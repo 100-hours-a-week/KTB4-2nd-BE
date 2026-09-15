@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import org.springframework.dao.DuplicateKeyException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -239,4 +240,104 @@ class MemberSchemaMigrationTest {
                 userId
         )).isInstanceOf(DuplicateKeyException.class);
     }
+
+    @Test
+    void consentsTableHasRequiredColumns() {
+        Long columnCount = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'consents'
+                  AND column_name IN (
+                      'consent_id',
+                      'user_id',
+                      'is_agreed',
+                      'agreed_at',
+                      'created_at',
+                      'updated_at',
+                      'deleted_at'
+                  )
+                """,
+                Long.class
+        );
+
+        assertThat(columnCount).isEqualTo(7L);
+    }
+
+    @Test
+    void userCanHaveOnlyOneConsentRow() {
+        String email = "consent@yeodam.test";
+
+        jdbcTemplate.update(
+                "INSERT INTO users (email, nickname) VALUES (?, ?)",
+                email,
+                "동의회원"
+        );
+
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT user_id FROM users WHERE email = ?",
+                Long.class,
+                email
+        );
+
+        jdbcTemplate.update(
+                """
+                INSERT INTO consents (user_id, is_agreed, agreed_at)
+                VALUES (?, TRUE, CURRENT_TIMESTAMP(6))
+                """,
+                userId
+        );
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                """
+                INSERT INTO consents (user_id, is_agreed, agreed_at)
+                VALUES (?, TRUE, CURRENT_TIMESTAMP(6))
+                """,
+                userId
+        )).isInstanceOf(DuplicateKeyException.class);
+    }
+
+    @Test
+    void consentRequiresAgreementAndAgreedAt() {
+        jdbcTemplate.update(
+                "INSERT INTO users (email, nickname) VALUES (?, ?)",
+                "required-consent@yeodam.test",
+                "필수동의"
+        );
+
+        Long userId = jdbcTemplate.queryForObject(
+                "SELECT user_id FROM users WHERE email = ?",
+                Long.class,
+                "required-consent@yeodam.test"
+        );
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                """
+                INSERT INTO consents (user_id, is_agreed, agreed_at)
+                VALUES (?, NULL, CURRENT_TIMESTAMP(6))
+                """,
+                userId
+        )).isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                """
+                INSERT INTO consents (user_id, is_agreed, agreed_at)
+                VALUES (?, TRUE, NULL)
+                """,
+                userId
+        )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void consentRequiresExistingUser() {
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                """
+                INSERT INTO consents (user_id, is_agreed, agreed_at)
+                VALUES (?, TRUE, CURRENT_TIMESTAMP(6))
+                """,
+                9_999_999L
+        )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
 }

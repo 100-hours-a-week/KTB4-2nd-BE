@@ -8,8 +8,12 @@ import java.util.Optional;
 
 public interface OAuthAccountRepository extends JpaRepository<OAuthAccount, Long> {
 
-    Optional<OAuthAccount>
-    findByProviderAndProviderUserIdAndDeletedAtIsNull(
+    Optional<OAuthAccount> findByProviderAndProviderUserIdAndDeletedAtIsNull(
+            OAuthProvider provider,
+            String providerUserId
+    );
+
+    boolean existsByProviderAndProviderUserIdAndDeletedAtIsNull(
             OAuthProvider provider,
             String providerUserId
     );

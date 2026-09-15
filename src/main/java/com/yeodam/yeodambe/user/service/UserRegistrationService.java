@@ -1,0 +1,53 @@
+package com.yeodam.yeodambe.user.service;
+
+import java.time.LocalDateTime;
+import com.yeodam.yeodambe.user.entity.OAuthProvider;
+import com.yeodam.yeodambe.user.entity.User;
+import com.yeodam.yeodambe.user.entity.OAuthAccount;
+import com.yeodam.yeodambe.user.entity.Consent;
+import com.yeodam.yeodambe.user.entity.UserStats;
+import com.yeodam.yeodambe.user.repository.ConsentRepository;
+import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
+import com.yeodam.yeodambe.user.repository.UserRepository;
+import com.yeodam.yeodambe.user.repository.UserStatsRepository;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+
+
+@Service
+@RequiredArgsConstructor
+public class UserRegistrationService {
+
+    private final UserRepository userRepository;
+    private final OAuthAccountRepository oauthAccountRepository;
+    private final ConsentRepository consentRepository;
+    private final UserStatsRepository userStatsRepository;
+
+    @Transactional
+    public User register(
+            String email,
+            String nickname,
+            OAuthProvider provider,
+            String providerUserId
+    ) {
+        if (userRepository.existsByEmailAndDeletedAtIsNull(email))
+        {
+            throw new IllegalStateException();
+        }
+        if(oauthAccountRepository.existsByProviderAndProviderUserIdAndDeletedAtIsNull(provider,providerUserId))
+        {
+            throw new IllegalStateException();
+        }
+        User user = userRepository.save(new User(email, nickname));
+
+        oauthAccountRepository.save(new OAuthAccount(user, provider, providerUserId));
+
+        consentRepository.save(new Consent(user, LocalDateTime.now()));
+
+        userStatsRepository.save(new UserStats(user));
+
+        return user;
+    }
+}

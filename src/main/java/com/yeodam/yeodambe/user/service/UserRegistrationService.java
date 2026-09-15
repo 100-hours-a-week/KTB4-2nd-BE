@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.user.entity.Consent;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
 import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
+import com.yeodam.yeodambe.user.exception.InvalidEmailException;
 import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
 import com.yeodam.yeodambe.user.repository.ConsentRepository;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
@@ -35,11 +36,17 @@ public class UserRegistrationService {
             OAuthProvider provider,
             String providerUserId
     ) {
+        String normalizedEmail = email.strip();
+
+        if (normalizedEmail.chars().anyMatch(Character::isWhitespace)) {
+            throw new InvalidEmailException();
+        }
+
         if (nickname == null ||
                 !nickname.matches("^[가-힣A-Za-z0-9]{2,10}$")) {
             throw new InvalidNicknameException();
         }
-        if (userRepository.existsByEmailAndDeletedAtIsNull(email))
+        if (userRepository.existsByEmailAndDeletedAtIsNull(normalizedEmail))
         {
             throw new DuplicateEmailException();
         }
@@ -47,7 +54,7 @@ public class UserRegistrationService {
         {
             throw new DuplicateOAuthAccountException();
         }
-        User user = userRepository.save(new User(email, nickname));
+        User user = userRepository.save(new User(normalizedEmail, nickname));
 
         oauthAccountRepository.save(new OAuthAccount(user, provider, providerUserId));
 

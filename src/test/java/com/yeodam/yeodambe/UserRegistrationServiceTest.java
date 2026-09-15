@@ -129,4 +129,27 @@ class UserRegistrationServiceTest {
                 "kakao-invalid-nickname-1"
         )).isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void registrationTrimsEmailWithoutChangingCase() {
+        User user = userRegistrationService.register(
+                "  CaseSensitive@yeodam.test  ",
+                "공백회원",
+                OAuthProvider.KAKAO,
+                "kakao-email-whitespace-1"
+        );
+
+        assertThat(user.getEmail())
+                .isEqualTo("CaseSensitive@yeodam.test");
+    }
+
+    @Test
+    void registrationRejectsEmailContainingInternalWhitespace() {
+        assertThatThrownBy(() -> userRegistrationService.register(
+                "invalid email@yeodam.test",
+                "메일회원",
+                OAuthProvider.KAKAO,
+                "kakao-invalid-email-1"
+        )).isInstanceOf(IllegalArgumentException.class);
+    }
 }

@@ -1,4 +1,3 @@
-// 회원 스키마의 초기 데이터와 제약조건을 검증합니다.
 package com.yeodam.yeodambe;
 
 import org.springframework.boot.test.context.SpringBootTest;

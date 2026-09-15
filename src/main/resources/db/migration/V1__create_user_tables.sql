@@ -1,4 +1,3 @@
--- 회원, OAuth 계정, 회원 통계, 회원 동의 테이블을 생성합니다.
 CREATE TABLE users (
     user_id BIGINT NOT NULL AUTO_INCREMENT,
     email VARCHAR(255)

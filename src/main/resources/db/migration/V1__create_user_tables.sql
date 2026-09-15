@@ -1,4 +1,4 @@
--- 회원, OAuth 계정, 회원 통계 테이블을 생성합니다.
+-- 회원, OAuth 계정, 회원 통계, 회원 동의 테이블을 생성합니다.
 CREATE TABLE users (
     user_id BIGINT NOT NULL AUTO_INCREMENT,
     email VARCHAR(255)
@@ -59,6 +59,26 @@ CREATE TABLE user_stats (
         ON UPDATE RESTRICT
         ON DELETE RESTRICT,
     CONSTRAINT uk_user_stats_user UNIQUE (user_id)
+) ENGINE = InnoDB
+  DEFAULT CHARACTER SET = utf8mb4
+  COLLATE = utf8mb4_0900_ai_ci;
+
+CREATE TABLE consents
+(
+    consent_id BIGINT  NOT NULL AUTO_INCREMENT,
+    user_id    BIGINT  NOT NULL,
+    is_agreed  BOOLEAN NOT NULL DEFAULT FALSE,
+    agreed_at  DATETIME(6) NOT NULL,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+        ON UPDATE CURRENT_TIMESTAMP(6),
+    deleted_at DATETIME(6) NULL DEFAULT NULL,
+    CONSTRAINT pk_consents PRIMARY KEY (consent_id),
+    CONSTRAINT fk_consents_user
+        FOREIGN KEY (user_id) REFERENCES users (user_id)
+            ON UPDATE RESTRICT
+            ON DELETE RESTRICT,
+    CONSTRAINT uk_consents_user UNIQUE (user_id)
 ) ENGINE = InnoDB
   DEFAULT CHARACTER SET = utf8mb4
   COLLATE = utf8mb4_0900_ai_ci;

@@ -94,3 +94,7 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+# 로컬 작업 인수인계 문서
+/PROJECT-START-CONTEXT.md
+/PROJECT-LEARNING-ROADMAP.md

@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.user.entity.Consent;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
 import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
+import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
 import com.yeodam.yeodambe.user.repository.ConsentRepository;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.repository.UserRepository;
@@ -34,6 +35,10 @@ public class UserRegistrationService {
             OAuthProvider provider,
             String providerUserId
     ) {
+        if (nickname == null ||
+                !nickname.matches("^[가-힣A-Za-z0-9]{2,10}$")) {
+            throw new InvalidNicknameException();
+        }
         if (userRepository.existsByEmailAndDeletedAtIsNull(email))
         {
             throw new DuplicateEmailException();

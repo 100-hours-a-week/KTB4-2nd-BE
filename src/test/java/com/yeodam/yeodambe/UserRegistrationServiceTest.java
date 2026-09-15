@@ -119,4 +119,14 @@ class UserRegistrationServiceTest {
                 providerUserId
         )).isInstanceOf(DuplicateOAuthAccountException.class);
     }
+
+    @Test
+    void registrationRejectsNicknameContainingWhitespace() {
+        assertThatThrownBy(() -> userRegistrationService.register(
+                "invalid-nickname@yeodam.test",
+                "잘못 된닉네임",
+                OAuthProvider.KAKAO,
+                "kakao-invalid-nickname-1"
+        )).isInstanceOf(IllegalArgumentException.class);
+    }
 }

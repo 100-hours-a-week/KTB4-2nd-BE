@@ -6,6 +6,8 @@ import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.OAuthAccount;
 import com.yeodam.yeodambe.user.entity.Consent;
 import com.yeodam.yeodambe.user.entity.UserStats;
+import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
+import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
 import com.yeodam.yeodambe.user.repository.ConsentRepository;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.repository.UserRepository;
@@ -34,11 +36,11 @@ public class UserRegistrationService {
     ) {
         if (userRepository.existsByEmailAndDeletedAtIsNull(email))
         {
-            throw new IllegalStateException();
+            throw new DuplicateEmailException();
         }
         if(oauthAccountRepository.existsByProviderAndProviderUserIdAndDeletedAtIsNull(provider,providerUserId))
         {
-            throw new IllegalStateException();
+            throw new DuplicateOAuthAccountException();
         }
         User user = userRepository.save(new User(email, nickname));
 

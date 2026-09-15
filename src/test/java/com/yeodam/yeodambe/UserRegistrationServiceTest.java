@@ -2,6 +2,8 @@ package com.yeodam.yeodambe;
 
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
+import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
+import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
 import com.yeodam.yeodambe.user.service.UserRegistrationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,5 +80,43 @@ class UserRegistrationServiceTest {
         );
 
         assertThat(userCount).isZero();
+    }
+
+    @Test
+    void registrationRejectsDuplicateEmail() {
+        String email = "duplicate-email@yeodam.test";
+
+        userRegistrationService.register(
+                email,
+                "첫회원",
+                OAuthProvider.KAKAO,
+                "kakao-duplicate-email-1"
+        );
+
+        assertThatThrownBy(() -> userRegistrationService.register(
+                email,
+                "둘째회원",
+                OAuthProvider.KAKAO,
+                "kakao-duplicate-email-2"
+        )).isInstanceOf(DuplicateEmailException.class);
+    }
+
+    @Test
+    void registrationRejectsDuplicateOAuthAccount() {
+        String providerUserId = "kakao-duplicate-oauth-1";
+
+        userRegistrationService.register(
+                "first-oauth@yeodam.test",
+                "첫회원",
+                OAuthProvider.KAKAO,
+                providerUserId
+        );
+
+        assertThatThrownBy(() -> userRegistrationService.register(
+                "second-oauth@yeodam.test",
+                "둘째회원",
+                OAuthProvider.KAKAO,
+                providerUserId
+        )).isInstanceOf(DuplicateOAuthAccountException.class);
     }
 }

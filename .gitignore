@@ -35,3 +35,8 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# 로컬 작업 인수인계 문서
+/PROJECT-START-CONTEXT.md
+/PROJECT-LEARNING-ROADMAP.md
+.DS_Store

@@ -1,6 +1,6 @@
-package com.yeodam.yeodambe;
+package com.yeodam.yeodambe.user.security;
 
-import com.yeodam.yeodambe.user.security.OAuthStateStore;
+import com.yeodam.yeodambe.TestcontainersConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

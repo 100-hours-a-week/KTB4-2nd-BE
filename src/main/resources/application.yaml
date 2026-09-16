@@ -28,6 +28,11 @@ spring:
     redis:
       url: ${REDIS_URL:redis://localhost:6379}
 
+oauth:
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID:local-client-id}
+    redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/auth/kakao/callback}
+
 ---
 spring:
   config:
@@ -40,3 +45,19 @@ spring:
   data:
     redis:
       url: ${REDIS_URL}
+
+oauth:
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID}
+    redirect-uri: ${KAKAO_REDIRECT_URI}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+oauth:
+  kakao:
+    client-id: test-client-id
+    redirect-uri: https://api.yeodam.test/auth/kakao/callback

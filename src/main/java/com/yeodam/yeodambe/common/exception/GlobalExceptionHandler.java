@@ -16,13 +16,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BindException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleBindException(BindException e) {
-        return new ApiResponse<>("INVALID_PLACE_QUERY", null);
+        return new ApiResponse<>("INVALID_REQUEST", null);
     }
 
-    @ExceptionHandler(MapProviderUnavailableException.class)
+    @ExceptionHandler(PlaceQueryProviderUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
-    ApiResponse<Void> handleMapProviderUnavailableException(MapProviderUnavailableException e) {
-        log.warn("지도 제공자 호출에 실패했습니다.", e);
+    ApiResponse<Void> handlePlaceQueryProviderUnavailableException(PlaceQueryProviderUnavailableException e) {
+        log.warn("지역 검색 제공자 호출에 실패했습니다.", e);
         return new ApiResponse<>("MAP_PROVIDER_UNAVAILABLE", null);
     }
 

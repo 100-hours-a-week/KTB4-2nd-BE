@@ -61,6 +61,30 @@ public class PlaceClient {
         }
     }
 
+    /**
+     * 메서드에서 행안부 API의 응답구조를 검증.
+     * 행안부 API 응답구조:
+     * {
+     *   "StanReginCd": [
+     *     {
+     *       "head": [
+     *         { "totalCount": 11 },
+     *         { "numOfRows": "10", "pageNo": "1", "type": "JSON" },
+     *         {
+     *           "RESULT": {
+     *             "resultCode": "INFO-0",
+     *             "resultMsg": "NOMAL SERVICE"
+     *           }
+     *         }
+     *       ]
+     *     },
+     *     {
+     *       "row": []
+     *     }
+     *   ]
+     * }
+     *
+     */
     private ProviderPage parse(JsonNode body) {
         if (body == null) {
             throw new PlaceQueryProviderUnavailableException("응답 본문이 없습니다.");
@@ -146,11 +170,11 @@ public class PlaceClient {
     }
 
     public record ProviderRegion(
-            String sidoCd,
-            String sggCd,
-            String umdCd,
-            String riCd,
-            String regionName
+            String sidoCd, // 시도 코드
+            String sggCd, // 시군구 코드
+            String umdCd, // 읍면동 코드
+            String riCd, // 리 코드
+            String regionName // 지역 주소 명
     ) {
 
     }

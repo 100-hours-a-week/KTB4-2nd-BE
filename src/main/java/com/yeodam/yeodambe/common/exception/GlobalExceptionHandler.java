@@ -4,6 +4,9 @@ import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
 import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
 import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
+import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
+import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
+import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.BindException;
@@ -51,6 +54,41 @@ public class GlobalExceptionHandler {
             DuplicateOAuthAccountException e
     ) {
         return new ApiResponse<>("ACCOUNT_ALREADY_REGISTERED", null);
+    }
+
+    @ExceptionHandler(OAuthStateInvalidOrExpiredException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleOAuthStateInvalidOrExpiredException(
+            OAuthStateInvalidOrExpiredException e
+    ) {
+        return new ApiResponse<>(
+                "OAUTH_STATE_INVALID_OR_EXPIRED",
+                null
+        );
+    }
+
+    @ExceptionHandler(KakaoAuthenticationFailedException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    ApiResponse<Void> handleKakaoAuthenticationFailedException(
+            KakaoAuthenticationFailedException e
+    ) {
+        return new ApiResponse<>(
+                "KAKAO_AUTHENTICATION_FAILED",
+                null
+        );
+    }
+
+    @ExceptionHandler(OAuthProviderUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handleOAuthProviderUnavailableException(
+            OAuthProviderUnavailableException e
+    ) {
+        log.warn("OAuth 제공자 호출에 실패했습니다.", e);
+
+        return new ApiResponse<>(
+                "OAUTH_PROVIDER_UNAVAILABLE",
+                null
+        );
     }
 
     @ExceptionHandler(Exception.class)

@@ -3,6 +3,9 @@ package com.yeodam.yeodambe.common.exception;
 import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
 import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
 import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
+import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
+import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
+import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -63,6 +66,42 @@ class GlobalExceptionHandlerTest {
                     """));
     }
 
+    @Test
+    void returnsBadRequestWhenOAuthStateIsInvalidOrExpired() throws Exception {
+        mockMvc.perform(get("/test/oauth-state-invalid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().json("""
+                    {
+                      "message": "OAUTH_STATE_INVALID_OR_EXPIRED",
+                      "data": null
+                    }
+                    """));
+    }
+
+    @Test
+    void returnsUnauthorizedWhenKakaoAuthenticationFails() throws Exception {
+        mockMvc.perform(get("/test/kakao-authentication-failed"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().json("""
+                    {
+                      "message": "KAKAO_AUTHENTICATION_FAILED",
+                      "data": null
+                    }
+                    """));
+    }
+
+    @Test
+    void returnsServiceUnavailableWhenOAuthProviderFails() throws Exception {
+        mockMvc.perform(get("/test/oauth-provider-unavailable"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(content().json("""
+                    {
+                      "message": "OAUTH_PROVIDER_UNAVAILABLE",
+                      "data": null
+                    }
+                    """));
+    }
+
     @RestController
     static class TestController {
 
@@ -79,6 +118,21 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/duplicate-oauth-account")
         void duplicateOAuthAccount() {
             throw new DuplicateOAuthAccountException();
+        }
+
+        @GetMapping("/test/oauth-state-invalid")
+        void oauthStateInvalid() {
+            throw new OAuthStateInvalidOrExpiredException();
+        }
+
+        @GetMapping("/test/kakao-authentication-failed")
+        void kakaoAuthenticationFailed() {
+            throw new KakaoAuthenticationFailedException();
+        }
+
+        @GetMapping("/test/oauth-provider-unavailable")
+        void oauthProviderUnavailable() {
+            throw new OAuthProviderUnavailableException();
         }
     }
 }

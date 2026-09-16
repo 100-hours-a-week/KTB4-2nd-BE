@@ -40,6 +40,8 @@ oauth:
   kakao:
     client-id: ${KAKAO_CLIENT_ID:local-client-id}
     redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/auth/kakao/callback}
+  browser-context-cookie:
+    secure: false
 
 ---
 spring:
@@ -58,6 +60,8 @@ oauth:
   kakao:
     client-id: ${KAKAO_CLIENT_ID}
     redirect-uri: ${KAKAO_REDIRECT_URI}
+  browser-context-cookie:
+    secure: true
 
 ---
 spring:
@@ -69,3 +73,5 @@ oauth:
   kakao:
     client-id: test-client-id
     redirect-uri: https://api.yeodam.test/auth/kakao/callback
+  browser-context-cookie:
+    secure: false

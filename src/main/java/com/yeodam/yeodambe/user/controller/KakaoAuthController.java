@@ -1,0 +1,76 @@
+package com.yeodam.yeodambe.user.controller;
+
+
+import com.yeodam.yeodambe.user.service.KakaoLoginStartService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.net.URI;
+import java.time.Duration;
+import java.util.UUID;
+
+import static org.springframework.http.HttpStatus.FOUND;
+
+@RestController
+@RequestMapping("/auth/kakao")
+public class KakaoAuthController {
+    private static final String BROWSER_CONTEXT_COOKIE = "OAUTH_BROWSER_CONTEXT";
+    private final KakaoLoginStartService loginStartService;
+    private final boolean cookieSecure;
+
+    public KakaoAuthController(KakaoLoginStartService loginStartService,
+                               @Value("${oauth.browser-context-cookie.secure}")
+                               boolean cookieSecure
+    ){
+        this.loginStartService=loginStartService;
+        this.cookieSecure=cookieSecure;
+    }
+    @GetMapping("/authorize")
+    public ResponseEntity<Void> authorize(
+            @CookieValue(
+                    name = BROWSER_CONTEXT_COOKIE,
+                    required = false
+            )
+            String browserContext
+    ) {
+        boolean browserContextCreated =
+                browserContext == null || browserContext.isBlank();
+
+        if (browserContextCreated) {
+            browserContext = UUID.randomUUID().toString();
+        }
+
+        String authorizationUrl =
+                loginStartService.start(browserContext);
+
+        ResponseEntity.BodyBuilder response = ResponseEntity
+                .status(FOUND)
+                .location(URI.create(authorizationUrl))
+                .cacheControl(CacheControl.noStore());
+
+        if (browserContextCreated) {
+            ResponseCookie cookie = ResponseCookie
+                    .from(BROWSER_CONTEXT_COOKIE, browserContext)
+                    .httpOnly(true)
+                    .secure(cookieSecure)
+                    .sameSite("Lax")
+                    .path("/auth/kakao")
+                    .maxAge(Duration.ofMinutes(10))
+                    .build();
+
+            response.header(
+                    HttpHeaders.SET_COOKIE,
+                    cookie.toString()
+            );
+        }
+
+        return response.build();
+    }
+}

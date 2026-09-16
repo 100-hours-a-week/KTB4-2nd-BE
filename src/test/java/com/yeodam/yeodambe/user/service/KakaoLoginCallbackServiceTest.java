@@ -11,6 +11,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.yeodam.yeodambe.user.client.KakaoTokenResponse;
 import com.yeodam.yeodambe.user.client.KakaoUserResponse;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
+import com.yeodam.yeodambe.user.security.LoginTicketGenerator;
+import com.yeodam.yeodambe.user.security.LoginTicketStore;
+
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.then;
@@ -27,13 +30,21 @@ class KakaoLoginCallbackServiceTest {
     @Mock
     private KakaoOAuthClient kakaoOAuthClient;
 
+    @Mock
+    private LoginTicketGenerator loginTicketGenerator;
+
+    @Mock
+    private LoginTicketStore loginTicketStore;
+
     private KakaoLoginCallbackService service;
 
     @BeforeEach
     void setUp() {
         service = new KakaoLoginCallbackService(
                 stateStore,
-                kakaoOAuthClient
+                kakaoOAuthClient,
+                loginTicketGenerator,
+                loginTicketStore
         );
     }
 
@@ -43,18 +54,22 @@ class KakaoLoginCallbackServiceTest {
                 .willReturn(false);
 
         assertThatThrownBy(() ->
-                service.authenticate(
+                service.issueLoginTicket(
                         "authorization-code",
                         "invalid-state",
                         "browser-1"
                 )
         ).isInstanceOf(OAuthStateInvalidOrExpiredException.class);
 
-        verifyNoInteractions(kakaoOAuthClient);
+        verifyNoInteractions(
+                kakaoOAuthClient,
+                loginTicketGenerator,
+                loginTicketStore
+        );
     }
 
     @Test
-    void returnsIdentityAfterValidKakaoAuthentication() {
+    void issuesLoginTicketAfterValidKakaoAuthentication() {
         given(stateStore.consume("valid-state", "browser-1"))
                 .willReturn(true);
 
@@ -75,16 +90,17 @@ class KakaoLoginCallbackServiceTest {
                         )
                 ));
 
-        KakaoUserIdentity identity = service.authenticate(
+        given(loginTicketGenerator.generate())
+                .willReturn("login-ticket");
+
+        String loginTicket = service.issueLoginTicket(
                 "authorization-code",
                 "valid-state",
                 "browser-1"
         );
 
-        assertThat(identity.providerUserId())
-                .isEqualTo("123456789");
-        assertThat(identity.email())
-                .isEqualTo("member@example.com");
+        assertThat(loginTicket)
+                .isEqualTo("login-ticket");
 
         then(stateStore).should()
                 .consume("valid-state", "browser-1");
@@ -92,5 +108,16 @@ class KakaoLoginCallbackServiceTest {
                 .exchangeToken("authorization-code");
         then(kakaoOAuthClient).should()
                 .getUser("kakao-access-token");
+        then(loginTicketGenerator).should()
+                .generate();
+
+        then(loginTicketStore).should()
+                .save(
+                        "login-ticket",
+                        new KakaoUserIdentity(
+                                "123456789",
+                                "member@example.com"
+                        )
+                );
     }
 }

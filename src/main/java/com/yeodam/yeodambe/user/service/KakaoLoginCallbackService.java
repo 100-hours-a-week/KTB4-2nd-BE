@@ -7,22 +7,30 @@ import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
 import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.security.OAuthStateStore;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
+import com.yeodam.yeodambe.user.security.LoginTicketGenerator;
+import com.yeodam.yeodambe.user.security.LoginTicketStore;
 import org.springframework.stereotype.Service;
 
 @Service
 public class KakaoLoginCallbackService {
     private final OAuthStateStore stateStore;
     private final KakaoOAuthClient kakaoOAuthClient;
+    private final LoginTicketGenerator loginTicketGenerator;
+    private final LoginTicketStore loginTicketStore;
 
     public KakaoLoginCallbackService(
             OAuthStateStore stateStore,
-            KakaoOAuthClient kakaoOAuthClient
+            KakaoOAuthClient kakaoOAuthClient,
+            LoginTicketGenerator loginTicketGenerator,
+            LoginTicketStore loginTicketStore
     ) {
         this.stateStore = stateStore;
         this.kakaoOAuthClient = kakaoOAuthClient;
+        this.loginTicketGenerator = loginTicketGenerator;
+        this.loginTicketStore = loginTicketStore;
     }
 
-    public KakaoUserIdentity authenticate(
+    public String issueLoginTicket(
             String code,
             String state,
             String browserContext
@@ -59,9 +67,15 @@ public class KakaoLoginCallbackService {
             throw new KakaoAuthenticationFailedException();
         }
 
-        return new KakaoUserIdentity(
+        KakaoUserIdentity identity = new KakaoUserIdentity(
                 user.id().toString(),
                 user.kakaoAccount().email()
         );
+
+        String loginTicket = loginTicketGenerator.generate();
+
+        loginTicketStore.save(loginTicket, identity);
+
+        return loginTicket;
     }
 }

@@ -34,12 +34,16 @@ class LoginTicketStoreTest {
                         "member@example.com"
                 );
 
-        loginTicketStore.save(ticket, identity);
+        loginTicketStore.save(
+                ticket,
+                identity,
+                "browser-1"
+        );
 
-        assertThat(loginTicketStore.consume(ticket))
+        assertThat(loginTicketStore.consume(ticket, "browser-1"))
                 .contains(identity);
 
-        assertThat(loginTicketStore.consume(ticket))
+        assertThat(loginTicketStore.consume(ticket, "browser-1"))
                 .isEmpty();
     }
 
@@ -52,15 +56,41 @@ class LoginTicketStoreTest {
                 new KakaoUserIdentity(
                         "123456789",
                         "member@example.com"
-                )
+                ),
+                "browser-1"
         );
 
         Long ttlSeconds = redisTemplate.getExpire(
-                "auth:login-ticket:" + ticket,
+                "auth:login-ticket:browser-1:" + ticket,
                 TimeUnit.SECONDS
         );
 
         assertThat(ttlSeconds)
                 .isBetween(50L, 60L);
+    }
+
+    @Test
+    void differentBrowserCannotConsumeTicket() {
+        String ticket = "login-ticket-browser";
+
+        KakaoUserIdentity identity =
+                new KakaoUserIdentity(
+                        "123456789",
+                        "member@example.com"
+                );
+
+        loginTicketStore.save(
+                ticket,
+                identity,
+                "browser-1"
+        );
+
+        assertThat(
+                loginTicketStore.consume(ticket, "browser-2")
+        ).isEmpty();
+
+        assertThat(
+                loginTicketStore.consume(ticket, "browser-1")
+        ).contains(identity);
     }
 }

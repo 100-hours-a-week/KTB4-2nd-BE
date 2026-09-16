@@ -117,7 +117,8 @@ class KakaoLoginCallbackServiceTest {
                         new KakaoUserIdentity(
                                 "123456789",
                                 "member@example.com"
-                        )
+                        ),
+                        "browser-1"
                 );
     }
 }

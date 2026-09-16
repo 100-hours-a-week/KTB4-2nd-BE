@@ -74,7 +74,11 @@ public class KakaoLoginCallbackService {
 
         String loginTicket = loginTicketGenerator.generate();
 
-        loginTicketStore.save(loginTicket, identity);
+        loginTicketStore.save(
+                loginTicket,
+                identity,
+                browserContext
+        );
 
         return loginTicket;
     }

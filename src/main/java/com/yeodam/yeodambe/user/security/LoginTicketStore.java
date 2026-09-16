@@ -22,13 +22,14 @@ public class LoginTicketStore {
 
     public void save(
             String ticket,
-            KakaoUserIdentity identity
+            KakaoUserIdentity identity,
+            String browserContext
     ) {
         try {
             String json = objectMapper.writeValueAsString(identity);
 
             redisTemplate.opsForValue().set(
-                    key(ticket),
+                    key(ticket, browserContext),
                     json,
                     TICKET_TTL
             );
@@ -40,14 +41,20 @@ public class LoginTicketStore {
         }
     }
 
-    public Optional<KakaoUserIdentity> consume(String ticket) {
-        if (ticket == null || ticket.isBlank()) {
+    public Optional<KakaoUserIdentity> consume(
+            String ticket,
+            String browserContext
+    ) {
+        if (ticket == null
+                || ticket.isBlank()
+                || browserContext == null
+                || browserContext.isBlank()) {
             return Optional.empty();
         }
 
         String json = redisTemplate
                 .opsForValue()
-                .getAndDelete(key(ticket));
+                .getAndDelete(key(ticket, browserContext));
 
         if (json == null) {
             return Optional.empty();
@@ -68,7 +75,10 @@ public class LoginTicketStore {
         }
     }
 
-    private String key(String ticket) {
-        return KEY_PREFIX + ticket;
+    private String key(
+            String ticket,
+            String browserContext
+    ) {
+        return KEY_PREFIX + browserContext + ":" + ticket;
     }
 }

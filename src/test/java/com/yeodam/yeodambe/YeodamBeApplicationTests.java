@@ -74,4 +74,11 @@ class YeodamBeApplicationTests {
                 .contains("Max-Age=604800");
     }
 
+    @Test
+    void kakaoLoginStartIsPublic() throws Exception {
+        mockMvc.perform(get("/auth/kakao/authorize"))
+                .andExpect(status().isFound())
+                .andExpect(header().exists("Location"));
+    }
+
 }

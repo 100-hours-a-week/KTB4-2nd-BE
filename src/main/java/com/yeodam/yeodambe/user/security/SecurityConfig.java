@@ -15,6 +15,11 @@ public class SecurityConfig {
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.GET, "/auth/csrf").permitAll()
+                .requestMatchers(
+                        HttpMethod.GET,
+                        "/auth/kakao/authorize",
+                        "/auth/kakao/callback"
+                ).permitAll()
                 .anyRequest().authenticated()
         );
 

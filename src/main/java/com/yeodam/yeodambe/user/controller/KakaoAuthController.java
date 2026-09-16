@@ -61,7 +61,7 @@ public class KakaoAuthController {
                     .httpOnly(true)
                     .secure(cookieSecure)
                     .sameSite("Lax")
-                    .path("/auth/kakao")
+                    .path("/auth")
                     .maxAge(Duration.ofMinutes(10))
                     .build();
 

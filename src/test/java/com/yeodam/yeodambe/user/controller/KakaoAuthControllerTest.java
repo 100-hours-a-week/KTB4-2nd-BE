@@ -98,7 +98,8 @@ class KakaoAuthControllerTest {
                         "OAUTH_BROWSER_CONTEXT="
                                 + browserContext
                 )
-                .contains("Path=/auth/kakao")
+                .contains("Path=/auth;")
+                .doesNotContain("Path=/auth/kakao")
                 .contains("Max-Age=600")
                 .contains("HttpOnly")
                 .contains("SameSite=Lax")

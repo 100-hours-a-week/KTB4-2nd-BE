@@ -1,6 +1,9 @@
 package com.yeodam.yeodambe.common.exception;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
+import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
+import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.BindException;
@@ -24,6 +27,30 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handlePlaceQueryProviderUnavailableException(PlaceQueryProviderUnavailableException e) {
         log.warn("지역 검색 제공자 호출에 실패했습니다.", e);
         return new ApiResponse<>("MAP_PROVIDER_UNAVAILABLE", null);
+    }
+
+    @ExceptionHandler(DuplicateEmailException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleDuplicateEmailException(
+            DuplicateEmailException e
+    ) {
+        return new ApiResponse<>("EMAIL_ALREADY_IN_USE", null);
+    }
+
+    @ExceptionHandler(InvalidNicknameException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidNicknameException(
+            InvalidNicknameException e
+    ) {
+        return new ApiResponse<>("INVALID_NICKNAME", null);
+    }
+
+    @ExceptionHandler(DuplicateOAuthAccountException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleDuplicateOAuthAccountException(
+            DuplicateOAuthAccountException e
+    ) {
+        return new ApiResponse<>("ACCOUNT_ALREADY_REGISTERED", null);
     }
 
     @ExceptionHandler(Exception.class)

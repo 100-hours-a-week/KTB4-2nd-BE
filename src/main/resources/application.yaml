@@ -37,6 +37,7 @@ spring:
       url: ${REDIS_URL:redis://localhost:6379}
 
 oauth:
+  frontend-callback-uri: ${FRONTEND_OAUTH_CALLBACK_URI:http://localhost:5173/auth/callback}
   kakao:
     client-id: ${KAKAO_CLIENT_ID:local-client-id}
     redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/auth/kakao/callback}
@@ -58,6 +59,7 @@ spring:
       url: ${REDIS_URL}
 
 oauth:
+  frontend-callback-uri: ${FRONTEND_OAUTH_CALLBACK_URI}
   kakao:
     client-id: ${KAKAO_CLIENT_ID}
     redirect-uri: ${KAKAO_REDIRECT_URI}
@@ -72,6 +74,7 @@ spring:
       on-profile: test
 
 oauth:
+  frontend-callback-uri: https://app.yeodam.test/auth/callback
   kakao:
     client-id: test-client-id
     redirect-uri: https://api.yeodam.test/auth/kakao/callback

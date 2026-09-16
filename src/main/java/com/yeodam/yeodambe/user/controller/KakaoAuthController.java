@@ -2,6 +2,9 @@ package com.yeodam.yeodambe.user.controller;
 
 
 import com.yeodam.yeodambe.user.service.KakaoLoginStartService;
+import com.yeodam.yeodambe.user.service.KakaoLoginCallbackService;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -24,13 +27,21 @@ public class KakaoAuthController {
     private static final String BROWSER_CONTEXT_COOKIE = "OAUTH_BROWSER_CONTEXT";
     private final KakaoLoginStartService loginStartService;
     private final boolean cookieSecure;
+    private final KakaoLoginCallbackService loginCallbackService;
+    private final String frontendCallbackUri;
 
-    public KakaoAuthController(KakaoLoginStartService loginStartService,
-                               @Value("${oauth.browser-context-cookie.secure}")
-                               boolean cookieSecure
-    ){
-        this.loginStartService=loginStartService;
-        this.cookieSecure=cookieSecure;
+    public KakaoAuthController(
+            KakaoLoginStartService loginStartService,
+            KakaoLoginCallbackService loginCallbackService,
+            @Value("${oauth.frontend-callback-uri}")
+            String frontendCallbackUri,
+            @Value("${oauth.browser-context-cookie.secure}")
+            boolean cookieSecure
+    ) {
+        this.loginStartService = loginStartService;
+        this.loginCallbackService = loginCallbackService;
+        this.frontendCallbackUri = frontendCallbackUri;
+        this.cookieSecure = cookieSecure;
     }
     @GetMapping("/authorize")
     public ResponseEntity<Void> authorize(
@@ -72,5 +83,43 @@ public class KakaoAuthController {
         }
 
         return response.build();
+    }
+
+    @GetMapping("/callback")
+    public ResponseEntity<Void> callback(
+            @RequestParam String code,
+            @RequestParam String state,
+            @CookieValue(
+                    name = BROWSER_CONTEXT_COOKIE,
+                    required = false
+            )
+            String browserContext
+    ) {
+        String loginTicket =
+                loginCallbackService.issueLoginTicket(
+                        code,
+                        state,
+                        browserContext
+                );
+
+        URI redirectUri = UriComponentsBuilder
+                .fromUriString(frontendCallbackUri)
+                .queryParam(
+                        "loginTicket",
+                        "{loginTicket}"
+                )
+                .encode()
+                .buildAndExpand(loginTicket)
+                .toUri();
+
+        return ResponseEntity
+                .status(FOUND)
+                .location(redirectUri)
+                .cacheControl(CacheControl.noStore())
+                .header(
+                        "Referrer-Policy",
+                        "no-referrer"
+                )
+                .build();
     }
 }

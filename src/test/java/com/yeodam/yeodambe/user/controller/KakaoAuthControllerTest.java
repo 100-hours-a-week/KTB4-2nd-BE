@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.user.service.KakaoLoginStartService;
+import com.yeodam.yeodambe.user.service.KakaoLoginCallbackService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,13 +28,20 @@ class KakaoAuthControllerTest {
     @Mock
     private KakaoLoginStartService loginStartService;
 
+    @Mock
+    private KakaoLoginCallbackService loginCallbackService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         KakaoAuthController controller =
-                new KakaoAuthController(loginStartService, false);
-
+                new KakaoAuthController(
+                        loginStartService,
+                        loginCallbackService,
+                        "https://app.yeodam.test/auth/callback",
+                        false
+                );
         mockMvc = standaloneSetup(controller).build();
     }
 
@@ -105,5 +113,45 @@ class KakaoAuthControllerTest {
                 .contains("SameSite=Lax")
                 .doesNotContain("Secure")
                 .doesNotContain("Domain=");
+    }
+
+    @Test
+    void redirectsToFrontendWithLoginTicket() throws Exception {
+        given(loginCallbackService.issueLoginTicket(
+                "authorization-code",
+                "valid-state",
+                "browser-1"
+        )).willReturn("login-ticket");
+
+        mockMvc.perform(
+                        get("/auth/kakao/callback")
+                                .param("code", "authorization-code")
+                                .param("state", "valid-state")
+                                .cookie(new Cookie(
+                                        "OAUTH_BROWSER_CONTEXT",
+                                        "browser-1"
+                                ))
+                )
+                .andExpect(status().isFound())
+                .andExpect(header().string(
+                        "Location",
+                        "https://app.yeodam.test/auth/callback"
+                                + "?loginTicket=login-ticket"
+                ))
+                .andExpect(header().string(
+                        "Cache-Control",
+                        "no-store"
+                ))
+                .andExpect(header().string(
+                        "Referrer-Policy",
+                        "no-referrer"
+                ));
+
+        then(loginCallbackService).should()
+                .issueLoginTicket(
+                        "authorization-code",
+                        "valid-state",
+                        "browser-1"
+                );
     }
 }

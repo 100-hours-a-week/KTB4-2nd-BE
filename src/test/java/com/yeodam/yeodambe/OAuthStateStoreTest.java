@@ -6,7 +6,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
+import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
@@ -16,6 +18,9 @@ class OAuthStateStoreTest {
 
     @Autowired
     private OAuthStateStore oauthStateStore;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
 
     @Test
     void stateCanBeConsumedOnlyOnce() {
@@ -42,5 +47,19 @@ class OAuthStateStoreTest {
 
         assertThat(oauthStateStore.consume(state, "browser-1"))
                 .isTrue();
+    }
+
+    @Test
+    void stateExpiresAfterFiveMinutes() {
+        String state = "oauth-state-ttl";
+
+        oauthStateStore.save(state, "browser-1");
+
+        Long ttlSeconds = redisTemplate.getExpire(
+                "oauth:state:" + state,
+                TimeUnit.SECONDS
+        );
+
+        assertThat(ttlSeconds).isBetween(240L, 300L);
     }
 }

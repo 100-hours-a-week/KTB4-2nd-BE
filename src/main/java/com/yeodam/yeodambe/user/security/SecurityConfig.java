@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfig {
@@ -13,7 +14,8 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            CsrfAccessDeniedHandler csrfAccessDeniedHandler
+            CsrfAccessDeniedHandler csrfAccessDeniedHandler,
+            RedisCsrfTokenRepository redisCsrfTokenRepository
     ) throws Exception {
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health").permitAll()
@@ -28,6 +30,11 @@ public class SecurityConfig {
 
         http.exceptionHandling(exceptions -> exceptions
                 .accessDeniedHandler(csrfAccessDeniedHandler)
+        );
+
+        http.csrf(csrf -> csrf
+                .csrfTokenRepository(redisCsrfTokenRepository)
+                .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
         );
 
         return http.build();

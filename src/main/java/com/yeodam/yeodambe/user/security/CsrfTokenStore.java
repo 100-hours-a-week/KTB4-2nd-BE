@@ -45,6 +45,22 @@ public class CsrfTokenStore {
         return token.equals(storedToken);
     }
 
+    public String find(String browserContext) {
+        if (browserContext == null || browserContext.isBlank()) {
+            return null;
+        }
+
+        return redisTemplate.opsForValue().get(key(browserContext));
+    }
+
+    public void delete(String browserContext) {
+        if (browserContext == null || browserContext.isBlank()) {
+            return;
+        }
+
+        redisTemplate.delete(key(browserContext));
+    }
+
     private String key(String browserContext) {
         return KEY_PREFIX + browserContext;
     }

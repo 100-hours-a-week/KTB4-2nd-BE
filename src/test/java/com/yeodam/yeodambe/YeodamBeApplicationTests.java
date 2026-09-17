@@ -10,7 +10,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-
+import org.springframework.http.MediaType;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -79,6 +80,16 @@ class YeodamBeApplicationTests {
         mockMvc.perform(get("/auth/kakao/authorize"))
                 .andExpect(status().isFound())
                 .andExpect(header().exists("Location"));
+    }
+
+    @Test
+    void tokenExchangeRejectsMissingCsrfToken() throws Exception {
+        mockMvc.perform(post("/auth/token/exchange")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"loginTicket\":\"test-ticket\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message")
+                        .value("CSRF_TOKEN_INVALID"));
     }
 
 }

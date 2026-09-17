@@ -11,7 +11,10 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            CsrfAccessDeniedHandler csrfAccessDeniedHandler
+    ) throws Exception {
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.GET, "/auth/csrf").permitAll()
@@ -21,6 +24,10 @@ public class SecurityConfig {
                         "/auth/kakao/callback"
                 ).permitAll()
                 .anyRequest().authenticated()
+        );
+
+        http.exceptionHandling(exceptions -> exceptions
+                .accessDeniedHandler(csrfAccessDeniedHandler)
         );
 
         return http.build();

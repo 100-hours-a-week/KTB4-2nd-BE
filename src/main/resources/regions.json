@@ -1,0 +1,2078 @@
+{
+  "regionUnit": "SIGUNGU",
+  "coordinateSystem": "WGS84",
+  "representativePlacePolicy": "LOCAL_GOVERNMENT_MAIN_OFFICE",
+  "coordinateSource": "KAKAO_LOCAL_KEYWORD",
+  "regions": [
+    {
+      "regionCode": "11110",
+      "regionName": "서울특별시 종로구",
+      "representativePlaceName": "종로구청 본관",
+      "kakaoPlaceId": "18618105",
+      "latitude": 37.57477115,
+      "longitude": 126.97961221,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11140",
+      "regionName": "서울특별시 중구",
+      "representativePlaceName": "서울특별시중구청",
+      "kakaoPlaceId": "7942399",
+      "latitude": 37.56380777,
+      "longitude": 126.99755518,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11170",
+      "regionName": "서울특별시 용산구",
+      "representativePlaceName": "용산구청",
+      "kakaoPlaceId": "11986555",
+      "latitude": 37.53242563,
+      "longitude": 126.99057556,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11200",
+      "regionName": "서울특별시 성동구",
+      "representativePlaceName": "성동구청",
+      "kakaoPlaceId": "16327522",
+      "latitude": 37.56342721,
+      "longitude": 127.03693014,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11215",
+      "regionName": "서울특별시 광진구",
+      "representativePlaceName": "광진구청",
+      "kakaoPlaceId": "8660382",
+      "latitude": 37.53628212,
+      "longitude": 127.08775365,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11230",
+      "regionName": "서울특별시 동대문구",
+      "representativePlaceName": "동대문구청",
+      "kakaoPlaceId": "1394496477",
+      "latitude": 37.57441844,
+      "longitude": 127.03974739,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11260",
+      "regionName": "서울특별시 중랑구",
+      "representativePlaceName": "중랑구청",
+      "kakaoPlaceId": "8082204",
+      "latitude": 37.60654324,
+      "longitude": 127.09282029,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11290",
+      "regionName": "서울특별시 성북구",
+      "representativePlaceName": "성북구청",
+      "kakaoPlaceId": "10485530",
+      "latitude": 37.58935882,
+      "longitude": 127.01670064,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11305",
+      "regionName": "서울특별시 강북구",
+      "representativePlaceName": "강북구청 용신빌딩 임시청사",
+      "kakaoPlaceId": "694697355",
+      "latitude": 37.63712794,
+      "longitude": 127.02420253,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11320",
+      "regionName": "서울특별시 도봉구",
+      "representativePlaceName": "도봉구청",
+      "kakaoPlaceId": "10307470",
+      "latitude": 37.66869141,
+      "longitude": 127.0472105,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11350",
+      "regionName": "서울특별시 노원구",
+      "representativePlaceName": "노원구청",
+      "kakaoPlaceId": "8210789",
+      "latitude": 37.65436176,
+      "longitude": 127.05643048,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11380",
+      "regionName": "서울특별시 은평구",
+      "representativePlaceName": "은평구청",
+      "kakaoPlaceId": "11176503",
+      "latitude": 37.60281744,
+      "longitude": 126.92893872,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11410",
+      "regionName": "서울특별시 서대문구",
+      "representativePlaceName": "서대문구청",
+      "kakaoPlaceId": "11143979",
+      "latitude": 37.57916186,
+      "longitude": 126.93681566,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11440",
+      "regionName": "서울특별시 마포구",
+      "representativePlaceName": "마포구청",
+      "kakaoPlaceId": "7873173",
+      "latitude": 37.56621419,
+      "longitude": 126.90195514,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11470",
+      "regionName": "서울특별시 양천구",
+      "representativePlaceName": "양천구청",
+      "kakaoPlaceId": "8426698",
+      "latitude": 37.51698848,
+      "longitude": 126.86650141,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11500",
+      "regionName": "서울특별시 강서구",
+      "representativePlaceName": "강서구청",
+      "kakaoPlaceId": "8162335",
+      "latitude": 37.55096462,
+      "longitude": 126.84953376,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11530",
+      "regionName": "서울특별시 구로구",
+      "representativePlaceName": "구로구청",
+      "kakaoPlaceId": "8191658",
+      "latitude": 37.49543309,
+      "longitude": 126.88750531,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11545",
+      "regionName": "서울특별시 금천구",
+      "representativePlaceName": "금천구청",
+      "kakaoPlaceId": "8203023",
+      "latitude": 37.45684115,
+      "longitude": 126.89545678,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11560",
+      "regionName": "서울특별시 영등포구",
+      "representativePlaceName": "영등포구청",
+      "kakaoPlaceId": "8507540",
+      "latitude": 37.52636177,
+      "longitude": 126.89627166,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11590",
+      "regionName": "서울특별시 동작구",
+      "representativePlaceName": "동작구청",
+      "kakaoPlaceId": "10287154",
+      "latitude": 37.50423743,
+      "longitude": 126.94026947,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11620",
+      "regionName": "서울특별시 관악구",
+      "representativePlaceName": "관악구청",
+      "kakaoPlaceId": "8226304",
+      "latitude": 37.47825663,
+      "longitude": 126.95152123,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11650",
+      "regionName": "서울특별시 서초구",
+      "representativePlaceName": "서초구청",
+      "kakaoPlaceId": "10492143",
+      "latitude": 37.48358701,
+      "longitude": 127.03273228,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11680",
+      "regionName": "서울특별시 강남구",
+      "representativePlaceName": "강남구청",
+      "kakaoPlaceId": "10120514",
+      "latitude": 37.51733193,
+      "longitude": 127.04737741,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11710",
+      "regionName": "서울특별시 송파구",
+      "representativePlaceName": "송파구청",
+      "kakaoPlaceId": "7962209",
+      "latitude": 37.51458372,
+      "longitude": 127.10591771,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "11740",
+      "regionName": "서울특별시 강동구",
+      "representativePlaceName": "강동구청",
+      "kakaoPlaceId": "10121607",
+      "latitude": 37.53019332,
+      "longitude": 127.1237925,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12110",
+      "regionName": "전남광주통합특별시 목포시",
+      "representativePlaceName": "목포시청",
+      "kakaoPlaceId": "7885605",
+      "latitude": 34.81183093,
+      "longitude": 126.39223317,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12130",
+      "regionName": "전남광주통합특별시 여수시",
+      "representativePlaceName": "여수시청",
+      "kakaoPlaceId": "8006025",
+      "latitude": 34.76040106,
+      "longitude": 127.66233125,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12150",
+      "regionName": "전남광주통합특별시 순천시",
+      "representativePlaceName": "순천시청",
+      "kakaoPlaceId": "7957990",
+      "latitude": 34.95060978,
+      "longitude": 127.48738293,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12170",
+      "regionName": "전남광주통합특별시 나주시",
+      "representativePlaceName": "나주시청",
+      "kakaoPlaceId": "8248271",
+      "latitude": 35.01589769,
+      "longitude": 126.71082926,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12190",
+      "regionName": "전남광주통합특별시 광양시",
+      "representativePlaceName": "광양시청",
+      "kakaoPlaceId": "8187092",
+      "latitude": 34.94042525,
+      "longitude": 127.69593077,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12210",
+      "regionName": "전남광주통합특별시 동구",
+      "representativePlaceName": "전남광주통합특별시 동구청",
+      "kakaoPlaceId": "8192442",
+      "latitude": 35.14616667,
+      "longitude": 126.92309511,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12240",
+      "regionName": "전남광주통합특별시 서구",
+      "representativePlaceName": "전남광주통합특별시 서구청",
+      "kakaoPlaceId": "14588328",
+      "latitude": 35.15207227,
+      "longitude": 126.89018753,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12270",
+      "regionName": "전남광주통합특별시 남구",
+      "representativePlaceName": "전남광주통합특별시 남구청",
+      "kakaoPlaceId": "19318820",
+      "latitude": 35.13281978,
+      "longitude": 126.90247687,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12300",
+      "regionName": "전남광주통합특별시 북구",
+      "representativePlaceName": "전남광주통합특별시 북구청",
+      "kakaoPlaceId": "8233271",
+      "latitude": 35.17417337,
+      "longitude": 126.91201208,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12330",
+      "regionName": "전남광주통합특별시 광산구",
+      "representativePlaceName": "광산구청",
+      "kakaoPlaceId": "8200696",
+      "latitude": 35.13954718,
+      "longitude": 126.79363125,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12710",
+      "regionName": "전남광주통합특별시 담양군",
+      "representativePlaceName": "담양군청 본관동",
+      "kakaoPlaceId": "7814280",
+      "latitude": 35.32120897,
+      "longitude": 126.98821071,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12720",
+      "regionName": "전남광주통합특별시 곡성군",
+      "representativePlaceName": "곡성군청",
+      "kakaoPlaceId": "8195029",
+      "latitude": 35.28202584,
+      "longitude": 127.29192964,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12730",
+      "regionName": "전남광주통합특별시 구례군",
+      "representativePlaceName": "구례군청",
+      "kakaoPlaceId": "8660548",
+      "latitude": 35.20249636,
+      "longitude": 127.46270364,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12740",
+      "regionName": "전남광주통합특별시 고흥군",
+      "representativePlaceName": "고흥군청",
+      "kakaoPlaceId": "27398897",
+      "latitude": 34.60456122,
+      "longitude": 127.27546165,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12750",
+      "regionName": "전남광주통합특별시 보성군",
+      "representativePlaceName": "보성군청",
+      "kakaoPlaceId": "7898541",
+      "latitude": 34.77144185,
+      "longitude": 127.07994753,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12760",
+      "regionName": "전남광주통합특별시 화순군",
+      "representativePlaceName": "화순군청",
+      "kakaoPlaceId": "11207540",
+      "latitude": 35.06451198,
+      "longitude": 126.98650244,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12770",
+      "regionName": "전남광주통합특별시 장흥군",
+      "representativePlaceName": "장흥군청",
+      "kakaoPlaceId": "8068402",
+      "latitude": 34.68161207,
+      "longitude": 126.90705843,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12780",
+      "regionName": "전남광주통합특별시 강진군",
+      "representativePlaceName": "강진군청",
+      "kakaoPlaceId": "8180690",
+      "latitude": 34.64206153,
+      "longitude": 126.76721347,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12790",
+      "regionName": "전남광주통합특별시 해남군",
+      "representativePlaceName": "해남군청",
+      "kakaoPlaceId": "1856259350",
+      "latitude": 34.57390814,
+      "longitude": 126.59964417,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12800",
+      "regionName": "전남광주통합특별시 영암군",
+      "representativePlaceName": "영암군청",
+      "kakaoPlaceId": "8008645",
+      "latitude": 34.80005911,
+      "longitude": 126.69676259,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12810",
+      "regionName": "전남광주통합특별시 무안군",
+      "representativePlaceName": "무안군청",
+      "kakaoPlaceId": "8341004",
+      "latitude": 34.99034062,
+      "longitude": 126.48170483,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12820",
+      "regionName": "전남광주통합특별시 함평군",
+      "representativePlaceName": "함평군청",
+      "kakaoPlaceId": "9645507",
+      "latitude": 35.06591117,
+      "longitude": 126.51662484,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12830",
+      "regionName": "전남광주통합특별시 영광군",
+      "representativePlaceName": "영광군청",
+      "kakaoPlaceId": "8495554",
+      "latitude": 35.27719003,
+      "longitude": 126.5120138,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12840",
+      "regionName": "전남광주통합특별시 장성군",
+      "representativePlaceName": "장성군청",
+      "kakaoPlaceId": "8053931",
+      "latitude": 35.30185768,
+      "longitude": 126.78491888,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12850",
+      "regionName": "전남광주통합특별시 완도군",
+      "representativePlaceName": "완도군청",
+      "kakaoPlaceId": "8489224",
+      "latitude": 34.31097892,
+      "longitude": 126.75499873,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12860",
+      "regionName": "전남광주통합특별시 진도군",
+      "representativePlaceName": "진도군청",
+      "kakaoPlaceId": "8085916",
+      "latitude": 34.48682862,
+      "longitude": 126.26344619,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "12870",
+      "regionName": "전남광주통합특별시 신안군",
+      "representativePlaceName": "신안군청",
+      "kakaoPlaceId": "7978001",
+      "latitude": 34.83355208,
+      "longitude": 126.35161426,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26110",
+      "regionName": "부산광역시 중구",
+      "representativePlaceName": "부산광역시중구청",
+      "kakaoPlaceId": "7915690",
+      "latitude": 35.10622698,
+      "longitude": 129.03237313,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26140",
+      "regionName": "부산광역시 서구",
+      "representativePlaceName": "부산광역시 서구청",
+      "kakaoPlaceId": "7907193",
+      "latitude": 35.09792356,
+      "longitude": 129.02429625,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26170",
+      "regionName": "부산광역시 동구",
+      "representativePlaceName": "부산광역시 동구청",
+      "kakaoPlaceId": "7899584",
+      "latitude": 35.1292668,
+      "longitude": 129.04530577,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26200",
+      "regionName": "부산광역시 영도구",
+      "representativePlaceName": "영도구청",
+      "kakaoPlaceId": "8008807",
+      "latitude": 35.09123989,
+      "longitude": 129.0678888,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26230",
+      "regionName": "부산광역시 부산진구",
+      "representativePlaceName": "부산진구청",
+      "kakaoPlaceId": "7909003",
+      "latitude": 35.16285368,
+      "longitude": 129.0531632,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26260",
+      "regionName": "부산광역시 동래구",
+      "representativePlaceName": "동래구청",
+      "kakaoPlaceId": "8275898",
+      "latitude": 35.20509157,
+      "longitude": 129.08371683,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26290",
+      "regionName": "부산광역시 남구",
+      "representativePlaceName": "부산광역시남구청",
+      "kakaoPlaceId": "14092088",
+      "latitude": 35.13652266,
+      "longitude": 129.08423827,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26320",
+      "regionName": "부산광역시 북구",
+      "representativePlaceName": "부산광역시북구청",
+      "kakaoPlaceId": "13140321",
+      "latitude": 35.19729594,
+      "longitude": 128.99003659,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26350",
+      "regionName": "부산광역시 해운대구",
+      "representativePlaceName": "해운대구청",
+      "kakaoPlaceId": "10927018",
+      "latitude": 35.16306667,
+      "longitude": 129.16359608,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26380",
+      "regionName": "부산광역시 사하구",
+      "representativePlaceName": "사하구청",
+      "kakaoPlaceId": "10439459",
+      "latitude": 35.1044479,
+      "longitude": 128.97493297,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26410",
+      "regionName": "부산광역시 금정구",
+      "representativePlaceName": "금정구청",
+      "kakaoPlaceId": "8201976",
+      "latitude": 35.2427772,
+      "longitude": 129.09209529,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26440",
+      "regionName": "부산광역시 강서구",
+      "representativePlaceName": "부산광역시강서구청",
+      "kakaoPlaceId": "8176694",
+      "latitude": 35.21219449,
+      "longitude": 128.98056169,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26470",
+      "regionName": "부산광역시 연제구",
+      "representativePlaceName": "연제구청",
+      "kakaoPlaceId": "11103035",
+      "latitude": 35.17620587,
+      "longitude": 129.0797414,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26500",
+      "regionName": "부산광역시 수영구",
+      "representativePlaceName": "수영구청",
+      "kakaoPlaceId": "8447041",
+      "latitude": 35.14553838,
+      "longitude": 129.11312519,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26530",
+      "regionName": "부산광역시 사상구",
+      "representativePlaceName": "사상구청",
+      "kakaoPlaceId": "7913112",
+      "latitude": 35.15259798,
+      "longitude": 128.99111977,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "26710",
+      "regionName": "부산광역시 기장군",
+      "representativePlaceName": "기장군청",
+      "kakaoPlaceId": "8212004",
+      "latitude": 35.2444181,
+      "longitude": 129.22242206,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "27110",
+      "regionName": "대구광역시 중구",
+      "representativePlaceName": "대구광역시 중구청",
+      "kakaoPlaceId": "9706173",
+      "latitude": 35.86938925,
+      "longitude": 128.60622052,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "27140",
+      "regionName": "대구광역시 동구",
+      "representativePlaceName": "대구광역시 동구청",
+      "kakaoPlaceId": "7816029",
+      "latitude": 35.88662362,
+      "longitude": 128.6355241,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "27170",
+      "regionName": "대구광역시 서구",
+      "representativePlaceName": "대구광역시서구청",
+      "kakaoPlaceId": "7816490",
+      "latitude": 35.87166758,
+      "longitude": 128.55915425,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "27200",
+      "regionName": "대구광역시 남구",
+      "representativePlaceName": "대구광역시 남구청",
+      "kakaoPlaceId": "8226856",
+      "latitude": 35.84604099,
+      "longitude": 128.59767862,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "27230",
+      "regionName": "대구광역시 북구",
+      "representativePlaceName": "대구광역시북구청",
+      "kakaoPlaceId": "7816519",
+      "latitude": 35.88568403,
+      "longitude": 128.58278005,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "27260",
+      "regionName": "대구광역시 수성구",
+      "representativePlaceName": "수성구청",
+      "kakaoPlaceId": "7962695",
+      "latitude": 35.8581745,
+      "longitude": 128.63063546,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "27290",
+      "regionName": "대구광역시 달서구",
+      "representativePlaceName": "달서구청",
+      "kakaoPlaceId": "8841754",
+      "latitude": 35.82991524,
+      "longitude": 128.53283654,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "27710",
+      "regionName": "대구광역시 달성군",
+      "representativePlaceName": "달성군청",
+      "kakaoPlaceId": "7813812",
+      "latitude": 35.77447387,
+      "longitude": 128.43122014,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "27720",
+      "regionName": "대구광역시 군위군",
+      "representativePlaceName": "군위군청",
+      "kakaoPlaceId": "8199153",
+      "latitude": 36.24296524,
+      "longitude": 128.57296044,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28125",
+      "regionName": "인천광역시 제물포구",
+      "representativePlaceName": "제물포구청 송림청사",
+      "kakaoPlaceId": "8048808",
+      "latitude": 37.47386099,
+      "longitude": 126.64328192,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28155",
+      "regionName": "인천광역시 영종구",
+      "representativePlaceName": "영종구청",
+      "kakaoPlaceId": "307290466",
+      "latitude": 37.48976828,
+      "longitude": 126.55993672,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28177",
+      "regionName": "인천광역시 미추홀구",
+      "representativePlaceName": "미추홀구청",
+      "kakaoPlaceId": "9358933",
+      "latitude": 37.46358605,
+      "longitude": 126.65056493,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28185",
+      "regionName": "인천광역시 연수구",
+      "representativePlaceName": "연수구청",
+      "kakaoPlaceId": "8001257",
+      "latitude": 37.41009957,
+      "longitude": 126.6782726,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28200",
+      "regionName": "인천광역시 남동구",
+      "representativePlaceName": "남동구청",
+      "kakaoPlaceId": "8224813",
+      "latitude": 37.44734879,
+      "longitude": 126.73148774,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28237",
+      "regionName": "인천광역시 부평구",
+      "representativePlaceName": "부평구청",
+      "kakaoPlaceId": "7907815",
+      "latitude": 37.50704166,
+      "longitude": 126.72186417,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28245",
+      "regionName": "인천광역시 계양구",
+      "representativePlaceName": "계양구청",
+      "kakaoPlaceId": "8196442",
+      "latitude": 37.53749567,
+      "longitude": 126.73770466,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28275",
+      "regionName": "인천광역시 서해구",
+      "representativePlaceName": "서해구청",
+      "kakaoPlaceId": "10757347",
+      "latitude": 37.54543352,
+      "longitude": 126.67602847,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28290",
+      "regionName": "인천광역시 검단구",
+      "representativePlaceName": "검단구청",
+      "kakaoPlaceId": "107217495",
+      "latitude": 37.59153433,
+      "longitude": 126.68156937,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28710",
+      "regionName": "인천광역시 강화군",
+      "representativePlaceName": "강화군청",
+      "kakaoPlaceId": "18286918",
+      "latitude": 37.74651783,
+      "longitude": 126.48801272,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "28720",
+      "regionName": "인천광역시 옹진군",
+      "representativePlaceName": "옹진군청",
+      "kakaoPlaceId": "8011329",
+      "latitude": 37.4465516,
+      "longitude": 126.63682097,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "30110",
+      "regionName": "대전광역시 동구",
+      "representativePlaceName": "대전광역시동구청",
+      "kakaoPlaceId": "13142544",
+      "latitude": 36.31177684,
+      "longitude": 127.45480491,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "30140",
+      "regionName": "대전광역시 중구",
+      "representativePlaceName": "대전광역시중구청",
+      "kakaoPlaceId": "8070135",
+      "latitude": 36.32578123,
+      "longitude": 127.42133992,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "30170",
+      "regionName": "대전광역시 서구",
+      "representativePlaceName": "대전광역시서구청",
+      "kakaoPlaceId": "7830164",
+      "latitude": 36.35549872,
+      "longitude": 127.38378972,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "30200",
+      "regionName": "대전광역시 유성구",
+      "representativePlaceName": "유성구청",
+      "kakaoPlaceId": "17151314",
+      "latitude": 36.36228511,
+      "longitude": 127.35625759,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "30230",
+      "regionName": "대전광역시 대덕구",
+      "representativePlaceName": "대덕구청",
+      "kakaoPlaceId": "8299019",
+      "latitude": 36.34670513,
+      "longitude": 127.41556189,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "31110",
+      "regionName": "울산광역시 중구",
+      "representativePlaceName": "울산광역시중구청",
+      "kakaoPlaceId": "10689998",
+      "latitude": 35.56933523,
+      "longitude": 129.33249408,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "31140",
+      "regionName": "울산광역시 남구",
+      "representativePlaceName": "울산광역시남구청",
+      "kakaoPlaceId": "8526718",
+      "latitude": 35.5438097,
+      "longitude": 129.33009179,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "31170",
+      "regionName": "울산광역시 동구",
+      "representativePlaceName": "울산광역시동구청",
+      "kakaoPlaceId": "8031174",
+      "latitude": 35.50463592,
+      "longitude": 129.41648557,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "31200",
+      "regionName": "울산광역시 북구",
+      "representativePlaceName": "울산광역시북구청",
+      "kakaoPlaceId": "7906016",
+      "latitude": 35.582747,
+      "longitude": 129.36114668,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "31710",
+      "regionName": "울산광역시 울주군",
+      "representativePlaceName": "울주군청",
+      "kakaoPlaceId": "27548124",
+      "latitude": 35.52202519,
+      "longitude": 129.2421129,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "36110",
+      "regionName": "세종특별자치시",
+      "representativePlaceName": "세종특별자치시청",
+      "kakaoPlaceId": "17821544",
+      "latitude": 36.48006311,
+      "longitude": 127.28919532,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41110",
+      "regionName": "경기도 수원시",
+      "representativePlaceName": "수원시청",
+      "kakaoPlaceId": "11113545",
+      "latitude": 37.26358468,
+      "longitude": 127.0287159,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41130",
+      "regionName": "경기도 성남시",
+      "representativePlaceName": "성남시청",
+      "kakaoPlaceId": "11560806",
+      "latitude": 37.41993056,
+      "longitude": 127.12628814,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41150",
+      "regionName": "경기도 의정부시",
+      "representativePlaceName": "의정부시청",
+      "kakaoPlaceId": "11180892",
+      "latitude": 37.73805664,
+      "longitude": 127.03389909,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41170",
+      "regionName": "경기도 안양시",
+      "representativePlaceName": "안양시청",
+      "kakaoPlaceId": "11560755",
+      "latitude": 37.3942588,
+      "longitude": 126.95686052,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41190",
+      "regionName": "경기도 부천시",
+      "representativePlaceName": "부천시청",
+      "kakaoPlaceId": "9826017",
+      "latitude": 37.50350636,
+      "longitude": 126.76602942,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41210",
+      "regionName": "경기도 광명시",
+      "representativePlaceName": "광명시청",
+      "kakaoPlaceId": "11561751",
+      "latitude": 37.47856748,
+      "longitude": 126.86464782,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41220",
+      "regionName": "경기도 평택시",
+      "representativePlaceName": "평택시청",
+      "kakaoPlaceId": "8126913",
+      "latitude": 36.99226067,
+      "longitude": 127.11268839,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41250",
+      "regionName": "경기도 동두천시",
+      "representativePlaceName": "동두천시청",
+      "kakaoPlaceId": "7843730",
+      "latitude": 37.90359865,
+      "longitude": 127.06044073,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41270",
+      "regionName": "경기도 안산시",
+      "representativePlaceName": "안산시청",
+      "kakaoPlaceId": "13324006",
+      "latitude": 37.32190855,
+      "longitude": 126.83083443,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41280",
+      "regionName": "경기도 고양시",
+      "representativePlaceName": "고양시청",
+      "kakaoPlaceId": "8186105",
+      "latitude": 37.65842714,
+      "longitude": 126.83197776,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41290",
+      "regionName": "경기도 과천시",
+      "representativePlaceName": "과천시청",
+      "kakaoPlaceId": "11561761",
+      "latitude": 37.4292328,
+      "longitude": 126.98771874,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41310",
+      "regionName": "경기도 구리시",
+      "representativePlaceName": "구리시청",
+      "kakaoPlaceId": "8193243",
+      "latitude": 37.59435238,
+      "longitude": 127.12963958,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41360",
+      "regionName": "경기도 남양주시",
+      "representativePlaceName": "남양주시청 제1청사",
+      "kakaoPlaceId": "10193908",
+      "latitude": 37.63602184,
+      "longitude": 127.21647349,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41370",
+      "regionName": "경기도 오산시",
+      "representativePlaceName": "오산시청",
+      "kakaoPlaceId": "8491014",
+      "latitude": 37.14987722,
+      "longitude": 127.0775243,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41390",
+      "regionName": "경기도 시흥시",
+      "representativePlaceName": "시흥시청",
+      "kakaoPlaceId": "7965201",
+      "latitude": 37.38011507,
+      "longitude": 126.8029778,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41410",
+      "regionName": "경기도 군포시",
+      "representativePlaceName": "군포시청",
+      "kakaoPlaceId": "8215482",
+      "latitude": 37.36163003,
+      "longitude": 126.93520593,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41430",
+      "regionName": "경기도 의왕시",
+      "representativePlaceName": "의왕시청",
+      "kakaoPlaceId": "16917793",
+      "latitude": 37.34476005,
+      "longitude": 126.96827381,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41450",
+      "regionName": "경기도 하남시",
+      "representativePlaceName": "하남시청",
+      "kakaoPlaceId": "8649804",
+      "latitude": 37.53927457,
+      "longitude": 127.2148606,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41460",
+      "regionName": "경기도 용인시",
+      "representativePlaceName": "용인시청",
+      "kakaoPlaceId": "8021938",
+      "latitude": 37.24102998,
+      "longitude": 127.17748233,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41480",
+      "regionName": "경기도 파주시",
+      "representativePlaceName": "파주시청",
+      "kakaoPlaceId": "8120855",
+      "latitude": 37.76004319,
+      "longitude": 126.77988023,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41500",
+      "regionName": "경기도 이천시",
+      "representativePlaceName": "이천시청",
+      "kakaoPlaceId": "8055643",
+      "latitude": 37.27226759,
+      "longitude": 127.43508928,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41550",
+      "regionName": "경기도 안성시",
+      "representativePlaceName": "안성시청",
+      "kakaoPlaceId": "7992450",
+      "latitude": 37.0080687,
+      "longitude": 127.27979032,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41570",
+      "regionName": "경기도 김포시",
+      "representativePlaceName": "김포시청",
+      "kakaoPlaceId": "8196378",
+      "latitude": 37.61526869,
+      "longitude": 126.71565792,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41590",
+      "regionName": "경기도 화성시",
+      "representativePlaceName": "화성시청",
+      "kakaoPlaceId": "26102889",
+      "latitude": 37.1995372,
+      "longitude": 126.83147735,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41610",
+      "regionName": "경기도 광주시",
+      "representativePlaceName": "광주시청",
+      "kakaoPlaceId": "8181455",
+      "latitude": 37.42939419,
+      "longitude": 127.25513872,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41630",
+      "regionName": "경기도 양주시",
+      "representativePlaceName": "양주시청",
+      "kakaoPlaceId": "7994421",
+      "latitude": 37.7853137,
+      "longitude": 127.04578608,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41650",
+      "regionName": "경기도 포천시",
+      "representativePlaceName": "포천시청",
+      "kakaoPlaceId": "8122492",
+      "latitude": 37.89499283,
+      "longitude": 127.20033289,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41670",
+      "regionName": "경기도 여주시",
+      "representativePlaceName": "여주시청",
+      "kakaoPlaceId": "8012785",
+      "latitude": 37.29842337,
+      "longitude": 127.63705879,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41800",
+      "regionName": "경기도 연천군",
+      "representativePlaceName": "연천군청",
+      "kakaoPlaceId": "10662368",
+      "latitude": 38.09652135,
+      "longitude": 127.0753535,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41820",
+      "regionName": "경기도 가평군",
+      "representativePlaceName": "가평군청",
+      "kakaoPlaceId": "8145797",
+      "latitude": 37.83144131,
+      "longitude": 127.50957018,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "41830",
+      "regionName": "경기도 양평군",
+      "representativePlaceName": "양평군청",
+      "kakaoPlaceId": "10567215",
+      "latitude": 37.49178829,
+      "longitude": 127.48757847,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43110",
+      "regionName": "충청북도 청주시",
+      "representativePlaceName": "청주시청 임시청사",
+      "kakaoPlaceId": "715064390",
+      "latitude": 36.63466488,
+      "longitude": 127.4884754,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43130",
+      "regionName": "충청북도 충주시",
+      "representativePlaceName": "충주시청",
+      "kakaoPlaceId": "8115884",
+      "latitude": 36.99104902,
+      "longitude": 127.92596104,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43150",
+      "regionName": "충청북도 제천시",
+      "representativePlaceName": "제천시청",
+      "kakaoPlaceId": "8515364",
+      "latitude": 37.132656,
+      "longitude": 128.19098272,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43720",
+      "regionName": "충청북도 보은군",
+      "representativePlaceName": "보은군청",
+      "kakaoPlaceId": "10382035",
+      "latitude": 36.48943535,
+      "longitude": 127.7294988,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43730",
+      "regionName": "충청북도 옥천군",
+      "representativePlaceName": "옥천군청",
+      "kakaoPlaceId": "8012192",
+      "latitude": 36.30643556,
+      "longitude": 127.57134504,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43740",
+      "regionName": "충청북도 영동군",
+      "representativePlaceName": "영동군청",
+      "kakaoPlaceId": "8009810",
+      "latitude": 36.17499282,
+      "longitude": 127.78343862,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43745",
+      "regionName": "충청북도 증평군",
+      "representativePlaceName": "증평군청",
+      "kakaoPlaceId": "8077118",
+      "latitude": 36.78540237,
+      "longitude": 127.58153989,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43750",
+      "regionName": "충청북도 진천군",
+      "representativePlaceName": "진천군청",
+      "kakaoPlaceId": "8085200",
+      "latitude": 36.855379,
+      "longitude": 127.43553384,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43760",
+      "regionName": "충청북도 괴산군",
+      "representativePlaceName": "괴산군청",
+      "kakaoPlaceId": "8211085",
+      "latitude": 36.81535717,
+      "longitude": 127.78665104,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43770",
+      "regionName": "충청북도 음성군",
+      "representativePlaceName": "음성군청",
+      "kakaoPlaceId": "10676563",
+      "latitude": 36.94032188,
+      "longitude": 127.69048004,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "43800",
+      "regionName": "충청북도 단양군",
+      "representativePlaceName": "단양군청",
+      "kakaoPlaceId": "10255867",
+      "latitude": 36.98465777,
+      "longitude": 128.36554422,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44130",
+      "regionName": "충청남도 천안시",
+      "representativePlaceName": "천안시청",
+      "kakaoPlaceId": "8090721",
+      "latitude": 36.81506788,
+      "longitude": 127.11391197,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44150",
+      "regionName": "충청남도 공주시",
+      "representativePlaceName": "공주시청",
+      "kakaoPlaceId": "8188132",
+      "latitude": 36.44655512,
+      "longitude": 127.11905504,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44180",
+      "regionName": "충청남도 보령시",
+      "representativePlaceName": "보령시청",
+      "kakaoPlaceId": "8367752",
+      "latitude": 36.33333669,
+      "longitude": 126.61275934,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44200",
+      "regionName": "충청남도 아산시",
+      "representativePlaceName": "아산시청",
+      "kakaoPlaceId": "9252704",
+      "latitude": 36.78997237,
+      "longitude": 127.00250964,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44210",
+      "regionName": "충청남도 서산시",
+      "representativePlaceName": "서산시청",
+      "kakaoPlaceId": "7939091",
+      "latitude": 36.7848763,
+      "longitude": 126.45033394,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44230",
+      "regionName": "충청남도 논산시",
+      "representativePlaceName": "논산시청",
+      "kakaoPlaceId": "8191957",
+      "latitude": 36.1871818,
+      "longitude": 127.09873247,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44250",
+      "regionName": "충청남도 계룡시",
+      "representativePlaceName": "계룡시청",
+      "kakaoPlaceId": "8178450",
+      "latitude": 36.274559,
+      "longitude": 127.24854256,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44270",
+      "regionName": "충청남도 당진시",
+      "representativePlaceName": "당진시청",
+      "kakaoPlaceId": "7814947",
+      "latitude": 36.88967486,
+      "longitude": 126.64588844,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44710",
+      "regionName": "충청남도 금산군",
+      "representativePlaceName": "금산군청",
+      "kakaoPlaceId": "10217090",
+      "latitude": 36.1088634,
+      "longitude": 127.48797456,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44760",
+      "regionName": "충청남도 부여군",
+      "representativePlaceName": "부여군청",
+      "kakaoPlaceId": "7908074",
+      "latitude": 36.27576281,
+      "longitude": 126.9097717,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44770",
+      "regionName": "충청남도 서천군",
+      "representativePlaceName": "서천군청",
+      "kakaoPlaceId": "7953483",
+      "latitude": 36.07803539,
+      "longitude": 126.70288394,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44790",
+      "regionName": "충청남도 청양군",
+      "representativePlaceName": "청양군청",
+      "kakaoPlaceId": "8581953",
+      "latitude": 36.4592147,
+      "longitude": 126.80220022,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44800",
+      "regionName": "충청남도 홍성군",
+      "representativePlaceName": "홍성군청",
+      "kakaoPlaceId": "8657985",
+      "latitude": 36.60135756,
+      "longitude": 126.66083239,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44810",
+      "regionName": "충청남도 예산군",
+      "representativePlaceName": "예산군청",
+      "kakaoPlaceId": "160892435",
+      "latitude": 36.68088054,
+      "longitude": 126.84485072,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "44825",
+      "regionName": "충청남도 태안군",
+      "representativePlaceName": "태안군청",
+      "kakaoPlaceId": "8117734",
+      "latitude": 36.74560468,
+      "longitude": 126.29792607,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47110",
+      "regionName": "경상북도 포항시",
+      "representativePlaceName": "포항시청",
+      "kakaoPlaceId": "8125917",
+      "latitude": 36.01899543,
+      "longitude": 129.34316458,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47130",
+      "regionName": "경상북도 경주시",
+      "representativePlaceName": "경주시청",
+      "kakaoPlaceId": "8643091",
+      "latitude": 35.85621666,
+      "longitude": 129.22478166,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47150",
+      "regionName": "경상북도 김천시",
+      "representativePlaceName": "김천시청",
+      "kakaoPlaceId": "8824344",
+      "latitude": 36.13988817,
+      "longitude": 128.11362448,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47170",
+      "regionName": "경상북도 안동시",
+      "representativePlaceName": "안동시청",
+      "kakaoPlaceId": "9267652",
+      "latitude": 36.56846076,
+      "longitude": 128.72958738,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47190",
+      "regionName": "경상북도 구미시",
+      "representativePlaceName": "구미시청",
+      "kakaoPlaceId": "8217670",
+      "latitude": 36.11957085,
+      "longitude": 128.34424636,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47210",
+      "regionName": "경상북도 영주시",
+      "representativePlaceName": "영주시청",
+      "kakaoPlaceId": "10631899",
+      "latitude": 36.80561928,
+      "longitude": 128.62393704,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47230",
+      "regionName": "경상북도 영천시",
+      "representativePlaceName": "영천시청",
+      "kakaoPlaceId": "10640967",
+      "latitude": 35.9732205,
+      "longitude": 128.93855086,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47250",
+      "regionName": "경상북도 상주시",
+      "representativePlaceName": "상주시청",
+      "kakaoPlaceId": "7934428",
+      "latitude": 36.4109398,
+      "longitude": 128.15914508,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47280",
+      "regionName": "경상북도 문경시",
+      "representativePlaceName": "문경시청",
+      "kakaoPlaceId": "8346403",
+      "latitude": 36.58652737,
+      "longitude": 128.18677192,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47290",
+      "regionName": "경상북도 경산시",
+      "representativePlaceName": "경산시청",
+      "kakaoPlaceId": "8180376",
+      "latitude": 35.82508162,
+      "longitude": 128.74131438,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47730",
+      "regionName": "경상북도 의성군",
+      "representativePlaceName": "의성군청",
+      "kakaoPlaceId": "8048450",
+      "latitude": 36.35271644,
+      "longitude": 128.69707782,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47750",
+      "regionName": "경상북도 청송군",
+      "representativePlaceName": "청송군청",
+      "kakaoPlaceId": "8097327",
+      "latitude": 36.43622816,
+      "longitude": 129.05707051,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47760",
+      "regionName": "경상북도 영양군",
+      "representativePlaceName": "영양군청",
+      "kakaoPlaceId": "8009382",
+      "latitude": 36.66670286,
+      "longitude": 129.11251025,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47770",
+      "regionName": "경상북도 영덕군",
+      "representativePlaceName": "영덕군청",
+      "kakaoPlaceId": "8002530",
+      "latitude": 36.41506188,
+      "longitude": 129.36530677,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47820",
+      "regionName": "경상북도 청도군",
+      "representativePlaceName": "청도군청",
+      "kakaoPlaceId": "8088806",
+      "latitude": 35.64738481,
+      "longitude": 128.73401526,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47830",
+      "regionName": "경상북도 고령군",
+      "representativePlaceName": "고령군청",
+      "kakaoPlaceId": "17023376",
+      "latitude": 35.72606532,
+      "longitude": 128.26289576,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47840",
+      "regionName": "경상북도 성주군",
+      "representativePlaceName": "성주군청",
+      "kakaoPlaceId": "9876240",
+      "latitude": 35.91909343,
+      "longitude": 128.28293243,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47850",
+      "regionName": "경상북도 칠곡군",
+      "representativePlaceName": "칠곡군청",
+      "kakaoPlaceId": "8579749",
+      "latitude": 35.99558969,
+      "longitude": 128.40166217,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47900",
+      "regionName": "경상북도 예천군",
+      "representativePlaceName": "예천군청",
+      "kakaoPlaceId": "27402346",
+      "latitude": 36.64693641,
+      "longitude": 128.43735952,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47920",
+      "regionName": "경상북도 봉화군",
+      "representativePlaceName": "봉화군청",
+      "kakaoPlaceId": "7897442",
+      "latitude": 36.8931351,
+      "longitude": 128.73238668,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47930",
+      "regionName": "경상북도 울진군",
+      "representativePlaceName": "울진군청",
+      "kakaoPlaceId": "8034981",
+      "latitude": 36.99303492,
+      "longitude": 129.40054702,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "47940",
+      "regionName": "경상북도 울릉군",
+      "representativePlaceName": "울릉군청",
+      "kakaoPlaceId": "8467437",
+      "latitude": 37.48444159,
+      "longitude": 130.90571281,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48120",
+      "regionName": "경상남도 창원시",
+      "representativePlaceName": "창원시청",
+      "kakaoPlaceId": "8083339",
+      "latitude": 35.22793981,
+      "longitude": 128.68183408,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48170",
+      "regionName": "경상남도 진주시",
+      "representativePlaceName": "진주시청",
+      "kakaoPlaceId": "10772193",
+      "latitude": 35.18022283,
+      "longitude": 128.10770634,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48220",
+      "regionName": "경상남도 통영시",
+      "representativePlaceName": "통영시청",
+      "kakaoPlaceId": "8560618",
+      "latitude": 34.85444392,
+      "longitude": 128.4331492,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48240",
+      "regionName": "경상남도 사천시",
+      "representativePlaceName": "사천시청",
+      "kakaoPlaceId": "7918034",
+      "latitude": 35.00367718,
+      "longitude": 128.06421259,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48250",
+      "regionName": "경상남도 김해시",
+      "representativePlaceName": "김해시청",
+      "kakaoPlaceId": "8230570",
+      "latitude": 35.22856536,
+      "longitude": 128.8893627,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48270",
+      "regionName": "경상남도 밀양시",
+      "representativePlaceName": "밀양시청",
+      "kakaoPlaceId": "11070570",
+      "latitude": 35.5038173,
+      "longitude": 128.74660534,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48310",
+      "regionName": "경상남도 거제시",
+      "representativePlaceName": "거제시청",
+      "kakaoPlaceId": "8691102",
+      "latitude": 34.88053905,
+      "longitude": 128.62112946,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48330",
+      "regionName": "경상남도 양산시",
+      "representativePlaceName": "양산시청",
+      "kakaoPlaceId": "10171099",
+      "latitude": 35.33499206,
+      "longitude": 129.03727279,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48720",
+      "regionName": "경상남도 의령군",
+      "representativePlaceName": "의령군청",
+      "kakaoPlaceId": "8047248",
+      "latitude": 35.32223522,
+      "longitude": 128.26168648,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48730",
+      "regionName": "경상남도 함안군",
+      "representativePlaceName": "함안군청",
+      "kakaoPlaceId": "8155354",
+      "latitude": 35.2724276,
+      "longitude": 128.4064986,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48740",
+      "regionName": "경상남도 창녕군",
+      "representativePlaceName": "창녕군청",
+      "kakaoPlaceId": "8080328",
+      "latitude": 35.54461538,
+      "longitude": 128.49216808,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48820",
+      "regionName": "경상남도 고성군",
+      "representativePlaceName": "고성군청",
+      "kakaoPlaceId": "8753096",
+      "latitude": 34.97306006,
+      "longitude": 128.32235909,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48840",
+      "regionName": "경상남도 남해군",
+      "representativePlaceName": "남해군청",
+      "kakaoPlaceId": "8248176",
+      "latitude": 34.83770155,
+      "longitude": 127.89265204,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48850",
+      "regionName": "경상남도 하동군",
+      "representativePlaceName": "하동군청",
+      "kakaoPlaceId": "8125174",
+      "latitude": 35.0673056,
+      "longitude": 127.75130802,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48860",
+      "regionName": "경상남도 산청군",
+      "representativePlaceName": "산청군청",
+      "kakaoPlaceId": "10442470",
+      "latitude": 35.41553039,
+      "longitude": 127.87334999,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48870",
+      "regionName": "경상남도 함양군",
+      "representativePlaceName": "함양군청",
+      "kakaoPlaceId": "10014810",
+      "latitude": 35.52052717,
+      "longitude": 127.72516046,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48880",
+      "regionName": "경상남도 거창군",
+      "representativePlaceName": "거창군청",
+      "kakaoPlaceId": "8192389",
+      "latitude": 35.68668463,
+      "longitude": 127.90950299,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "48890",
+      "regionName": "경상남도 합천군",
+      "representativePlaceName": "합천군청",
+      "kakaoPlaceId": "8148033",
+      "latitude": 35.56667034,
+      "longitude": 128.16579083,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "50110",
+      "regionName": "제주특별자치도 제주시",
+      "representativePlaceName": "제주시청",
+      "kakaoPlaceId": "8064058",
+      "latitude": 33.49953424,
+      "longitude": 126.53117109,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "50130",
+      "regionName": "제주특별자치도 서귀포시",
+      "representativePlaceName": "서귀포시청 제1청사",
+      "kakaoPlaceId": "10503563",
+      "latitude": 33.25406463,
+      "longitude": 126.55956347,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51110",
+      "regionName": "강원특별자치도 춘천시",
+      "representativePlaceName": "춘천시청",
+      "kakaoPlaceId": "27439399",
+      "latitude": 37.8813999,
+      "longitude": 127.72976981,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51130",
+      "regionName": "강원특별자치도 원주시",
+      "representativePlaceName": "원주시청",
+      "kakaoPlaceId": "8026636",
+      "latitude": 37.34204759,
+      "longitude": 127.92009712,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51150",
+      "regionName": "강원특별자치도 강릉시",
+      "representativePlaceName": "강릉시청",
+      "kakaoPlaceId": "18356036",
+      "latitude": 37.75211262,
+      "longitude": 128.87590399,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51170",
+      "regionName": "강원특별자치도 동해시",
+      "representativePlaceName": "동해시청",
+      "kakaoPlaceId": "7845894",
+      "latitude": 37.5247415,
+      "longitude": 129.11429929,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51190",
+      "regionName": "강원특별자치도 태백시",
+      "representativePlaceName": "태백시청",
+      "kakaoPlaceId": "10815086",
+      "latitude": 37.16400834,
+      "longitude": 128.98572416,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51210",
+      "regionName": "강원특별자치도 속초시",
+      "representativePlaceName": "속초시청",
+      "kakaoPlaceId": "8394817",
+      "latitude": 38.20689434,
+      "longitude": 128.59193859,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51230",
+      "regionName": "강원특별자치도 삼척시",
+      "representativePlaceName": "삼척시청",
+      "kakaoPlaceId": "7924702",
+      "latitude": 37.4498976,
+      "longitude": 129.16511167,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51720",
+      "regionName": "강원특별자치도 홍천군",
+      "representativePlaceName": "홍천군청",
+      "kakaoPlaceId": "8174813",
+      "latitude": 37.69716551,
+      "longitude": 127.88868411,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51730",
+      "regionName": "강원특별자치도 횡성군",
+      "representativePlaceName": "횡성군청",
+      "kakaoPlaceId": "8185188",
+      "latitude": 37.49178324,
+      "longitude": 127.98507091,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51750",
+      "regionName": "강원특별자치도 영월군",
+      "representativePlaceName": "영월군청",
+      "kakaoPlaceId": "8009926",
+      "latitude": 37.18368604,
+      "longitude": 128.46178393,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51760",
+      "regionName": "강원특별자치도 평창군",
+      "representativePlaceName": "평창군청",
+      "kakaoPlaceId": "10095334",
+      "latitude": 37.37078204,
+      "longitude": 128.39016179,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51770",
+      "regionName": "강원특별자치도 정선군",
+      "representativePlaceName": "정선군청",
+      "kakaoPlaceId": "10717713",
+      "latitude": 37.3805845,
+      "longitude": 128.6608136,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51780",
+      "regionName": "강원특별자치도 철원군",
+      "representativePlaceName": "철원군청",
+      "kakaoPlaceId": "8091579",
+      "latitude": 38.14679199,
+      "longitude": 127.31337985,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51790",
+      "regionName": "강원특별자치도 화천군",
+      "representativePlaceName": "화천군청",
+      "kakaoPlaceId": "8173592",
+      "latitude": 38.10618195,
+      "longitude": 127.70815058,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51800",
+      "regionName": "강원특별자치도 양구군",
+      "representativePlaceName": "양구군청",
+      "kakaoPlaceId": "15412074",
+      "latitude": 38.11000128,
+      "longitude": 127.98995063,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51810",
+      "regionName": "강원특별자치도 인제군",
+      "representativePlaceName": "인제군청",
+      "kakaoPlaceId": "11170941",
+      "latitude": 38.06970616,
+      "longitude": 128.17034917,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51820",
+      "regionName": "강원특별자치도 고성군",
+      "representativePlaceName": "고성군청",
+      "kakaoPlaceId": "10166601",
+      "latitude": 38.38059243,
+      "longitude": 128.4678663,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "51830",
+      "regionName": "강원특별자치도 양양군",
+      "representativePlaceName": "양양군청",
+      "kakaoPlaceId": "7997006",
+      "latitude": 38.07551117,
+      "longitude": 128.61907985,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52110",
+      "regionName": "전북특별자치도 전주시",
+      "representativePlaceName": "전주시청",
+      "kakaoPlaceId": "9397045",
+      "latitude": 35.82407315,
+      "longitude": 127.1481438,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52130",
+      "regionName": "전북특별자치도 군산시",
+      "representativePlaceName": "군산시청",
+      "kakaoPlaceId": "8702223",
+      "latitude": 35.96746656,
+      "longitude": 126.73684049,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52140",
+      "regionName": "전북특별자치도 익산시",
+      "representativePlaceName": "익산시청",
+      "kakaoPlaceId": "8049734",
+      "latitude": 35.94871983,
+      "longitude": 126.95785397,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52180",
+      "regionName": "전북특별자치도 정읍시",
+      "representativePlaceName": "정읍시청",
+      "kakaoPlaceId": "8496800",
+      "latitude": 35.56984917,
+      "longitude": 126.85599687,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52190",
+      "regionName": "전북특별자치도 남원시",
+      "representativePlaceName": "남원시청",
+      "kakaoPlaceId": "8229378",
+      "latitude": 35.41636276,
+      "longitude": 127.39039423,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52210",
+      "regionName": "전북특별자치도 김제시",
+      "representativePlaceName": "김제시청",
+      "kakaoPlaceId": "8208312",
+      "latitude": 35.80357986,
+      "longitude": 126.88064624,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52710",
+      "regionName": "전북특별자치도 완주군",
+      "representativePlaceName": "완주군청",
+      "kakaoPlaceId": "17661822",
+      "latitude": 35.9048146,
+      "longitude": 127.16211902,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52720",
+      "regionName": "전북특별자치도 진안군",
+      "representativePlaceName": "진안군청",
+      "kakaoPlaceId": "8086188",
+      "latitude": 35.7917723,
+      "longitude": 127.42486547,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52730",
+      "regionName": "전북특별자치도 무주군",
+      "representativePlaceName": "무주군청",
+      "kakaoPlaceId": "7878897",
+      "latitude": 36.00684374,
+      "longitude": 127.66080634,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52740",
+      "regionName": "전북특별자치도 장수군",
+      "representativePlaceName": "장수군청",
+      "kakaoPlaceId": "10732611",
+      "latitude": 35.6478378,
+      "longitude": 127.52129202,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52750",
+      "regionName": "전북특별자치도 임실군",
+      "representativePlaceName": "임실군청",
+      "kakaoPlaceId": "8058021",
+      "latitude": 35.61785451,
+      "longitude": 127.28908748,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52770",
+      "regionName": "전북특별자치도 순창군",
+      "representativePlaceName": "순창군청",
+      "kakaoPlaceId": "10555383",
+      "latitude": 35.37442988,
+      "longitude": 127.13739127,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52790",
+      "regionName": "전북특별자치도 고창군",
+      "representativePlaceName": "고창군청",
+      "kakaoPlaceId": "8195217",
+      "latitude": 35.43569822,
+      "longitude": 126.70212037,
+      "verifiedAt": "2026-09-16"
+    },
+    {
+      "regionCode": "52800",
+      "regionName": "전북특별자치도 부안군",
+      "representativePlaceName": "부안군청",
+      "kakaoPlaceId": "10465325",
+      "latitude": 35.73165599,
+      "longitude": 126.73301133,
+      "verifiedAt": "2026-09-16"
+    }
+  ]
+}

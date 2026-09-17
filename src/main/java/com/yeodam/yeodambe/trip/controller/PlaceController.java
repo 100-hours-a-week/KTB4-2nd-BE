@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.trip.service.request.PlaceSearchRequest;
 import com.yeodam.yeodambe.trip.service.response.PlaceCandidatesResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,12 +17,14 @@ public class PlaceController {
     private final PlaceService placeService;
 
     @GetMapping
-    public ApiResponse<PlaceCandidatesResponse> search(
+    public ResponseEntity<ApiResponse<PlaceCandidatesResponse>> search(
             @Valid @ModelAttribute PlaceSearchRequest request
     ) {
-        return new ApiResponse<>(
-                "PLACE_CANDIDATES_FOUND",
-                placeService.search(request)
+        return ResponseEntity.ok().body(
+                new ApiResponse<>(
+                        "PLACE_CANDIDATES_FOUND",
+                        placeService.search(request)
+                )
         );
     }
 }

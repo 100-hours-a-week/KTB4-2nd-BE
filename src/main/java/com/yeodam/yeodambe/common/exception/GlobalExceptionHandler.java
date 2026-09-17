@@ -28,7 +28,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(TripNameDuplicatedException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     ApiResponse<Void> handleTripNameDuplicatedException(TripNameDuplicatedException e) {
-        return new ApiResponse<>("NAME_DUPLICATED", null);
+        return new ApiResponse<>("TRIP_NAME_DUPLICATED", null);
     }
 
     @ExceptionHandler(PlaceQueryProviderUnavailableException.class)

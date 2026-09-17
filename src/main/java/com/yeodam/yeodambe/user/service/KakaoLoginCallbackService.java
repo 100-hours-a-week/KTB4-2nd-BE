@@ -5,10 +5,10 @@ import com.yeodam.yeodambe.user.client.KakaoTokenResponse;
 import com.yeodam.yeodambe.user.client.KakaoUserResponse;
 import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
 import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
-import com.yeodam.yeodambe.user.security.OAuthStateStore;
+import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
-import com.yeodam.yeodambe.user.security.LoginTicketGenerator;
-import com.yeodam.yeodambe.user.security.LoginTicketStore;
+import com.yeodam.yeodambe.user.security.oauth.LoginTicketGenerator;
+import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;
 import org.springframework.stereotype.Service;
 
 @Service

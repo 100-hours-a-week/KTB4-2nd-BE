@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.user.service;
 
-import com.yeodam.yeodambe.user.security.OAuthStateGenerator;
-import com.yeodam.yeodambe.user.security.OAuthStateStore;
+import com.yeodam.yeodambe.user.security.oauth.OAuthStateGenerator;
+import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

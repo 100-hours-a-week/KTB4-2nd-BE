@@ -5,13 +5,13 @@ import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
-import com.yeodam.yeodambe.user.security.LoginTicketStore;
+import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.yeodam.yeodambe.user.security.ProfileTokenGenerator;
-import com.yeodam.yeodambe.user.security.ProfileTokenStore;
+import com.yeodam.yeodambe.user.security.oauth.ProfileTokenGenerator;
+import com.yeodam.yeodambe.user.security.oauth.ProfileTokenStore;
 
 import java.util.Optional;
 

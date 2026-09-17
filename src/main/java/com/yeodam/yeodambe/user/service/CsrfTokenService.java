@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.user.service;
 
-import com.yeodam.yeodambe.user.security.CsrfTokenGenerator;
-import com.yeodam.yeodambe.user.security.CsrfTokenStore;
+import com.yeodam.yeodambe.user.security.csrf.CsrfTokenGenerator;
+import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

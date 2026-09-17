@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.user.service;
 
-import com.yeodam.yeodambe.user.security.OAuthStateGenerator;
-import com.yeodam.yeodambe.user.security.OAuthStateStore;
+import com.yeodam.yeodambe.user.security.oauth.OAuthStateGenerator;
+import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;

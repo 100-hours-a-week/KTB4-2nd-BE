@@ -2,7 +2,7 @@ package com.yeodam.yeodambe.user.service;
 
 import com.yeodam.yeodambe.user.client.KakaoOAuthClient;
 import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
-import com.yeodam.yeodambe.user.security.OAuthStateStore;
+import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,8 +11,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.yeodam.yeodambe.user.client.KakaoTokenResponse;
 import com.yeodam.yeodambe.user.client.KakaoUserResponse;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
-import com.yeodam.yeodambe.user.security.LoginTicketGenerator;
-import com.yeodam.yeodambe.user.security.LoginTicketStore;
+import com.yeodam.yeodambe.user.security.oauth.LoginTicketGenerator;
+import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;
 
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -14,6 +14,7 @@ import java.util.Optional;
 public class LoginSessionStore {
 
     private static final String KEY_PREFIX = "auth:session:";
+    private static final String REFRESH_INDEX_PREFIX = "auth:refresh:";
     private static final Duration SESSION_TTL = Duration.ofDays(7);
 
     private final StringRedisTemplate redisTemplate;
@@ -27,6 +28,11 @@ public class LoginSessionStore {
             redisTemplate.opsForValue().set(
                     key(sid),
                     json,
+                    SESSION_TTL
+            );
+            redisTemplate.opsForValue().set(
+                    refreshIndexKey(refreshTokenHash),
+                    sid,
                     SESSION_TTL
             );
         } catch (JacksonException e) {
@@ -53,7 +59,25 @@ public class LoginSessionStore {
         }
     }
 
+    public Optional<String> findSidByRefreshTokenHash(
+            String refreshTokenHash
+    ) {
+        if (refreshTokenHash == null || refreshTokenHash.isBlank()) {
+            return Optional.empty();
+        }
+
+        return Optional.ofNullable(
+                redisTemplate.opsForValue().get(
+                        refreshIndexKey(refreshTokenHash)
+                )
+        );
+    }
+
     private String key(String sid) {
         return KEY_PREFIX + sid;
+    }
+
+    private String refreshIndexKey(String refreshTokenHash) {
+        return REFRESH_INDEX_PREFIX + refreshTokenHash;
     }
 }

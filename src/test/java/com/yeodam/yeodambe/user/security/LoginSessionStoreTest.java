@@ -29,7 +29,11 @@ class LoginSessionStoreTest {
 
         assertThat(loginSessionStore.findBySid("sid-1"))
                 .contains(new LoginSession(42L, "refresh-hash-1"));
+        assertThat(loginSessionStore.findSidByRefreshTokenHash("refresh-hash-1"))
+                .contains("sid-1");
         assertThat(loginSessionStore.findBySid("missing-sid"))
+                .isEmpty();
+        assertThat(loginSessionStore.findSidByRefreshTokenHash("missing-hash"))
                 .isEmpty();
     }
 
@@ -41,7 +45,12 @@ class LoginSessionStoreTest {
                 "auth:session:sid-ttl",
                 TimeUnit.SECONDS
         );
+        Long refreshIndexTtlSeconds = redisTemplate.getExpire(
+                "auth:refresh:refresh-hash-2",
+                TimeUnit.SECONDS
+        );
 
         assertThat(ttlSeconds).isBetween(604790L, 604800L);
+        assertThat(refreshIndexTtlSeconds).isBetween(604790L, 604800L);
     }
 }

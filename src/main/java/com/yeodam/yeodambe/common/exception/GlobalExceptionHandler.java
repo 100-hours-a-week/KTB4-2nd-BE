@@ -26,6 +26,8 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleUnreadableRequest(HttpMessageNotReadableException e) {
         return new ApiResponse<>("INVALID_REQUEST", null);
+    }
+
     @ExceptionHandler(InvalidTripRequestException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidTripRequest(InvalidTripRequestException e) {

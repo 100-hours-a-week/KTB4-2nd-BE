@@ -1,233 +1,26 @@
 {
-  "regionUnit": "SIGUNGU",
+  "regionUnit": "SIDO_SIGUN",
   "coordinateSystem": "WGS84",
-  "representativePlacePolicy": "LOCAL_GOVERNMENT_MAIN_OFFICE",
+  "representativePlacePolicy": "LOCAL_GOVERNMENT_OFFICE",
   "coordinateSource": "KAKAO_LOCAL_KEYWORD",
   "regions": [
     {
-      "regionCode": "11110",
-      "regionName": "서울특별시 종로구",
-      "representativePlaceName": "종로구청 본관",
-      "kakaoPlaceId": "18618105",
-      "latitude": 37.57477115,
-      "longitude": 126.97961221,
-      "verifiedAt": "2026-09-16"
+      "regionCode": "11000",
+      "regionName": "서울특별시",
+      "representativePlaceName": "서울특별시청",
+      "kakaoPlaceId": "8430129",
+      "latitude": 37.5668242,
+      "longitude": 126.97865226,
+      "verifiedAt": "2026-09-17"
     },
     {
-      "regionCode": "11140",
-      "regionName": "서울특별시 중구",
-      "representativePlaceName": "서울특별시중구청",
-      "kakaoPlaceId": "7942399",
-      "latitude": 37.56380777,
-      "longitude": 126.99755518,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11170",
-      "regionName": "서울특별시 용산구",
-      "representativePlaceName": "용산구청",
-      "kakaoPlaceId": "11986555",
-      "latitude": 37.53242563,
-      "longitude": 126.99057556,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11200",
-      "regionName": "서울특별시 성동구",
-      "representativePlaceName": "성동구청",
-      "kakaoPlaceId": "16327522",
-      "latitude": 37.56342721,
-      "longitude": 127.03693014,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11215",
-      "regionName": "서울특별시 광진구",
-      "representativePlaceName": "광진구청",
-      "kakaoPlaceId": "8660382",
-      "latitude": 37.53628212,
-      "longitude": 127.08775365,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11230",
-      "regionName": "서울특별시 동대문구",
-      "representativePlaceName": "동대문구청",
-      "kakaoPlaceId": "1394496477",
-      "latitude": 37.57441844,
-      "longitude": 127.03974739,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11260",
-      "regionName": "서울특별시 중랑구",
-      "representativePlaceName": "중랑구청",
-      "kakaoPlaceId": "8082204",
-      "latitude": 37.60654324,
-      "longitude": 127.09282029,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11290",
-      "regionName": "서울특별시 성북구",
-      "representativePlaceName": "성북구청",
-      "kakaoPlaceId": "10485530",
-      "latitude": 37.58935882,
-      "longitude": 127.01670064,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11305",
-      "regionName": "서울특별시 강북구",
-      "representativePlaceName": "강북구청 용신빌딩 임시청사",
-      "kakaoPlaceId": "694697355",
-      "latitude": 37.63712794,
-      "longitude": 127.02420253,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11320",
-      "regionName": "서울특별시 도봉구",
-      "representativePlaceName": "도봉구청",
-      "kakaoPlaceId": "10307470",
-      "latitude": 37.66869141,
-      "longitude": 127.0472105,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11350",
-      "regionName": "서울특별시 노원구",
-      "representativePlaceName": "노원구청",
-      "kakaoPlaceId": "8210789",
-      "latitude": 37.65436176,
-      "longitude": 127.05643048,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11380",
-      "regionName": "서울특별시 은평구",
-      "representativePlaceName": "은평구청",
-      "kakaoPlaceId": "11176503",
-      "latitude": 37.60281744,
-      "longitude": 126.92893872,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11410",
-      "regionName": "서울특별시 서대문구",
-      "representativePlaceName": "서대문구청",
-      "kakaoPlaceId": "11143979",
-      "latitude": 37.57916186,
-      "longitude": 126.93681566,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11440",
-      "regionName": "서울특별시 마포구",
-      "representativePlaceName": "마포구청",
-      "kakaoPlaceId": "7873173",
-      "latitude": 37.56621419,
-      "longitude": 126.90195514,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11470",
-      "regionName": "서울특별시 양천구",
-      "representativePlaceName": "양천구청",
-      "kakaoPlaceId": "8426698",
-      "latitude": 37.51698848,
-      "longitude": 126.86650141,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11500",
-      "regionName": "서울특별시 강서구",
-      "representativePlaceName": "강서구청",
-      "kakaoPlaceId": "8162335",
-      "latitude": 37.55096462,
-      "longitude": 126.84953376,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11530",
-      "regionName": "서울특별시 구로구",
-      "representativePlaceName": "구로구청",
-      "kakaoPlaceId": "8191658",
-      "latitude": 37.49543309,
-      "longitude": 126.88750531,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11545",
-      "regionName": "서울특별시 금천구",
-      "representativePlaceName": "금천구청",
-      "kakaoPlaceId": "8203023",
-      "latitude": 37.45684115,
-      "longitude": 126.89545678,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11560",
-      "regionName": "서울특별시 영등포구",
-      "representativePlaceName": "영등포구청",
-      "kakaoPlaceId": "8507540",
-      "latitude": 37.52636177,
-      "longitude": 126.89627166,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11590",
-      "regionName": "서울특별시 동작구",
-      "representativePlaceName": "동작구청",
-      "kakaoPlaceId": "10287154",
-      "latitude": 37.50423743,
-      "longitude": 126.94026947,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11620",
-      "regionName": "서울특별시 관악구",
-      "representativePlaceName": "관악구청",
-      "kakaoPlaceId": "8226304",
-      "latitude": 37.47825663,
-      "longitude": 126.95152123,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11650",
-      "regionName": "서울특별시 서초구",
-      "representativePlaceName": "서초구청",
-      "kakaoPlaceId": "10492143",
-      "latitude": 37.48358701,
-      "longitude": 127.03273228,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11680",
-      "regionName": "서울특별시 강남구",
-      "representativePlaceName": "강남구청",
-      "kakaoPlaceId": "10120514",
-      "latitude": 37.51733193,
-      "longitude": 127.04737741,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11710",
-      "regionName": "서울특별시 송파구",
-      "representativePlaceName": "송파구청",
-      "kakaoPlaceId": "7962209",
-      "latitude": 37.51458372,
-      "longitude": 127.10591771,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "11740",
-      "regionName": "서울특별시 강동구",
-      "representativePlaceName": "강동구청",
-      "kakaoPlaceId": "10121607",
-      "latitude": 37.53019332,
-      "longitude": 127.1237925,
-      "verifiedAt": "2026-09-16"
+      "regionCode": "12000",
+      "regionName": "전남광주통합특별시",
+      "representativePlaceName": "전남광주통합특별시청 광주청사",
+      "kakaoPlaceId": "8766926",
+      "latitude": 35.16010196,
+      "longitude": 126.85162996,
+      "verifiedAt": "2026-09-17"
     },
     {
       "regionCode": "12110",
@@ -272,51 +65,6 @@
       "kakaoPlaceId": "8187092",
       "latitude": 34.94042525,
       "longitude": 127.69593077,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "12210",
-      "regionName": "전남광주통합특별시 동구",
-      "representativePlaceName": "전남광주통합특별시 동구청",
-      "kakaoPlaceId": "8192442",
-      "latitude": 35.14616667,
-      "longitude": 126.92309511,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "12240",
-      "regionName": "전남광주통합특별시 서구",
-      "representativePlaceName": "전남광주통합특별시 서구청",
-      "kakaoPlaceId": "14588328",
-      "latitude": 35.15207227,
-      "longitude": 126.89018753,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "12270",
-      "regionName": "전남광주통합특별시 남구",
-      "representativePlaceName": "전남광주통합특별시 남구청",
-      "kakaoPlaceId": "19318820",
-      "latitude": 35.13281978,
-      "longitude": 126.90247687,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "12300",
-      "regionName": "전남광주통합특별시 북구",
-      "representativePlaceName": "전남광주통합특별시 북구청",
-      "kakaoPlaceId": "8233271",
-      "latitude": 35.17417337,
-      "longitude": 126.91201208,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "12330",
-      "regionName": "전남광주통합특별시 광산구",
-      "representativePlaceName": "광산구청",
-      "kakaoPlaceId": "8200696",
-      "latitude": 35.13954718,
-      "longitude": 126.79363125,
       "verifiedAt": "2026-09-16"
     },
     {
@@ -473,139 +221,13 @@
       "verifiedAt": "2026-09-16"
     },
     {
-      "regionCode": "26110",
-      "regionName": "부산광역시 중구",
-      "representativePlaceName": "부산광역시중구청",
-      "kakaoPlaceId": "7915690",
-      "latitude": 35.10622698,
-      "longitude": 129.03237313,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26140",
-      "regionName": "부산광역시 서구",
-      "representativePlaceName": "부산광역시 서구청",
-      "kakaoPlaceId": "7907193",
-      "latitude": 35.09792356,
-      "longitude": 129.02429625,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26170",
-      "regionName": "부산광역시 동구",
-      "representativePlaceName": "부산광역시 동구청",
-      "kakaoPlaceId": "7899584",
-      "latitude": 35.1292668,
-      "longitude": 129.04530577,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26200",
-      "regionName": "부산광역시 영도구",
-      "representativePlaceName": "영도구청",
-      "kakaoPlaceId": "8008807",
-      "latitude": 35.09123989,
-      "longitude": 129.0678888,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26230",
-      "regionName": "부산광역시 부산진구",
-      "representativePlaceName": "부산진구청",
-      "kakaoPlaceId": "7909003",
-      "latitude": 35.16285368,
-      "longitude": 129.0531632,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26260",
-      "regionName": "부산광역시 동래구",
-      "representativePlaceName": "동래구청",
-      "kakaoPlaceId": "8275898",
-      "latitude": 35.20509157,
-      "longitude": 129.08371683,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26290",
-      "regionName": "부산광역시 남구",
-      "representativePlaceName": "부산광역시남구청",
-      "kakaoPlaceId": "14092088",
-      "latitude": 35.13652266,
-      "longitude": 129.08423827,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26320",
-      "regionName": "부산광역시 북구",
-      "representativePlaceName": "부산광역시북구청",
-      "kakaoPlaceId": "13140321",
-      "latitude": 35.19729594,
-      "longitude": 128.99003659,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26350",
-      "regionName": "부산광역시 해운대구",
-      "representativePlaceName": "해운대구청",
-      "kakaoPlaceId": "10927018",
-      "latitude": 35.16306667,
-      "longitude": 129.16359608,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26380",
-      "regionName": "부산광역시 사하구",
-      "representativePlaceName": "사하구청",
-      "kakaoPlaceId": "10439459",
-      "latitude": 35.1044479,
-      "longitude": 128.97493297,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26410",
-      "regionName": "부산광역시 금정구",
-      "representativePlaceName": "금정구청",
-      "kakaoPlaceId": "8201976",
-      "latitude": 35.2427772,
-      "longitude": 129.09209529,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26440",
-      "regionName": "부산광역시 강서구",
-      "representativePlaceName": "부산광역시강서구청",
-      "kakaoPlaceId": "8176694",
-      "latitude": 35.21219449,
-      "longitude": 128.98056169,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26470",
-      "regionName": "부산광역시 연제구",
-      "representativePlaceName": "연제구청",
-      "kakaoPlaceId": "11103035",
-      "latitude": 35.17620587,
-      "longitude": 129.0797414,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26500",
-      "regionName": "부산광역시 수영구",
-      "representativePlaceName": "수영구청",
-      "kakaoPlaceId": "8447041",
-      "latitude": 35.14553838,
-      "longitude": 129.11312519,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "26530",
-      "regionName": "부산광역시 사상구",
-      "representativePlaceName": "사상구청",
-      "kakaoPlaceId": "7913112",
-      "latitude": 35.15259798,
-      "longitude": 128.99111977,
-      "verifiedAt": "2026-09-16"
+      "regionCode": "26000",
+      "regionName": "부산광역시",
+      "representativePlaceName": "부산광역시청",
+      "kakaoPlaceId": "27284326",
+      "latitude": 35.17973748,
+      "longitude": 129.07506783,
+      "verifiedAt": "2026-09-17"
     },
     {
       "regionCode": "26710",
@@ -617,67 +239,13 @@
       "verifiedAt": "2026-09-16"
     },
     {
-      "regionCode": "27110",
-      "regionName": "대구광역시 중구",
-      "representativePlaceName": "대구광역시 중구청",
-      "kakaoPlaceId": "9706173",
-      "latitude": 35.86938925,
-      "longitude": 128.60622052,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "27140",
-      "regionName": "대구광역시 동구",
-      "representativePlaceName": "대구광역시 동구청",
-      "kakaoPlaceId": "7816029",
-      "latitude": 35.88662362,
-      "longitude": 128.6355241,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "27170",
-      "regionName": "대구광역시 서구",
-      "representativePlaceName": "대구광역시서구청",
-      "kakaoPlaceId": "7816490",
-      "latitude": 35.87166758,
-      "longitude": 128.55915425,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "27200",
-      "regionName": "대구광역시 남구",
-      "representativePlaceName": "대구광역시 남구청",
-      "kakaoPlaceId": "8226856",
-      "latitude": 35.84604099,
-      "longitude": 128.59767862,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "27230",
-      "regionName": "대구광역시 북구",
-      "representativePlaceName": "대구광역시북구청",
-      "kakaoPlaceId": "7816519",
-      "latitude": 35.88568403,
-      "longitude": 128.58278005,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "27260",
-      "regionName": "대구광역시 수성구",
-      "representativePlaceName": "수성구청",
-      "kakaoPlaceId": "7962695",
-      "latitude": 35.8581745,
-      "longitude": 128.63063546,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "27290",
-      "regionName": "대구광역시 달서구",
-      "representativePlaceName": "달서구청",
-      "kakaoPlaceId": "8841754",
-      "latitude": 35.82991524,
-      "longitude": 128.53283654,
-      "verifiedAt": "2026-09-16"
+      "regionCode": "27000",
+      "regionName": "대구광역시",
+      "representativePlaceName": "대구광역시청 동인청사",
+      "kakaoPlaceId": "7816301",
+      "latitude": 35.87138026,
+      "longitude": 128.60180549,
+      "verifiedAt": "2026-09-17"
     },
     {
       "regionCode": "27710",
@@ -698,85 +266,13 @@
       "verifiedAt": "2026-09-16"
     },
     {
-      "regionCode": "28125",
-      "regionName": "인천광역시 제물포구",
-      "representativePlaceName": "제물포구청 송림청사",
-      "kakaoPlaceId": "8048808",
-      "latitude": 37.47386099,
-      "longitude": 126.64328192,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "28155",
-      "regionName": "인천광역시 영종구",
-      "representativePlaceName": "영종구청",
-      "kakaoPlaceId": "307290466",
-      "latitude": 37.48976828,
-      "longitude": 126.55993672,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "28177",
-      "regionName": "인천광역시 미추홀구",
-      "representativePlaceName": "미추홀구청",
-      "kakaoPlaceId": "9358933",
-      "latitude": 37.46358605,
-      "longitude": 126.65056493,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "28185",
-      "regionName": "인천광역시 연수구",
-      "representativePlaceName": "연수구청",
-      "kakaoPlaceId": "8001257",
-      "latitude": 37.41009957,
-      "longitude": 126.6782726,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "28200",
-      "regionName": "인천광역시 남동구",
-      "representativePlaceName": "남동구청",
-      "kakaoPlaceId": "8224813",
-      "latitude": 37.44734879,
-      "longitude": 126.73148774,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "28237",
-      "regionName": "인천광역시 부평구",
-      "representativePlaceName": "부평구청",
-      "kakaoPlaceId": "7907815",
-      "latitude": 37.50704166,
-      "longitude": 126.72186417,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "28245",
-      "regionName": "인천광역시 계양구",
-      "representativePlaceName": "계양구청",
-      "kakaoPlaceId": "8196442",
-      "latitude": 37.53749567,
-      "longitude": 126.73770466,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "28275",
-      "regionName": "인천광역시 서해구",
-      "representativePlaceName": "서해구청",
-      "kakaoPlaceId": "10757347",
-      "latitude": 37.54543352,
-      "longitude": 126.67602847,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "28290",
-      "regionName": "인천광역시 검단구",
-      "representativePlaceName": "검단구청",
-      "kakaoPlaceId": "107217495",
-      "latitude": 37.59153433,
-      "longitude": 126.68156937,
-      "verifiedAt": "2026-09-16"
+      "regionCode": "28000",
+      "regionName": "인천광역시",
+      "representativePlaceName": "인천광역시청",
+      "kakaoPlaceId": "8046450",
+      "latitude": 37.45600447,
+      "longitude": 126.70525807,
+      "verifiedAt": "2026-09-17"
     },
     {
       "regionCode": "28710",
@@ -797,85 +293,22 @@
       "verifiedAt": "2026-09-16"
     },
     {
-      "regionCode": "30110",
-      "regionName": "대전광역시 동구",
-      "representativePlaceName": "대전광역시동구청",
-      "kakaoPlaceId": "13142544",
-      "latitude": 36.31177684,
-      "longitude": 127.45480491,
-      "verifiedAt": "2026-09-16"
+      "regionCode": "30000",
+      "regionName": "대전광역시",
+      "representativePlaceName": "대전광역시청",
+      "kakaoPlaceId": "11305938",
+      "latitude": 36.3505389,
+      "longitude": 127.38483485,
+      "verifiedAt": "2026-09-17"
     },
     {
-      "regionCode": "30140",
-      "regionName": "대전광역시 중구",
-      "representativePlaceName": "대전광역시중구청",
-      "kakaoPlaceId": "8070135",
-      "latitude": 36.32578123,
-      "longitude": 127.42133992,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "30170",
-      "regionName": "대전광역시 서구",
-      "representativePlaceName": "대전광역시서구청",
-      "kakaoPlaceId": "7830164",
-      "latitude": 36.35549872,
-      "longitude": 127.38378972,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "30200",
-      "regionName": "대전광역시 유성구",
-      "representativePlaceName": "유성구청",
-      "kakaoPlaceId": "17151314",
-      "latitude": 36.36228511,
-      "longitude": 127.35625759,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "30230",
-      "regionName": "대전광역시 대덕구",
-      "representativePlaceName": "대덕구청",
-      "kakaoPlaceId": "8299019",
-      "latitude": 36.34670513,
-      "longitude": 127.41556189,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "31110",
-      "regionName": "울산광역시 중구",
-      "representativePlaceName": "울산광역시중구청",
-      "kakaoPlaceId": "10689998",
-      "latitude": 35.56933523,
-      "longitude": 129.33249408,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "31140",
-      "regionName": "울산광역시 남구",
-      "representativePlaceName": "울산광역시남구청",
-      "kakaoPlaceId": "8526718",
-      "latitude": 35.5438097,
-      "longitude": 129.33009179,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "31170",
-      "regionName": "울산광역시 동구",
-      "representativePlaceName": "울산광역시동구청",
-      "kakaoPlaceId": "8031174",
-      "latitude": 35.50463592,
-      "longitude": 129.41648557,
-      "verifiedAt": "2026-09-16"
-    },
-    {
-      "regionCode": "31200",
-      "regionName": "울산광역시 북구",
-      "representativePlaceName": "울산광역시북구청",
-      "kakaoPlaceId": "7906016",
-      "latitude": 35.582747,
-      "longitude": 129.36114668,
-      "verifiedAt": "2026-09-16"
+      "regionCode": "31000",
+      "regionName": "울산광역시",
+      "representativePlaceName": "울산광역시청",
+      "kakaoPlaceId": "8035568",
+      "latitude": 35.53959647,
+      "longitude": 129.31160127,
+      "verifiedAt": "2026-09-17"
     },
     {
       "regionCode": "31710",

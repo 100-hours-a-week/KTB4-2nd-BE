@@ -1,12 +1,7 @@
 package com.yeodam.yeodambe.common.exception;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
-import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
-import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
-import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
-import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
-import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
-import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
+import com.yeodam.yeodambe.user.exception.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.BindException;
@@ -87,6 +82,18 @@ public class GlobalExceptionHandler {
 
         return new ApiResponse<>(
                 "OAUTH_PROVIDER_UNAVAILABLE",
+                null
+        );
+    }
+
+    @ExceptionHandler(LoginTicketInvalidOrExpiredException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    ApiResponse<Void> handleLoginTicketInvalidOrExpiredException(
+            LoginTicketInvalidOrExpiredException e
+    ) {
+
+        return new ApiResponse<>(
+                "LOGIN_TICKET_INVALID_OR_EXPIRED",
                 null
         );
     }

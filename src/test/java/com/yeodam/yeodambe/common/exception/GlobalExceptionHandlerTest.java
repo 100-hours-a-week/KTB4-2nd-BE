@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
 import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
 import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
 import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
+import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
 import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
 import org.junit.jupiter.api.BeforeEach;
@@ -91,6 +92,18 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void returnsUnauthorizedWhenLoginTicketIsInvalidOrExpired() throws Exception {
+        mockMvc.perform(get("/test/login-ticket-invalid"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().json("""
+                        {
+                          "message": "LOGIN_TICKET_INVALID_OR_EXPIRED",
+                          "data": null
+                        }
+                        """));
+    }
+
+    @Test
     void returnsServiceUnavailableWhenOAuthProviderFails() throws Exception {
         mockMvc.perform(get("/test/oauth-provider-unavailable"))
                 .andExpect(status().isServiceUnavailable())
@@ -128,6 +141,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/kakao-authentication-failed")
         void kakaoAuthenticationFailed() {
             throw new KakaoAuthenticationFailedException();
+        }
+
+        @GetMapping("/test/login-ticket-invalid")
+        void loginTicketInvalid() {
+            throw new LoginTicketInvalidOrExpiredException();
         }
 
         @GetMapping("/test/oauth-provider-unavailable")

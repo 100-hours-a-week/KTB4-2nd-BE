@@ -20,7 +20,10 @@ management:
   endpoint:
     health:
       show-details: never
-
+auth:
+  jwt:
+    audience: yeodam-api
+    access-token-ttl: 30m
 ---
 spring:
   config:
@@ -44,7 +47,10 @@ oauth:
     client-secret: ${KAKAO_CLIENT_SECRET:local-client-secret}
   browser-context-cookie:
     secure: false
-
+auth:
+  jwt:
+    secret: ${JWT_SECRET:local-development-jwt-secret-key-32-bytes}
+    issuer: ${JWT_ISSUER:http://localhost:8080}
 ---
 spring:
   config:
@@ -58,6 +64,7 @@ spring:
     redis:
       url: ${REDIS_URL}
 
+
 oauth:
   frontend-callback-uri: ${FRONTEND_OAUTH_CALLBACK_URI}
   kakao:
@@ -66,7 +73,10 @@ oauth:
     client-secret: ${KAKAO_CLIENT_SECRET}
   browser-context-cookie:
     secure: true
-
+auth:
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER}
 ---
 spring:
   config:
@@ -81,3 +91,7 @@ oauth:
     client-secret: test-client-secret
   browser-context-cookie:
     secure: false
+auth:
+  jwt:
+    secret: test-jwt-secret-key-must-be-at-least-32-bytes
+    issuer: https://api.yeodam.test

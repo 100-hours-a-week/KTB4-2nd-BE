@@ -13,10 +13,22 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(InvalidTripRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidTripRequest(InvalidTripRequestException e) {
+        return new ApiResponse<>("INVALID_TRIP_REQUEST", null);
+    }
+
     @ExceptionHandler(BindException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleBindException(BindException e) {
         return new ApiResponse<>("INVALID_REQUEST", null);
+    }
+
+    @ExceptionHandler(TripNameDuplicatedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleTripNameDuplicatedException(TripNameDuplicatedException e) {
+        return new ApiResponse<>("TRIP_NAME_DUPLICATED", null);
     }
 
     @ExceptionHandler(PlaceQueryProviderUnavailableException.class)

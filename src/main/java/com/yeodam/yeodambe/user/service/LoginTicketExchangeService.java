@@ -10,6 +10,8 @@ import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.yeodam.yeodambe.user.security.ProfileTokenGenerator;
+import com.yeodam.yeodambe.user.security.ProfileTokenStore;
 
 import java.util.Optional;
 
@@ -19,6 +21,8 @@ public class LoginTicketExchangeService {
 
     private final LoginTicketStore loginTicketStore;
     private final OAuthAccountRepository oauthAccountRepository;
+    private final ProfileTokenGenerator profileTokenGenerator;
+    private final ProfileTokenStore profileTokenStore;
 
     @Transactional(readOnly = true)
     public LoginExchangeDecision exchange(String loginTicket, String browserContext) {
@@ -33,7 +37,9 @@ public class LoginTicketExchangeService {
                 );
 
         if (account.isEmpty()) {
-            return new LoginExchangeDecision.Onboarding(identity);
+            String profileToken = profileTokenGenerator.generate();
+            profileTokenStore.save(profileToken, identity);
+            return new LoginExchangeDecision.Onboarding(profileToken);
         }
 
         User user = account.get().getUser();

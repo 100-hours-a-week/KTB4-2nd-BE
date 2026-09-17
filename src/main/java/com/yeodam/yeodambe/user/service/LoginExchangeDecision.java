@@ -14,7 +14,7 @@ public sealed interface LoginExchangeDecision
     }
 
     record Onboarding(
-            KakaoUserIdentity identity
+            String profileToken
     ) implements LoginExchangeDecision {
     }
 }

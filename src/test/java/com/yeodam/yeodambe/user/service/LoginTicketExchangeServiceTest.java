@@ -6,6 +6,8 @@ import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.security.LoginTicketStore;
+import com.yeodam.yeodambe.user.security.ProfileTokenGenerator;
+import com.yeodam.yeodambe.user.security.ProfileTokenStore;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,13 +33,21 @@ class LoginTicketExchangeServiceTest {
     @Mock
     private OAuthAccountRepository oauthAccountRepository;
 
+    @Mock
+    private ProfileTokenGenerator profileTokenGenerator;
+
+    @Mock
+    private ProfileTokenStore profileTokenStore;
+
     private LoginTicketExchangeService service;
 
     @BeforeEach
     void setUp() {
         service = new LoginTicketExchangeService(
                 loginTicketStore,
-                oauthAccountRepository
+                oauthAccountRepository,
+                profileTokenGenerator,
+                profileTokenStore
         );
     }
 
@@ -66,15 +76,19 @@ class LoginTicketExchangeServiceTest {
                         "kakao-user-1"
                 ))
                 .willReturn(Optional.empty());
+        given(profileTokenGenerator.generate())
+                .willReturn("new-profile-token");
 
         LoginExchangeDecision result =
                 service.exchange("valid-ticket", "browser-1");
 
         assertThat(result).isEqualTo(
-                new LoginExchangeDecision.Onboarding(identity)
+                new LoginExchangeDecision.Onboarding("new-profile-token")
         );
         then(loginTicketStore).should()
                 .consume("valid-ticket", "browser-1");
+        then(profileTokenStore).should()
+                .save("new-profile-token", identity);
     }
 
     @Test
@@ -107,5 +121,6 @@ class LoginTicketExchangeServiceTest {
                         "여행자"
                 )
         );
+        verifyNoInteractions(profileTokenGenerator, profileTokenStore);
     }
 }

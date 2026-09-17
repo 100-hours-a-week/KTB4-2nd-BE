@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
 import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -115,6 +116,18 @@ class GlobalExceptionHandlerTest {
                     """));
     }
 
+    @Test
+    void returnsServiceUnavailableWhenRedisConnectionFails() throws Exception {
+        mockMvc.perform(get("/test/redis-unavailable"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(content().json("""
+                    {
+                      "message": "AUTH_STORE_UNAVAILABLE",
+                      "data": null
+                    }
+                    """));
+    }
+
     @RestController
     static class TestController {
 
@@ -151,6 +164,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/oauth-provider-unavailable")
         void oauthProviderUnavailable() {
             throw new OAuthProviderUnavailableException();
+        }
+
+        @GetMapping("/test/redis-unavailable")
+        void redisUnavailable() {
+            throw new RedisConnectionFailureException("Redis unavailable");
         }
     }
 }

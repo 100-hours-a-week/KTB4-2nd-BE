@@ -12,7 +12,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.yeodam.yeodambe.user.security.oauth.ProfileTokenGenerator;
 import com.yeodam.yeodambe.user.security.oauth.ProfileTokenStore;
-
+import com.yeodam.yeodambe.user.security.session.IssuedLoginSession;
+import com.yeodam.yeodambe.user.security.session.LoginSessionIssuer;
+import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import java.util.Optional;
 
 @Service
@@ -23,6 +25,8 @@ public class LoginTicketExchangeService {
     private final OAuthAccountRepository oauthAccountRepository;
     private final ProfileTokenGenerator profileTokenGenerator;
     private final ProfileTokenStore profileTokenStore;
+    private final LoginSessionIssuer loginSessionIssuer;
+    private final AccessTokenIssuer accessTokenIssuer;
 
     @Transactional(readOnly = true)
     public LoginExchangeDecision exchange(String loginTicket, String browserContext) {
@@ -43,10 +47,15 @@ public class LoginTicketExchangeService {
         }
 
         User user = account.get().getUser();
+        IssuedLoginSession session = loginSessionIssuer.issue(user.getUserId());
+        String accessToken = accessTokenIssuer.issue(user.getUserId(), session.sid());
+
         return new LoginExchangeDecision.ExistingMember(
                 user.getUserId(),
                 user.getEmail(),
-                user.getNickname()
+                user.getNickname(),
+                accessToken,
+                session.refreshToken()
         );
     }
 }

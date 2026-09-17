@@ -21,6 +21,7 @@ public class SecurityConfig {
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.GET, "/auth/csrf").permitAll()
+                .requestMatchers(HttpMethod.POST, "/auth/token/exchange").permitAll()
                 .requestMatchers(
                         HttpMethod.GET,
                         "/auth/kakao/authorize",

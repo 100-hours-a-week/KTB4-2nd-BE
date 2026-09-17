@@ -8,11 +8,25 @@ import org.springframework.validation.BindException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(RedisConnectionFailureException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handleRedisConnectionFailure(RedisConnectionFailureException e) {
+        log.warn("인증 저장소에 연결할 수 없습니다.", e);
+        return new ApiResponse<>("AUTH_STORE_UNAVAILABLE", null);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleUnreadableRequest(HttpMessageNotReadableException e) {
+        return new ApiResponse<>("INVALID_REQUEST", null);
+    }
 
     @ExceptionHandler(BindException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)

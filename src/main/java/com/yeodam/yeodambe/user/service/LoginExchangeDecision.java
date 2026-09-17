@@ -9,7 +9,9 @@ public sealed interface LoginExchangeDecision
     record ExistingMember(
             Long userId,
             String email,
-            String nickname
+            String nickname,
+            String accessToken,
+            String refreshToken
     ) implements LoginExchangeDecision {
     }
 

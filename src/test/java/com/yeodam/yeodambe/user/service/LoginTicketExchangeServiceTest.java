@@ -8,6 +8,9 @@ import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;
 import com.yeodam.yeodambe.user.security.oauth.ProfileTokenGenerator;
 import com.yeodam.yeodambe.user.security.oauth.ProfileTokenStore;
+import com.yeodam.yeodambe.user.security.session.IssuedLoginSession;
+import com.yeodam.yeodambe.user.security.session.LoginSessionIssuer;
+import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +42,12 @@ class LoginTicketExchangeServiceTest {
     @Mock
     private ProfileTokenStore profileTokenStore;
 
+    @Mock
+    private LoginSessionIssuer loginSessionIssuer;
+
+    @Mock
+    private AccessTokenIssuer accessTokenIssuer;
+
     private LoginTicketExchangeService service;
 
     @BeforeEach
@@ -47,7 +56,9 @@ class LoginTicketExchangeServiceTest {
                 loginTicketStore,
                 oauthAccountRepository,
                 profileTokenGenerator,
-                profileTokenStore
+                profileTokenStore,
+                loginSessionIssuer,
+                accessTokenIssuer
         );
     }
 
@@ -61,7 +72,7 @@ class LoginTicketExchangeServiceTest {
 
         then(loginTicketStore).should()
                 .consume("expired-ticket", "browser-1");
-        verifyNoInteractions(oauthAccountRepository);
+        verifyNoInteractions(oauthAccountRepository, loginSessionIssuer, accessTokenIssuer);
     }
 
     @Test
@@ -89,6 +100,7 @@ class LoginTicketExchangeServiceTest {
                 .consume("valid-ticket", "browser-1");
         then(profileTokenStore).should()
                 .save("new-profile-token", identity);
+        verifyNoInteractions(loginSessionIssuer, accessTokenIssuer);
     }
 
     @Test
@@ -110,6 +122,10 @@ class LoginTicketExchangeServiceTest {
         given(user.getUserId()).willReturn(42L);
         given(user.getEmail()).willReturn("member@example.com");
         given(user.getNickname()).willReturn("여행자");
+        given(loginSessionIssuer.issue(42L))
+                .willReturn(new IssuedLoginSession("sid-1", "refresh-1"));
+        given(accessTokenIssuer.issue(42L, "sid-1"))
+                .willReturn("access-1");
 
         LoginExchangeDecision result =
                 service.exchange("valid-ticket", "browser-2");
@@ -118,9 +134,13 @@ class LoginTicketExchangeServiceTest {
                 new LoginExchangeDecision.ExistingMember(
                         42L,
                         "member@example.com",
-                        "여행자"
+                        "여행자",
+                        "access-1",
+                        "refresh-1"
                 )
         );
+        then(loginSessionIssuer).should().issue(42L);
+        then(accessTokenIssuer).should().issue(42L, "sid-1");
         verifyNoInteractions(profileTokenGenerator, profileTokenStore);
     }
 }

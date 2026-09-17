@@ -22,7 +22,10 @@ WORKDIR /app
 
 ENV SERVER_PORT=8080
 
-RUN groupadd --system --gid 1001 spring \
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 1001 spring \
     && useradd --system --uid 1001 --gid spring spring
 
 COPY --from=build --chown=spring:spring /workspace/app.jar /app/app.jar
@@ -31,4 +34,3 @@ USER spring
 EXPOSE 8080
 
 CMD ["java", "-jar", "/app/app.jar"]
-

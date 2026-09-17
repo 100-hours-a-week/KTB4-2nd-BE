@@ -20,7 +20,10 @@ management:
   endpoint:
     health:
       show-details: never
-
+auth:
+  jwt:
+    audience: yeodam-api
+    access-token-ttl: 30m
 ---
 spring:
   config:
@@ -36,6 +39,18 @@ spring:
     redis:
       url: ${REDIS_URL:redis://localhost:6379}
 
+oauth:
+  frontend-callback-uri: ${FRONTEND_OAUTH_CALLBACK_URI:http://localhost:5173/auth/callback}
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID:local-client-id}
+    redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/auth/kakao/callback}
+    client-secret: ${KAKAO_CLIENT_SECRET:local-client-secret}
+  browser-context-cookie:
+    secure: false
+auth:
+  jwt:
+    secret: ${JWT_SECRET:local-development-jwt-secret-key-32-bytes}
+    issuer: ${JWT_ISSUER:http://localhost:8080}
 ---
 spring:
   config:
@@ -48,3 +63,35 @@ spring:
   data:
     redis:
       url: ${REDIS_URL}
+
+
+oauth:
+  frontend-callback-uri: ${FRONTEND_OAUTH_CALLBACK_URI}
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID}
+    redirect-uri: ${KAKAO_REDIRECT_URI}
+    client-secret: ${KAKAO_CLIENT_SECRET}
+  browser-context-cookie:
+    secure: true
+auth:
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER}
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+oauth:
+  frontend-callback-uri: https://app.yeodam.test/auth/callback
+  kakao:
+    client-id: test-client-id
+    redirect-uri: https://api.yeodam.test/auth/kakao/callback
+    client-secret: test-client-secret
+  browser-context-cookie:
+    secure: false
+auth:
+  jwt:
+    secret: test-jwt-secret-key-must-be-at-least-32-bytes
+    issuer: https://api.yeodam.test

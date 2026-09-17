@@ -1,0 +1,15 @@
+.git
+.github
+.gradle
+build
+out
+.idea
+
+.env
+.env.*
+!.env.example
+
+*.iml
+*.log
+.DS_Store
+

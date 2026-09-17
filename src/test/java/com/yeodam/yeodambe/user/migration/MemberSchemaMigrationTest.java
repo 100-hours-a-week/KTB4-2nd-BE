@@ -1,6 +1,6 @@
-// 회원 스키마의 초기 데이터와 제약조건을 검증합니다.
-package com.yeodam.yeodambe;
+package com.yeodam.yeodambe.user.migration;
 
+import com.yeodam.yeodambe.TestcontainersConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;

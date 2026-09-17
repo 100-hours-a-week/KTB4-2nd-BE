@@ -124,6 +124,22 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(OnboardingTokenInvalidOrExpiredException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    ApiResponse<Void> handleOnboardingTokenInvalidOrExpired(
+            OnboardingTokenInvalidOrExpiredException e
+    ) {
+        return new ApiResponse<>("ONBOARDING_TOKEN_INVALID_OR_EXPIRED", null);
+    }
+
+    @ExceptionHandler(OnboardingTokenRequiredException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    ApiResponse<Void> handleOnboardingTokenRequired(
+            OnboardingTokenRequiredException e
+    ) {
+        return new ApiResponse<>("ONBOARDING_TOKEN_REQUIRED", null);
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleUnexpectedException(Exception e) {

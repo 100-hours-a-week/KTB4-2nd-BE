@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -60,5 +61,32 @@ class CsrfFilterIntegrationTest {
                         .header("X-CSRF-TOKEN", "wrong-token"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+    }
+
+    @Test
+    void profileRegistrationWithoutCsrfTokenIsRejected() throws Exception {
+        mockMvc.perform(post("/users/me/profile")
+                        .cookie(new Cookie("profileToken", "unused-profile-token"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"여행자\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+    }
+
+    @Test
+    void profileRegistrationWithValidCsrfReachesTokenValidation() throws Exception {
+        csrfTokenStore.save("profile-browser", "profile-csrf-token");
+
+        mockMvc.perform(post("/users/me/profile")
+                        .cookie(
+                                new Cookie("CSRF_CONTEXT", "profile-browser"),
+                                new Cookie("profileToken", "missing-profile-token")
+                        )
+                        .header("X-CSRF-TOKEN", "profile-csrf-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"여행자\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message")
+                        .value("ONBOARDING_TOKEN_INVALID_OR_EXPIRED"));
     }
 }

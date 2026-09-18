@@ -8,6 +8,9 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import com.yeodam.yeodambe.user.security.jwt.CookieAccessTokenResolver;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.config.Customizer;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfig {
@@ -16,7 +19,8 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             CsrfAccessDeniedHandler csrfAccessDeniedHandler,
-            RedisCsrfTokenRepository redisCsrfTokenRepository
+            RedisCsrfTokenRepository redisCsrfTokenRepository,
+            CookieAccessTokenResolver cookieAccessTokenResolver
     ) throws Exception {
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health").permitAll()
@@ -38,6 +42,15 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf
                 .csrfTokenRepository(redisCsrfTokenRepository)
                 .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+        );
+
+        http.sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+        );
+
+        http.oauth2ResourceServer(oauth2 -> oauth2
+                .bearerTokenResolver(cookieAccessTokenResolver)
+                .jwt(Customizer.withDefaults())
         );
 
         return http.build();

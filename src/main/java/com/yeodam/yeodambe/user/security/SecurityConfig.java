@@ -27,6 +27,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/auth/csrf").permitAll()
                 .requestMatchers(HttpMethod.POST, "/auth/token/exchange").permitAll()
                 .requestMatchers(HttpMethod.POST, "/users/me/profile").permitAll()
+                .requestMatchers(HttpMethod.POST, "/auth/token/refresh").permitAll()
                 .requestMatchers(
                         HttpMethod.GET,
                         "/auth/kakao/authorize",

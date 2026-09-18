@@ -30,6 +30,7 @@ class CookieAccessTokenResolverTest {
                 "/actuator/health",
                 "/auth/csrf",
                 "/auth/token/exchange",
+                "/auth/token/refresh",
                 "/auth/kakao/authorize",
                 "/auth/kakao/callback",
                 "/users/me/profile"

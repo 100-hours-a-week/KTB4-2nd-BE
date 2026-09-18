@@ -16,7 +16,8 @@ public class CookieAccessTokenResolver implements BearerTokenResolver {
             "/auth/token/exchange",
             "/auth/kakao/authorize",
             "/auth/kakao/callback",
-            "/users/me/profile"
+            "/users/me/profile",
+            "/auth/token/refresh"
     );
 
     @Override

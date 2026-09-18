@@ -74,6 +74,18 @@ class CsrfFilterIntegrationTest {
     }
 
     @Test
+    void tokenRefreshWithoutCsrfTokenIsRejected() throws Exception {
+        mockMvc.perform(post("/auth/token/refresh")
+                        .servletPath("/auth/token/refresh")
+                        .cookie(
+                                new Cookie("accessToken", "expired-access-token"),
+                                new Cookie("refreshToken", "unused-refresh-token")
+                        ))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+    }
+
+    @Test
     void profileRegistrationWithValidCsrfReachesTokenValidation() throws Exception {
         csrfTokenStore.save("profile-browser", "profile-csrf-token");
 

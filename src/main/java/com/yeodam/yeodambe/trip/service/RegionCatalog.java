@@ -53,6 +53,13 @@ public class RegionCatalog {
         return region;
     }
 
+    public Region findByName(String name) {
+        return regions.values().stream()
+                .filter(region -> region.name().equals(name))
+                .findFirst()
+                .orElse(null);
+    }
+
     public record Region(
             String code,
             String name,

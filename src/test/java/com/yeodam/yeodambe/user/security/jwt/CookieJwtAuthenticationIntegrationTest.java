@@ -69,10 +69,22 @@ class CookieJwtAuthenticationIntegrationTest {
     @Test
     void missingOrInvalidAccessCookieCannotEnterProtectedRequest() throws Exception {
         mockMvc.perform(get("/test/auth-probe"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().json("""
+                        {
+                          "message": "UNAUTHORIZED",
+                          "data": null
+                        }
+                        """));
 
         mockMvc.perform(get("/test/auth-probe")
                         .cookie(new Cookie("accessToken", "invalid-jwt")))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().json("""
+                        {
+                          "message": "UNAUTHORIZED",
+                          "data": null
+                        }
+                        """));
     }
 }

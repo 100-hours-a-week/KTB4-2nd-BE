@@ -11,6 +11,8 @@ import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import com.yeodam.yeodambe.user.security.jwt.CookieAccessTokenResolver;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.config.Customizer;
+import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
+
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfig {
@@ -20,7 +22,8 @@ public class SecurityConfig {
             HttpSecurity http,
             CsrfAccessDeniedHandler csrfAccessDeniedHandler,
             RedisCsrfTokenRepository redisCsrfTokenRepository,
-            CookieAccessTokenResolver cookieAccessTokenResolver
+            CookieAccessTokenResolver cookieAccessTokenResolver,
+            ApiAuthenticationEntryPoint apiAuthenticationEntryPoint
     ) throws Exception {
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health").permitAll()
@@ -37,6 +40,7 @@ public class SecurityConfig {
         );
 
         http.exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(apiAuthenticationEntryPoint)
                 .accessDeniedHandler(csrfAccessDeniedHandler)
         );
 
@@ -51,6 +55,7 @@ public class SecurityConfig {
 
         http.oauth2ResourceServer(oauth2 -> oauth2
                 .bearerTokenResolver(cookieAccessTokenResolver)
+                .authenticationEntryPoint(apiAuthenticationEntryPoint)
                 .jwt(Customizer.withDefaults())
         );
 

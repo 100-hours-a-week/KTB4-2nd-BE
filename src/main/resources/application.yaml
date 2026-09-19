@@ -51,6 +51,9 @@ auth:
   jwt:
     secret: ${JWT_SECRET:local-development-jwt-secret-key-32-bytes}
     issuer: ${JWT_ISSUER:http://localhost:8080}
+app:
+  cors:
+    allowed-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
 ---
 spring:
   config:
@@ -77,6 +80,9 @@ auth:
   jwt:
     secret: ${JWT_SECRET}
     issuer: ${JWT_ISSUER}
+app:
+  cors:
+    allowed-origin: ${FRONTEND_ORIGIN}
 ---
 spring:
   config:
@@ -95,3 +101,6 @@ auth:
   jwt:
     secret: test-jwt-secret-key-must-be-at-least-32-bytes
     issuer: https://api.yeodam.test
+app:
+  cors:
+    allowed-origin: https://app.yeodam.test

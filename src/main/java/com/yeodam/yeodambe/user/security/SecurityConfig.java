@@ -12,7 +12,11 @@ import com.yeodam.yeodambe.user.security.jwt.CookieAccessTokenResolver;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.config.Customizer;
 import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.List;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfig {
@@ -25,6 +29,7 @@ public class SecurityConfig {
             CookieAccessTokenResolver cookieAccessTokenResolver,
             ApiAuthenticationEntryPoint apiAuthenticationEntryPoint
     ) throws Exception {
+        http.cors(Customizer.withDefaults());
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.GET, "/auth/csrf").permitAll()
@@ -60,5 +65,34 @@ public class SecurityConfig {
         );
 
         return http.build();
+    }
+    @Bean
+    UrlBasedCorsConfigurationSource corsConfigurationSource(
+            @Value("${app.cors.allowed-origin}") String allowedOrigin
+    ) {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        configuration.setAllowedOrigins(List.of(allowedOrigin));
+        configuration.setAllowedMethods(List.of(
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "OPTIONS"
+        ));
+        configuration.setAllowedHeaders(List.of(
+                "Content-Type",
+                "X-CSRF-TOKEN"
+        ));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+
+        source.registerCorsConfiguration("/**", configuration);
+
+        return source;
     }
 }

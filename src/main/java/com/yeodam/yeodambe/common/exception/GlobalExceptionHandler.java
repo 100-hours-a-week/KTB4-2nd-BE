@@ -140,6 +140,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("ONBOARDING_TOKEN_REQUIRED", null);
     }
 
+    @ExceptionHandler(RefreshTokenInvalidOrExpiredException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    ApiResponse<Void> handleRefreshTokenInvalidOrExpired(
+            RefreshTokenInvalidOrExpiredException e
+    ) {
+        return new ApiResponse<>("REFRESH_TOKEN_INVALID_OR_EXPIRED", null);
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleUnexpectedException(Exception e) {

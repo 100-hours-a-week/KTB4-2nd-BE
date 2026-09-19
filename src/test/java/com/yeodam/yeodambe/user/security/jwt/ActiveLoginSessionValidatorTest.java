@@ -9,12 +9,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -80,6 +83,26 @@ class ActiveLoginSessionValidatorTest {
         given(userRepository.findById(42L)).willReturn(Optional.of(user));
 
         assertThat(validator.validate(jwt("42", "sid-1")).hasErrors()).isTrue();
+    }
+
+    @Test
+    void reportsAuthenticationStoreFailureWhenRedisIsUnavailable() {
+        RedisConnectionFailureException redisFailure =
+                new RedisConnectionFailureException("Redis unavailable");
+        given(loginSessionStore.findBySid("sid-1"))
+                .willThrow(redisFailure);
+
+        assertThatThrownBy(() -> validator.validate(jwt("42", "sid-1")))
+                .isInstanceOfSatisfying(
+                        OAuth2AuthenticationException.class,
+                        exception -> {
+                            assertThat(exception.getError().getErrorCode())
+                                    .isEqualTo("auth_store_unavailable");
+                            assertThat(exception).hasCause(redisFailure);
+                        }
+                );
+
+        verifyNoInteractions(userRepository);
     }
 
     private Jwt jwt(String subject, String sid) {

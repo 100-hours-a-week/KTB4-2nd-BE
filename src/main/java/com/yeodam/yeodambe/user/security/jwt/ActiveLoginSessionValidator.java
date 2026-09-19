@@ -8,6 +8,8 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 
 @Component
 @RequiredArgsConstructor
@@ -30,9 +32,24 @@ public class ActiveLoginSessionValidator implements OAuth2TokenValidator<Jwt> {
             return invalidToken();
         }
 
-        boolean sessionMatches = loginSessionStore.findBySid(sid)
-                .map(session -> userId.equals(session.userId()))
-                .orElse(false);
+        boolean sessionMatches;
+
+        try {
+            sessionMatches = loginSessionStore.findBySid(sid)
+                    .map(session -> userId.equals(session.userId()))
+                    .orElse(false);
+        } catch (RedisConnectionFailureException e) {
+            OAuth2Error error = new OAuth2Error(
+                    "auth_store_unavailable",
+                    "인증 저장소에 연결할 수 없습니다.",
+                    null
+            );
+
+            throw new OAuth2AuthenticationException(
+                    error,
+                    e
+            );
+        }
         if (!sessionMatches) {
             return invalidToken();
         }

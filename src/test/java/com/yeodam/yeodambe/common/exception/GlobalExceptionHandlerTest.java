@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
 import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
 import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
+import com.yeodam.yeodambe.user.exception.UserNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.RedisConnectionFailureException;
@@ -128,6 +129,18 @@ class GlobalExceptionHandlerTest {
                     """));
     }
 
+    @Test
+    void returnsNotFoundWhenActiveUserDoesNotExist() throws Exception {
+        mockMvc.perform(get("/test/user-not-found"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().json("""
+                    {
+                      "message": "USER_NOT_FOUND",
+                      "data": null
+                    }
+                    """));
+    }
+
     @RestController
     static class TestController {
 
@@ -169,6 +182,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/redis-unavailable")
         void redisUnavailable() {
             throw new RedisConnectionFailureException("Redis unavailable");
+        }
+
+        @GetMapping("/test/user-not-found")
+        void userNotFound() {
+            throw new UserNotFoundException();
         }
     }
 }

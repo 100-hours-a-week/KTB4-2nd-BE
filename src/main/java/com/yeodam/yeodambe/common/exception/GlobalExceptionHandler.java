@@ -148,6 +148,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("REFRESH_TOKEN_INVALID_OR_EXPIRED", null);
     }
 
+    @ExceptionHandler(UserNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleUserNotFound(
+            UserNotFoundException e
+    ) {
+        return new ApiResponse<>("USER_NOT_FOUND", null);
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleUnexpectedException(Exception e) {

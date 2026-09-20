@@ -88,6 +88,15 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(OAuthStateCreateFailedException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    ApiResponse<Void> handleOAuthStateCreateFailed(
+            OAuthStateCreateFailedException e
+    ) {
+        log.error("OAuth state 생성에 실패했습니다.", e);
+        return new ApiResponse<>("OAUTH_STATE_CREATE_FAILED", null);
+    }
+
     @ExceptionHandler(KakaoAuthenticationFailedException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     ApiResponse<Void> handleKakaoAuthenticationFailedException(
@@ -122,6 +131,47 @@ public class GlobalExceptionHandler {
                 "LOGIN_TICKET_INVALID_OR_EXPIRED",
                 null
         );
+    }
+
+    @ExceptionHandler(LoginTicketIssueFailedException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    ApiResponse<Void> handleLoginTicketIssueFailed(
+            LoginTicketIssueFailedException e
+    ) {
+        log.error("로그인 티켓 발급에 실패했습니다.", e);
+        return new ApiResponse<>("LOGIN_TICKET_ISSUE_FAILED", null);
+    }
+
+    @ExceptionHandler(OnboardingTokenInvalidOrExpiredException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    ApiResponse<Void> handleOnboardingTokenInvalidOrExpired(
+            OnboardingTokenInvalidOrExpiredException e
+    ) {
+        return new ApiResponse<>("ONBOARDING_TOKEN_INVALID_OR_EXPIRED", null);
+    }
+
+    @ExceptionHandler(OnboardingTokenRequiredException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    ApiResponse<Void> handleOnboardingTokenRequired(
+            OnboardingTokenRequiredException e
+    ) {
+        return new ApiResponse<>("ONBOARDING_TOKEN_REQUIRED", null);
+    }
+
+    @ExceptionHandler(RefreshTokenInvalidOrExpiredException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    ApiResponse<Void> handleRefreshTokenInvalidOrExpired(
+            RefreshTokenInvalidOrExpiredException e
+    ) {
+        return new ApiResponse<>("REFRESH_TOKEN_INVALID_OR_EXPIRED", null);
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleUserNotFound(
+            UserNotFoundException e
+    ) {
+        return new ApiResponse<>("USER_NOT_FOUND", null);
     }
 
     @ExceptionHandler(Exception.class)

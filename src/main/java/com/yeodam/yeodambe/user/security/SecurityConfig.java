@@ -8,6 +8,15 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import com.yeodam.yeodambe.user.security.jwt.CookieAccessTokenResolver;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.config.Customizer;
+import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfig {
@@ -16,12 +25,17 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             CsrfAccessDeniedHandler csrfAccessDeniedHandler,
-            RedisCsrfTokenRepository redisCsrfTokenRepository
+            RedisCsrfTokenRepository redisCsrfTokenRepository,
+            CookieAccessTokenResolver cookieAccessTokenResolver,
+            ApiAuthenticationEntryPoint apiAuthenticationEntryPoint
     ) throws Exception {
+        http.cors(Customizer.withDefaults());
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.GET, "/auth/csrf").permitAll()
                 .requestMatchers(HttpMethod.POST, "/auth/token/exchange").permitAll()
+                .requestMatchers(HttpMethod.POST, "/users/me/profile").permitAll()
+                .requestMatchers(HttpMethod.POST, "/auth/token/refresh").permitAll()
                 .requestMatchers(
                         HttpMethod.GET,
                         "/auth/kakao/authorize",
@@ -31,6 +45,7 @@ public class SecurityConfig {
         );
 
         http.exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(apiAuthenticationEntryPoint)
                 .accessDeniedHandler(csrfAccessDeniedHandler)
         );
 
@@ -39,6 +54,45 @@ public class SecurityConfig {
                 .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
         );
 
+        http.sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+        );
+
+        http.oauth2ResourceServer(oauth2 -> oauth2
+                .bearerTokenResolver(cookieAccessTokenResolver)
+                .authenticationEntryPoint(apiAuthenticationEntryPoint)
+                .jwt(Customizer.withDefaults())
+        );
+
         return http.build();
+    }
+    @Bean
+    UrlBasedCorsConfigurationSource corsConfigurationSource(
+            @Value("${app.cors.allowed-origin}") String allowedOrigin
+    ) {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        configuration.setAllowedOrigins(List.of(allowedOrigin));
+        configuration.setAllowedMethods(List.of(
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "OPTIONS"
+        ));
+        configuration.setAllowedHeaders(List.of(
+                "Content-Type",
+                "X-CSRF-TOKEN"
+        ));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+
+        source.registerCorsConfiguration("/**", configuration);
+
+        return source;
     }
 }

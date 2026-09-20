@@ -1,8 +1,10 @@
 package com.yeodam.yeodambe.user.security.jwt;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -12,6 +14,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -20,6 +23,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 
 @SpringBootTest(classes = {
         JwtConfig.class,
@@ -39,6 +44,15 @@ class JwtSigningIntegrationTest {
 
     @Autowired
     private Clock clock;
+
+    @MockitoBean
+    private ActiveLoginSessionValidator activeLoginSessionValidator;
+
+    @BeforeEach
+    void allowSessionValidation() {
+        given(activeLoginSessionValidator.validate(any(Jwt.class)))
+                .willReturn(OAuth2TokenValidatorResult.success());
+    }
 
     @Test
     void issuedTokenCanBeVerifiedAndDecoded() {

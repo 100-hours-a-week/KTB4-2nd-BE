@@ -43,7 +43,8 @@ public class JwtConfig {
     @Bean
     JwtDecoder jwtDecoder(
             SecretKey secretKey,
-            JwtProperties properties
+            JwtProperties properties,
+            ActiveLoginSessionValidator activeLoginSessionValidator
     ) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder
                 .withSecretKey(secretKey)
@@ -66,7 +67,8 @@ public class JwtConfig {
         decoder.setJwtValidator(
                 new DelegatingOAuth2TokenValidator<>(
                         issuerValidator,
-                        audienceValidator
+                        audienceValidator,
+                        activeLoginSessionValidator
                 )
         );
 

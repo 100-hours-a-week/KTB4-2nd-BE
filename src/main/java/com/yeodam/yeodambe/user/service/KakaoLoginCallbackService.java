@@ -4,12 +4,14 @@ import com.yeodam.yeodambe.user.client.KakaoOAuthClient;
 import com.yeodam.yeodambe.user.client.KakaoTokenResponse;
 import com.yeodam.yeodambe.user.client.KakaoUserResponse;
 import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
+import com.yeodam.yeodambe.user.exception.LoginTicketIssueFailedException;
 import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import com.yeodam.yeodambe.user.security.oauth.LoginTicketGenerator;
 import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;
 import org.springframework.stereotype.Service;
+import org.springframework.data.redis.RedisConnectionFailureException;
 
 @Service
 public class KakaoLoginCallbackService {
@@ -72,14 +74,20 @@ public class KakaoLoginCallbackService {
                 user.kakaoAccount().email()
         );
 
-        String loginTicket = loginTicketGenerator.generate();
+        try {
+            String loginTicket = loginTicketGenerator.generate();
 
-        loginTicketStore.save(
-                loginTicket,
-                identity,
-                browserContext
-        );
+            loginTicketStore.save(
+                    loginTicket,
+                    identity,
+                    browserContext
+            );
 
-        return loginTicket;
+            return loginTicket;
+        } catch (RedisConnectionFailureException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new LoginTicketIssueFailedException(e);
+        }
     }
 }

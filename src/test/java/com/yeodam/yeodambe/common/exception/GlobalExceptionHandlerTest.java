@@ -5,8 +5,11 @@ import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
 import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
 import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
 import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
+import com.yeodam.yeodambe.user.exception.LoginTicketIssueFailedException;
 import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
+import com.yeodam.yeodambe.user.exception.OAuthStateCreateFailedException;
 import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
+import com.yeodam.yeodambe.user.exception.UserNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.RedisConnectionFailureException;
@@ -128,6 +131,42 @@ class GlobalExceptionHandlerTest {
                     """));
     }
 
+    @Test
+    void returnsNotFoundWhenActiveUserDoesNotExist() throws Exception {
+        mockMvc.perform(get("/test/user-not-found"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().json("""
+                    {
+                      "message": "USER_NOT_FOUND",
+                      "data": null
+                    }
+                        """));
+    }
+
+    @Test
+    void returnsInternalServerErrorWhenOAuthStateCreationFails() throws Exception {
+        mockMvc.perform(get("/test/oauth-state-create-failed"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().json("""
+                    {
+                      "message": "OAUTH_STATE_CREATE_FAILED",
+                      "data": null
+                    }
+                    """));
+    }
+
+    @Test
+    void returnsInternalServerErrorWhenLoginTicketIssueFails() throws Exception {
+        mockMvc.perform(get("/test/login-ticket-issue-failed"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().json("""
+                    {
+                      "message": "LOGIN_TICKET_ISSUE_FAILED",
+                      "data": null
+                    }
+                    """));
+    }
+
     @RestController
     static class TestController {
 
@@ -169,6 +208,25 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/redis-unavailable")
         void redisUnavailable() {
             throw new RedisConnectionFailureException("Redis unavailable");
+        }
+
+        @GetMapping("/test/user-not-found")
+        void userNotFound() {
+            throw new UserNotFoundException();
+        }
+
+        @GetMapping("/test/oauth-state-create-failed")
+        void oauthStateCreateFailed() {
+            throw new OAuthStateCreateFailedException(
+                    new IllegalStateException("state generation failed")
+            );
+        }
+
+        @GetMapping("/test/login-ticket-issue-failed")
+        void loginTicketIssueFailed() {
+            throw new LoginTicketIssueFailedException(
+                    new IllegalStateException("ticket issue failed")
+            );
         }
     }
 }

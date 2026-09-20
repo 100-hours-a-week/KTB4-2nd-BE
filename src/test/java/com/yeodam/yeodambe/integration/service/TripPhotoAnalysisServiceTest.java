@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.integration.service;
 
+import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusResponse;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -28,5 +29,44 @@ class TripPhotoAnalysisServiceTest {
 
         assertSame(response.path("result"),
                 TripPhotoAnalysisService.validateResponse(7L, "run", response));
+    }
+
+    @Test
+    void 처리중_상태_응답을_검증해_변환한다() {
+        var response = json.readTree("""
+                {"trip_id":7,"status":"PROCESSING","progress":{"done":2,"total":5},
+                 "current_step":"EMBEDDING","result":null,"error":null}
+                """);
+
+        TripPhotoAnalysisStatusResponse status =
+                TripPhotoAnalysisService.validateStatusResponse(7L, response);
+
+        assertEquals(TripPhotoAnalysisStatusResponse.Status.PROCESSING, status.status());
+        assertEquals(2, status.progress().done());
+        assertEquals(5, status.progress().total());
+        assertEquals("EMBEDDING", status.currentStep());
+    }
+
+    @Test
+    void 진행_수치나_상태별_필드_조합이_잘못되면_거부한다() {
+        var invalidTripId = json.readTree("""
+                {"trip_id":"7","status":"PROCESSING","progress":{"done":2,"total":5},
+                 "current_step":"EMBEDDING","result":null,"error":null}
+                """);
+        var invalidProgress = json.readTree("""
+                {"trip_id":7,"status":"PROCESSING","progress":{"done":6,"total":5},
+                 "current_step":"EMBEDDING","result":null,"error":null}
+                """);
+        var invalidCompleted = json.readTree("""
+                {"trip_id":7,"status":"COMPLETED","progress":{"done":5,"total":5},
+                 "current_step":null,"result":null,"error":null}
+                """);
+
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateStatusResponse(7L, invalidTripId));
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateStatusResponse(7L, invalidProgress));
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateStatusResponse(7L, invalidCompleted));
     }
 }

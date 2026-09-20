@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -23,6 +24,10 @@ public class Trip {
 
     @Column(name = "user_id", nullable = false)
     private Long userId;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false, insertable = false, updatable = false)
+    private User user;
 
     @Column(name = "trip_name", nullable = false, length = 10)
     private String tripName;

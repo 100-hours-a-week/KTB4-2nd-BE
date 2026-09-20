@@ -22,7 +22,7 @@ public class TripRegion {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "trip_id")
+    @JoinColumn(name = "trip_id", nullable = false)
     private Trip trip;
 
     @Column(name = "region_code", nullable = false, length = 5)

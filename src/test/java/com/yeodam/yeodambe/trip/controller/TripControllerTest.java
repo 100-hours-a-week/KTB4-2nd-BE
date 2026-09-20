@@ -3,8 +3,10 @@ package com.yeodam.yeodambe.trip.controller;
 import com.yeodam.yeodambe.trip.controller.TripController;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripService;
+import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -17,7 +19,9 @@ import static org.mockito.Mockito.*;
 
 class TripControllerTest {
     private final TripService tripService = mock(TripService.class);
-    private final TripController controller = new TripController(tripService);
+    private final TripProcessingStatusService processingStatusService =
+            mock(TripProcessingStatusService.class);
+    private final TripController controller = new TripController(tripService, processingStatusService);
     private final TripCreateRequest request = new TripCreateRequest(
             "여행", LocalDate.now(), LocalDate.now(), List.of("50110"));
 
@@ -42,5 +46,31 @@ class TripControllerTest {
         assertThat(response.getBody().message()).isEqualTo("TRIP_CREATED");
         assertThat(response.getBody().data().tripId()).isEqualTo(7L);
         assertThat(response.getBody().data().status()).isEqualTo(ProcessingStatus.PROCESSING);
+    }
+
+    @Test
+    void 인증_정보가_없으면_처리_상태를_조회하지_않는다() {
+        var response = controller.getProcessingStatus(7L, null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getBody().message()).isEqualTo("UNAUTHORIZED");
+        verifyNoInteractions(processingStatusService);
+    }
+
+    @Test
+    void 소유한_여행의_처리_상태를_조회한다() {
+        var status = new TripProcessingStatusResponse(
+                7L, ProcessingStatus.PROCESSING, null, null, null, null);
+        when(processingStatusService.findStatus(7L, 1L)).thenReturn(status);
+
+        var response = controller.getProcessingStatus(7L, jwt());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");
+        assertThat(response.getBody().data()).isSameAs(status);
+    }
+
+    private Jwt jwt() {
+        return Jwt.withTokenValue("token").header("alg", "HS256").subject("1").build();
     }
 }

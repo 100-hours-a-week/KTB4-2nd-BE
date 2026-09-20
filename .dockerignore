@@ -1,17 +1,15 @@
 .git
 .github
 .gradle
-.idea
-.impeccable
 build
 out
+.idea
 
-*.iml
-.DS_Store
 .env
 .env.*
 !.env.example
 
-PROJECT-START-CONTEXT.md
-PROJECT-LEARNING-ROADMAP.md
-compose.yaml
+*.iml
+*.log
+.DS_Store
+

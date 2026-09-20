@@ -6,10 +6,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
+import java.util.Optional;
+
 public interface TripRepository extends JpaRepository<Trip, Long> {
     boolean existsByUserIdAndTripNameAndDeletedAtIsNull(Long userId, String tripName);
 
     boolean existsByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
+
+    Optional<Trip> findByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
 
     @Modifying
     @Query("""

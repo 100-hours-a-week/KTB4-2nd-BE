@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.service;
 
+import com.yeodam.yeodambe.user.exception.OAuthStateCreateFailedException;
 import com.yeodam.yeodambe.user.security.oauth.OAuthStateGenerator;
 import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,6 +10,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -49,5 +51,16 @@ class KakaoLoginStartServiceTest {
 
         then(stateStore).should()
                 .save("fixed-state", "browser-1");
+    }
+
+    @Test
+    void convertsStateGenerationFailureToContractException() {
+        given(stateGenerator.generate())
+                .willThrow(new IllegalStateException("state generation failed"));
+
+        assertThatThrownBy(() -> service.start("browser-1"))
+                .isInstanceOf(OAuthStateCreateFailedException.class);
+
+        then(stateStore).shouldHaveNoInteractions();
     }
 }

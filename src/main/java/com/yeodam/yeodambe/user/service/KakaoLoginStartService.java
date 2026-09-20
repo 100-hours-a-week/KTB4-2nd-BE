@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.service;
 
+import com.yeodam.yeodambe.user.exception.OAuthStateCreateFailedException;
 import com.yeodam.yeodambe.user.security.oauth.OAuthStateGenerator;
 import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,7 +31,13 @@ public class KakaoLoginStartService {
     }
 
     public String start(String browserContext) {
-        String state = stateGenerator.generate();
+        String state;
+
+        try {
+            state = stateGenerator.generate();
+        } catch (RuntimeException e) {
+            throw new OAuthStateCreateFailedException(e);
+        }
 
         stateStore.save(state, browserContext);
 

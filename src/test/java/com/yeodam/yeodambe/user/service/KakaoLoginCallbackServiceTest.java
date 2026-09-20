@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.service;
 
 import com.yeodam.yeodambe.user.client.KakaoOAuthClient;
+import com.yeodam.yeodambe.user.exception.LoginTicketIssueFailedException;
 import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import com.yeodam.yeodambe.user.client.KakaoTokenResponse;
 import com.yeodam.yeodambe.user.client.KakaoUserResponse;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
@@ -120,5 +122,68 @@ class KakaoLoginCallbackServiceTest {
                         ),
                         "browser-1"
                 );
+    }
+
+    @Test
+    void convertsLoginTicketGenerationFailureToContractException() {
+        givenValidKakaoAuthentication();
+        given(loginTicketGenerator.generate())
+                .willThrow(new IllegalStateException("ticket generation failed"));
+
+        assertThatThrownBy(() -> service.issueLoginTicket(
+                "authorization-code",
+                "valid-state",
+                "browser-1"
+        )).isInstanceOf(LoginTicketIssueFailedException.class);
+
+        verifyNoInteractions(loginTicketStore);
+    }
+
+    @Test
+    void keepsRedisFailureForAuthStoreUnavailableResponse() {
+        givenValidKakaoAuthentication();
+        given(loginTicketGenerator.generate()).willReturn("login-ticket");
+
+        RedisConnectionFailureException redisFailure =
+                new RedisConnectionFailureException("Redis unavailable");
+
+        org.mockito.BDDMockito.willThrow(redisFailure)
+                .given(loginTicketStore)
+                .save(
+                        "login-ticket",
+                        new KakaoUserIdentity(
+                                "123456789",
+                                "member@example.com"
+                        ),
+                        "browser-1"
+                );
+
+        assertThatThrownBy(() -> service.issueLoginTicket(
+                "authorization-code",
+                "valid-state",
+                "browser-1"
+        )).isSameAs(redisFailure);
+    }
+
+    private void givenValidKakaoAuthentication() {
+        given(stateStore.consume("valid-state", "browser-1"))
+                .willReturn(true);
+
+        given(kakaoOAuthClient.exchangeToken("authorization-code"))
+                .willReturn(new KakaoTokenResponse(
+                        "kakao-access-token",
+                        "bearer",
+                        3600
+                ));
+
+        given(kakaoOAuthClient.getUser("kakao-access-token"))
+                .willReturn(new KakaoUserResponse(
+                        123456789L,
+                        new KakaoUserResponse.KakaoAccount(
+                                true,
+                                true,
+                                "member@example.com"
+                        )
+                ));
     }
 }

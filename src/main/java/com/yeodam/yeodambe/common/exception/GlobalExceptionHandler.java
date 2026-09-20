@@ -9,17 +9,45 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.ResponseEntity;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ApiResponse<Void>> handleUnsupportedContentType(
+            HttpMediaTypeNotSupportedException e, HttpServletRequest request) {
+        if (request.getRequestURI().matches("^/trips/[^/]+/initial-attachments$")) {
+            return ResponseEntity.badRequest().body(new ApiResponse<>("INVALID_ATTACHMENT_UPLOAD", null));
+        }
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(new ApiResponse<>("UNSUPPORTED_MEDIA_TYPE", null));
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidMultipart(MultipartException e) {
+        return new ApiResponse<>("INVALID_ATTACHMENT_UPLOAD", null);
+    }
 
     @ExceptionHandler(RedisConnectionFailureException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handleRedisConnectionFailure(RedisConnectionFailureException e) {
         log.warn("인증 저장소에 연결할 수 없습니다.", e);
         return new ApiResponse<>("AUTH_STORE_UNAVAILABLE", null);
+    }
+
+    @ExceptionHandler(AuthenticationCredentialsNotFoundException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    ApiResponse<Void> handleAuthenticationMissing(AuthenticationCredentialsNotFoundException e) {
+        return new ApiResponse<>("UNAUTHORIZED", null);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -67,6 +95,12 @@ public class GlobalExceptionHandler {
             InvalidNicknameException e
     ) {
         return new ApiResponse<>("INVALID_NICKNAME", null);
+    }
+
+    @ExceptionHandler(InvalidEmailException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidEmailException(InvalidEmailException e) {
+        return new ApiResponse<>("INVALID_EMAIL_FORMAT", null);
     }
 
     @ExceptionHandler(DuplicateOAuthAccountException.class)
@@ -174,10 +208,59 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("USER_NOT_FOUND", null);
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    ApiResponse<Void> handleIllegalArgumentException(IllegalArgumentException e) {
+        log.error("잘못된 내부 인자가 전달됐습니다.", e);
+        return new ApiResponse<>("INTERNAL_SERVER_ERROR", null);
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    ApiResponse<Void> handleIllegalStateException(IllegalStateException e) {
+        log.error("잘못된 내부 상태가 발생했습니다.", e);
+        return new ApiResponse<>("INTERNAL_SERVER_ERROR", null);
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleUnexpectedException(Exception e) {
         log.error("예상하지 못한 서버 오류가 발생했습니다.", e);
         return new ApiResponse<>("INTERNAL_SERVER_ERROR", null);
+    }
+
+    @ExceptionHandler(TripNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleTripNotFound(TripNotFoundException e) {
+        return new ApiResponse<>("TRIP_NOT_FOUND", null);
+    }
+
+    @ExceptionHandler(TripInitialAttachmentUploadNotAllowedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleInitialAttachmentUploadNotAllowed(
+            TripInitialAttachmentUploadNotAllowedException e
+    ) {
+        return new ApiResponse<>("TRIP_INITIAL_ATTACHMENT_UPLOAD_NOT_ALLOWED", null);
+    }
+
+    @ExceptionHandler(InvalidAttachmentUploadException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidAttachmentUpload(InvalidAttachmentUploadException e) {
+        return new ApiResponse<>("INVALID_ATTACHMENT_UPLOAD", null);
+    }
+
+    @ExceptionHandler({
+            AttachmentUploadLimitExceededException.class,
+            MaxUploadSizeExceededException.class
+    })
+    @ResponseStatus(HttpStatus.CONTENT_TOO_LARGE)
+    ApiResponse<Void> handleAttachmentUploadLimitExceeded(Exception e) {
+        return new ApiResponse<>("ATTACHMENT_UPLOAD_LIMIT_EXCEEDED", null);
+    }
+
+    @ExceptionHandler(UnsupportedAttachmentFormatException.class)
+    @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+    ApiResponse<Void> handleUnsupportedAttachmentFormat(UnsupportedAttachmentFormatException e) {
+        return new ApiResponse<>("UNSUPPORTED_ATTACHMENT_FORMAT", null);
     }
 }

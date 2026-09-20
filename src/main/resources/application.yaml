@@ -1,10 +1,19 @@
 spring:
   application:
     name: yeodam-be
+  servlet:
+    multipart:
+      max-file-size: 15MB
+      max-request-size: 3GB
+      file-size-threshold: 0B
   profiles:
     default: local
   config:
     import: optional:file:.env[.properties]
+
+server:
+  tomcat:
+    max-part-count: 200
 
 place:
   provider:
@@ -24,6 +33,24 @@ auth:
   jwt:
     audience: yeodam-api
     access-token-ttl: 30m
+
+aws:
+  region: ${AWS_REGION:ap-northeast-2}
+
+attachment:
+  s3:
+    bucket: ${ATTACHMENT_S3_BUCKET}
+
+ai:
+  server:
+    base-url: ${AI_SERVER_BASE_URL}
+    api-key: ${AI_SERVER_API_KEY}
+    instance-id: ${AI_EC2_INSTANCE_ID}
+    connection-timeout: ${AI_CONNECTION_TIMEOUT:10s}
+    analysis_timeout: ${AI_ANALYSIS_TIMEOUT:30m}
+    health-connection-timeout: ${AI_HEALTH_CONNECTION_TIMEOUT:5s}
+    health_read_timeout: ${AI_HEALTH_READ_TIMEOUT:5s}
+
 ---
 spring:
   config:
@@ -91,6 +118,15 @@ spring:
   config:
     activate:
       on-profile: test
+
+ai:
+  server:
+    base-url: http://localhost:9999
+    api-key: test
+    instance-id: i-test
+attachment:
+  s3:
+    bucket: test-bucket
 
 oauth:
   frontend-callback-uri: https://app.yeodam.test/auth/callback

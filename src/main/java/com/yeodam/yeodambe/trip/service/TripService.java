@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 
 import java.util.HashMap;
 import java.time.LocalDate;
@@ -32,6 +33,7 @@ public class TripService {
     private final TripRegionRepository tripRegionRepository;
     private final RegionCatalog regionCatalog;
     private final TripAttachmentRepository tripAttachmentRepository;
+    private final TripAttachmentStorageClient tripAttachmentStorageClient;
 
     @Transactional
     public TripCreateResponse createTrip(Long userId, TripCreateRequest request) {
@@ -122,7 +124,7 @@ public class TripService {
                 trips.add(new TripMapResponse.TripSummary(
                         trip.getId(),
                         trip.getTripName(),
-                        null,
+                        createThumbnailUrl(trip),
                         attachmentCounts.getOrDefault(trip.getId(), 0L)
                 ));
             }
@@ -138,6 +140,16 @@ public class TripService {
         }
 
         return new TripMapResponse(markers);
+    }
+
+    private String createThumbnailUrl(Trip trip) {
+        String thumbnailKey = trip.getThumbnailKey();
+
+        if (thumbnailKey == null || thumbnailKey.isBlank()) {
+            return null;
+        }
+
+        return tripAttachmentStorageClient.createReadUrl(thumbnailKey);
     }
 
     private void validateTrip(TripCreateRequest request) {

@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
@@ -30,6 +31,7 @@ class TripServiceTest {
     private TripRepository tripRepository;
     private TripRegionRepository tripRegionRepository;
     private TripAttachmentRepository tripAttachmentRepository;
+    private TripAttachmentStorageClient tripAttachmentStorageClient;
     private RegionCatalog regionCatalog;
     private TripService tripService;
 
@@ -38,12 +40,14 @@ class TripServiceTest {
         tripRepository = mock(TripRepository.class);
         tripRegionRepository = mock(TripRegionRepository.class);
         tripAttachmentRepository = mock(TripAttachmentRepository.class);
+        tripAttachmentStorageClient = mock(TripAttachmentStorageClient.class);
         regionCatalog = mock(RegionCatalog.class);
         tripService = new TripService(
                 tripRepository,
                 tripRegionRepository,
                 regionCatalog,
-                tripAttachmentRepository
+                tripAttachmentRepository,
+                tripAttachmentStorageClient
         );
     }
 
@@ -149,6 +153,36 @@ class TripServiceTest {
 
         assertThat(response.markers().getFirst().trips().getFirst().attachmentCount())
                 .isEqualTo(3L);
+    }
+
+    @Test
+    void 썸네일_키가_있으면_조회_URL을_반환한다() {
+        Trip trip = mapTrip(1L, "제주 여행");
+        TripRegion region = mapRegion(trip);
+        when(trip.getThumbnailKey()).thenReturn("trip-uploads/first/preview.webp");
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of(region));
+        when(tripAttachmentStorageClient.createReadUrl("trip-uploads/first/preview.webp"))
+                .thenReturn("https://example.com/presigned-thumbnail");
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers().getFirst().trips().getFirst().thumbnailUrl())
+                .isEqualTo("https://example.com/presigned-thumbnail");
+    }
+
+    @Test
+    void 썸네일_키가_없으면_조회_URL을_만들지_않는다() {
+        Trip trip = mapTrip(1L, "제주 여행");
+        TripRegion region = mapRegion(trip);
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of(region));
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers().getFirst().trips().getFirst().thumbnailUrl())
+                .isNull();
+        verifyNoInteractions(tripAttachmentStorageClient);
     }
 
     @Test

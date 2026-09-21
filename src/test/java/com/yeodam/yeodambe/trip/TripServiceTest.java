@@ -151,6 +151,49 @@ class TripServiceTest {
                 .isEqualTo(3L);
     }
 
+    @Test
+    void 같은_여행이_여러_지역에_연결되면_각_마커에_포함한다() {
+        Trip trip = mapTrip(1L, "전국 여행");
+        TripRegion jeju = mapRegion(
+                trip,
+                "50110",
+                "제주특별자치도 제주시",
+                "33.4996",
+                "126.5312"
+        );
+        TripRegion busan = mapRegion(
+                trip,
+                "26110",
+                "부산광역시 중구",
+                "35.1060",
+                "129.0323"
+        );
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of(busan, jeju));
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers()).hasSize(2);
+        assertThat(response.markers())
+                .extracting(marker -> marker.regionCode())
+                .containsExactly("26110", "50110");
+        assertThat(response.markers())
+                .allSatisfy(marker -> assertThat(marker.trips())
+                        .extracting(summary -> summary.tripId())
+                        .containsExactly(1L));
+    }
+
+    @Test
+    void 표시할_여행이_없으면_첨부_개수를_조회하지_않는다() {
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of());
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers()).isEmpty();
+        verifyNoInteractions(tripAttachmentRepository);
+    }
+
     private void assertInvalid(LocalDate start, LocalDate end, List<String> codes) {
         assertThrows(InvalidTripRequestException.class,
                 () -> tripService.createTrip(1L, request(start, end, codes)));
@@ -181,12 +224,28 @@ class TripServiceTest {
     }
 
     private TripRegion mapRegion(Trip trip) {
+        return mapRegion(
+                trip,
+                "50110",
+                "제주특별자치도 제주시",
+                "33.4996",
+                "126.5312"
+        );
+    }
+
+    private TripRegion mapRegion(
+            Trip trip,
+            String regionCode,
+            String regionName,
+            String latitude,
+            String longitude
+    ) {
         TripRegion region = mock(TripRegion.class);
         when(region.getTrip()).thenReturn(trip);
-        when(region.getRegionCode()).thenReturn("50110");
-        when(region.getRegionName()).thenReturn("제주특별자치도 제주시");
-        when(region.getLatitude()).thenReturn(new BigDecimal("33.4996"));
-        when(region.getLongitude()).thenReturn(new BigDecimal("126.5312"));
+        when(region.getRegionCode()).thenReturn(regionCode);
+        when(region.getRegionName()).thenReturn(regionName);
+        when(region.getLatitude()).thenReturn(new BigDecimal(latitude));
+        when(region.getLongitude()).thenReturn(new BigDecimal(longitude));
         return region;
     }
 }

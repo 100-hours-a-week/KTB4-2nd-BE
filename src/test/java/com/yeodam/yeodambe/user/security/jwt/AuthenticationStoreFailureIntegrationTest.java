@@ -11,7 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
-import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ActiveProfiles;
@@ -58,22 +58,22 @@ class AuthenticationStoreFailureIntegrationTest {
     }
 
     @Test
-    void redisFailureDuringJwtValidationReturnsServiceUnavailable()
+    void databaseFailureDuringJwtValidationReturnsServiceUnavailable()
             throws Exception {
         String unique = UUID.randomUUID().toString();
         User user = userRegistrationService.register(
-                "redis-failure-" + unique + "@yeodam.test",
+                "database-failure-" + unique + "@yeodam.test",
                 "저장소장애",
                 OAuthProvider.KAKAO,
-                "kakao-redis-failure-" + unique
+                "kakao-database-failure-" + unique
         );
         String accessToken = accessTokenIssuer.issue(
                 user.getUserId(),
-                "sid-redis-down"
+                "sid-database-down"
         );
-        given(loginSessionStore.findBySid("sid-redis-down"))
-                .willThrow(new RedisConnectionFailureException(
-                        "Redis unavailable"
+        given(loginSessionStore.findBySid("sid-database-down"))
+                .willThrow(new DataAccessResourceFailureException(
+                        "Authentication database unavailable"
                 ));
 
         mockMvc.perform(get("/test/auth-store-failure-probe")

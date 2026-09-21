@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.jwt.Jwt;
 
@@ -55,7 +55,7 @@ class ActiveLoginSessionValidatorTest {
     }
 
     @Test
-    void rejectsTokenWhenRedisSessionIsMissing() {
+    void rejectsTokenWhenDatabaseSessionIsMissing() {
         given(loginSessionStore.findBySid("sid-1"))
                 .willReturn(Optional.empty());
 
@@ -86,11 +86,13 @@ class ActiveLoginSessionValidatorTest {
     }
 
     @Test
-    void reportsAuthenticationStoreFailureWhenRedisIsUnavailable() {
-        RedisConnectionFailureException redisFailure =
-                new RedisConnectionFailureException("Redis unavailable");
+    void reportsAuthenticationStoreFailureWhenDatabaseIsUnavailable() {
+        DataAccessResourceFailureException databaseFailure =
+                new DataAccessResourceFailureException(
+                        "Authentication database unavailable"
+                );
         given(loginSessionStore.findBySid("sid-1"))
-                .willThrow(redisFailure);
+                .willThrow(databaseFailure);
 
         assertThatThrownBy(() -> validator.validate(jwt("42", "sid-1")))
                 .isInstanceOfSatisfying(
@@ -98,7 +100,7 @@ class ActiveLoginSessionValidatorTest {
                         exception -> {
                             assertThat(exception.getError().getErrorCode())
                                     .isEqualTo("auth_store_unavailable");
-                            assertThat(exception).hasCause(redisFailure);
+                            assertThat(exception).hasCause(databaseFailure);
                         }
                 );
 

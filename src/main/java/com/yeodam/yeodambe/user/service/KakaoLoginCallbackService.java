@@ -11,7 +11,7 @@ import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import com.yeodam.yeodambe.user.security.oauth.LoginTicketGenerator;
 import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;
 import org.springframework.stereotype.Service;
-import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.dao.DataAccessException;
 
 @Service
 public class KakaoLoginCallbackService {
@@ -84,7 +84,7 @@ public class KakaoLoginCallbackService {
             );
 
             return loginTicket;
-        } catch (RedisConnectionFailureException e) {
+        } catch (DataAccessException e) {
             throw e;
         } catch (RuntimeException e) {
             throw new LoginTicketIssueFailedException(e);

@@ -8,7 +8,7 @@ import org.springframework.validation.BindException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -44,9 +44,11 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("INVALID_ATTACHMENT_UPLOAD", null);
     }
 
-    @ExceptionHandler(RedisConnectionFailureException.class)
+    @ExceptionHandler(DataAccessResourceFailureException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
-    ApiResponse<Void> handleRedisConnectionFailure(RedisConnectionFailureException e) {
+    ApiResponse<Void> handleAuthenticationStoreUnavailable(
+            DataAccessResourceFailureException e
+    ) {
         log.warn("인증 저장소에 연결할 수 없습니다.", e);
         return new ApiResponse<>("AUTH_STORE_UNAVAILABLE", null);
     }

@@ -1,4 +1,4 @@
-package com.yeodam.yeodambe.trip;
+package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.trip.service.RegionCatalog;

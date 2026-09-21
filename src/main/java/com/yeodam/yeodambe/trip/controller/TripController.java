@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,14 +22,14 @@ public class TripController {
     @PostMapping("/trips")
     public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(
             @Valid @RequestBody TripCreateRequest request,
-            @AuthenticationPrincipal Long userId
+            @AuthenticationPrincipal Jwt jwt
     ) {
-        if (userId == null) {
+        if (jwt == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new ApiResponse<>("UNAUTHORIZED", null));
         }
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new ApiResponse<>("TRIP_CREATED", tripService.createTrip(userId, request)));
+                .body(new ApiResponse<>("TRIP_CREATED", tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
     }
 }

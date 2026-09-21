@@ -2,7 +2,7 @@ package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
-import com.yeodam.yeodambe.trip.service.response.InitialAttachmentsResponse;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -23,15 +23,11 @@ public class TripAttachmentController {
     private final TripAttachmentService service;
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<InitialAttachmentsResponse>> uploadInitialAttachments(
+    public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> uploadInitialAttachments(
             @PathVariable Long tripId,
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(value = "attachments[]", required = false) List<MultipartFile> files
     ) {
-        if (jwt == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ApiResponse<>("UNAUTHORIZED", null));
-        }
         if (files == null || files.isEmpty() || files.stream().anyMatch(file -> file == null || file.isEmpty())) {
             return ResponseEntity.badRequest()
                     .body(new ApiResponse<>("INVALID_ATTACHMENT_UPLOAD", null));
@@ -41,8 +37,8 @@ public class TripAttachmentController {
                     .body(new ApiResponse<>("ATTACHMENT_UPLOAD_LIMIT_EXCEEDED", null));
         }
 
-        InitialAttachmentsResponse result = service.uploadInitialAttachments(tripId, Long.valueOf(jwt.getSubject()), files);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new ApiResponse<>("TRIP_INITIAL_ATTACHMENTS_CREATED", result));
+        TripProcessingStatusResponse result = service.uploadInitialAttachments(
+                tripId, Long.valueOf(jwt.getSubject()), files);
+        return ResponseEntity.ok(new ApiResponse<>("TRIP_PROCESSING_STATUS_FOUND", result));
     }
 }

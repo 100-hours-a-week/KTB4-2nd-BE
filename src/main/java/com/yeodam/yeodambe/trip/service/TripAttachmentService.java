@@ -8,7 +8,7 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
-import com.yeodam.yeodambe.trip.service.response.InitialAttachmentsResponse;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -30,8 +30,10 @@ public class TripAttachmentService {
     private final TripPhotoAnalysisService analysis;
     private final TripAnalysisResultService results;
     private final InitialUploadExecutionRegistry executions;
+    private final TripProcessingStatusService statuses;
 
-    public InitialAttachmentsResponse uploadInitialAttachments(Long tripId, Long userId, List<MultipartFile> files) {
+    public TripProcessingStatusResponse uploadInitialAttachments(
+            Long tripId, Long userId, List<MultipartFile> files) {
         Trip trip = trips.findById(tripId)
                 .orElseThrow(TripNotFoundException::new);
 
@@ -79,7 +81,19 @@ public class TripAttachmentService {
             storage.retain(List.copyOf(objectKeys(originalsKeys, derivedKeys)));
             results.saveCompleted(tripId, userId, executionId, savedAttachments, result);
 
-            return new InitialAttachmentsResponse(tripId, ProcessingStatus.COMPLETED, savedAttachments.size());
+        } catch (AiProcessingFailedException failure) {
+            cleanupFailure(tripId, userId, executionId, originalsKeys, derivedKeys,
+                    originalFiles, savedAttachments, failure);
+            if (failure.getSuppressed().length > 0) throw failure;
+            return new TripProcessingStatusResponse(
+                    failure.getTripId(),
+                    ProcessingStatus.FAILED,
+                    new TripProcessingStatusResponse.Progress(failure.getDone(), failure.getTotal()),
+                    failure.getCurrentStep(),
+                    null,
+                    new TripProcessingStatusResponse.Error(
+                            failure.getCode(), failure.getPublicMessage())
+            );
 
         } catch (RuntimeException failure) {
             cleanupFailure(tripId, userId, executionId, originalsKeys, derivedKeys,
@@ -89,6 +103,8 @@ public class TripAttachmentService {
         } finally {
             executions.release(tripId, executionId);
         }
+
+        return statuses.findStatus(tripId, userId);
     }
 
     private void deleteStaleObjects(List<String> staleKeys) {

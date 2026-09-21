@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
@@ -32,12 +33,13 @@ class TripAttachmentServiceTest {
     private final TripPhotoAnalysisService analysis = mock(TripPhotoAnalysisService.class);
     private final TripAnalysisResultService results = mock(TripAnalysisResultService.class);
     private final InitialUploadExecutionRegistry executions = mock(InitialUploadExecutionRegistry.class);
+    private final TripProcessingStatusService statuses = mock(TripProcessingStatusService.class);
     private TripAttachmentService service;
 
     @BeforeEach
     void setUp() {
         service = new TripAttachmentService(trips, regions, storage, transactions,
-                derivatives, analysis, results, executions);
+                derivatives, analysis, results, executions, statuses);
     }
 
     @Test
@@ -158,14 +160,102 @@ class TripAttachmentServiceTest {
             invocation.<Runnable>getArgument(3).run();
             return aiResult;
         });
+        when(statuses.findStatus(7L, 1L)).thenReturn(new TripProcessingStatusResponse(
+                7L,
+                ProcessingStatus.COMPLETED,
+                new TripProcessingStatusResponse.Progress(1, 1),
+                null,
+                new TripProcessingStatusResponse.Result(7L, 1, 1, 0),
+                null
+        ));
 
         var response = service.uploadInitialAttachments(7L, 1L, List.of(file));
 
         assertEquals(ProcessingStatus.COMPLETED, response.status());
+        assertEquals(1, response.result().placeFolderCount());
         verify(storage).retain(List.of("original", "analyze", "preview"));
         verify(results).saveCompleted(7L, 1L, "run", List.of(attachment), aiResult);
         verify(executions).markAnalysisStarted(7L, "run");
         verify(executions).release(7L, "run");
+    }
+
+    @Test
+    void 완료_저장_후_응답_조회가_실패해도_완료된_첨부를_정리하지_않는다() {
+        Trip trip = trip(1L);
+        MockMultipartFile file = jpeg();
+        StoredFile original = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
+        ReflectionTestUtils.setField(original, "id", 20L);
+        TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
+        ReflectionTestUtils.setField(attachment, "id", 30L);
+        DerivedPhotoKeys keys = new DerivedPhotoKeys(
+                "original", "analyze", "preview", null, null, null, null);
+        TripRegion region = new TripRegion(trip, "50110", "제주특별자치도 제주시",
+                new BigDecimal("33.5"), new BigDecimal("126.5"));
+        var aiResult = mock(tools.jackson.databind.JsonNode.class);
+
+        when(trips.findById(7L)).thenReturn(Optional.of(trip));
+        when(transactions.reserve(7L, 1L)).thenReturn(reservation());
+        when(storage.store("run", file)).thenReturn("original");
+        when(derivatives.createAll("run", List.of("original")))
+                .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
+        when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
+                List.of("original"), List.of("image/jpeg"), List.of(keys)))
+                .thenReturn(new TripAttachmentTransactionService.SavedAttachments(
+                        List.of(original), List.of(attachment)));
+        when(regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L)).thenReturn(List.of(region));
+        when(analysis.analyze(eq(7L), eq("run"), any(), any())).thenReturn(aiResult);
+        when(statuses.findStatus(7L, 1L)).thenThrow(new IllegalStateException("집계 실패"));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.uploadInitialAttachments(7L, 1L, List.of(file)));
+
+        verify(results).saveCompleted(7L, 1L, "run", List.of(attachment), aiResult);
+        verify(transactions, never()).failAndDeleteReference(anyLong(), anyLong(), anyString(), anyList(), anyList());
+        verify(storage, never()).delete(anyString());
+        verify(executions).release(7L, "run");
+    }
+
+    @Test
+    void AI가_명시적으로_실패하면_정리한_뒤_FAILED_응답을_반환한다() {
+        Trip trip = trip(1L);
+        MockMultipartFile file = jpeg();
+        StoredFile original = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
+        ReflectionTestUtils.setField(original, "id", 20L);
+        TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
+        ReflectionTestUtils.setField(attachment, "id", 30L);
+        DerivedPhotoKeys keys = new DerivedPhotoKeys(
+                "original", "analyze", "preview", null, null, null, null);
+        TripRegion region = new TripRegion(trip, "50110", "제주특별자치도 제주시",
+                new BigDecimal("33.5"), new BigDecimal("126.5"));
+
+        when(trips.findById(7L)).thenReturn(Optional.of(trip));
+        when(transactions.reserve(7L, 1L)).thenReturn(reservation());
+        when(storage.store("run", file)).thenReturn("original");
+        when(derivatives.createAll("run", List.of("original")))
+                .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
+        when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
+                List.of("original"), List.of("image/jpeg"), List.of(keys)))
+                .thenReturn(new TripAttachmentTransactionService.SavedAttachments(
+                        List.of(original), List.of(attachment)));
+        when(regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L)).thenReturn(List.of(region));
+        when(analysis.analyze(eq(7L), eq("run"), any(), any())).thenThrow(
+                new AiProcessingFailedException(
+                        7L, 12, 128, null,
+                        "AI_PROCESSING_FAILED", "첨부 처리에 실패했습니다."));
+
+        TripProcessingStatusResponse response =
+                service.uploadInitialAttachments(7L, 1L, List.of(file));
+
+        assertEquals(ProcessingStatus.FAILED, response.status());
+        assertEquals(12, response.progress().done());
+        assertEquals(128, response.progress().total());
+        assertEquals("AI_PROCESSING_FAILED", response.error().code());
+        verify(transactions).failAndDeleteReference(7L, 1L, "run", List.of(20L), List.of(30L));
+        verify(storage).delete("original");
+        verify(storage).delete("analyze");
+        verify(storage).delete("preview");
+        verify(executions).release(7L, "run");
+        verifyNoInteractions(statuses);
     }
 
     private Trip trip(Long owner) {

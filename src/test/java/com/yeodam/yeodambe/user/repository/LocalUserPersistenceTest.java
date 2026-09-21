@@ -13,7 +13,12 @@ import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "attachment.s3.bucket=test-bucket",
+        "ai.server.base-url=http://localhost:9999",
+        "ai.server.api-key=test",
+        "ai.server.instance-id=i-test"
+})
 @ActiveProfiles("local")
 class LocalUserPersistenceTest {
 

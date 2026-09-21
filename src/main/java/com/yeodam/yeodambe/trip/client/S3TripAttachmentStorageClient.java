@@ -7,8 +7,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
+import java.time.Duration;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
@@ -21,13 +25,20 @@ import software.amazon.awssdk.services.s3.model.Tagging;
 public class S3TripAttachmentStorageClient implements TripAttachmentStorageClient {
     private final S3Client s3;
     private final String bucket;
+    private final S3Presigner presigner;
+    private final Duration readUrlTtl;
 
     public S3TripAttachmentStorageClient(
             @Value("${attachment.s3.bucket}") String bucket,
-            @Value("${aws.region}") String region
+            @Value("${aws.region}") String region,
+            @Value("${attachment.s3.read-url-ttl}") Duration readUrlTtl
     ) {
         this.bucket = bucket;
+        this.readUrlTtl = readUrlTtl;
         this.s3 = S3Client.builder()
+                .region(Region.of(region))
+                .build();
+        this.presigner = S3Presigner.builder()
                 .region(Region.of(region))
                 .build();
     }
@@ -62,6 +73,23 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     }
 
     @Override
+    public String createReadUrl(String objectKey) {
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(bucket)
+                .key(objectKey)
+                .build();
+
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(readUrlTtl)
+                .getObjectRequest(getObjectRequest)
+                .build();
+
+        return presigner.presignGetObject(presignRequest)
+                .url()
+                .toString();
+    }
+
+    @Override
     public String storeDerived(String executionId, Path file, String mimeType) {
         if (!mimeType.equals("image/jpeg") && !mimeType.equals("image/webp")) {
             throw new IllegalArgumentException("지원하지 않는 파생 파일 형식입니다.");
@@ -90,8 +118,10 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         }
     }
 
+
     @PreDestroy
     void close() {
         s3.close();
+        presigner.close();
     }
 }

@@ -2,8 +2,12 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripRegion;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.RegionCatalog;
@@ -26,6 +30,8 @@ import static org.mockito.Mockito.*;
 class TripServiceTest {
     private TripRepository tripRepository;
     private TripRegionRepository tripRegionRepository;
+    private TripAttachmentRepository tripAttachmentRepository;
+    private TripAttachmentStorageClient tripAttachmentStorageClient;
     private RegionCatalog regionCatalog;
     private TripService tripService;
 
@@ -33,8 +39,16 @@ class TripServiceTest {
     void setUp() {
         tripRepository = mock(TripRepository.class);
         tripRegionRepository = mock(TripRegionRepository.class);
+        tripAttachmentRepository = mock(TripAttachmentRepository.class);
+        tripAttachmentStorageClient = mock(TripAttachmentStorageClient.class);
         regionCatalog = mock(RegionCatalog.class);
-        tripService = new TripService(tripRepository, tripRegionRepository, regionCatalog);
+        tripService = new TripService(
+                tripRepository,
+                tripRegionRepository,
+                regionCatalog,
+                tripAttachmentRepository,
+                tripAttachmentStorageClient
+        );
     }
 
     @Test
@@ -103,6 +117,117 @@ class TripServiceTest {
         verify(tripRegionRepository).saveAll(anyList());
     }
 
+    @Test
+    void 같은_지역의_완료_여행을_하나의_마커로_묶는다() {
+        Trip firstTrip = mapTrip(1L, "첫 여행");
+        Trip secondTrip = mapTrip(2L, "두 번째 여행");
+        TripRegion firstRegion = mapRegion(firstTrip);
+        TripRegion secondRegion = mapRegion(secondTrip);
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of(firstRegion, secondRegion));
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers()).hasSize(1);
+        var marker = response.markers().getFirst();
+        assertThat(marker.regionCode()).isEqualTo("50110");
+        assertThat(marker.regionName()).isEqualTo("제주특별자치도 제주시");
+        assertThat(marker.latitude()).isEqualByComparingTo("33.4996");
+        assertThat(marker.longitude()).isEqualByComparingTo("126.5312");
+        assertThat(marker.tripCount()).isEqualTo(2);
+        assertThat(marker.trips())
+                .extracting(trip -> trip.tripId())
+                .containsExactly(1L, 2L);
+    }
+
+    @Test
+    void 여행별_미삭제_첨부_개수를_반환한다() {
+        Trip trip = mapTrip(1L, "제주 여행");
+        TripRegion region = mapRegion(trip);
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of(region));
+        when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(1L)))
+                .thenReturn(List.of(new TripAttachmentCount(1L, 3L)));
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers().getFirst().trips().getFirst().attachmentCount())
+                .isEqualTo(3L);
+    }
+
+    @Test
+    void 썸네일_키가_있으면_조회_URL을_반환한다() {
+        Trip trip = mapTrip(1L, "제주 여행");
+        TripRegion region = mapRegion(trip);
+        when(trip.getThumbnailKey()).thenReturn("trip-uploads/first/preview.webp");
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of(region));
+        when(tripAttachmentStorageClient.createReadUrl("trip-uploads/first/preview.webp"))
+                .thenReturn("https://example.com/presigned-thumbnail");
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers().getFirst().trips().getFirst().thumbnailUrl())
+                .isEqualTo("https://example.com/presigned-thumbnail");
+    }
+
+    @Test
+    void 썸네일_키가_없으면_조회_URL을_만들지_않는다() {
+        Trip trip = mapTrip(1L, "제주 여행");
+        TripRegion region = mapRegion(trip);
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of(region));
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers().getFirst().trips().getFirst().thumbnailUrl())
+                .isNull();
+        verifyNoInteractions(tripAttachmentStorageClient);
+    }
+
+    @Test
+    void 같은_여행이_여러_지역에_연결되면_각_마커에_포함한다() {
+        Trip trip = mapTrip(1L, "전국 여행");
+        TripRegion jeju = mapRegion(
+                trip,
+                "50110",
+                "제주특별자치도 제주시",
+                "33.4996",
+                "126.5312"
+        );
+        TripRegion busan = mapRegion(
+                trip,
+                "26110",
+                "부산광역시 중구",
+                "35.1060",
+                "129.0323"
+        );
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of(busan, jeju));
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers()).hasSize(2);
+        assertThat(response.markers())
+                .extracting(marker -> marker.regionCode())
+                .containsExactly("26110", "50110");
+        assertThat(response.markers())
+                .allSatisfy(marker -> assertThat(marker.trips())
+                        .extracting(summary -> summary.tripId())
+                        .containsExactly(1L));
+    }
+
+    @Test
+    void 표시할_여행이_없으면_첨부_개수를_조회하지_않는다() {
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of());
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers()).isEmpty();
+        verifyNoInteractions(tripAttachmentRepository);
+    }
+
     private void assertInvalid(LocalDate start, LocalDate end, List<String> codes) {
         assertThrows(InvalidTripRequestException.class,
                 () -> tripService.createTrip(1L, request(start, end, codes)));
@@ -123,5 +248,38 @@ class TripServiceTest {
             ReflectionTestUtils.setField(trip, "id", 7L);
             return trip;
         });
+    }
+
+    private Trip mapTrip(Long tripId, String tripName) {
+        Trip trip = mock(Trip.class);
+        when(trip.getId()).thenReturn(tripId);
+        when(trip.getTripName()).thenReturn(tripName);
+        return trip;
+    }
+
+    private TripRegion mapRegion(Trip trip) {
+        return mapRegion(
+                trip,
+                "50110",
+                "제주특별자치도 제주시",
+                "33.4996",
+                "126.5312"
+        );
+    }
+
+    private TripRegion mapRegion(
+            Trip trip,
+            String regionCode,
+            String regionName,
+            String latitude,
+            String longitude
+    ) {
+        TripRegion region = mock(TripRegion.class);
+        when(region.getTrip()).thenReturn(trip);
+        when(region.getRegionCode()).thenReturn(regionCode);
+        when(region.getRegionName()).thenReturn(regionName);
+        when(region.getLatitude()).thenReturn(new BigDecimal(latitude));
+        when(region.getLongitude()).thenReturn(new BigDecimal(longitude));
+        return region;
     }
 }

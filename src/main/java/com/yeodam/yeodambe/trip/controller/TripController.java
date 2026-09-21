@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -52,5 +53,17 @@ public class TripController {
                 "TRIP_PROCESSING_STATUS_FOUND",
                 processingStatusService.findStatus(tripId, Long.valueOf(jwt.getSubject()))
         ));
+    }
+
+    @GetMapping("/trips/map")
+    public ResponseEntity<ApiResponse<TripMapResponse>> findMap(
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+        TripMapResponse data = tripService.findMap(userId);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>("TRIP_MAP_FOUND", data)
+        );
     }
 }

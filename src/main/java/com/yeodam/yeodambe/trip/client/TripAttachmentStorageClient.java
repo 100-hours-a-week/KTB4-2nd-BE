@@ -16,4 +16,6 @@ public interface TripAttachmentStorageClient {
     String storeDerived(String executionId, Path file, String mimeType);
 
     void retain(List<String> objectKeys);
+
+    String createReadUrl(String objectKey);
 }

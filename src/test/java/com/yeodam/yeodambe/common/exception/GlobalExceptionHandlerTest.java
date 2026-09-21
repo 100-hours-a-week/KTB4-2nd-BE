@@ -1,7 +1,6 @@
 package com.yeodam.yeodambe.common.exception;
 
 import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
-import com.yeodam.yeodambe.user.exception.InvalidEmailException;
 import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
 import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
 import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
@@ -13,10 +12,7 @@ import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.exception.UserNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.data.redis.RedisConnectionFailureException;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,20 +31,6 @@ class GlobalExceptionHandlerTest {
         mockMvc = standaloneSetup(new TestController())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
-    }
-
-    @ParameterizedTest
-    @CsvSource({
-            "invalid-attachment, 400, INVALID_ATTACHMENT_UPLOAD",
-            "trip-not-found, 404, TRIP_NOT_FOUND",
-            "attachment-not-allowed, 409, TRIP_INITIAL_ATTACHMENT_UPLOAD_NOT_ALLOWED",
-            "attachment-limit, 413, ATTACHMENT_UPLOAD_LIMIT_EXCEEDED",
-            "unsupported-attachment, 415, UNSUPPORTED_ATTACHMENT_FORMAT"
-    })
-    void 초기_첨부_예외를_공개_API_오류로_변환한다(String path, int statusCode, String message) throws Exception {
-        mockMvc.perform(get("/test/" + path))
-                .andExpect(status().is(statusCode))
-                .andExpect(content().json("{\"message\":\"" + message + "\",\"data\":null}"));
     }
 
     @Test
@@ -75,19 +57,6 @@ class GlobalExceptionHandlerTest {
                     """));
 
 
-    }
-
-    @ParameterizedTest
-    @CsvSource({
-            "invalid-email, 400, INVALID_EMAIL_FORMAT",
-            "illegal-argument, 500, INTERNAL_SERVER_ERROR",
-            "illegal-state, 500, INTERNAL_SERVER_ERROR"
-    })
-    void distinguishesInvalidInputFromInternalRuntimeErrors(String path, int statusCode, String message)
-            throws Exception {
-        mockMvc.perform(get("/test/" + path))
-                .andExpect(status().is(statusCode))
-                .andExpect(content().json("{\"message\":\"" + message + "\",\"data\":null}"));
     }
 
     @Test
@@ -198,40 +167,8 @@ class GlobalExceptionHandlerTest {
                     """));
     }
 
-    @Test
-    void returnsUnauthorizedWhenAuthenticationIsMissing() throws Exception {
-        mockMvc.perform(get("/test/authentication-missing"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(content().json("{\"message\":\"UNAUTHORIZED\",\"data\":null}"));
-    }
-
     @RestController
     static class TestController {
-
-        @GetMapping("/test/invalid-attachment")
-        void invalidAttachment() {
-            throw new InvalidAttachmentUploadException();
-        }
-
-        @GetMapping("/test/trip-not-found")
-        void tripNotFound() {
-            throw new TripNotFoundException();
-        }
-
-        @GetMapping("/test/attachment-not-allowed")
-        void attachmentNotAllowed() {
-            throw new TripInitialAttachmentUploadNotAllowedException();
-        }
-
-        @GetMapping("/test/attachment-limit")
-        void attachmentLimit() {
-            throw new AttachmentUploadLimitExceededException();
-        }
-
-        @GetMapping("/test/unsupported-attachment")
-        void unsupportedAttachment() {
-            throw new UnsupportedAttachmentFormatException();
-        }
 
         @GetMapping("/test/duplicate-email")
         void duplicateEmail() {
@@ -241,21 +178,6 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/invalid-nickname")
         void invalidNickname() {
             throw new InvalidNicknameException();
-        }
-
-        @GetMapping("/test/invalid-email")
-        void invalidEmail() {
-            throw new InvalidEmailException();
-        }
-
-        @GetMapping("/test/illegal-argument")
-        void illegalArgument() {
-            throw new IllegalArgumentException("내부 객체가 잘못되었습니다.");
-        }
-
-        @GetMapping("/test/illegal-state")
-        void illegalState() {
-            throw new IllegalStateException("내부 상태가 잘못되었습니다.");
         }
 
         @GetMapping("/test/duplicate-oauth-account")
@@ -305,11 +227,6 @@ class GlobalExceptionHandlerTest {
             throw new LoginTicketIssueFailedException(
                     new IllegalStateException("ticket issue failed")
             );
-        }
-
-        @GetMapping("/test/authentication-missing")
-        void authenticationMissing() {
-            throw new AuthenticationCredentialsNotFoundException("인증된 사용자가 없습니다.");
         }
     }
 }

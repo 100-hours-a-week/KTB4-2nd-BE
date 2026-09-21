@@ -4,6 +4,9 @@ import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripRegion;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.RegionCatalog;
@@ -26,6 +29,7 @@ import static org.mockito.Mockito.*;
 class TripServiceTest {
     private TripRepository tripRepository;
     private TripRegionRepository tripRegionRepository;
+    private TripAttachmentRepository tripAttachmentRepository;
     private RegionCatalog regionCatalog;
     private TripService tripService;
 
@@ -33,8 +37,14 @@ class TripServiceTest {
     void setUp() {
         tripRepository = mock(TripRepository.class);
         tripRegionRepository = mock(TripRegionRepository.class);
+        tripAttachmentRepository = mock(TripAttachmentRepository.class);
         regionCatalog = mock(RegionCatalog.class);
-        tripService = new TripService(tripRepository, tripRegionRepository, regionCatalog);
+        tripService = new TripService(
+                tripRepository,
+                tripRegionRepository,
+                regionCatalog,
+                tripAttachmentRepository
+        );
     }
 
     @Test
@@ -103,6 +113,44 @@ class TripServiceTest {
         verify(tripRegionRepository).saveAll(anyList());
     }
 
+    @Test
+    void 같은_지역의_완료_여행을_하나의_마커로_묶는다() {
+        Trip firstTrip = mapTrip(1L, "첫 여행");
+        Trip secondTrip = mapTrip(2L, "두 번째 여행");
+        TripRegion firstRegion = mapRegion(firstTrip);
+        TripRegion secondRegion = mapRegion(secondTrip);
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of(firstRegion, secondRegion));
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers()).hasSize(1);
+        var marker = response.markers().getFirst();
+        assertThat(marker.regionCode()).isEqualTo("50110");
+        assertThat(marker.regionName()).isEqualTo("제주특별자치도 제주시");
+        assertThat(marker.latitude()).isEqualByComparingTo("33.4996");
+        assertThat(marker.longitude()).isEqualByComparingTo("126.5312");
+        assertThat(marker.tripCount()).isEqualTo(2);
+        assertThat(marker.trips())
+                .extracting(trip -> trip.tripId())
+                .containsExactly(1L, 2L);
+    }
+
+    @Test
+    void 여행별_미삭제_첨부_개수를_반환한다() {
+        Trip trip = mapTrip(1L, "제주 여행");
+        TripRegion region = mapRegion(trip);
+        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
+                .thenReturn(List.of(region));
+        when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(1L)))
+                .thenReturn(List.of(new TripAttachmentCount(1L, 3L)));
+
+        var response = tripService.findMap(1L);
+
+        assertThat(response.markers().getFirst().trips().getFirst().attachmentCount())
+                .isEqualTo(3L);
+    }
+
     private void assertInvalid(LocalDate start, LocalDate end, List<String> codes) {
         assertThrows(InvalidTripRequestException.class,
                 () -> tripService.createTrip(1L, request(start, end, codes)));
@@ -123,5 +171,22 @@ class TripServiceTest {
             ReflectionTestUtils.setField(trip, "id", 7L);
             return trip;
         });
+    }
+
+    private Trip mapTrip(Long tripId, String tripName) {
+        Trip trip = mock(Trip.class);
+        when(trip.getId()).thenReturn(tripId);
+        when(trip.getTripName()).thenReturn(tripName);
+        return trip;
+    }
+
+    private TripRegion mapRegion(Trip trip) {
+        TripRegion region = mock(TripRegion.class);
+        when(region.getTrip()).thenReturn(trip);
+        when(region.getRegionCode()).thenReturn("50110");
+        when(region.getRegionName()).thenReturn("제주특별자치도 제주시");
+        when(region.getLatitude()).thenReturn(new BigDecimal("33.4996"));
+        when(region.getLongitude()).thenReturn(new BigDecimal("126.5312"));
+        return region;
     }
 }

@@ -5,8 +5,10 @@ import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -40,5 +42,20 @@ class TripControllerTest {
         assertThat(response.getBody().message()).isEqualTo("TRIP_CREATED");
         assertThat(response.getBody().data().tripId()).isEqualTo(7L);
         assertThat(response.getBody().data().status()).isEqualTo(ProcessingStatus.PROCESSING);
+    }
+
+    @Test
+    void 인증된_사용자의_메인_지도_조회_결과를_반환한다() {
+        Jwt jwt = mock(Jwt.class);
+        TripMapResponse data = new TripMapResponse(List.of());
+        when(jwt.getSubject()).thenReturn("1");
+        when(tripService.findMap(1L)).thenReturn(data);
+
+        var response = controller.findMap(jwt);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().message()).isEqualTo("TRIP_MAP_FOUND");
+        assertThat(response.getBody().data().markers()).isEmpty();
+        verify(tripService).findMap(1L);
     }
 }

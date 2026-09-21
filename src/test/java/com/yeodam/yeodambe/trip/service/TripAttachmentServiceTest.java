@@ -154,17 +154,13 @@ class TripAttachmentServiceTest {
                 .thenReturn(new TripAttachmentTransactionService.SavedAttachments(
                         List.of(original), List.of(attachment)));
         when(regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L)).thenReturn(List.of(region));
-        when(analysis.analyze(eq(7L), eq("run"), any(), any())).thenAnswer(invocation -> {
-            invocation.<Runnable>getArgument(3).run();
-            return aiResult;
-        });
+        when(analysis.analyze(eq(7L), eq("run"), any())).thenReturn(aiResult);
 
         var response = service.uploadInitialAttachments(7L, 1L, List.of(file));
 
         assertEquals(ProcessingStatus.COMPLETED, response.status());
         verify(storage).retain(List.of("original", "analyze", "preview"));
         verify(results).saveCompleted(7L, 1L, "run", List.of(attachment), aiResult);
-        verify(executions).markAnalysisStarted(7L, "run");
         verify(executions).release(7L, "run");
     }
 

@@ -72,8 +72,7 @@ public class TripAttachmentService {
             JsonNode result = analysis.analyze(
                     tripId,
                     executionId,
-                    analysisRequest(executionId, trip, savedAttachments, derivedKeys),
-                    () -> executions.markAnalysisStarted(tripId, executionId)
+                    analysisRequest(executionId, trip, savedAttachments, derivedKeys)
             );
 
             storage.retain(List.copyOf(objectKeys(originalsKeys, derivedKeys)));

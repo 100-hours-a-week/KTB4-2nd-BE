@@ -29,16 +29,4 @@ class InitialUploadExecutionRegistryTest {
         assertFalse(registry.isCurrent(7L, executionId));
         assertDoesNotThrow(() -> registry.reserve(7L));
     }
-
-    @Test
-    void 현재_실행의_AI_분석_시작만_기록한다() {
-        String executionId = registry.reserve(7L);
-
-        assertFalse(registry.isAnalysisStarted(7L));
-        registry.markAnalysisStarted(7L, "other");
-        assertFalse(registry.isAnalysisStarted(7L));
-
-        registry.markAnalysisStarted(7L, executionId);
-        assertTrue(registry.isAnalysisStarted(7L));
-    }
 }

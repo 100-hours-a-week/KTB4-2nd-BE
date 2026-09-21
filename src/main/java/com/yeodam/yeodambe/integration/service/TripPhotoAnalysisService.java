@@ -1,8 +1,6 @@
 package com.yeodam.yeodambe.integration.service;
 
-import com.yeodam.yeodambe.common.exception.AiStatusUnavailableException;
 import com.yeodam.yeodambe.integration.service.request.TripPhotoAnalysisRequest;
-import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusResponse;
 import com.yeodam.yeodambe.integration.client.AiEc2Starter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -61,13 +59,11 @@ public class TripPhotoAnalysisService {
         this.apiKey = apiKey;
     }
 
-    public JsonNode analyze(Long tripId, String executionId, TripPhotoAnalysisRequest request,
-                            Runnable analysisStarted) {
+    public JsonNode analyze(Long tripId, String executionId, TripPhotoAnalysisRequest request) {
         JsonNode response;
 
         starter.ensureRunning();
         waitUntilReady();
-        analysisStarted.run();
 
         try {
             response = restClient.post()
@@ -84,21 +80,6 @@ public class TripPhotoAnalysisService {
         return validateResponse(tripId, executionId, response);
     }
 
-    public TripPhotoAnalysisStatusResponse findStatus(Long tripId) {
-        try {
-            JsonNode response = restClient.get()
-                    .uri("/trips/{tripId}/process", tripId)
-                    .headers(headers -> headers.setBearerAuth(apiKey))
-                    .retrieve()
-                    .body(JsonNode.class);
-            return validateStatusResponse(tripId, response);
-        } catch (ResourceAccessException e) {
-            throw new AiStatusUnavailableException(e);
-        } catch (RestClientException e) {
-            throw new IllegalStateException("AI 사진 분석 상태 조회에 실패했습니다.", e);
-        }
-    }
-
     static JsonNode validateResponse(Long tripId, String executionId, JsonNode response) {
         if (response == null
                 || response.path("trip_id").asLong(-1) != tripId
@@ -112,56 +93,6 @@ public class TripPhotoAnalysisService {
             throw new IllegalStateException("AI 사진 분석 결과가 올바르지 않습니다.");
         }
         return response.path("result");
-    }
-
-    static TripPhotoAnalysisStatusResponse validateStatusResponse(Long tripId, JsonNode response) {
-        JsonNode responseTripId = response == null ? null : response.path("trip_id");
-        if (responseTripId == null
-                || !responseTripId.isIntegralNumber()
-                || responseTripId.asLong(-1) != tripId) {
-            throw new IllegalStateException("AI 사진 분석 상태가 올바르지 않습니다.");
-        }
-
-        TripPhotoAnalysisStatusResponse.Status status;
-        try {
-            status = TripPhotoAnalysisStatusResponse.Status.valueOf(response.path("status").asString());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("AI 사진 분석 상태가 올바르지 않습니다.", e);
-        }
-
-        JsonNode progress = response.path("progress");
-        JsonNode doneNode = progress.path("done");
-        JsonNode totalNode = progress.path("total");
-        int done = doneNode.asInt(-1);
-        int total = totalNode.asInt(-1);
-        JsonNode result = response.path("result");
-        JsonNode error = response.path("error");
-        JsonNode currentStep = response.path("current_step");
-
-        boolean fieldsValid = switch (status) {
-            case PROCESSING -> result.isNull() && error.isNull();
-            case COMPLETED -> result.isObject() && error.isNull();
-            case FAILED -> result.isNull() && error.isObject();
-            case CANCELED -> result.isNull() && error.isNull();
-        };
-
-        if (!progress.isObject()
-                || !doneNode.isIntegralNumber()
-                || !totalNode.isIntegralNumber()
-                || done < 0 || total < 0 || done > total
-                || (!currentStep.isTextual() && !currentStep.isNull())
-                || !fieldsValid) {
-            throw new IllegalStateException("AI 사진 분석 상태가 올바르지 않습니다.");
-        }
-
-        return new TripPhotoAnalysisStatusResponse(
-                tripId,
-                status,
-                new TripPhotoAnalysisStatusResponse.Progress(done, total),
-                currentStep.isNull() ? null : currentStep.asString(),
-                result,
-                error
-        );
     }
 
     private void waitUntilReady() {

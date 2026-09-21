@@ -21,13 +21,6 @@ import org.springframework.http.ResponseEntity;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(AiStatusUnavailableException.class)
-    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
-    ApiResponse<Void> handleAiStatusUnavailable(AiStatusUnavailableException e) {
-        log.warn("AI 사진 분석 상태를 조회할 수 없습니다.", e);
-        return new ApiResponse<>("AI_STATUS_UNAVAILABLE", null);
-    }
-
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     ResponseEntity<ApiResponse<Void>> handleUnsupportedContentType(
             HttpMediaTypeNotSupportedException e, HttpServletRequest request) {

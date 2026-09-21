@@ -175,18 +175,6 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void AI_상태_조회_연결_실패는_서비스_사용_불가로_응답한다() throws Exception {
-        mockMvc.perform(get("/test/ai-status-unavailable"))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(content().json("""
-                        {
-                          "message": "AI_STATUS_UNAVAILABLE",
-                          "data": null
-                        }
-                        """));
-    }
-
-    @Test
     void returnsInternalServerErrorWhenOAuthStateCreationFails() throws Exception {
         mockMvc.perform(get("/test/oauth-state-create-failed"))
                 .andExpect(status().isInternalServerError())
@@ -298,11 +286,6 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/redis-unavailable")
         void redisUnavailable() {
             throw new RedisConnectionFailureException("Redis unavailable");
-        }
-
-        @GetMapping("/test/ai-status-unavailable")
-        void aiStatusUnavailable() {
-            throw new AiStatusUnavailableException(new IllegalStateException("timeout"));
         }
 
         @GetMapping("/test/user-not-found")

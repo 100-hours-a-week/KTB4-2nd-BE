@@ -1,136 +1,139 @@
 package com.yeodam.yeodambe.user.security.session;
 
+import com.yeodam.yeodambe.user.entity.LoginSessionEntity;
+import com.yeodam.yeodambe.user.entity.User;
+import com.yeodam.yeodambe.user.repository.LoginSessionRepository;
+import com.yeodam.yeodambe.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
 public class LoginSessionStore {
 
-    private static final String KEY_PREFIX = "auth:session:";
-    private static final String REFRESH_INDEX_PREFIX = "auth:refresh:";
-    private static final Duration SESSION_TTL = Duration.ofDays(7);
+    private static final Duration SESSION_TTL =
+            Duration.ofDays(7);
 
-    private static final DefaultRedisScript<Long> ROTATE_SCRIPT =
-            new DefaultRedisScript<>();
+    private final LoginSessionRepository loginSessionRepository;
+    private final UserRepository userRepository;
 
-    static {
-        ROTATE_SCRIPT.setLocation(
-                new ClassPathResource("rotate-refresh-token.lua")
+    @Transactional
+    public void save(
+            String sid,
+            Long userId,
+            String refreshTokenHash
+    ) {
+        User user = userRepository.getReferenceById(userId);
+
+        LoginSessionEntity entity = new LoginSessionEntity(
+                sid,
+                user,
+                refreshTokenHash,
+                LocalDateTime.now().plus(SESSION_TTL)
         );
-        ROTATE_SCRIPT.setResultType(Long.class);
+
+        loginSessionRepository.save(entity);
     }
 
-    private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper objectMapper;
-
-    public void save(String sid, Long userId, String refreshTokenHash) {
-        LoginSession session = new LoginSession(userId, refreshTokenHash);
-
-        try {
-            String json = objectMapper.writeValueAsString(session);
-            redisTemplate.opsForValue().set(
-                    key(sid),
-                    json,
-                    SESSION_TTL
-            );
-            redisTemplate.opsForValue().set(
-                    refreshIndexKey(refreshTokenHash),
-                    sid,
-                    SESSION_TTL
-            );
-        } catch (JacksonException e) {
-            throw new IllegalStateException("로그인 세션 변환에 실패했습니다.", e);
-        }
-    }
-
+    @Transactional
     public Optional<LoginSession> findBySid(String sid) {
         if (sid == null || sid.isBlank()) {
             return Optional.empty();
         }
 
-        String json = redisTemplate.opsForValue().get(key(sid));
-        if (json == null) {
+        Optional<LoginSessionEntity> result =
+                loginSessionRepository.findBySid(sid);
+
+        if (result.isEmpty()) {
             return Optional.empty();
         }
 
-        try {
-            return Optional.of(
-                    objectMapper.readValue(json, LoginSession.class)
-            );
-        } catch (JacksonException e) {
-            throw new IllegalStateException("로그인 세션 복원에 실패했습니다.", e);
+        LoginSessionEntity entity = result.get();
+
+        if (entity.isExpired(LocalDateTime.now())) {
+            loginSessionRepository.delete(entity);
+            return Optional.empty();
         }
+
+        return Optional.of(toLoginSession(entity));
     }
 
+    @Transactional
     public Optional<String> findSidByRefreshTokenHash(
             String refreshTokenHash
     ) {
-        if (refreshTokenHash == null || refreshTokenHash.isBlank()) {
+        if (refreshTokenHash == null
+                || refreshTokenHash.isBlank()) {
             return Optional.empty();
         }
 
-        return Optional.ofNullable(
-                redisTemplate.opsForValue().get(
-                        refreshIndexKey(refreshTokenHash)
-                )
+        Optional<LoginSessionEntity> result =
+                loginSessionRepository.findByRefreshTokenHash(
+                        refreshTokenHash
+                );
+
+        if (result.isEmpty()) {
+            return Optional.empty();
+        }
+
+        LoginSessionEntity entity = result.get();
+
+        if (entity.isExpired(LocalDateTime.now())) {
+            loginSessionRepository.delete(entity);
+            return Optional.empty();
+        }
+
+        return Optional.of(entity.getSid());
+    }
+
+    @Transactional
+    public Optional<Long> rotate(
+            String oldHash,
+            String newHash
+    ) {
+        if (oldHash == null
+                || oldHash.isBlank()
+                || newHash == null
+                || newHash.isBlank()) {
+            return Optional.empty();
+        }
+
+        Optional<LoginSessionEntity> result =
+                loginSessionRepository
+                        .findByRefreshTokenHashForUpdate(oldHash);
+
+        if (result.isEmpty()) {
+            return Optional.empty();
+        }
+
+        LoginSessionEntity entity = result.get();
+
+        if (entity.isExpired(LocalDateTime.now())) {
+            loginSessionRepository.delete(entity);
+            return Optional.empty();
+        }
+
+        Long userId = entity.getUser().getUserId();
+
+        entity.rotateRefreshToken(
+                newHash,
+                LocalDateTime.now().plus(SESSION_TTL)
         );
+
+        return Optional.of(userId);
     }
 
-    public Optional<Long> rotate(String oldHash, String newHash) {
-        Optional<String> sidResult = findSidByRefreshTokenHash(oldHash);
-        if (sidResult.isEmpty()) {
-            return Optional.empty();
-        }
-
-        String sid = sidResult.get();
-        Optional<LoginSession> sessionResult = findBySid(sid);
-        if (sessionResult.isEmpty()) {
-            return Optional.empty();
-        }
-
-        LoginSession session = sessionResult.get();
-
-        try {
-            String newJson = objectMapper.writeValueAsString(
-                    new LoginSession(session.userId(), newHash)
-            );
-
-            Long result = redisTemplate.execute(
-                    ROTATE_SCRIPT,
-                    List.of(
-                            refreshIndexKey(oldHash),
-                            key(sid),
-                            refreshIndexKey(newHash)
-                    ),
-                    sid,
-                    oldHash,
-                    newJson,
-                    Long.toString(SESSION_TTL.toSeconds())
-            );
-
-            return Long.valueOf(1L).equals(result)
-                    ? Optional.of(session.userId())
-                    : Optional.empty();
-        } catch (JacksonException e) {
-            throw new IllegalStateException("로그인 세션 변환에 실패했습니다.", e);
-        }
-    }
-
-    private String key(String sid) {
-        return KEY_PREFIX + sid;
-    }
-
-    private String refreshIndexKey(String refreshTokenHash) {
-        return REFRESH_INDEX_PREFIX + refreshTokenHash;
+    private LoginSession toLoginSession(
+            LoginSessionEntity entity
+    ) {
+        return new LoginSession(
+                entity.getUser().getUserId(),
+                entity.getRefreshTokenHash()
+        );
     }
 }

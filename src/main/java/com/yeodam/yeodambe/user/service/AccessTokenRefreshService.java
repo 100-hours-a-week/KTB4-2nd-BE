@@ -7,7 +7,8 @@ import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.session.LoginSession;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
 import com.yeodam.yeodambe.user.security.session.RefreshTokenGenerator;
-import com.yeodam.yeodambe.user.security.session.RefreshTokenHasher;
+import com.yeodam.yeodambe.user.security.TokenHasher;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -15,18 +16,19 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AccessTokenRefreshService {
 
-    private final RefreshTokenHasher refreshTokenHasher;
+    private final TokenHasher tokenHasher;
     private final RefreshTokenGenerator refreshTokenGenerator;
     private final LoginSessionStore loginSessionStore;
     private final UserRepository userRepository;
     private final AccessTokenIssuer accessTokenIssuer;
 
+    @Transactional
     public Result refresh(String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {
             throw new RefreshTokenInvalidOrExpiredException();
         }
 
-        String oldHash = refreshTokenHasher.hash(refreshToken);
+        String oldHash = tokenHasher.hash(refreshToken);
         String sid = loginSessionStore.findSidByRefreshTokenHash(oldHash)
                 .orElseThrow(RefreshTokenInvalidOrExpiredException::new);
 
@@ -42,7 +44,7 @@ public class AccessTokenRefreshService {
                 .orElseThrow(RefreshTokenInvalidOrExpiredException::new);
 
         String newRefreshToken = refreshTokenGenerator.generate();
-        String newHash = refreshTokenHasher.hash(newRefreshToken);
+        String newHash = tokenHasher.hash(newRefreshToken);
         String newAccessToken = accessTokenIssuer.issue(user.getUserId(), sid);
 
         loginSessionStore.rotate(oldHash, newHash)

@@ -2,10 +2,10 @@ package com.yeodam.yeodambe;
 
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
+import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
-import com.yeodam.yeodambe.user.security.session.RefreshTokenHasher;
 import com.yeodam.yeodambe.user.service.UserRegistrationService;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import jakarta.servlet.http.Cookie;
@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -36,9 +35,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class YeodamBeApplicationTests {
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
-
-    @Autowired
     private MockMvc mockMvc;
 
     @Autowired
@@ -57,19 +53,10 @@ class YeodamBeApplicationTests {
     private LoginSessionStore loginSessionStore;
 
     @Autowired
-    private RefreshTokenHasher refreshTokenHasher;
+    private TokenHasher tokenHasher;
 
     @Test
     void contextLoads() {
-    }
-
-    @Test
-    void redisConnectionWorks() {
-        String key = "test:connection";
-
-        redisTemplate.opsForValue().set(key, "ok");
-
-        assertThat(redisTemplate.opsForValue().get(key)).isEqualTo("ok");
     }
 
     @Test
@@ -206,7 +193,7 @@ class YeodamBeApplicationTests {
         assertThat(loginSessionStore.findBySid(sid).orElseThrow().userId())
                 .isEqualTo(user.getUserId());
         assertThat(loginSessionStore.findSidByRefreshTokenHash(
-                refreshTokenHasher.hash(refreshCookie.getValue())))
+                tokenHasher.hash(refreshCookie.getValue())))
                 .contains(sid);
     }
 

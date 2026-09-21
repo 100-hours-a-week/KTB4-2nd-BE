@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.security.session;
 
+import com.yeodam.yeodambe.user.security.TokenHasher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,7 +21,7 @@ class LoginSessionIssuerTest {
     private RefreshTokenGenerator refreshTokenGenerator;
 
     @Mock
-    private RefreshTokenHasher refreshTokenHasher;
+    private TokenHasher tokenHasher;
 
     @Mock
     private LoginSessionStore loginSessionStore;
@@ -32,8 +33,8 @@ class LoginSessionIssuerTest {
         loginSessionIssuer = new LoginSessionIssuer(
                 sessionIdGenerator,
                 refreshTokenGenerator,
-                refreshTokenHasher,
-                loginSessionStore
+                loginSessionStore,
+                tokenHasher
         );
     }
 
@@ -41,7 +42,7 @@ class LoginSessionIssuerTest {
     void issuesSessionAndStoresOnlyRefreshTokenHash() {
         given(sessionIdGenerator.generate()).willReturn("sid-1");
         given(refreshTokenGenerator.generate()).willReturn("raw-refresh-token");
-        given(refreshTokenHasher.hash("raw-refresh-token"))
+        given(tokenHasher.hash("raw-refresh-token"))
                 .willReturn("refresh-token-hash");
 
         IssuedLoginSession issued = loginSessionIssuer.issue(42L);

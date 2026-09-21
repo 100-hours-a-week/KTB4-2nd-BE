@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.user.security;
 
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
-import com.yeodam.yeodambe.user.security.csrf.RedisCsrfTokenRepository;
+import com.yeodam.yeodambe.user.security.csrf.RdbCsrfTokenRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -25,7 +25,7 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             CsrfAccessDeniedHandler csrfAccessDeniedHandler,
-            RedisCsrfTokenRepository redisCsrfTokenRepository,
+            RdbCsrfTokenRepository rdbCsrfTokenRepository,
             CookieAccessTokenResolver cookieAccessTokenResolver,
             ApiAuthenticationEntryPoint apiAuthenticationEntryPoint
     ) throws Exception {
@@ -50,7 +50,7 @@ public class SecurityConfig {
         );
 
         http.csrf(csrf -> csrf
-                .csrfTokenRepository(redisCsrfTokenRepository)
+                .csrfTokenRepository(rdbCsrfTokenRepository)
                 .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
         );
 

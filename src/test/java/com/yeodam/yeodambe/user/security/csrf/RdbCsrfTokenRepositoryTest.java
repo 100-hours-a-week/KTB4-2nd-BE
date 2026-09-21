@@ -1,29 +1,32 @@
 package com.yeodam.yeodambe.user.security.csrf;
 
-import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.user.security.TokenHasher;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.DefaultCsrfToken;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
-class RedisCsrfTokenRepositoryTest {
+@DataJpaTest
+@Import({
+        CsrfTokenStore.class,
+        TokenHasher.class,
+        CsrfTokenGenerator.class,
+        RdbCsrfTokenRepository.class
+})
+class RdbCsrfTokenRepositoryTest {
 
     @Autowired
     private CsrfTokenStore csrfTokenStore;
 
     @Autowired
-    private RedisCsrfTokenRepository csrfTokenRepository;
+    private RdbCsrfTokenRepository csrfTokenRepository;
 
     @Test
     void loadsTokenForBrowserContextCookie() {

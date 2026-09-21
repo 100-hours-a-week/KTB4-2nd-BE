@@ -1,46 +1,44 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
+import com.yeodam.yeodambe.user.entity.LoginTicketEntity;
+import com.yeodam.yeodambe.user.repository.LoginTicketRepository;
+import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
 public class LoginTicketStore {
 
-    private static final String KEY_PREFIX = "auth:login-ticket:";
-    private static final Duration TICKET_TTL = Duration.ofMinutes(1);
+    private static final Duration TICKET_TTL =
+            Duration.ofMinutes(1);
 
-    private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper objectMapper;
+    private final LoginTicketRepository loginTicketRepository;
+    private final TokenHasher tokenHasher;
 
     public void save(
             String ticket,
             KakaoUserIdentity identity,
             String browserContext
     ) {
-        try {
-            String json = objectMapper.writeValueAsString(identity);
+        LoginTicketEntity entity = new LoginTicketEntity(
+                tokenHasher.hash(ticket),
+                tokenHasher.hash(browserContext),
+                identity.providerUserId(),
+                identity.email(),
+                LocalDateTime.now().plus(TICKET_TTL)
+        );
 
-            redisTemplate.opsForValue().set(
-                    key(ticket, browserContext),
-                    json,
-                    TICKET_TTL
-            );
-        } catch (JacksonException e) {
-            throw new IllegalStateException(
-                    "로그인 티켓 데이터 변환에 실패했습니다.",
-                    e
-            );
-        }
+        loginTicketRepository.save(entity);
     }
 
+    @Transactional
     public Optional<KakaoUserIdentity> consume(
             String ticket,
             String browserContext
@@ -52,33 +50,36 @@ public class LoginTicketStore {
             return Optional.empty();
         }
 
-        String json = redisTemplate
-                .opsForValue()
-                .getAndDelete(key(ticket, browserContext));
+        String ticketHash = tokenHasher.hash(ticket);
+        String browserContextHash =
+                tokenHasher.hash(browserContext);
 
-        if (json == null) {
+        Optional<LoginTicketEntity> result =
+                loginTicketRepository.findByTicketHashForUpdate(
+                        ticketHash
+                );
+
+        if (result.isEmpty()) {
             return Optional.empty();
         }
 
-        try {
-            return Optional.of(
-                    objectMapper.readValue(
-                            json,
-                            KakaoUserIdentity.class
-                    )
-            );
-        } catch (JacksonException e) {
-            throw new IllegalStateException(
-                    "로그인 티켓 데이터 복원에 실패했습니다.",
-                    e
-            );
-        }
-    }
+        LoginTicketEntity entity = result.get();
 
-    private String key(
-            String ticket,
-            String browserContext
-    ) {
-        return KEY_PREFIX + browserContext + ":" + ticket;
+        if (entity.isExpired(LocalDateTime.now())) {
+            loginTicketRepository.delete(entity);
+            return Optional.empty();
+        }
+
+        if (!entity.matchesBrowserContext(browserContextHash)) {
+            return Optional.empty();
+        }
+
+        KakaoUserIdentity identity = new KakaoUserIdentity(
+                entity.getProviderUserId(),
+                entity.getEmail()
+        );
+
+        loginTicketRepository.delete(entity);
+        return Optional.of(identity);
     }
 }

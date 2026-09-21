@@ -1,20 +1,25 @@
 package com.yeodam.yeodambe.user.security.session;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.user.entity.LoginSessionEntity;
+import com.yeodam.yeodambe.user.entity.User;
+import com.yeodam.yeodambe.user.repository.LoginSessionRepository;
+import com.yeodam.yeodambe.user.repository.UserRepository;
+import com.yeodam.yeodambe.user.security.TokenHasher;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
-import java.util.concurrent.TimeUnit;
+import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,72 +32,107 @@ class LoginSessionStoreTest {
     private LoginSessionStore loginSessionStore;
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private LoginSessionRepository loginSessionRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private TokenHasher tokenHasher;
 
     @Test
-    void savesAndFindsSessionBySid() {
-        loginSessionStore.save("sid-1", 42L, "refresh-hash-1");
+    void savesAndFindsSessionBySidAndRefreshTokenHash() {
+        User user = saveUser("lookup");
+        String sid = UUID.randomUUID().toString();
+        String refreshHash = tokenHasher.hash("refresh-token-lookup");
 
-        assertThat(loginSessionStore.findBySid("sid-1"))
-                .contains(new LoginSession(42L, "refresh-hash-1"));
-        assertThat(loginSessionStore.findSidByRefreshTokenHash("refresh-hash-1"))
-                .contains("sid-1");
-        assertThat(loginSessionStore.findBySid("missing-sid"))
-                .isEmpty();
-        assertThat(loginSessionStore.findSidByRefreshTokenHash("missing-hash"))
-                .isEmpty();
-    }
-
-    @Test
-    void sessionExpiresAfterSevenDays() {
-        loginSessionStore.save("sid-ttl", 42L, "refresh-hash-2");
-
-        Long ttlSeconds = redisTemplate.getExpire(
-                "auth:session:sid-ttl",
-                TimeUnit.SECONDS
-        );
-        Long refreshIndexTtlSeconds = redisTemplate.getExpire(
-                "auth:refresh:refresh-hash-2",
-                TimeUnit.SECONDS
-        );
-
-        assertThat(ttlSeconds).isBetween(604790L, 604800L);
-        assertThat(refreshIndexTtlSeconds).isBetween(604790L, 604800L);
-    }
-
-    @Test
-    void rotatesRefreshTokenAndRemovesOldIndex() {
-        String suffix = UUID.randomUUID().toString();
-        String sid = "sid-" + suffix;
-        String oldHash = "old-" + suffix;
-        String newHash = "new-" + suffix;
-        loginSessionStore.save(sid, 42L, oldHash);
-
-        assertThat(loginSessionStore.rotate(oldHash, newHash)).contains(42L);
+        loginSessionStore.save(sid, user.getUserId(), refreshHash);
 
         assertThat(loginSessionStore.findBySid(sid))
-                .contains(new LoginSession(42L, newHash));
+                .contains(new LoginSession(user.getUserId(), refreshHash));
+        assertThat(loginSessionStore.findSidByRefreshTokenHash(refreshHash))
+                .contains(sid);
+        assertThat(loginSessionStore.findBySid("missing-sid"))
+                .isEmpty();
+    }
+
+    @Test
+    void storesSevenDayExpiration() {
+        User user = saveUser("expiration");
+        String sid = UUID.randomUUID().toString();
+        String refreshHash = tokenHasher.hash("refresh-token-expiration");
+        LocalDateTime beforeSave = LocalDateTime.now();
+
+        loginSessionStore.save(sid, user.getUserId(), refreshHash);
+
+        LoginSessionEntity saved = loginSessionRepository
+                .findBySid(sid)
+                .orElseThrow();
+
+        assertThat(saved.getExpiresAt())
+                .isBetween(
+                        beforeSave.plusDays(7),
+                        LocalDateTime.now().plusDays(7)
+                );
+    }
+
+    @Test
+    void rotatesRefreshTokenAndExtendsExpiration() {
+        User user = saveUser("rotation");
+        String sid = UUID.randomUUID().toString();
+        String oldHash = tokenHasher.hash("old-refresh-token");
+        String newHash = tokenHasher.hash("new-refresh-token");
+
+        loginSessionStore.save(sid, user.getUserId(), oldHash);
+        LocalDateTime beforeRotation = LocalDateTime.now();
+
+        assertThat(loginSessionStore.rotate(oldHash, newHash))
+                .contains(user.getUserId());
         assertThat(loginSessionStore.findSidByRefreshTokenHash(oldHash))
                 .isEmpty();
         assertThat(loginSessionStore.findSidByRefreshTokenHash(newHash))
                 .contains(sid);
-        assertThat(redisTemplate.getExpire("auth:session:" + sid, TimeUnit.SECONDS))
-                .isBetween(604790L, 604800L);
-        assertThat(redisTemplate.getExpire("auth:refresh:" + newHash, TimeUnit.SECONDS))
-                .isBetween(604790L, 604800L);
+
+        LoginSessionEntity rotated = loginSessionRepository
+                .findBySid(sid)
+                .orElseThrow();
+
+        assertThat(rotated.getExpiresAt())
+                .isBetween(
+                        beforeRotation.plusDays(7),
+                        LocalDateTime.now().plusDays(7)
+                );
+    }
+
+    @Test
+    void expiredSessionCannotBeFoundAndIsDeleted() {
+        User user = saveUser("expired");
+        String sid = UUID.randomUUID().toString();
+        String refreshHash = tokenHasher.hash("expired-refresh-token");
+
+        loginSessionRepository.save(new LoginSessionEntity(
+                sid,
+                user,
+                refreshHash,
+                LocalDateTime.now().minusSeconds(1)
+        ));
+
+        assertThat(loginSessionStore.findBySid(sid)).isEmpty();
+        assertThat(loginSessionRepository.findBySid(sid)).isEmpty();
     }
 
     @Test
     void onlyOneConcurrentRotationOfSameTokenSucceeds() throws Exception {
-        String suffix = UUID.randomUUID().toString();
-        String sid = "sid-" + suffix;
-        String oldHash = "old-" + suffix;
-        String firstNewHash = "first-" + suffix;
-        String secondNewHash = "second-" + suffix;
-        loginSessionStore.save(sid, 42L, oldHash);
+        User user = saveUser("concurrent");
+        String sid = UUID.randomUUID().toString();
+        String oldHash = tokenHasher.hash("concurrent-old-token");
+        String firstNewHash = tokenHasher.hash("concurrent-first-token");
+        String secondNewHash = tokenHasher.hash("concurrent-second-token");
+        loginSessionStore.save(sid, user.getUserId(), oldHash);
 
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
+
         try {
             Future<Optional<Long>> first = executor.submit(() -> {
                 start.await();
@@ -107,19 +147,31 @@ class LoginSessionStoreTest {
             Optional<Long> firstResult = first.get(10, TimeUnit.SECONDS);
             Optional<Long> secondResult = second.get(10, TimeUnit.SECONDS);
 
-            assertThat(firstResult.isPresent() == secondResult.isPresent()).isFalse();
-            assertThat(loginSessionStore.findSidByRefreshTokenHash(oldHash)).isEmpty();
+            assertThat(firstResult.isPresent() == secondResult.isPresent())
+                    .isFalse();
+            assertThat(loginSessionStore.findSidByRefreshTokenHash(oldHash))
+                    .isEmpty();
 
-            String winningHash = firstResult.isPresent() ? firstNewHash : secondNewHash;
-            String losingHash = firstResult.isPresent() ? secondNewHash : firstNewHash;
+            String winningHash = firstResult.isPresent()
+                    ? firstNewHash
+                    : secondNewHash;
+            String losingHash = firstResult.isPresent()
+                    ? secondNewHash
+                    : firstNewHash;
+
             assertThat(loginSessionStore.findBySid(sid))
-                    .contains(new LoginSession(42L, winningHash));
-            assertThat(loginSessionStore.findSidByRefreshTokenHash(winningHash))
-                    .contains(sid);
+                    .contains(new LoginSession(user.getUserId(), winningHash));
             assertThat(loginSessionStore.findSidByRefreshTokenHash(losingHash))
                     .isEmpty();
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    private User saveUser(String suffix) {
+        return userRepository.save(new User(
+                suffix + "-" + UUID.randomUUID() + "@yeodam.test",
+                "세션회원"
+        ));
     }
 }

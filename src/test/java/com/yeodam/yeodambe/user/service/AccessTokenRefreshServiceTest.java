@@ -3,11 +3,11 @@ package com.yeodam.yeodambe.user.service;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.repository.UserRepository;
+import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.session.LoginSession;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
 import com.yeodam.yeodambe.user.security.session.RefreshTokenGenerator;
-import com.yeodam.yeodambe.user.security.session.RefreshTokenHasher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,7 +27,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class AccessTokenRefreshServiceTest {
 
     @Mock
-    private RefreshTokenHasher refreshTokenHasher;
+    private TokenHasher tokenHasher;
 
     @Mock
     private RefreshTokenGenerator refreshTokenGenerator;
@@ -46,7 +46,7 @@ class AccessTokenRefreshServiceTest {
     @BeforeEach
     void setUp() {
         service = new AccessTokenRefreshService(
-                refreshTokenHasher,
+                tokenHasher,
                 refreshTokenGenerator,
                 loginSessionStore,
                 userRepository,
@@ -60,7 +60,7 @@ class AccessTokenRefreshServiceTest {
                 .isInstanceOf(RefreshTokenInvalidOrExpiredException.class);
 
         verifyNoInteractions(
-                refreshTokenHasher,
+                tokenHasher,
                 refreshTokenGenerator,
                 loginSessionStore,
                 userRepository,
@@ -71,7 +71,7 @@ class AccessTokenRefreshServiceTest {
     @Test
     void rotatesRefreshTokenAndReturnsNewTokens() {
         User user = mock(User.class);
-        given(refreshTokenHasher.hash("old-refresh-token"))
+        given(tokenHasher.hash("old-refresh-token"))
                 .willReturn("old-refresh-hash");
         given(loginSessionStore.findSidByRefreshTokenHash("old-refresh-hash"))
                 .willReturn(Optional.of("sid-1"));
@@ -83,7 +83,7 @@ class AccessTokenRefreshServiceTest {
         given(user.getUserId()).willReturn(42L);
         given(refreshTokenGenerator.generate())
                 .willReturn("new-refresh-token");
-        given(refreshTokenHasher.hash("new-refresh-token"))
+        given(tokenHasher.hash("new-refresh-token"))
                 .willReturn("new-refresh-hash");
         given(accessTokenIssuer.issue(42L, "sid-1"))
                 .willReturn("new-access-token");
@@ -110,7 +110,7 @@ class AccessTokenRefreshServiceTest {
     @Test
     void rejectsRequestThatLosesRefreshTokenRotationRace() {
         User user = mock(User.class);
-        given(refreshTokenHasher.hash("old-refresh-token"))
+        given(tokenHasher.hash("old-refresh-token"))
                 .willReturn("old-refresh-hash");
         given(loginSessionStore.findSidByRefreshTokenHash("old-refresh-hash"))
                 .willReturn(Optional.of("sid-1"));
@@ -122,7 +122,7 @@ class AccessTokenRefreshServiceTest {
         given(user.getUserId()).willReturn(42L);
         given(refreshTokenGenerator.generate())
                 .willReturn("new-refresh-token");
-        given(refreshTokenHasher.hash("new-refresh-token"))
+        given(tokenHasher.hash("new-refresh-token"))
                 .willReturn("new-refresh-hash");
         given(accessTokenIssuer.issue(42L, "sid-1"))
                 .willReturn("new-access-token");

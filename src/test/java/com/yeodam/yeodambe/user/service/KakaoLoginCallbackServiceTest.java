@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import com.yeodam.yeodambe.user.client.KakaoTokenResponse;
 import com.yeodam.yeodambe.user.client.KakaoUserResponse;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
@@ -140,14 +140,16 @@ class KakaoLoginCallbackServiceTest {
     }
 
     @Test
-    void keepsRedisFailureForAuthStoreUnavailableResponse() {
+    void keepsDatabaseFailureForAuthStoreUnavailableResponse() {
         givenValidKakaoAuthentication();
         given(loginTicketGenerator.generate()).willReturn("login-ticket");
 
-        RedisConnectionFailureException redisFailure =
-                new RedisConnectionFailureException("Redis unavailable");
+        DataAccessResourceFailureException databaseFailure =
+                new DataAccessResourceFailureException(
+                        "Authentication database unavailable"
+                );
 
-        org.mockito.BDDMockito.willThrow(redisFailure)
+        org.mockito.BDDMockito.willThrow(databaseFailure)
                 .given(loginTicketStore)
                 .save(
                         "login-ticket",
@@ -162,7 +164,7 @@ class KakaoLoginCallbackServiceTest {
                 "authorization-code",
                 "valid-state",
                 "browser-1"
-        )).isSameAs(redisFailure);
+        )).isSameAs(databaseFailure);
     }
 
     private void givenValidKakaoAuthentication() {

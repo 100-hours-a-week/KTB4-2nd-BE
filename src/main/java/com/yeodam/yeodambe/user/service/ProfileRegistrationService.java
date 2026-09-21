@@ -10,6 +10,7 @@ import com.yeodam.yeodambe.user.security.session.LoginSessionIssuer;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +21,7 @@ public class ProfileRegistrationService {
     private final LoginSessionIssuer loginSessionIssuer;
     private final AccessTokenIssuer accessTokenIssuer;
 
+    @Transactional
     public Result register(String profileToken, String nickname) {
         KakaoUserIdentity identity = profileTokenStore.find(profileToken)
                 .orElseThrow(OnboardingTokenInvalidOrExpiredException::new);

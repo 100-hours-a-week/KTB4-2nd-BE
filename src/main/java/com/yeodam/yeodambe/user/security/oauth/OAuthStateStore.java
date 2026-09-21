@@ -1,52 +1,79 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
+import com.yeodam.yeodambe.user.entity.OAuthStateEntity;
+import com.yeodam.yeodambe.user.repository.OAuthStateRepository;
+import com.yeodam.yeodambe.user.security.TokenHasher;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
 public class OAuthStateStore {
 
-    private static final String KEY_PREFIX = "oauth:state:";
-    private static final Duration STATE_TTL = Duration.ofMinutes(5);
+    private static final Duration STATE_TTL =
+            Duration.ofMinutes(5);
 
-    private final StringRedisTemplate redisTemplate;
+    private final OAuthStateRepository oauthStateRepository;
+    private final TokenHasher tokenHasher;
 
-    private static final DefaultRedisScript<Long> CONSUME_SCRIPT =
-            new DefaultRedisScript<>(
-                    """
-                    if redis.call('GET', KEYS[1]) == ARGV[1] then
-                        return redis.call('DEL', KEYS[1])
-                    end
-                    return 0
-                    """,
-                    Long.class
-            );
+    public void save(
+            String state,
+            String browserContext
+    ) {
+        LocalDateTime expiresAt =
+                LocalDateTime.now().plus(STATE_TTL);
 
-    public void save(String state, String browserContext) {
-        redisTemplate.opsForValue().set(
-                key(state),
-                browserContext,
-                STATE_TTL
-        );
-    }
-
-    public boolean consume(String state, String browserContext) {
-        Long deletedCount = redisTemplate.execute(
-                CONSUME_SCRIPT,
-                List.of(key(state)),
-                browserContext
+        OAuthStateEntity entity = new OAuthStateEntity(
+                tokenHasher.hash(state),
+                tokenHasher.hash(browserContext),
+                expiresAt
         );
 
-        return Long.valueOf(1L).equals(deletedCount);
+        oauthStateRepository.save(entity);
     }
 
-    private String key(String state) {
-        return KEY_PREFIX + state;
+    @Transactional
+    public boolean consume(
+            String state,
+            String browserContext
+    ) {
+        if (state == null
+                || state.isBlank()
+                || browserContext == null
+                || browserContext.isBlank()) {
+            return false;
+        }
+
+        String stateHash = tokenHasher.hash(state);
+        String browserContextHash =
+                tokenHasher.hash(browserContext);
+
+        Optional<OAuthStateEntity> result =
+                oauthStateRepository.findByStateHashForUpdate(
+                        stateHash
+                );
+
+        if (result.isEmpty()) {
+            return false;
+        }
+
+        OAuthStateEntity entity = result.get();
+
+        if (entity.isExpired(LocalDateTime.now())) {
+            oauthStateRepository.delete(entity);
+            return false;
+        }
+
+        if (!entity.matchesBrowserContext(browserContextHash)) {
+            return false;
+        }
+
+        oauthStateRepository.delete(entity);
+        return true;
     }
 }

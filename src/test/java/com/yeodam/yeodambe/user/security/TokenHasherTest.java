@@ -1,13 +1,13 @@
-package com.yeodam.yeodambe.user.security.session;
+package com.yeodam.yeodambe.user.security;
 
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class RefreshTokenHasherTest {
+class TokenHasherTest {
 
-    private final RefreshTokenHasher hasher =
-            new RefreshTokenHasher();
+    private final TokenHasher hasher =
+            new TokenHasher();
 
     @Test
     void sameTokenHasSameHashWithoutExposingRawValue() {

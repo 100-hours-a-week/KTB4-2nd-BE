@@ -15,7 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -151,8 +151,8 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsServiceUnavailableWhenRedisConnectionFails() throws Exception {
-        mockMvc.perform(get("/test/redis-unavailable"))
+    void returnsServiceUnavailableWhenAuthenticationDatabaseFails() throws Exception {
+        mockMvc.perform(get("/test/auth-database-unavailable"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(content().json("""
                     {
@@ -295,9 +295,11 @@ class GlobalExceptionHandlerTest {
             throw new OAuthProviderUnavailableException();
         }
 
-        @GetMapping("/test/redis-unavailable")
-        void redisUnavailable() {
-            throw new RedisConnectionFailureException("Redis unavailable");
+        @GetMapping("/test/auth-database-unavailable")
+        void authenticationDatabaseUnavailable() {
+            throw new DataAccessResourceFailureException(
+                    "Authentication database unavailable"
+            );
         }
 
         @GetMapping("/test/ai-status-unavailable")

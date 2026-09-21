@@ -28,7 +28,7 @@ public class LoginTicketExchangeService {
     private final LoginSessionIssuer loginSessionIssuer;
     private final AccessTokenIssuer accessTokenIssuer;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public LoginExchangeDecision exchange(String loginTicket, String browserContext) {
         KakaoUserIdentity identity = loginTicketStore
                 .consume(loginTicket, browserContext)

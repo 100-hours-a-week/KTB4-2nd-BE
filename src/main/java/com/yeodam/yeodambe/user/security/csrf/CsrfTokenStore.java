@@ -1,32 +1,56 @@
 package com.yeodam.yeodambe.user.security.csrf;
 
+import com.yeodam.yeodambe.user.entity.CsrfTokenEntity;
+import com.yeodam.yeodambe.user.repository.CsrfTokenRepository;
+import com.yeodam.yeodambe.user.security.TokenHasher;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
 public class CsrfTokenStore {
 
-    private static final String KEY_PREFIX = "auth:csrf:";
     private static final Duration TOKEN_TTL =
             Duration.ofDays(7);
 
-    private final StringRedisTemplate redisTemplate;
+    private final CsrfTokenRepository csrfTokenRepository;
+    private final TokenHasher tokenHasher;
 
+    @Transactional
     public void save(
             String browserContext,
             String token
     ) {
-        redisTemplate.opsForValue().set(
-                key(browserContext),
+        String browserContextHash =
+                tokenHasher.hash(browserContext);
+
+        Optional<CsrfTokenEntity> result =
+                csrfTokenRepository
+                        .findByBrowserContextHashForUpdate(
+                                browserContextHash
+                        );
+
+        LocalDateTime expiresAt =
+                LocalDateTime.now().plus(TOKEN_TTL);
+
+        if (result.isPresent()) {
+            result.get().update(token, expiresAt);
+            return;
+        }
+
+        csrfTokenRepository.save(new CsrfTokenEntity(
+                browserContextHash,
                 token,
-                TOKEN_TTL
-        );
+                expiresAt
+        ));
     }
 
+    @Transactional
     public boolean matches(
             String browserContext,
             String token
@@ -38,30 +62,64 @@ public class CsrfTokenStore {
             return false;
         }
 
-        String storedToken = redisTemplate
-                .opsForValue()
-                .get(key(browserContext));
+        Optional<CsrfTokenEntity> result =
+                findEntity(browserContext);
 
-        return token.equals(storedToken);
+        if (result.isEmpty()) {
+            return false;
+        }
+
+        CsrfTokenEntity entity = result.get();
+
+        if (entity.isExpired(LocalDateTime.now())) {
+            csrfTokenRepository.delete(entity);
+            return false;
+        }
+
+        return token.equals(entity.getTokenValue());
     }
 
+    @Transactional
     public String find(String browserContext) {
-        if (browserContext == null || browserContext.isBlank()) {
+        if (browserContext == null
+                || browserContext.isBlank()) {
             return null;
         }
 
-        return redisTemplate.opsForValue().get(key(browserContext));
+        Optional<CsrfTokenEntity> result =
+                findEntity(browserContext);
+
+        if (result.isEmpty()) {
+            return null;
+        }
+
+        CsrfTokenEntity entity = result.get();
+
+        if (entity.isExpired(LocalDateTime.now())) {
+            csrfTokenRepository.delete(entity);
+            return null;
+        }
+
+        return entity.getTokenValue();
     }
 
+    @Transactional
     public void delete(String browserContext) {
-        if (browserContext == null || browserContext.isBlank()) {
+        if (browserContext == null
+                || browserContext.isBlank()) {
             return;
         }
 
-        redisTemplate.delete(key(browserContext));
+        csrfTokenRepository.deleteByBrowserContextHash(
+                tokenHasher.hash(browserContext)
+        );
     }
 
-    private String key(String browserContext) {
-        return KEY_PREFIX + browserContext;
+    private Optional<CsrfTokenEntity> findEntity(
+            String browserContext
+    ) {
+        return csrfTokenRepository.findByBrowserContextHash(
+                tokenHasher.hash(browserContext)
+        );
     }
 }

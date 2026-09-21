@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
+import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
@@ -9,7 +10,7 @@ import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenGenerator;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
-import com.yeodam.yeodambe.user.security.csrf.RedisCsrfTokenRepository;
+import com.yeodam.yeodambe.user.security.csrf.RdbCsrfTokenRepository;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.jwt.ActiveLoginSessionValidator;
 import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
@@ -35,6 +36,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -47,7 +49,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         CookieAccessTokenResolver.class,
         ApiAuthenticationEntryPoint.class,
         CsrfAccessDeniedHandler.class,
-        RedisCsrfTokenRepository.class
+        RdbCsrfTokenRepository.class
 })
 class TripCreationSecurityIntegrationTest {
 
@@ -62,6 +64,9 @@ class TripCreationSecurityIntegrationTest {
 
     @MockitoBean
     private TripProcessingStatusService processingStatusService;
+
+    @MockitoBean
+    private TripProcessingCancellationService processingCancellationService;
 
     @MockitoBean
     private ActiveLoginSessionValidator activeLoginSessionValidator;
@@ -136,6 +141,48 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(jsonPath("$.data").doesNotExist());
 
         then(tripService).should(never()).createTrip(any(), any());
+    }
+
+    @Test
+    void 취소_API는_쿠키_Jwt와_CSRF를_검증한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("cancel-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(delete("/trips/7/processing")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "cancel-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isNoContent());
+
+        then(processingCancellationService).should().cancel(7L, 42L);
+    }
+
+    @Test
+    void 취소_API는_액세스_토큰이_없으면_401을_반환한다() throws Exception {
+        given(csrfTokenStore.find("unauthorized-cancel-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(delete("/trips/7/processing")
+                        .cookie(new Cookie("CSRF_CONTEXT", "unauthorized-cancel-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    void 취소_API는_CSRF가_일치하지_않으면_403을_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("invalid-csrf-cancel-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(delete("/trips/7/processing")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "invalid-csrf-cancel-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "wrong-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
     }
 
     private String validRequest() {

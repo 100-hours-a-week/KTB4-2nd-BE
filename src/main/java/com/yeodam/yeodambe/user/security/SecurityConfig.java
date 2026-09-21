@@ -8,6 +8,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.config.ObjectPostProcessor;
 import com.yeodam.yeodambe.user.security.jwt.CookieAccessTokenResolver;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.config.Customizer;
@@ -52,6 +54,14 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf
                 .csrfTokenRepository(rdbCsrfTokenRepository)
                 .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                .withObjectPostProcessor(new ObjectPostProcessor<CsrfFilter>() {
+                    @Override
+                    public <O extends CsrfFilter> O postProcess(O filter) {
+                        // 쿠키의 accessToken도 Bearer 토큰이므로 Resource Server 기본 CSRF 제외를 되돌린다.
+                        filter.setRequireCsrfProtectionMatcher(CsrfFilter.DEFAULT_CSRF_MATCHER);
+                        return filter;
+                    }
+                })
         );
 
         http.sessionManagement(session -> session

@@ -23,7 +23,7 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
     """)
     int prepareInitialUpload(Long tripId, Long userId, ProcessingStatus processing, ProcessingStatus failed);
 
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("""
         update Trip t set t.processingStatus = :status
         where t.id = :tripId and t.userId = :userId and t.deletedAt is null

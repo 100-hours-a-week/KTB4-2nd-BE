@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.integration.service;
 
 import com.yeodam.yeodambe.common.exception.AiProcessingFailedException;
+import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusResponse;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -89,5 +90,25 @@ class TripPhotoAnalysisServiceTest {
                 () -> TripPhotoAnalysisService.validateStatusResponse(7L, invalidProgress));
         assertThrows(IllegalStateException.class,
                 () -> TripPhotoAnalysisService.validateStatusResponse(7L, invalidCompleted));
+    }
+
+    @Test
+    void 취소_응답은_같은_여행의_CANCELED만_허용한다() {
+        var valid = json.readTree("{\"trip_id\":7,\"status\":\"CANCELED\"}");
+        var wrongTrip = json.readTree("{\"trip_id\":8,\"status\":\"CANCELED\"}");
+        var wrongStatus = json.readTree("{\"trip_id\":7,\"status\":\"COMPLETED\"}");
+
+        assertDoesNotThrow(() -> TripPhotoAnalysisService.validateCancelResponse(7L, valid));
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateCancelResponse(7L, wrongTrip));
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateCancelResponse(7L, wrongStatus));
+    }
+
+    @Test
+    void 서버_준비_후_취소된_실행이면_AI_POST를_시작하지_않는다() {
+        assertDoesNotThrow(() -> TripPhotoAnalysisService.requireAnalysisStart(() -> true));
+        assertThrows(TripInitialAttachmentUploadNotAllowedException.class,
+                () -> TripPhotoAnalysisService.requireAnalysisStart(() -> false));
     }
 }

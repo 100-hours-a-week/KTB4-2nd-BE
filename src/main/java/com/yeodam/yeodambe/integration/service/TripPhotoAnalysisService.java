@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.integration.service;
 
 import com.yeodam.yeodambe.common.exception.AiStatusUnavailableException;
 import com.yeodam.yeodambe.common.exception.AiProcessingFailedException;
+import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.integration.service.request.TripPhotoAnalysisRequest;
 import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusResponse;
 import com.yeodam.yeodambe.integration.client.AiEc2Starter;
@@ -19,6 +20,7 @@ import tools.jackson.databind.JsonNode;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.function.BooleanSupplier;
 
 @Service
 public class TripPhotoAnalysisService {
@@ -63,12 +65,12 @@ public class TripPhotoAnalysisService {
     }
 
     public JsonNode analyze(Long tripId, String executionId, TripPhotoAnalysisRequest request,
-                            Runnable analysisStarted) {
+                            BooleanSupplier analysisStarted) {
         JsonNode response;
 
         starter.ensureRunning();
         waitUntilReady();
-        analysisStarted.run();
+        requireAnalysisStart(analysisStarted);
 
         try {
             response = restClient.post()
@@ -85,6 +87,12 @@ public class TripPhotoAnalysisService {
         return validateResponse(tripId, executionId, response);
     }
 
+    static void requireAnalysisStart(BooleanSupplier analysisStarted) {
+        if (!analysisStarted.getAsBoolean()) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+    }
+
     public TripPhotoAnalysisStatusResponse findStatus(Long tripId) {
         try {
             JsonNode response = restClient.get()
@@ -97,6 +105,29 @@ public class TripPhotoAnalysisService {
             throw new AiStatusUnavailableException(e);
         } catch (RestClientException e) {
             throw new IllegalStateException("AI 사진 분석 상태 조회에 실패했습니다.", e);
+        }
+    }
+
+    public void cancel(Long tripId) {
+        JsonNode response;
+        try {
+            response = restClient.delete()
+                    .uri("/trips/{tripId}/process", tripId)
+                    .headers(headers -> headers.setBearerAuth(apiKey))
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientException e) {
+            throw new IllegalStateException("AI 사진 분석 취소 호출에 실패했습니다.", e);
+        }
+        validateCancelResponse(tripId, response);
+    }
+
+    static void validateCancelResponse(Long tripId, JsonNode response) {
+        if (response == null
+                || !response.path("trip_id").isIntegralNumber()
+                || response.path("trip_id").asLong(-1) != tripId
+                || !"CANCELED".equals(response.path("status").asString())) {
+            throw new IllegalStateException("AI 사진 분석 취소 응답이 올바르지 않습니다.");
         }
     }
 

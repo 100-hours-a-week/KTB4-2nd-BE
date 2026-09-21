@@ -71,6 +71,7 @@ public class TripAttachmentService {
             originalFiles = persisted.originals();
             savedAttachments = persisted.attachments();
 
+            requireProcessing(tripId, userId);
             JsonNode result = analysis.analyze(
                     tripId,
                     executionId,
@@ -105,6 +106,13 @@ public class TripAttachmentService {
         }
 
         return statuses.findStatus(tripId, userId);
+    }
+
+    private void requireProcessing(Long tripId, Long userId) {
+        if (!trips.existsByIdAndUserIdAndDeletedAtIsNullAndProcessingStatus(
+                tripId, userId, ProcessingStatus.PROCESSING)) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
     }
 
     private void deleteStaleObjects(List<String> staleKeys) {

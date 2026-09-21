@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -40,6 +41,8 @@ class TripAttachmentServiceTest {
     void setUp() {
         service = new TripAttachmentService(trips, regions, storage, transactions,
                 derivatives, analysis, results, executions, statuses);
+        when(trips.existsByIdAndUserIdAndDeletedAtIsNullAndProcessingStatus(
+                7L, 1L, ProcessingStatus.PROCESSING)).thenReturn(true);
     }
 
     @Test
@@ -156,8 +159,9 @@ class TripAttachmentServiceTest {
                 .thenReturn(new TripAttachmentTransactionService.SavedAttachments(
                         List.of(original), List.of(attachment)));
         when(regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L)).thenReturn(List.of(region));
+        when(executions.markAnalysisStarted(7L, "run")).thenReturn(true);
         when(analysis.analyze(eq(7L), eq("run"), any(), any())).thenAnswer(invocation -> {
-            invocation.<Runnable>getArgument(3).run();
+            invocation.<BooleanSupplier>getArgument(3).getAsBoolean();
             return aiResult;
         });
         when(statuses.findStatus(7L, 1L)).thenReturn(new TripProcessingStatusResponse(
@@ -177,6 +181,41 @@ class TripAttachmentServiceTest {
         verify(results).saveCompleted(7L, 1L, "run", List.of(attachment), aiResult);
         verify(executions).markAnalysisStarted(7L, "run");
         verify(executions).release(7L, "run");
+    }
+
+    @Test
+    void 첨부_저장_후_취소되면_AI를_호출하지_않고_요청_객체를_정리한다() {
+        Trip trip = trip(1L);
+        MockMultipartFile file = jpeg();
+        StoredFile original = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
+        ReflectionTestUtils.setField(original, "id", 20L);
+        TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
+        ReflectionTestUtils.setField(attachment, "id", 30L);
+        DerivedPhotoKeys keys = new DerivedPhotoKeys(
+                "original", "analyze", "preview", null, null, null, null);
+        TripRegion region = new TripRegion(trip, "50110", "제주특별자치도 제주시",
+                new BigDecimal("33.5"), new BigDecimal("126.5"));
+
+        when(trips.findById(7L)).thenReturn(Optional.of(trip));
+        when(transactions.reserve(7L, 1L)).thenReturn(reservation());
+        when(storage.store("run", file)).thenReturn("original");
+        when(derivatives.createAll("run", List.of("original")))
+                .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
+        when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
+                List.of("original"), List.of("image/jpeg"), List.of(keys)))
+                .thenReturn(new TripAttachmentTransactionService.SavedAttachments(
+                        List.of(original), List.of(attachment)));
+        when(regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L)).thenReturn(List.of(region));
+        when(trips.existsByIdAndUserIdAndDeletedAtIsNullAndProcessingStatus(
+                7L, 1L, ProcessingStatus.PROCESSING)).thenReturn(false);
+
+        assertThrows(TripInitialAttachmentUploadNotAllowedException.class,
+                () -> service.uploadInitialAttachments(7L, 1L, List.of(file)));
+
+        verifyNoInteractions(analysis);
+        verify(storage).delete("original");
+        verify(storage).delete("analyze");
+        verify(storage).delete("preview");
     }
 
     @Test

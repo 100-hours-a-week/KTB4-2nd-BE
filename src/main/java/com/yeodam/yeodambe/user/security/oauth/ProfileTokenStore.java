@@ -1,66 +1,77 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
+import com.yeodam.yeodambe.user.entity.ProfileTokenEntity;
+import com.yeodam.yeodambe.user.repository.ProfileTokenRepository;
+import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
 public class ProfileTokenStore {
 
-    private static final String KEY_PREFIX = "auth:profile-token:";
-    private static final Duration TOKEN_TTL = Duration.ofMinutes(10);
+    private static final Duration TOKEN_TTL =
+            Duration.ofMinutes(10);
 
-    private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper objectMapper;
+    private final ProfileTokenRepository profileTokenRepository;
+    private final TokenHasher tokenHasher;
 
-    public void save(String token, KakaoUserIdentity identity) {
-        try {
-            String json = objectMapper.writeValueAsString(identity);
-            redisTemplate.opsForValue().set(
-                    key(token),
-                    json,
-                    TOKEN_TTL
-            );
-        } catch (JacksonException e) {
-            throw new IllegalStateException("가입 토큰 데이터 변환에 실패했습니다.", e);
-        }
+    public void save(
+            String token,
+            KakaoUserIdentity identity
+    ) {
+        ProfileTokenEntity entity = new ProfileTokenEntity(
+                tokenHasher.hash(token),
+                identity.providerUserId(),
+                identity.email(),
+                LocalDateTime.now().plus(TOKEN_TTL)
+        );
+
+        profileTokenRepository.save(entity);
     }
 
+    @Transactional
     public Optional<KakaoUserIdentity> find(String token) {
         if (token == null || token.isBlank()) {
             return Optional.empty();
         }
 
-        String json = redisTemplate.opsForValue().get(key(token));
-        if (json == null) {
+        Optional<ProfileTokenEntity> result =
+                profileTokenRepository.findByTokenHashForUpdate(
+                        tokenHasher.hash(token)
+                );
+
+        if (result.isEmpty()) {
             return Optional.empty();
         }
 
-        try {
-            return Optional.of(
-                    objectMapper.readValue(json, KakaoUserIdentity.class)
-            );
-        } catch (JacksonException e) {
-            throw new IllegalStateException("가입 토큰 데이터 복원에 실패했습니다.", e);
+        ProfileTokenEntity entity = result.get();
+
+        if (entity.isExpired(LocalDateTime.now())) {
+            profileTokenRepository.delete(entity);
+            return Optional.empty();
         }
+
+        return Optional.of(new KakaoUserIdentity(
+                entity.getProviderUserId(),
+                entity.getEmail()
+        ));
     }
 
+    @Transactional
     public void delete(String token) {
         if (token == null || token.isBlank()) {
             return;
         }
 
-        redisTemplate.delete(key(token));
-    }
-
-    private String key(String token) {
-        return KEY_PREFIX + token;
+        profileTokenRepository
+                .findByTokenHashForUpdate(tokenHasher.hash(token))
+                .ifPresent(profileTokenRepository::delete);
     }
 }

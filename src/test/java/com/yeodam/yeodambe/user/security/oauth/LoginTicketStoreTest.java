@@ -1,28 +1,30 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
-import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.user.entity.LoginTicketEntity;
+import com.yeodam.yeodambe.user.repository.LoginTicketRepository;
+import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.context.ActiveProfiles;
 
-import java.util.concurrent.TimeUnit;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@DataJpaTest
+@Import({LoginTicketStore.class, TokenHasher.class})
 class LoginTicketStoreTest {
 
     @Autowired
     private LoginTicketStore loginTicketStore;
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private LoginTicketRepository loginTicketRepository;
+
+    @Autowired
+    private TokenHasher tokenHasher;
 
     @Test
     void ticketCanBeConsumedOnlyOnce() {
@@ -48,8 +50,10 @@ class LoginTicketStoreTest {
     }
 
     @Test
-    void ticketExpiresAfterOneMinute() {
-        String ticket = "login-ticket-ttl";
+    void storesHashesAndOneMinuteExpiration() {
+        String ticket = "login-ticket-hash";
+        String browserContext = "browser-hash";
+        LocalDateTime beforeSave = LocalDateTime.now();
 
         loginTicketStore.save(
                 ticket,
@@ -57,16 +61,21 @@ class LoginTicketStoreTest {
                         "123456789",
                         "member@example.com"
                 ),
-                "browser-1"
+                browserContext
         );
 
-        Long ttlSeconds = redisTemplate.getExpire(
-                "auth:login-ticket:browser-1:" + ticket,
-                TimeUnit.SECONDS
-        );
+        LoginTicketEntity saved = loginTicketRepository
+                .findByTicketHashForUpdate(tokenHasher.hash(ticket))
+                .orElseThrow();
 
-        assertThat(ttlSeconds)
-                .isBetween(50L, 60L);
+        assertThat(saved.getTicketHash()).isNotEqualTo(ticket);
+        assertThat(saved.getBrowserContextHash())
+                .isEqualTo(tokenHasher.hash(browserContext));
+        assertThat(saved.getExpiresAt())
+                .isBetween(
+                        beforeSave.plusMinutes(1),
+                        LocalDateTime.now().plusMinutes(1)
+                );
     }
 
     @Test
@@ -92,5 +101,24 @@ class LoginTicketStoreTest {
         assertThat(
                 loginTicketStore.consume(ticket, "browser-1")
         ).contains(identity);
+    }
+
+    @Test
+    void expiredTicketCannotBeConsumedAndIsDeleted() {
+        String ticket = "login-ticket-expired";
+        String ticketHash = tokenHasher.hash(ticket);
+
+        loginTicketRepository.save(new LoginTicketEntity(
+                ticketHash,
+                tokenHasher.hash("browser-1"),
+                "123456789",
+                "member@example.com",
+                LocalDateTime.now().minusSeconds(1)
+        ));
+
+        assertThat(loginTicketStore.consume(ticket, "browser-1"))
+                .isEmpty();
+        assertThat(loginTicketRepository.findByTicketHashForUpdate(ticketHash))
+                .isEmpty();
     }
 }

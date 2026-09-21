@@ -47,8 +47,8 @@ ai:
     base-url: ${AI_SERVER_BASE_URL}
     api-key: ${AI_SERVER_API_KEY}
     instance-id: ${AI_EC2_INSTANCE_ID}
-    connection-timeout: ${AI_CONNECTION_TIMEOUT:10s}
-    analysis_timeout: ${AI_ANALYSIS_TIMEOUT:30m}
+    connection-timeout: ${AI_ANALYSIS_CONNECTION_TIMEOUT:10s}
+    analysis_timeout: ${AI_ANALYSIS_READ_TIMEOUT:30m}
     health-connection-timeout: ${AI_HEALTH_CONNECTION_TIMEOUT:5s}
     health_read_timeout: ${AI_HEALTH_READ_TIMEOUT:5s}
 

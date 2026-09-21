@@ -30,11 +30,6 @@ public class TripController {
             @Valid @RequestBody TripCreateRequest request,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        if (jwt == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ApiResponse<>("UNAUTHORIZED", null));
-        }
-
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ApiResponse<>("TRIP_CREATED", tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
     }
@@ -44,11 +39,6 @@ public class TripController {
             @PathVariable Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        if (jwt == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ApiResponse<>("UNAUTHORIZED", null));
-        }
-
         return ResponseEntity.ok(new ApiResponse<>(
                 "TRIP_PROCESSING_STATUS_FOUND",
                 processingStatusService.findStatus(tripId, Long.valueOf(jwt.getSubject()))

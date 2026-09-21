@@ -9,7 +9,6 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface TripRegionRepository extends JpaRepository<TripRegion, Long> {
-
     @Query("""
             SELECT region
             FROM TripRegion region
@@ -26,4 +25,6 @@ public interface TripRegionRepository extends JpaRepository<TripRegion, Long> {
             @Param("userId") Long userId,
             @Param("status") ProcessingStatus status
     );
+
+    List<TripRegion> findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(Long tripId);
 }

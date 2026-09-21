@@ -1,4 +1,4 @@
-package com.yeodam.yeodambe.trip;
+package com.yeodam.yeodambe.trip.service.request;
 
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import jakarta.validation.Validation;

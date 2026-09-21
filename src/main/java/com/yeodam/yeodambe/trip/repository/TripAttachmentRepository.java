@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.repository;
 
+import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -10,6 +11,7 @@ import java.util.List;
 
 public interface TripAttachmentRepository extends JpaRepository<TripAttachment, Long> {
     List<TripAttachment> findAllByTripId(Long tripId);
+
     @Query("""
         SELECT new com.yeodam.yeodambe.trip.repository.TripAttachmentCount(
                 attachment.tripId,
@@ -23,4 +25,7 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     List<TripAttachmentCount> countNotDeletedByTripIds(
             @Param("tripIds") Collection<Long> tripIds
     );
+
+    long countByTripIdAndDeletedAtIsNullAndClassificationStatus(
+            Long tripId, ClassificationStatus classificationStatus);
 }

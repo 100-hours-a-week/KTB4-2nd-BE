@@ -70,6 +70,43 @@ class TripPhotoAnalysisServiceTest {
     }
 
     @Test
+    void 대기중_상태는_진행_정보를_검증하지_않고_변환한다() {
+        var response = json.readTree("""
+                {"trip_id":7,"status":"QUEUED","progress":{"done":9,"total":1},
+                 "current_step":null,"result":null,"error":null}
+                """);
+
+        TripPhotoAnalysisStatusResponse status =
+                TripPhotoAnalysisService.validateStatusResponse(7L, response);
+
+        assertEquals(TripPhotoAnalysisStatusResponse.Status.QUEUED, status.status());
+        assertNull(status.progress());
+        assertNull(status.currentStep());
+        assertTrue(status.result().isNull());
+        assertTrue(status.error().isNull());
+    }
+
+    @Test
+    void 대기중_상태에_진행_단계나_결과나_오류가_있으면_거부한다() {
+        var currentStep = json.readTree("""
+                {"trip_id":7,"status":"QUEUED","current_step":"DOWNLOADING","result":null,"error":null}
+                """);
+        var result = json.readTree("""
+                {"trip_id":7,"status":"QUEUED","current_step":null,"result":{},"error":null}
+                """);
+        var error = json.readTree("""
+                {"trip_id":7,"status":"QUEUED","current_step":null,"result":null,"error":{}}
+                """);
+
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateStatusResponse(7L, currentStep));
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateStatusResponse(7L, result));
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateStatusResponse(7L, error));
+    }
+
+    @Test
     void 진행_수치나_상태별_필드_조합이_잘못되면_거부한다() {
         var invalidTripId = json.readTree("""
                 {"trip_id":"7","status":"PROCESSING","progress":{"done":2,"total":5},
@@ -93,16 +130,31 @@ class TripPhotoAnalysisServiceTest {
     }
 
     @Test
-    void 취소_응답은_같은_여행의_CANCELED만_허용한다() {
-        var valid = json.readTree("{\"trip_id\":7,\"status\":\"CANCELED\"}");
+    void 취소_응답은_같은_여행의_종결_상태를_허용한다() {
+        var canceled = json.readTree("{\"trip_id\":7,\"status\":\"CANCELED\"}");
+        var completed = json.readTree("{\"trip_id\":7,\"status\":\"COMPLETED\"}");
+        var failed = json.readTree("{\"trip_id\":7,\"status\":\"FAILED\"}");
         var wrongTrip = json.readTree("{\"trip_id\":8,\"status\":\"CANCELED\"}");
-        var wrongStatus = json.readTree("{\"trip_id\":7,\"status\":\"COMPLETED\"}");
+        var wrongStatus = json.readTree("{\"trip_id\":7,\"status\":\"PROCESSING\"}");
 
-        assertDoesNotThrow(() -> TripPhotoAnalysisService.validateCancelResponse(7L, valid));
+        assertDoesNotThrow(() -> TripPhotoAnalysisService.validateCancelResponse(7L, canceled));
+        assertDoesNotThrow(() -> TripPhotoAnalysisService.validateCancelResponse(7L, completed));
+        assertDoesNotThrow(() -> TripPhotoAnalysisService.validateCancelResponse(7L, failed));
         assertThrows(IllegalStateException.class,
                 () -> TripPhotoAnalysisService.validateCancelResponse(7L, wrongTrip));
         assertThrows(IllegalStateException.class,
                 () -> TripPhotoAnalysisService.validateCancelResponse(7L, wrongStatus));
+    }
+
+    @Test
+    void 현재_실행의_취소_응답은_초기_첨부_충돌로_변환한다() {
+        var response = json.readTree("""
+                {"trip_id":7,"execution_id":"run","status":"CANCELED",
+                 "progress":{"done":2,"total":5},"current_step":null,"result":null,"error":null}
+                """);
+
+        assertThrows(TripInitialAttachmentUploadNotAllowedException.class,
+                () -> TripPhotoAnalysisService.validateResponse(7L, "run", response));
     }
 
     @Test

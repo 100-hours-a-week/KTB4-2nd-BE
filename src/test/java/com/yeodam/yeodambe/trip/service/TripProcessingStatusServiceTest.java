@@ -102,6 +102,29 @@ class TripProcessingStatusServiceTest {
     }
 
     @Test
+    void AI가_대기중이면_공개_상태를_진행중으로_유지한다() {
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)));
+        when(executions.isAnalysisStarted(7L)).thenReturn(true);
+        when(analysis.findStatus(7L)).thenReturn(new TripPhotoAnalysisStatusResponse(
+                7L,
+                TripPhotoAnalysisStatusResponse.Status.QUEUED,
+                null,
+                null,
+                null,
+                null
+        ));
+
+        var response = service.findStatus(7L, 1L);
+
+        assertThat(response.status()).isEqualTo(ProcessingStatus.PROCESSING);
+        assertThat(response.progress()).isNull();
+        assertThat(response.currentStep()).isNull();
+        assertThat(response.result()).isNull();
+        assertThat(response.error()).isNull();
+    }
+
+    @Test
     void AI가_끝나도_DB가_처리중이면_완료를_노출하지_않는다() {
         Trip processing = trip(ProcessingStatus.PROCESSING);
         when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))

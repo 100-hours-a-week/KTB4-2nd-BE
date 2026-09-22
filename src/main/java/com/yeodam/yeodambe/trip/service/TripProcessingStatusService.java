@@ -33,6 +33,9 @@ public class TripProcessingStatusService {
         }
 
         TripPhotoAnalysisStatusResponse aiStatus = analysis.findStatus(tripId);
+        if (aiStatus.status() == TripPhotoAnalysisStatusResponse.Status.QUEUED) {
+            return processing(tripId);
+        }
         if (aiStatus.status() == TripPhotoAnalysisStatusResponse.Status.PROCESSING) {
             return new TripProcessingStatusResponse(
                     tripId,

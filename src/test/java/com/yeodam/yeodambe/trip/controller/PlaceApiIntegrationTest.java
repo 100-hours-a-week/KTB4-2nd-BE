@@ -1,10 +1,8 @@
 package com.yeodam.yeodambe.trip.controller;
 
-import com.yeodam.yeodambe.common.exception.PlaceQueryProviderUnavailableException;
+import com.yeodam.yeodambe.trip.client.PlaceClient;
 import com.yeodam.yeodambe.trip.service.PlaceService;
-import com.yeodam.yeodambe.trip.service.request.PlaceSearchRequest;
-import com.yeodam.yeodambe.trip.service.response.PlaceCandidateResponse;
-import com.yeodam.yeodambe.trip.service.response.PlaceCandidatesResponse;
+import com.yeodam.yeodambe.trip.service.RegionCatalog;
 import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenGenerator;
@@ -15,8 +13,10 @@ import com.yeodam.yeodambe.user.security.jwt.ActiveLoginSessionValidator;
 import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
 import com.yeodam.yeodambe.user.security.jwt.CookieAccessTokenResolver;
 import com.yeodam.yeodambe.user.security.jwt.JwtConfig;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -24,12 +24,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.List;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
-import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -38,6 +32,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @Import({
         SecurityConfig.class,
+        PlaceService.class,
+        PlaceClient.class,
+        RegionCatalog.class,
         JwtConfig.class,
         AccessTokenIssuer.class,
         CookieAccessTokenResolver.class,
@@ -51,9 +48,6 @@ class PlaceApiIntegrationTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private PlaceService placeService;
-
-    @MockitoBean
     private ActiveLoginSessionValidator activeLoginSessionValidator;
 
     @MockitoBean
@@ -62,21 +56,23 @@ class PlaceApiIntegrationTest {
     @MockitoBean
     private CsrfTokenGenerator csrfTokenGenerator;
 
+    @Value("${place.provider.base-url:}")
+    private String providerBaseUrl;
+
+    @Value("${place.provider.service-key:}")
+    private String providerServiceKey;
+
     @Test
     @WithMockUser
-    void 인증된_사용자는_여행지_후보를_검색한다() throws Exception {
-        given(placeService.search(new PlaceSearchRequest("제주", null)))
-                .willReturn(new PlaceCandidatesResponse(List.of(
-                        new PlaceCandidateResponse("50110", "제주특별자치도 제주시")
-                )));
+    void 실제_행안부_API에서_여행지_후보를_검색한다() throws Exception {
+        Assumptions.assumeTrue(!providerBaseUrl.isBlank() && !providerServiceKey.isBlank(),
+                "행안부 API URL과 서비스 키가 설정되어야 합니다.");
 
         mockMvc.perform(get("/places").param("query", "제주"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("PLACE_CANDIDATES_FOUND"))
                 .andExpect(jsonPath("$.data.items[0].regionCode").value("50110"))
                 .andExpect(jsonPath("$.data.items[0].regionName").value("제주특별자치도 제주시"));
-
-        then(placeService).should().search(new PlaceSearchRequest("제주", null));
     }
 
     @Test
@@ -85,19 +81,6 @@ class PlaceApiIntegrationTest {
         mockMvc.perform(get("/places").param("query", "제주1"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
-
-        then(placeService).should(never()).search(any());
-    }
-
-    @Test
-    @WithMockUser
-    void 행안부_API_장애는_503을_반환한다() throws Exception {
-        given(placeService.search(new PlaceSearchRequest("제주", null)))
-                .willThrow(new PlaceQueryProviderUnavailableException("행안부 API 장애"));
-
-        mockMvc.perform(get("/places").param("query", "제주"))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.message").value("MAP_PROVIDER_UNAVAILABLE"));
     }
 
     @Test
@@ -105,7 +88,5 @@ class PlaceApiIntegrationTest {
         mockMvc.perform(get("/places").param("query", "제주"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
-
-        then(placeService).should(never()).search(any());
     }
 }

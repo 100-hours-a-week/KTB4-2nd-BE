@@ -51,4 +51,9 @@ public class UserStats {
     public UserStats(User user) {
         this.user = user;
     }
+
+    public void withdraw(LocalDateTime withdrawnAt) {
+        this.deletedAt = withdrawnAt;
+    }
+
 }

@@ -16,4 +16,17 @@ public interface TripDetailPlaceRepository extends JpaRepository<TripDetailPlace
             where place.tripId = :tripId and place.deletedAt is null
             """)
     int softDeleteByTripId(Long tripId, LocalDateTime deletedAt);
+
+    @Modifying
+    @Query("""
+            update TripDetailPlace place
+            set place.deletedAt = :deletedAt
+            where place.tripId in (
+                select trip.id
+                from Trip trip
+                where trip.userId = :userId
+            )
+              and place.deletedAt is null
+            """)
+    int softDeleteByUserId(Long userId, LocalDateTime deletedAt);
 }

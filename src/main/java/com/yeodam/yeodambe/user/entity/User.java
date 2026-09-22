@@ -51,5 +51,8 @@ public class User {
         this.nickname = nickname;
     }
 
+    public void withdraw(LocalDateTime withdrawnAt) {
+        this.deletedAt = withdrawnAt;
+    }
 
 }

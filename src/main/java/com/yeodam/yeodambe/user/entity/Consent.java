@@ -44,4 +44,8 @@ public class Consent {
         this.agreed = true;
         this.agreedAt = agreedAt;
     }
+
+    public void withdraw(LocalDateTime withdrawnAt) {
+        this.deletedAt = withdrawnAt;
+    }
 }

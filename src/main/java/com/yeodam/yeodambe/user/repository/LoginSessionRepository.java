@@ -29,6 +29,8 @@ public interface LoginSessionRepository
             @Param("refreshTokenHash") String refreshTokenHash
     );
 
+    long deleteByUser_UserId(Long userId);
+
     long deleteByExpiresAtLessThanEqual(LocalDateTime now);
 
     void deleteBySid(String sid);

@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface ConsentRepository extends JpaRepository<Consent, Long> {
 
     Optional<Consent> findByUser_UserId(Long userId);
+
+    Optional<Consent> findByUser_UserIdAndDeletedAtIsNull(Long userId);
 }

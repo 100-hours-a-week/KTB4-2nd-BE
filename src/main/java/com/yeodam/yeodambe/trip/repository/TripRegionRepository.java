@@ -36,4 +36,17 @@ public interface TripRegionRepository extends JpaRepository<TripRegion, Long> {
             where region.trip.id = :tripId and region.deletedAt is null
             """)
     int softDeleteByTripId(Long tripId, LocalDateTime deletedAt);
+
+    @Modifying
+    @Query("""
+            update TripRegion region
+            set region.deletedAt = :deletedAt
+            where region.trip.id in (
+                select trip.id
+                from Trip trip
+                where trip.userId = :userId
+            )
+              and region.deletedAt is null
+            """)
+    int softDeleteByUserId(Long userId, LocalDateTime deletedAt);
 }

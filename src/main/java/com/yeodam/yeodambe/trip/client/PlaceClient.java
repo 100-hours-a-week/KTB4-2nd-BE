@@ -7,7 +7,9 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -18,11 +20,13 @@ import java.util.List;
 public class PlaceClient {
     private final RestClient restClient;
     private final String serviceKey;
+    private final ObjectMapper objectMapper;
 
     public PlaceClient(
             @Value("${place.provider.base-url}") String baseUrl,
             @Value("${place.provider.service-key}") String serviceKey,
-            @Value("${place.provider.timeout}") Duration timeout
+            @Value("${place.provider.timeout}") Duration timeout,
+            ObjectMapper objectMapper
     ) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(timeout)
@@ -38,25 +42,27 @@ public class PlaceClient {
                 .build();
 
         this.serviceKey = serviceKey;
+        this.objectMapper = objectMapper;
     }
 
     public ProviderPage search(String query, int pageNo) {
         try {
 
-            JsonNode body = restClient.get()
+            String body = restClient.get()
                     .uri(builder -> builder
-                            .queryParam("ServiceKey", serviceKey)
+                            .queryParam("ServiceKey", "{serviceKey}")
                             .queryParam("pageNo", pageNo)
                             .queryParam("numOfRows", 10)
                             .queryParam("type", "json")
                             .queryParam("locatadd_nm", query)
-                            .build())
+                            .build(serviceKey)
+                    )
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
-                    .body(JsonNode.class);
+                    .body(String.class);
 
-            return parse(body);
-        } catch (RestClientException e) {
+            return parse(body == null ? null : objectMapper.readTree(body));
+        } catch (RestClientException | JacksonException e) {
             throw new PlaceQueryProviderUnavailableException(e);
         }
     }

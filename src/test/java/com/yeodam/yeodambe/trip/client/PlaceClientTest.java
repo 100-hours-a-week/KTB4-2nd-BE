@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 
@@ -22,7 +23,8 @@ class PlaceClientTest {
 
     @BeforeEach
     void setUp() {
-        client = new PlaceClient("https://provider.example/regions", "test-key", Duration.ofSeconds(1));
+        client = new PlaceClient(
+                "https://provider.example/regions", "test-key", Duration.ofSeconds(1), new ObjectMapper());
         RestClient.Builder builder = RestClient.builder().baseUrl("https://provider.example/regions");
         server = MockRestServiceServer.bindTo(builder).build();
         ReflectionTestUtils.setField(client, "restClient", builder.build());
@@ -47,6 +49,15 @@ class PlaceClientTest {
         assertThat(result.totalCount()).isEqualTo(11);
         assertThat(result.rows()).containsExactly(new PlaceClient.ProviderRegion(
                 "50", "110", "000", "00", "제주특별자치도 제주시"));
+        server.verify();
+    }
+
+    @Test
+    void text_html로_전달된_JSON_응답도_변환한다() {
+        server.expect(request -> {}).andRespond(withSuccess(
+                response("INFO-0", 0, ""), MediaType.TEXT_HTML));
+
+        assertThat(client.search("제주", 1).totalCount()).isZero();
         server.verify();
     }
 

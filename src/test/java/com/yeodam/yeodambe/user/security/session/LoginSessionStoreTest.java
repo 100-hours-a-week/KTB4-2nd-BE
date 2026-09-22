@@ -122,6 +122,30 @@ class LoginSessionStoreTest {
     }
 
     @Test
+    void deletesOnlyRequestedSession() {
+        User user = saveUser("logout");
+        String requestedSid = UUID.randomUUID().toString();
+        String otherSid = UUID.randomUUID().toString();
+
+        loginSessionStore.save(
+                requestedSid,
+                user.getUserId(),
+                tokenHasher.hash("logout-requested-refresh-token")
+        );
+        loginSessionStore.save(
+                otherSid,
+                user.getUserId(),
+                tokenHasher.hash("logout-other-refresh-token")
+        );
+
+        loginSessionStore.deleteBySid(requestedSid);
+
+        assertThat(loginSessionStore.findBySid(requestedSid)).isEmpty();
+        assertThat(loginSessionStore.findBySid(otherSid))
+                .isPresent();
+    }
+
+    @Test
     void onlyOneConcurrentRotationOfSameTokenSucceeds() throws Exception {
         User user = saveUser("concurrent");
         String sid = UUID.randomUUID().toString();

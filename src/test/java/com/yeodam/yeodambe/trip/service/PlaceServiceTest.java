@@ -1,9 +1,7 @@
-package com.yeodam.yeodambe.trip;
+package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.PlaceQueryProviderUnavailableException;
 import com.yeodam.yeodambe.trip.client.PlaceClient;
-import com.yeodam.yeodambe.trip.service.PlaceService;
-import com.yeodam.yeodambe.trip.service.RegionCatalog;
 import com.yeodam.yeodambe.trip.service.request.PlaceSearchRequest;
 import com.yeodam.yeodambe.trip.service.response.PlaceCandidateResponse;
 import org.junit.jupiter.api.Test;

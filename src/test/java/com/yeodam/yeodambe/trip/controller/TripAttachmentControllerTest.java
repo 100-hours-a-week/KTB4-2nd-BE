@@ -4,7 +4,7 @@ import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
 import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
-import com.yeodam.yeodambe.trip.service.response.InitialAttachmentsResponse;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
@@ -34,7 +34,7 @@ class TripAttachmentControllerTest {
     @Test
     void multipart_attachments_필드를_여행_아이디와_함께_받는다() throws Exception {
         when(service.uploadInitialAttachments(eq(7L), eq(1L), anyList()))
-                .thenReturn(new InitialAttachmentsResponse(7L, ProcessingStatus.COMPLETED, 1));
+                .thenReturn(completed(1));
 
         MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(new HandlerMethodArgumentResolver() {
@@ -51,9 +51,18 @@ class TripAttachmentControllerTest {
                 })
                 .build()
                 .perform(multipart("/trips/7/initial-attachments").file(photo()))
-                .andExpect(status().isCreated())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_PROCESSING_STATUS_FOUND"))
                 .andExpect(jsonPath("$.data.tripId").value(7))
-                .andExpect(jsonPath("$.data.totalAttachments").value(1));
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.progress.done").value(1))
+                .andExpect(jsonPath("$.data.progress.total").value(1))
+                .andExpect(jsonPath("$.data.currentStep").doesNotExist())
+                .andExpect(jsonPath("$.data.result.tripId").value(7))
+                .andExpect(jsonPath("$.data.result.placeFolderCount").value(1))
+                .andExpect(jsonPath("$.data.result.classifiedAttachmentCount").value(1))
+                .andExpect(jsonPath("$.data.result.unclassifiedAttachmentCount").value(0))
+                .andExpect(jsonPath("$.data.error").doesNotExist());
 
         verify(service).uploadInitialAttachments(eq(7L), eq(1L), argThat(files ->
                 files.size() == 1 && files.getFirst().getOriginalFilename().equals("photo.jpg")));
@@ -86,12 +95,12 @@ class TripAttachmentControllerTest {
     void 이백_장은_서비스에_전달한다() {
         var files = Collections.<MultipartFile>nCopies(200, photo());
         when(service.uploadInitialAttachments(7L, 1L, files))
-                .thenReturn(new InitialAttachmentsResponse(7L, ProcessingStatus.COMPLETED, 200));
+                .thenReturn(completed(200));
 
         var response = controller.uploadInitialAttachments(7L, jwt(), files);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(response.getBody().data().totalAttachments()).isEqualTo(200);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().data().progress().total()).isEqualTo(200);
         verify(service).uploadInitialAttachments(7L, 1L, files);
     }
 
@@ -99,15 +108,39 @@ class TripAttachmentControllerTest {
     void 결과_저장이_끝난_후_완료_응답을_반환한다() {
         var files = List.<MultipartFile>of(photo());
         when(service.uploadInitialAttachments(7L, 1L, files))
-                .thenReturn(new InitialAttachmentsResponse(7L, ProcessingStatus.COMPLETED, 1));
+                .thenReturn(completed(1));
 
         var response = controller.uploadInitialAttachments(7L, jwt(), files);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(response.getBody().message()).isEqualTo("TRIP_INITIAL_ATTACHMENTS_CREATED");
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");
         assertThat(response.getBody().data().tripId()).isEqualTo(7L);
         assertThat(response.getBody().data().status()).isEqualTo(ProcessingStatus.COMPLETED);
-        assertThat(response.getBody().data().totalAttachments()).isEqualTo(1);
+        assertThat(response.getBody().data().result().placeFolderCount()).isEqualTo(1);
+    }
+
+    @Test
+    void AI가_명시적으로_실패하면_200과_FAILED_오류를_반환한다() {
+        var files = List.<MultipartFile>of(photo());
+        when(service.uploadInitialAttachments(7L, 1L, files))
+                .thenReturn(new TripProcessingStatusResponse(
+                        7L,
+                        ProcessingStatus.FAILED,
+                        new TripProcessingStatusResponse.Progress(12, 128),
+                        null,
+                        null,
+                        new TripProcessingStatusResponse.Error(
+                                "AI_PROCESSING_FAILED", "첨부 처리에 실패했습니다.")
+                ));
+
+        var response = controller.uploadInitialAttachments(7L, jwt(), files);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");
+        assertThat(response.getBody().data().status()).isEqualTo(ProcessingStatus.FAILED);
+        assertThat(response.getBody().data().result()).isNull();
+        assertThat(response.getBody().data().error().code()).isEqualTo("AI_PROCESSING_FAILED");
+        assertThat(response.getBody().data().error().message()).isEqualTo("첨부 처리에 실패했습니다.");
     }
 
     @Test
@@ -132,5 +165,16 @@ class TripAttachmentControllerTest {
 
     private MockMultipartFile emptyPhoto() {
         return new MockMultipartFile("attachments[]", "empty.jpg", "image/jpeg", new byte[0]);
+    }
+
+    private TripProcessingStatusResponse completed(int total) {
+        return new TripProcessingStatusResponse(
+                7L,
+                ProcessingStatus.COMPLETED,
+                new TripProcessingStatusResponse.Progress(total, total),
+                null,
+                new TripProcessingStatusResponse.Result(7L, 1, total, 0),
+                null
+        );
     }
 }

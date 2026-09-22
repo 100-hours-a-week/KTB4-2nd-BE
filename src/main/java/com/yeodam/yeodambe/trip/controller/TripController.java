@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.controller;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
+import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
@@ -14,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,17 +26,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class TripController {
     private final TripService tripService;
     private final TripProcessingStatusService processingStatusService;
+    private final TripProcessingCancellationService processingCancellationService;
 
     @PostMapping("/trips")
     public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(
             @Valid @RequestBody TripCreateRequest request,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        if (jwt == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ApiResponse<>("UNAUTHORIZED", null));
-        }
-
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ApiResponse<>("TRIP_CREATED", tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
     }
@@ -44,15 +42,19 @@ public class TripController {
             @PathVariable Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        if (jwt == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ApiResponse<>("UNAUTHORIZED", null));
-        }
-
         return ResponseEntity.ok(new ApiResponse<>(
                 "TRIP_PROCESSING_STATUS_FOUND",
                 processingStatusService.findStatus(tripId, Long.valueOf(jwt.getSubject()))
         ));
+    }
+
+    @DeleteMapping("/trips/{tripId}/processing")
+    public ResponseEntity<Void> cancelProcessing(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        processingCancellationService.cancel(tripId, Long.valueOf(jwt.getSubject()));
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/trips/map")

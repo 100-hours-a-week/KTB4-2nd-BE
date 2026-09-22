@@ -41,6 +41,7 @@ class GlobalExceptionHandlerTest {
     @CsvSource({
             "invalid-attachment, 400, INVALID_ATTACHMENT_UPLOAD",
             "trip-not-found, 404, TRIP_NOT_FOUND",
+            "processing-cannot-be-canceled, 409, TRIP_PROCESSING_CANNOT_BE_CANCELED",
             "attachment-not-allowed, 409, TRIP_INITIAL_ATTACHMENT_UPLOAD_NOT_ALLOWED",
             "attachment-limit, 413, ATTACHMENT_UPLOAD_LIMIT_EXCEEDED",
             "unsupported-attachment, 415, UNSUPPORTED_ATTACHMENT_FORMAT"
@@ -228,6 +229,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/trip-not-found")
         void tripNotFound() {
             throw new TripNotFoundException();
+        }
+
+        @GetMapping("/test/processing-cannot-be-canceled")
+        void processingCannotBeCanceled() {
+            throw new TripProcessingCannotBeCanceledException();
         }
 
         @GetMapping("/test/attachment-not-allowed")

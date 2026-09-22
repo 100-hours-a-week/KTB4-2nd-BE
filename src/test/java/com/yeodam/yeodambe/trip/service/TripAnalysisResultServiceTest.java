@@ -81,8 +81,11 @@ class TripAnalysisResultServiceTest {
 
         assertEquals(40L, photo.getTripPlaceId());
         assertEquals(ClassificationStatus.ACTIVE, photo.getClassificationStatus());
-        verify(places).save(any(TripDetailPlace.class));
-        verify(attachments).saveAll(List.of(photo));
+        var writes = inOrder(trips, places, attachments);
+        writes.verify(trips).finishInitialUpload(
+                7L, 1L, ProcessingStatus.PROCESSING, ProcessingStatus.COMPLETED);
+        writes.verify(places).save(any(TripDetailPlace.class));
+        writes.verify(attachments).saveAll(List.of(photo));
     }
 
     @Test
@@ -94,5 +97,24 @@ class TripAnalysisResultServiceTest {
                         "{\"places\":[],\"unclassified\":[]}")));
 
         verifyNoInteractions(trips, attachments, places);
+    }
+
+    @Test
+    void 취소가_먼저_상태를_변경하면_늦은_AI_결과를_저장하지_않는다() {
+        String executionId = executions.reserve(7L);
+        TripAttachment photo = TripAttachment.initial(7L, 20L, "analyze", "preview");
+        ReflectionTestUtils.setField(photo, "id", 30L);
+        var result = json.readTree("""
+                {"places":[],"unclassified":[{"trip_attachment_id":30,"issue":"BLURRY",
+                "region_origin":"UNKNOWN","taken_at":null,"latitude":null,
+                "longitude":null,"evaluation":31}]}
+                """);
+
+        assertThrows(IllegalStateException.class,
+                () -> service.saveCompleted(7L, 1L, executionId, List.of(photo), result));
+
+        verify(trips).finishInitialUpload(
+                7L, 1L, ProcessingStatus.PROCESSING, ProcessingStatus.COMPLETED);
+        verifyNoInteractions(attachments, places);
     }
 }

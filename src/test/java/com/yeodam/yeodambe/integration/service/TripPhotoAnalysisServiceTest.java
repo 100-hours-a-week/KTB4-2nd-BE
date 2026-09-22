@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.integration.service;
 
+import com.yeodam.yeodambe.common.exception.AiProcessingFailedException;
+import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusResponse;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -29,6 +31,26 @@ class TripPhotoAnalysisServiceTest {
 
         assertSame(response.path("result"),
                 TripPhotoAnalysisService.validateResponse(7L, "run", response));
+    }
+
+    @Test
+    void 현재_실행의_명시적_실패_응답을_공개_응답_정보로_변환한다() {
+        var response = json.readTree("""
+                {"trip_id":7,"execution_id":"run","status":"FAILED",
+                 "progress":{"done":12,"total":128},"current_step":null,"result":null,
+                 "error":{"code":"AI_PROCESSING_FAILED","message":"첨부 처리에 실패했습니다."}}
+                """);
+
+        AiProcessingFailedException failure = assertThrows(
+                AiProcessingFailedException.class,
+                () -> TripPhotoAnalysisService.validateResponse(7L, "run", response));
+
+        assertEquals(7L, failure.getTripId());
+        assertEquals(12, failure.getDone());
+        assertEquals(128, failure.getTotal());
+        assertNull(failure.getCurrentStep());
+        assertEquals("AI_PROCESSING_FAILED", failure.getCode());
+        assertEquals("첨부 처리에 실패했습니다.", failure.getPublicMessage());
     }
 
     @Test
@@ -68,5 +90,25 @@ class TripPhotoAnalysisServiceTest {
                 () -> TripPhotoAnalysisService.validateStatusResponse(7L, invalidProgress));
         assertThrows(IllegalStateException.class,
                 () -> TripPhotoAnalysisService.validateStatusResponse(7L, invalidCompleted));
+    }
+
+    @Test
+    void 취소_응답은_같은_여행의_CANCELED만_허용한다() {
+        var valid = json.readTree("{\"trip_id\":7,\"status\":\"CANCELED\"}");
+        var wrongTrip = json.readTree("{\"trip_id\":8,\"status\":\"CANCELED\"}");
+        var wrongStatus = json.readTree("{\"trip_id\":7,\"status\":\"COMPLETED\"}");
+
+        assertDoesNotThrow(() -> TripPhotoAnalysisService.validateCancelResponse(7L, valid));
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateCancelResponse(7L, wrongTrip));
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateCancelResponse(7L, wrongStatus));
+    }
+
+    @Test
+    void 서버_준비_후_취소된_실행이면_AI_POST를_시작하지_않는다() {
+        assertDoesNotThrow(() -> TripPhotoAnalysisService.requireAnalysisStart(() -> true));
+        assertThrows(TripInitialAttachmentUploadNotAllowedException.class,
+                () -> TripPhotoAnalysisService.requireAnalysisStart(() -> false));
     }
 }

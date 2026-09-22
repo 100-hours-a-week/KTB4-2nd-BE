@@ -252,6 +252,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("TRIP_INITIAL_ATTACHMENT_UPLOAD_NOT_ALLOWED", null);
     }
 
+    @ExceptionHandler(TripProcessingCannotBeCanceledException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleProcessingCannotBeCanceled(
+            TripProcessingCannotBeCanceledException e
+    ) {
+        return new ApiResponse<>("TRIP_PROCESSING_CANNOT_BE_CANCELED", null);
+    }
+
     @ExceptionHandler(InvalidAttachmentUploadException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidAttachmentUpload(InvalidAttachmentUploadException e) {

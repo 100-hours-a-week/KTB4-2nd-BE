@@ -31,7 +31,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     ResponseEntity<ApiResponse<Void>> handleUnsupportedContentType(
             HttpMediaTypeNotSupportedException e, HttpServletRequest request) {
-        if (request.getRequestURI().matches("^/trips/[^/]+/initial-attachments$")) {
+        if (request.getServletPath().matches("^/trips/[^/]+/initial-attachments$")) {
             return ResponseEntity.badRequest().body(new ApiResponse<>("INVALID_ATTACHMENT_UPLOAD", null));
         }
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)

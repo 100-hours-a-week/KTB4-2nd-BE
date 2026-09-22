@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.service.AccessTokenRefreshService;
 import com.yeodam.yeodambe.user.service.response.AccessTokenRefreshResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,13 +20,16 @@ public class AccessTokenRefreshController {
 
     private final AccessTokenRefreshService service;
     private final boolean cookieSecure;
+    private final CookiePathResolver cookiePathResolver;
 
     public AccessTokenRefreshController(
             AccessTokenRefreshService service,
-            @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure
+            @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure,
+            CookiePathResolver cookiePathResolver
     ) {
         this.service = service;
         this.cookieSecure = cookieSecure;
+        this.cookiePathResolver = cookiePathResolver;
     }
 
     @PostMapping("/auth/token/refresh")
@@ -48,7 +52,7 @@ public class AccessTokenRefreshController {
         ResponseCookie refreshCookie = cookie(
                 "refreshToken",
                 result.refreshToken(),
-                "/auth",
+                cookiePathResolver.apiPath("/auth"),
                 604800
         );
 

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.user.service.LogoutService;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
@@ -17,13 +18,16 @@ public class LogoutController {
 
     private final LogoutService service;
     private final boolean cookieSecure;
+    private final CookiePathResolver cookiePathResolver;
 
     public LogoutController(
             LogoutService service,
-            @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure
+            @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure,
+            CookiePathResolver cookiePathResolver
     ) {
         this.service = service;
         this.cookieSecure = cookieSecure;
+        this.cookiePathResolver = cookiePathResolver;
     }
 
     @PostMapping("/auth/logout")
@@ -38,7 +42,7 @@ public class LogoutController {
         );
         ResponseCookie refreshCookie = expiredCookie(
                 "refreshToken",
-                "/auth"
+                cookiePathResolver.apiPath("/auth")
         );
 
         return ResponseEntity.noContent()

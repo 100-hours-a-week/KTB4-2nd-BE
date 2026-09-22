@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.user.security.SecurityConfig;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenGenerator;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
@@ -35,6 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @Import({
         SecurityConfig.class,
+        CookiePathResolver.class,
         JwtConfig.class,
         AccessTokenIssuer.class,
         CookieAccessTokenResolver.class,

@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.user.service.KakaoLoginStartService;
 import com.yeodam.yeodambe.user.service.KakaoLoginCallbackService;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,7 +41,8 @@ class KakaoAuthControllerTest {
                         loginStartService,
                         loginCallbackService,
                         "https://app.yeodam.test/auth/callback",
-                        false
+                        false,
+                        new CookiePathResolver("/api")
                 );
         mockMvc = standaloneSetup(controller).build();
     }
@@ -106,8 +108,8 @@ class KakaoAuthControllerTest {
                         "OAUTH_BROWSER_CONTEXT="
                                 + browserContext
                 )
-                .contains("Path=/auth;")
-                .doesNotContain("Path=/auth/kakao")
+                .contains("Path=/api/auth;")
+                .doesNotContain("Path=/api/auth/kakao")
                 .contains("Max-Age=600")
                 .contains("HttpOnly")
                 .contains("SameSite=Lax")

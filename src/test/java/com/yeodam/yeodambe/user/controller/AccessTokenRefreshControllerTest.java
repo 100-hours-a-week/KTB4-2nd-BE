@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.user.service.AccessTokenRefreshService;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,9 @@ class AccessTokenRefreshControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = standaloneSetup(
-                new AccessTokenRefreshController(service, false)
+                new AccessTokenRefreshController(
+                        service, false, new CookiePathResolver("/api")
+                )
         ).build();
     }
 
@@ -63,7 +66,7 @@ class AccessTokenRefreshControllerTest {
                 .anySatisfy(cookie -> assertThat(cookie)
                         .contains(
                                 "refreshToken=new-refresh-token",
-                                "Path=/auth",
+                                "Path=/api/auth",
                                 "Max-Age=604800",
                                 "HttpOnly",
                                 "SameSite=Lax"

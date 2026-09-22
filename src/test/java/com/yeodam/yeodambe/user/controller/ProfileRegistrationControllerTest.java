@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.user.controller;
 import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
 import com.yeodam.yeodambe.user.exception.OnboardingTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.service.ProfileRegistrationService;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,9 @@ class ProfileRegistrationControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = standaloneSetup(new ProfileRegistrationController(service, false))
+        mockMvc = standaloneSetup(new ProfileRegistrationController(
+                service, false, new CookiePathResolver("/api")
+        ))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -60,9 +63,9 @@ class ProfileRegistrationControllerTest {
                 .anySatisfy(cookie -> assertThat(cookie)
                         .contains("accessToken=access-1", "Path=/", "Max-Age=1800", "HttpOnly", "SameSite=Lax"))
                 .anySatisfy(cookie -> assertThat(cookie)
-                        .contains("refreshToken=refresh-1", "Path=/auth", "Max-Age=604800", "HttpOnly", "SameSite=Lax"))
+                        .contains("refreshToken=refresh-1", "Path=/api/auth", "Max-Age=604800", "HttpOnly", "SameSite=Lax"))
                 .anySatisfy(cookie -> assertThat(cookie)
-                        .contains("profileToken=", "Path=/users/me/profile", "Max-Age=0", "HttpOnly", "SameSite=Lax"));
+                        .contains("profileToken=", "Path=/api/users/me/profile", "Max-Age=0", "HttpOnly", "SameSite=Lax"));
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.user.service.LogoutService;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,7 +25,9 @@ class LogoutControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new LogoutController(service, false);
+        controller = new LogoutController(
+                service, false, new CookiePathResolver("/api")
+        );
     }
 
     @Test
@@ -51,7 +54,7 @@ class LogoutControllerTest {
                 .anySatisfy(cookie -> assertThat(cookie)
                         .contains(
                                 "refreshToken=",
-                                "Path=/auth",
+                                "Path=/api/auth",
                                 "Max-Age=0",
                                 "HttpOnly",
                                 "SameSite=Lax"

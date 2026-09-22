@@ -49,4 +49,8 @@ public class OAuthAccount {
         this.provider = provider;
         this.providerUserId = providerUserId;
     }
+
+    public void withdraw(LocalDateTime withdrawnAt) {
+        this.deletedAt = withdrawnAt;
+    }
 }

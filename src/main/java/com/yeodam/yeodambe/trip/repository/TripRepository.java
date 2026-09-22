@@ -58,5 +58,13 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
     int finishInitialUpload(Long tripId, Long userId, ProcessingStatus processing,
                             ProcessingStatus status);
 
+    @Modifying
+    @Query("""
+            update Trip trip
+            set trip.deletedAt = :deletedAt
+            where trip.userId = :userId
+              and trip.deletedAt is null
+            """)
+    int softDeleteByUserId(Long userId, LocalDateTime deletedAt);
 
 }

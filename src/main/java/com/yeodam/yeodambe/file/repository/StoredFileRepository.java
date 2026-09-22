@@ -15,4 +15,13 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
             where file.id in :ids and file.deletedAt is null
             """)
     int softDeleteByIds(Collection<Long> ids, LocalDateTime deletedAt);
+
+    @Modifying
+    @Query("""
+            update StoredFile file
+            set file.deletedAt = :deletedAt
+            where file.userId = :userId
+              and file.deletedAt is null
+            """)
+    int softDeleteByUserId(Long userId, LocalDateTime deletedAt);
 }

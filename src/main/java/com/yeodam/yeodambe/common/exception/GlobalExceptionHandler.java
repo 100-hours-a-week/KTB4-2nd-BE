@@ -217,6 +217,15 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("USER_NOT_FOUND", null);
     }
 
+    @ExceptionHandler(WithdrawalFailedException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    ApiResponse<Void> handleWithdrawalFailed(
+            WithdrawalFailedException exception
+    ) {
+        log.error("회원 탈퇴 처리에 실패했습니다.", exception);
+        return new ApiResponse<>("WITHDRAWAL_FAILED", null);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleIllegalArgumentException(IllegalArgumentException e) {

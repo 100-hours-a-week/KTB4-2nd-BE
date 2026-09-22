@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
 import java.util.Collection;
 import java.util.List;
@@ -52,4 +53,30 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
               and attachment.deletedAt is null
             """)
     int softDeleteByUserId(Long userId, LocalDateTime deletedAt);
+
+    @Query("""
+        select attachment
+        from TripAttachment attachment
+        where attachment.tripId = :tripId
+          and attachment.tripPlaceId = :tripPlaceId
+          and attachment.classificationStatus = :classificationStatus
+          and attachment.deletedAt is null
+          and (
+                :cursorCreatedAt is null
+                or attachment.createdAt < :cursorCreatedAt
+                or (
+                    attachment.createdAt = :cursorCreatedAt
+                    and attachment.id < :cursorId
+                )
+          )
+        order by attachment.createdAt desc, attachment.id desc
+        """)
+    List<TripAttachment> findByPlaceFolderWithCursor(
+            @Param("tripId") Long tripId,
+            @Param("tripPlaceId") Long tripPlaceId,
+            @Param("classificationStatus") ClassificationStatus classificationStatus,
+            @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable
+    );
 }

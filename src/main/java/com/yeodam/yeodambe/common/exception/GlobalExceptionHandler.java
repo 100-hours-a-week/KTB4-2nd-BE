@@ -253,6 +253,22 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("TRIP_NOT_FOUND", null);
     }
 
+    @ExceptionHandler(PlaceFolderNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handlePlaceFolderNotFound(
+            PlaceFolderNotFoundException exception
+    ) {
+        return new ApiResponse<>("PLACE_FOLDER_NOT_FOUND", null);
+    }
+
+    @ExceptionHandler(InvalidCursorException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidCursor(
+            InvalidCursorException exception
+    ) {
+        return new ApiResponse<>("INVALID_CURSOR", null);
+    }
+
     @ExceptionHandler(TripInitialAttachmentUploadNotAllowedException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     ApiResponse<Void> handleInitialAttachmentUploadNotAllowed(

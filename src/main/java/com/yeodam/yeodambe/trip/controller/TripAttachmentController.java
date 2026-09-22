@@ -14,6 +14,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
+import org.springframework.web.bind.annotation.GetMapping;
 
 import java.util.List;
 
@@ -21,6 +24,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class TripAttachmentController {
     private final TripAttachmentService service;
+    private final TripAttachmentListService tripAttachmentListService;
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> uploadInitialAttachments(
@@ -40,5 +44,27 @@ public class TripAttachmentController {
         TripProcessingStatusResponse result = service.uploadInitialAttachments(
                 tripId, Long.valueOf(jwt.getSubject()), files);
         return ResponseEntity.ok(new ApiResponse<>("TRIP_PROCESSING_STATUS_FOUND", result));
+    }
+
+    @GetMapping("/trips/{tripId}/place-folders/{tripPlaceId}/attachments")
+    public ResponseEntity<ApiResponse<TripAttachmentListResponse>> findAttachmentsByPlaceFolder(
+            @PathVariable Long tripId,
+            @PathVariable Long tripPlaceId,
+            @RequestParam(required = false) String cursor,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        TripAttachmentListResponse result =
+                tripAttachmentListService.findByPlaceFolder(
+                        userId,
+                        tripId,
+                        tripPlaceId,
+                        cursor
+                );
+
+        return ResponseEntity.ok(
+                new ApiResponse<>("ATTACHMENT_LIST_FOUND", result)
+        );
     }
 }

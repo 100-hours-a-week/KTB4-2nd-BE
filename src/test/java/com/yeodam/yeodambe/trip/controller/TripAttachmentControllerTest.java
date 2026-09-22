@@ -3,7 +3,9 @@ package com.yeodam.yeodambe.trip.controller;
 import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
 import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -24,12 +26,51 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class TripAttachmentControllerTest {
     private final TripAttachmentService service = mock(TripAttachmentService.class);
-    private final TripAttachmentController controller = new TripAttachmentController(service);
+    private final TripAttachmentListService listService = mock(TripAttachmentListService.class);
+    private final TripAttachmentController controller = new TripAttachmentController(service, listService);
+
+    @Test
+    void 장소_폴더의_첨부_목록을_조회한다() throws Exception {
+        when(listService.findByPlaceFolder(1L, 7L, 3L, "cursor"))
+                .thenReturn(new TripAttachmentListResponse(
+                        List.of(new TripAttachmentListResponse.Item(11L, "https://example.com/preview")),
+                        true,
+                        "next-cursor"
+                ));
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(new HandlerMethodArgumentResolver() {
+                    @Override
+                    public boolean supportsParameter(MethodParameter parameter) {
+                        return parameter.hasParameterAnnotation(AuthenticationPrincipal.class);
+                    }
+
+                    @Override
+                    public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer container,
+                                                  NativeWebRequest request, org.springframework.web.bind.support.WebDataBinderFactory binderFactory) {
+                        return jwt();
+                    }
+                })
+                .build()
+                .perform(get("/api/trips/7/place-folders/3/attachments")
+                        .contextPath("/api")
+                        .servletPath("/trips/7/place-folders/3/attachments")
+                        .param("cursor", "cursor"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("ATTACHMENT_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.items[0].tripAttachmentId").value(11))
+                .andExpect(jsonPath("$.data.items[0].thumbnailUrl").value("https://example.com/preview"))
+                .andExpect(jsonPath("$.data.hasNext").value(true))
+                .andExpect(jsonPath("$.data.nextCursor").value("next-cursor"));
+
+        verify(listService).findByPlaceFolder(1L, 7L, 3L, "cursor");
+    }
 
     @Test
     void multipart_attachments_필드를_여행_아이디와_함께_받는다() throws Exception {

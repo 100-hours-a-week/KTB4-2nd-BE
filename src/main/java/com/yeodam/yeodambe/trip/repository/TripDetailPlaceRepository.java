@@ -29,4 +29,9 @@ public interface TripDetailPlaceRepository extends JpaRepository<TripDetailPlace
               and place.deletedAt is null
             """)
     int softDeleteByUserId(Long userId, LocalDateTime deletedAt);
+
+    boolean existsByIdAndTripIdAndDeletedAtIsNull(
+            Long id,
+            Long tripId
+    );
 }

@@ -44,7 +44,9 @@ class GlobalExceptionHandlerTest {
             "processing-cannot-be-canceled, 409, TRIP_PROCESSING_CANNOT_BE_CANCELED",
             "attachment-not-allowed, 409, TRIP_INITIAL_ATTACHMENT_UPLOAD_NOT_ALLOWED",
             "attachment-limit, 413, ATTACHMENT_UPLOAD_LIMIT_EXCEEDED",
-            "unsupported-attachment, 415, UNSUPPORTED_ATTACHMENT_FORMAT"
+            "unsupported-attachment, 415, UNSUPPORTED_ATTACHMENT_FORMAT",
+            "place-folder-not-found, 404, PLACE_FOLDER_NOT_FOUND",
+            "invalid-cursor, 400, INVALID_CURSOR"
     })
     void 초기_첨부_예외를_공개_API_오류로_변환한다(String path, int statusCode, String message) throws Exception {
         mockMvc.perform(get("/test/" + path))
@@ -249,6 +251,16 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/unsupported-attachment")
         void unsupportedAttachment() {
             throw new UnsupportedAttachmentFormatException();
+        }
+
+        @GetMapping("/test/place-folder-not-found")
+        void placeFolderNotFound() {
+            throw new PlaceFolderNotFoundException();
+        }
+
+        @GetMapping("/test/invalid-cursor")
+        void invalidCursor() {
+            throw new InvalidCursorException();
         }
 
         @GetMapping("/test/duplicate-email")

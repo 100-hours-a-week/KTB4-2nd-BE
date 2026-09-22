@@ -71,6 +71,9 @@ class TripAttachmentTransactionServiceTest {
         var upload = new MockMultipartFile("attachments[]", "photo.jpg", "image/jpeg", new byte[]{1});
         var derived = new com.yeodam.yeodambe.trip.service.DerivedPhotoKeys(
                 "original", "analyze", "preview", null, null, null, null);
+        when(trips.findProcessableForUpdate(
+                7L, 1L, ProcessingStatus.PROCESSING)).thenReturn(java.util.Optional.of(mock(
+                com.yeodam.yeodambe.trip.entity.Trip.class)));
         when(files.saveAll(anyList())).thenAnswer(invocation -> {
             List<StoredFile> saved = invocation.getArgument(0);
             ReflectionTestUtils.setField(saved.getFirst(), "id", 20L);
@@ -85,5 +88,26 @@ class TripAttachmentTransactionServiceTest {
         assertEquals("analyze", saved.attachments().getFirst().getAnalyzeStorageKey());
         verify(files).saveAll(anyList());
         verify(attachments).saveAll(anyList());
+    }
+
+    @Test
+    void 취소된_여행에는_첨부_참조를_저장하지_않는다() {
+        String executionId = executions.reserve(7L);
+        var upload = new MockMultipartFile("attachments[]", "photo.jpg", "image/jpeg", new byte[]{1});
+        var derived = new DerivedPhotoKeys(
+                "original", "analyze", "preview", null, null, null, null);
+
+        assertThrows(TripInitialAttachmentUploadNotAllowedException.class,
+                () -> service.saveFilesAndAttachments(
+                        7L,
+                        1L,
+                        executionId,
+                        List.of(upload),
+                        List.of("original"),
+                        List.of("image/jpeg"),
+                        List.of(derived)
+                ));
+
+        verifyNoInteractions(files, attachments);
     }
 }

@@ -4,9 +4,11 @@ import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 public interface TripRegionRepository extends JpaRepository<TripRegion, Long> {
     @Query("""
@@ -27,4 +29,11 @@ public interface TripRegionRepository extends JpaRepository<TripRegion, Long> {
     );
 
     List<TripRegion> findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(Long tripId);
+
+    @Modifying
+    @Query("""
+            update TripRegion region set region.deletedAt = :deletedAt
+            where region.trip.id = :tripId and region.deletedAt is null
+            """)
+    int softDeleteByTripId(Long tripId, LocalDateTime deletedAt);
 }

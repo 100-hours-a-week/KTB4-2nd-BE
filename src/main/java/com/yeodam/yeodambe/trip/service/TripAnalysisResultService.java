@@ -57,6 +57,14 @@ public class TripAnalysisResultService {
         }
 
         if (!expected.equals(actual)) throw new IllegalStateException("AI 결과의 사진 목록이 다릅니다.");
+        if (trips.finishInitialUpload(
+                tripId,
+                userId,
+                ProcessingStatus.PROCESSING,
+                ProcessingStatus.COMPLETED
+        ) != 1) {
+            throw new IllegalStateException("현재 실행과 AI 결과가 일치하지 않습니다.");
+        }
 
         Map<Long, TripAttachment> byId = new HashMap<>();
         for (TripAttachment attachment : attachments) byId.put(attachment.getId(), attachment);
@@ -118,17 +126,6 @@ public class TripAnalysisResultService {
         }
 
         attachmentRepository.saveAll(attachments);
-
-        if (
-                trips.finishInitialUpload(
-                        tripId,
-                        userId,
-                        ProcessingStatus.PROCESSING,
-                        ProcessingStatus.COMPLETED
-                ) != 1
-        ) {
-            throw new IllegalStateException("현재 실행과 AI 결과가 일치하지 않습니다.");
-        }
     }
 
     private RegionOrigin origin(JsonNode photo) {

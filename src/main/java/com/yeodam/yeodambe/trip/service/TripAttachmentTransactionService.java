@@ -94,6 +94,10 @@ public class TripAttachmentTransactionService {
             throw new IllegalArgumentException("원본과 파생 사진 수가 다릅니다.");
         }
         requireCurrentExecution(tripId, executionId);
+        if (tripRepository.findProcessableForUpdate(
+                tripId, userId, ProcessingStatus.PROCESSING).isEmpty()) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
 
         List<StoredFile> originals = new ArrayList<>(files.size());
         for (int i = 0; i < files.size(); i++) {

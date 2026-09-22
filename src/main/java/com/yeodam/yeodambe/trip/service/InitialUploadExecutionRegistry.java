@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
 public class InitialUploadExecutionRegistry {
@@ -12,7 +13,7 @@ public class InitialUploadExecutionRegistry {
 
     public String reserve(Long tripId) {
         String executionId = UUID.randomUUID().toString();
-        if (executions.putIfAbsent(tripId, new Execution(executionId, false)) != null) {
+        if (executions.putIfAbsent(tripId, new Execution(executionId, State.RESERVED)) != null) {
             throw new TripInitialAttachmentUploadNotAllowedException();
         }
         return executionId;
@@ -23,14 +24,29 @@ public class InitialUploadExecutionRegistry {
         return execution != null && execution.id().equals(executionId);
     }
 
-    public void markAnalysisStarted(Long tripId, String executionId) {
+    public boolean markAnalysisStarted(Long tripId, String executionId) {
+        AtomicBoolean started = new AtomicBoolean();
         executions.computeIfPresent(tripId, (ignored, current) ->
-                current.id().equals(executionId) ? new Execution(executionId, true) : current);
+                {
+                    if (!current.id().equals(executionId) || current.state() == State.CANCELED) return current;
+                    started.set(true);
+                    return new Execution(executionId, State.STARTED);
+                });
+        return started.get();
     }
 
     public boolean isAnalysisStarted(Long tripId) {
         Execution execution = executions.get(tripId);
-        return execution != null && execution.analysisStarted();
+        return execution != null && execution.state() == State.STARTED;
+    }
+
+    public boolean cancel(Long tripId) {
+        AtomicBoolean started = new AtomicBoolean();
+        executions.computeIfPresent(tripId, (ignored, current) -> {
+            started.set(current.state() == State.STARTED);
+            return new Execution(current.id(), State.CANCELED);
+        });
+        return started.get();
     }
 
     public void release(Long tripId, String executionId) {
@@ -38,6 +54,12 @@ public class InitialUploadExecutionRegistry {
                 current.id().equals(executionId) ? null : current);
     }
 
-    private record Execution(String id, boolean analysisStarted) {
+    private record Execution(String id, State state) {
+    }
+
+    private enum State {
+        RESERVED,
+        STARTED,
+        CANCELED
     }
 }

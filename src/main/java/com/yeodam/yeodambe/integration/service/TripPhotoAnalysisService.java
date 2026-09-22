@@ -123,10 +123,11 @@ public class TripPhotoAnalysisService {
     }
 
     static void validateCancelResponse(Long tripId, JsonNode response) {
+        String status = response == null ? "" : response.path("status").asString();
         if (response == null
                 || !response.path("trip_id").isIntegralNumber()
                 || response.path("trip_id").asLong(-1) != tripId
-                || !"CANCELED".equals(response.path("status").asString())) {
+                || !("CANCELED".equals(status) || "COMPLETED".equals(status) || "FAILED".equals(status))) {
             throw new IllegalStateException("AI 사진 분석 취소 응답이 올바르지 않습니다.");
         }
     }
@@ -140,6 +141,9 @@ public class TripPhotoAnalysisService {
 
         if ("FAILED".equals(response.path("status").asString())) {
             throw failedResponse(tripId, response);
+        }
+        if ("CANCELED".equals(response.path("status").asString())) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
         }
 
         if (!"COMPLETED".equals(response.path("status").asString())
@@ -168,7 +172,7 @@ public class TripPhotoAnalysisService {
                 || done.asInt(-1) < 0
                 || total.asInt(-1) < 0
                 || done.asInt() > total.asInt()
-                || (!currentStep.isTextual() && !currentStep.isNull())
+                || (!currentStep.isString() && !currentStep.isNull())
                 || !response.path("result").isNull()
                 || !error.isObject()
                 || code.isBlank()
@@ -211,17 +215,20 @@ public class TripPhotoAnalysisService {
         JsonNode currentStep = response.path("current_step");
 
         boolean fieldsValid = switch (status) {
+            case QUEUED -> currentStep.isNull() && result.isNull() && error.isNull();
             case PROCESSING -> result.isNull() && error.isNull();
             case COMPLETED -> result.isObject() && error.isNull();
             case FAILED -> result.isNull() && error.isObject();
             case CANCELED -> result.isNull() && error.isNull();
         };
+        boolean progressValid = status == TripPhotoAnalysisStatusResponse.Status.QUEUED
+                || (progress.isObject()
+                && doneNode.isIntegralNumber()
+                && totalNode.isIntegralNumber()
+                && done >= 0 && total >= 0 && done <= total);
 
-        if (!progress.isObject()
-                || !doneNode.isIntegralNumber()
-                || !totalNode.isIntegralNumber()
-                || done < 0 || total < 0 || done > total
-                || (!currentStep.isTextual() && !currentStep.isNull())
+        if (!progressValid
+                || (!currentStep.isString() && !currentStep.isNull())
                 || !fieldsValid) {
             throw new IllegalStateException("AI 사진 분석 상태가 올바르지 않습니다.");
         }
@@ -229,7 +236,9 @@ public class TripPhotoAnalysisService {
         return new TripPhotoAnalysisStatusResponse(
                 tripId,
                 status,
-                new TripPhotoAnalysisStatusResponse.Progress(done, total),
+                status == TripPhotoAnalysisStatusResponse.Status.QUEUED
+                        ? null
+                        : new TripPhotoAnalysisStatusResponse.Progress(done, total),
                 currentStep.isNull() ? null : currentStep.asString(),
                 result,
                 error

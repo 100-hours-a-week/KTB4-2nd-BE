@@ -11,6 +11,7 @@ public record TripPhotoAnalysisStatusResponse(
         JsonNode error
 ) {
     public enum Status {
+        QUEUED,
         PROCESSING,
         COMPLETED,
         FAILED,

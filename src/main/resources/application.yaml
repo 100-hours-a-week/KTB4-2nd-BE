@@ -12,6 +12,8 @@ spring:
     import: optional:file:.env[.properties]
 
 server:
+  servlet:
+    context-path: /api
   tomcat:
     max-part-count: 200
 

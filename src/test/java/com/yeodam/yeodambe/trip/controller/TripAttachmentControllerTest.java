@@ -144,11 +144,13 @@ class TripAttachmentControllerTest {
     }
 
     @Test
-    void multipart가_아닌_요청은_400으로_거부한다() throws Exception {
+    void API_접두사가_있어도_multipart가_아닌_요청은_400으로_거부한다() throws Exception {
         MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build()
-                .perform(post("/trips/7/initial-attachments")
+                .perform(post("/api/trips/7/initial-attachments")
+                        .contextPath("/api")
+                        .servletPath("/trips/7/initial-attachments")
                         .contentType("application/json").content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_ATTACHMENT_UPLOAD"));

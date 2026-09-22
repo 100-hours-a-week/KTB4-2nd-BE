@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.user.controller;
 
 
 import com.yeodam.yeodambe.user.service.KakaoLoginStartService;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.service.KakaoLoginCallbackService;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -29,6 +30,7 @@ public class KakaoAuthController {
     private final boolean cookieSecure;
     private final KakaoLoginCallbackService loginCallbackService;
     private final String frontendCallbackUri;
+    private final CookiePathResolver cookiePathResolver;
 
     public KakaoAuthController(
             KakaoLoginStartService loginStartService,
@@ -36,12 +38,14 @@ public class KakaoAuthController {
             @Value("${oauth.frontend-callback-uri}")
             String frontendCallbackUri,
             @Value("${oauth.browser-context-cookie.secure}")
-            boolean cookieSecure
+            boolean cookieSecure,
+            CookiePathResolver cookiePathResolver
     ) {
         this.loginStartService = loginStartService;
         this.loginCallbackService = loginCallbackService;
         this.frontendCallbackUri = frontendCallbackUri;
         this.cookieSecure = cookieSecure;
+        this.cookiePathResolver = cookiePathResolver;
     }
     @GetMapping("/authorize")
     public ResponseEntity<Void> authorize(
@@ -72,7 +76,7 @@ public class KakaoAuthController {
                     .httpOnly(true)
                     .secure(cookieSecure)
                     .sameSite("Lax")
-                    .path("/auth")
+                    .path(cookiePathResolver.apiPath("/auth"))
                     .maxAge(Duration.ofMinutes(10))
                     .build();
 

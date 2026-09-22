@@ -64,6 +64,15 @@ public class LoginSessionStore {
     }
 
     @Transactional
+    public void deleteBySid(String sid) {
+        if (sid == null || sid.isBlank()) {
+            return;
+        }
+
+        loginSessionRepository.deleteBySid(sid);
+    }
+
+    @Transactional
     public Optional<String> findSidByRefreshTokenHash(
             String refreshTokenHash
     ) {

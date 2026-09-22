@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.exception.OnboardingTokenRequiredException;
 import com.yeodam.yeodambe.user.service.ProfileRegistrationService;
 import com.yeodam.yeodambe.user.service.request.ProfileRegistrationRequest;
@@ -23,13 +24,16 @@ public class ProfileRegistrationController {
 
     private final ProfileRegistrationService service;
     private final boolean cookieSecure;
+    private final CookiePathResolver cookiePathResolver;
 
     public ProfileRegistrationController(
             ProfileRegistrationService service,
-            @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure
+            @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure,
+            CookiePathResolver cookiePathResolver
     ) {
         this.service = service;
         this.cookieSecure = cookieSecure;
+        this.cookiePathResolver = cookiePathResolver;
     }
 
     @PostMapping("/users/me/profile")
@@ -52,10 +56,10 @@ public class ProfileRegistrationController {
                 "accessToken", result.accessToken(), "/", 1800
         );
         ResponseCookie refreshCookie = cookie(
-                "refreshToken", result.refreshToken(), "/auth", 604800
+                "refreshToken", result.refreshToken(), cookiePathResolver.apiPath("/auth"), 604800
         );
         ResponseCookie clearedProfileCookie = cookie(
-                "profileToken", "", "/users/me/profile", 0
+                "profileToken", "", cookiePathResolver.apiPath("/users/me/profile"), 0
         );
 
         ProfileRegistrationResponse data = new ProfileRegistrationResponse(

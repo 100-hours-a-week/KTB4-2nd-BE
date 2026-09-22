@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.service.LoginExchangeDecision;
 import com.yeodam.yeodambe.user.service.LoginTicketExchangeService;
@@ -23,13 +24,16 @@ public class LoginTicketExchangeController {
 
     private final LoginTicketExchangeService service;
     private final boolean cookieSecure;
+    private final CookiePathResolver cookiePathResolver;
 
     public LoginTicketExchangeController(
             LoginTicketExchangeService service,
-            @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure
+            @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure,
+            CookiePathResolver cookiePathResolver
     ) {
         this.service = service;
         this.cookieSecure = cookieSecure;
+        this.cookiePathResolver = cookiePathResolver;
     }
 
     @PostMapping("/auth/token/exchange")
@@ -45,7 +49,7 @@ public class LoginTicketExchangeController {
 
         if (decision instanceof LoginExchangeDecision.ExistingMember member) {
             ResponseCookie accessCookie = cookie("accessToken", member.accessToken(), "/", 1800);
-            ResponseCookie refreshCookie = cookie("refreshToken", member.refreshToken(), "/auth", 604800);
+            ResponseCookie refreshCookie = cookie("refreshToken", member.refreshToken(), cookiePathResolver.apiPath("/auth"), 604800);
             LoginExchangeResponse data = new LoginExchangeResponse.ExistingMember(
                     1800,
                     false,
@@ -59,7 +63,7 @@ public class LoginTicketExchangeController {
         }
 
         LoginExchangeDecision.Onboarding onboarding = (LoginExchangeDecision.Onboarding) decision;
-        ResponseCookie profileCookie = cookie("profileToken", onboarding.profileToken(), "/users/me/profile", 600);
+        ResponseCookie profileCookie = cookie("profileToken", onboarding.profileToken(), cookiePathResolver.apiPath("/users/me/profile"), 600);
         LoginExchangeResponse data = new LoginExchangeResponse.Onboarding(600, true);
 
         return ResponseEntity.ok()

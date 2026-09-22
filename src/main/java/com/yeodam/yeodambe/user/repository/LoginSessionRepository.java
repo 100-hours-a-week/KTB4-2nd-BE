@@ -30,4 +30,6 @@ public interface LoginSessionRepository
     );
 
     long deleteByExpiresAtLessThanEqual(LocalDateTime now);
+
+    void deleteBySid(String sid);
 }

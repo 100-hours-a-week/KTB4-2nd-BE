@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.user.service.LoginExchangeDecision;
 import com.yeodam.yeodambe.user.service.LoginTicketExchangeService;
+import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,9 @@ class LoginTicketExchangeControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = standaloneSetup(new LoginTicketExchangeController(service, false)).build();
+        mockMvc = standaloneSetup(new LoginTicketExchangeController(
+                service, false, new CookiePathResolver("/api")
+        )).build();
     }
 
     @Test
@@ -58,7 +61,7 @@ class LoginTicketExchangeControllerTest {
                 .anySatisfy(cookie -> assertThat(cookie)
                         .contains("accessToken=access-1", "Path=/", "Max-Age=1800", "HttpOnly", "SameSite=Lax"))
                 .anySatisfy(cookie -> assertThat(cookie)
-                        .contains("refreshToken=refresh-1", "Path=/auth", "Max-Age=604800", "HttpOnly", "SameSite=Lax"));
+                        .contains("refreshToken=refresh-1", "Path=/api/auth", "Max-Age=604800", "HttpOnly", "SameSite=Lax"));
     }
 
     @Test
@@ -81,6 +84,6 @@ class LoginTicketExchangeControllerTest {
         assertThat(response.getHeaders("Set-Cookie"))
                 .singleElement()
                 .asString()
-                .contains("profileToken=profile-1", "Path=/users/me/profile", "Max-Age=600", "HttpOnly", "SameSite=Lax");
+                .contains("profileToken=profile-1", "Path=/api/users/me/profile", "Max-Age=600", "HttpOnly", "SameSite=Lax");
     }
 }

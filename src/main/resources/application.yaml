@@ -17,7 +17,7 @@ server:
 
 place:
   provider:
-    base-url: ${DATA_GO_KR_LEGAL_DISTRICT_API_URL:https://apis.data.go.kr/1741000/StanReginCd/getStanReginCdList}
+    base-url: ${DATA_GO_KR_LEGAL_DISTRICT_API_URL:}
     service-key: ${DATA_GO_KR_SERVICE_KEY:}
     timeout: ${DATA_GO_KR_TIMEOUT:3s}
 

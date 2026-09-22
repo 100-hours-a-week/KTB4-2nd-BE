@@ -5,7 +5,11 @@ import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import com.yeodam.yeodambe.trip.service.request.TripListRequest;
+import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
+import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenGenerator;
@@ -29,6 +33,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDate;
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -37,6 +44,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -203,6 +211,58 @@ class TripCreationSecurityIntegrationTest {
                         .header("X-CSRF-TOKEN", "wrong-token"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+    }
+
+    @Test
+    void 목록_API는_Jwt_subject와_검증된_필터를_서비스에_전달한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(tripService.findTrips(eq(42L), any(TripListRequest.class)))
+                .willReturn(new TripListResponse(List.of(new TripListItemResponse(
+                        7L,
+                        "제주 여행",
+                        LocalDate.of(2026, 9, 1),
+                        LocalDate.of(2026, 9, 2),
+                        "제주",
+                        3L,
+                        true,
+                        "https://cdn.test/7"
+                )), false, null));
+
+        mockMvc.perform(get("/trips")
+                        .queryParam("sort", "OLDEST")
+                        .queryParam("favorite", "true")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.items[0].tripId").value(7))
+                .andExpect(jsonPath("$.data.items[0].isFavorite").value(true))
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").doesNotExist());
+
+        then(tripService).should().findTrips(eq(42L), argThat(request ->
+                request.sort() == TripSort.OLDEST && request.favorite()));
+    }
+
+    @Test
+    void 목록_API의_필터가_잘못되면_400을_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+
+        mockMvc.perform(get("/trips")
+                        .queryParam("favorite", "TRUE")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_TRIP_LIST_FILTER"));
+
+        then(tripService).should(never()).findTrips(any(), any());
+    }
+
+    @Test
+    void 목록_API는_액세스_토큰이_없으면_401을_반환한다() throws Exception {
+        mockMvc.perform(get("/trips"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+
+        then(tripService).should(never()).findTrips(any(), any());
     }
 
     private String validRequest() {

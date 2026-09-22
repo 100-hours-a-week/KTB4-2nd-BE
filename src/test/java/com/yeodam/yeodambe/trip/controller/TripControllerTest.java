@@ -6,7 +6,10 @@ import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import com.yeodam.yeodambe.trip.service.request.TripListRequest;
+import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -64,6 +67,20 @@ class TripControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         assertThat(response.getBody()).isNull();
         verify(cancellationService).cancel(7L, 1L);
+    }
+
+    @Test
+    void 여행_목록_조회_필터와_인증_사용자를_서비스에_전달한다() {
+        TripListResponse result = new TripListResponse(List.of(), false, null);
+        when(tripService.findTrips(eq(1L), any(TripListRequest.class))).thenReturn(result);
+
+        var response = controller.findTrips(null, "OLDEST", "true", jwt());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().message()).isEqualTo("TRIP_LIST_FOUND");
+        assertThat(response.getBody().data()).isSameAs(result);
+        verify(tripService).findTrips(eq(1L), argThat(request ->
+                request.sort() == TripSort.OLDEST && request.favorite()));
     }
 
     private Jwt jwt() {

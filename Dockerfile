@@ -23,7 +23,10 @@ WORKDIR /app
 ENV SERVER_PORT=8080
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends curl \
+    && apt-get install --yes --no-install-recommends \
+        curl \
+        imagemagick \
+        libimage-exiftool-perl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1001 spring \
     && useradd --system --uid 1001 --gid spring spring
@@ -31,6 +34,7 @@ RUN apt-get update \
 COPY --from=build --chown=spring:spring /workspace/app.jar /app/app.jar
 
 USER spring
+
 EXPOSE 8080
 
 CMD ["java", "-jar", "/app/app.jar"]

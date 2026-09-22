@@ -80,7 +80,7 @@ public class TripAttachmentDerivativeService {
             JsonNode metadata = metadata(original);
 
             // 방향 보정 → 비율 유지·긴 변 최대 1024px → 메타데이터 제거
-            run("magick", original + "[0]", "-auto-orient",
+            run("convert", original + "[0]", "-auto-orient",
                     "-resize", "1024x1024>", "-strip",
                     "-background", "white", "-alpha", "remove", "-alpha", "off",
                     analyze.toString());
@@ -93,7 +93,7 @@ public class TripAttachmentDerivativeService {
                     "-Orientation=1", analyze.toString());
 
             // 미리보기에는 EXIF를 복사하지 않는다.
-            run("magick", original + "[0]", "-auto-orient",
+            run("convert", original + "[0]", "-auto-orient",
                     "-resize", "1024x1024>", "-strip",
                     "-quality", "75", preview.toString());
 

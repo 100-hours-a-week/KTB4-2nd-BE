@@ -71,6 +71,12 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("INVALID_TRIP_REQUEST", null);
     }
 
+    @ExceptionHandler(InvalidTripListFilterException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidTripListFilter(InvalidTripListFilterException e) {
+        return new ApiResponse<>("INVALID_TRIP_LIST_FILTER", null);
+    }
+
     @ExceptionHandler(BindException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleBindException(BindException e) {

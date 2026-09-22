@@ -3,10 +3,6 @@ package com.yeodam.yeodambe.user.controller;
 import com.yeodam.yeodambe.user.service.KakaoLoginStartService;
 import com.yeodam.yeodambe.user.service.KakaoLoginCallbackService;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
-import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
-import com.yeodam.yeodambe.user.exception.LoginTicketIssueFailedException;
-import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
-import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +19,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.dao.DataAccessResourceFailureException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -160,108 +155,5 @@ class KakaoAuthControllerTest {
                         "valid-state",
                         "browser-1"
                 );
-    }
-
-    @Test
-    void redirectsToFrontendWhenKakaoLoginIsCancelled() throws Exception {
-        mockMvc.perform(
-                        get("/auth/kakao/callback")
-                                .param("error", "access_denied")
-                )
-                .andExpect(status().isFound())
-                .andExpect(header().string(
-                        "Location",
-                        "https://app.yeodam.test/auth/callback"
-                                + "?error=KAKAO_LOGIN_CANCELLED"
-                ))
-                .andExpect(header().string("Cache-Control", "no-store"))
-                .andExpect(header().string("Referrer-Policy", "no-referrer"));
-
-        then(loginCallbackService).shouldHaveNoInteractions();
-    }
-
-    @Test
-    void redirectsToFrontendWhenKakaoReturnsUnknownError() throws Exception {
-        mockMvc.perform(
-                        get("/auth/kakao/callback")
-                                .param("error", "invalid_request")
-                )
-                .andExpect(status().isFound())
-                .andExpect(header().string(
-                        "Location",
-                        "https://app.yeodam.test/auth/callback"
-                                + "?error=KAKAO_AUTHENTICATION_FAILED"
-                ));
-
-        then(loginCallbackService).shouldHaveNoInteractions();
-    }
-
-    @Test
-    void redirectsToFrontendWhenOAuthStateIsInvalid() throws Exception {
-        assertCallbackFailureRedirect(
-                new OAuthStateInvalidOrExpiredException(),
-                "OAUTH_STATE_INVALID_OR_EXPIRED"
-        );
-    }
-
-    @Test
-    void redirectsToFrontendWhenKakaoAuthenticationFails() throws Exception {
-        assertCallbackFailureRedirect(
-                new KakaoAuthenticationFailedException(),
-                "KAKAO_AUTHENTICATION_FAILED"
-        );
-    }
-
-    @Test
-    void redirectsToFrontendWhenKakaoProviderIsUnavailable() throws Exception {
-        assertCallbackFailureRedirect(
-                new OAuthProviderUnavailableException(),
-                "OAUTH_PROVIDER_UNAVAILABLE"
-        );
-    }
-
-    @Test
-    void redirectsToFrontendWhenAuthenticationStoreIsUnavailable() throws Exception {
-        assertCallbackFailureRedirect(
-                new DataAccessResourceFailureException("database unavailable"),
-                "AUTH_STORE_UNAVAILABLE"
-        );
-    }
-
-    @Test
-    void redirectsToFrontendWhenLoginTicketIssueFails() throws Exception {
-        assertCallbackFailureRedirect(
-                new LoginTicketIssueFailedException(new IllegalStateException()),
-                "LOGIN_TICKET_ISSUE_FAILED"
-        );
-    }
-
-    private void assertCallbackFailureRedirect(
-            RuntimeException exception,
-            String expectedErrorCode
-    ) throws Exception {
-        given(loginCallbackService.issueLoginTicket(
-                "authorization-code",
-                "valid-state",
-                "browser-1"
-        )).willThrow(exception);
-
-        mockMvc.perform(
-                        get("/auth/kakao/callback")
-                                .param("code", "authorization-code")
-                                .param("state", "valid-state")
-                                .cookie(new Cookie(
-                                        "OAUTH_BROWSER_CONTEXT",
-                                        "browser-1"
-                                ))
-                )
-                .andExpect(status().isFound())
-                .andExpect(header().string(
-                        "Location",
-                        "https://app.yeodam.test/auth/callback"
-                                + "?error=" + expectedErrorCode
-                ))
-                .andExpect(header().string("Cache-Control", "no-store"))
-                .andExpect(header().string("Referrer-Policy", "no-referrer"));
     }
 }

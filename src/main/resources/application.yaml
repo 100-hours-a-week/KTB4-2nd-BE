@@ -37,7 +37,7 @@ auth:
     access-token-ttl: 30m
 
 app:
-  public-api-prefix: /api
+  public-api-prefix: ""
 
 aws:
   region: ${AWS_REGION:ap-northeast-2}
@@ -76,7 +76,7 @@ oauth:
   frontend-callback-uri: ${FRONTEND_OAUTH_CALLBACK_URI:http://localhost:5173/auth/callback}
   kakao:
     client-id: ${KAKAO_CLIENT_ID:local-client-id}
-    redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/auth/kakao/callback}
+    redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/auth/kakao/callback}
     client-secret: ${KAKAO_CLIENT_SECRET:local-client-secret}
   browser-context-cookie:
     secure: false

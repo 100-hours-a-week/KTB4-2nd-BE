@@ -7,11 +7,18 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.TripRegionName;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import com.yeodam.yeodambe.trip.service.request.TripListCursor;
+import com.yeodam.yeodambe.trip.service.request.TripListRequest;
+import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
+import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
@@ -25,10 +32,14 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class TripService {
+    private static final int TRIP_LIST_SIZE = 7;
+    private static final int TRIP_LIST_FETCH_SIZE = TRIP_LIST_SIZE + 1;
+
     private final TripRepository tripRepository;
     private final TripRegionRepository tripRegionRepository;
     private final RegionCatalog regionCatalog;
@@ -140,6 +151,110 @@ public class TripService {
         }
 
         return new TripMapResponse(markers);
+    }
+
+    @Transactional(readOnly = true)
+    public TripListResponse findTrips(Long userId, TripListRequest request) {
+        List<Trip> fetched = findTripPage(userId, request);
+        boolean hasNext = fetched.size() > TRIP_LIST_SIZE;
+        List<Trip> page = hasNext ? fetched.subList(0, TRIP_LIST_SIZE) : fetched;
+
+        if (page.isEmpty()) {
+            return new TripListResponse(List.of(), false, null);
+        }
+
+        List<Long> tripIds = page.stream().map(Trip::getId).toList();
+        Map<Long, List<String>> regionNames = tripRegionRepository.findNamesByTripIds(tripIds).stream()
+                .collect(Collectors.groupingBy(
+                        TripRegionName::tripId,
+                        LinkedHashMap::new,
+                        Collectors.mapping(TripRegionName::regionName, Collectors.toList())
+                ));
+        Map<Long, Long> attachmentCounts = tripAttachmentRepository
+                .countNotDeletedByTripIds(tripIds).stream()
+                .collect(Collectors.toMap(
+                        TripAttachmentCount::tripId,
+                        TripAttachmentCount::attachmentCount
+                ));
+
+        List<TripListItemResponse> items = page.stream()
+                .map(trip -> new TripListItemResponse(
+                        trip.getId(),
+                        trip.getTripName(),
+                        trip.getStartDate(),
+                        trip.getEndDate(),
+                        regionNames.getOrDefault(trip.getId(), List.of()).stream()
+                                .limit(3)
+                                .collect(Collectors.joining(", ")),
+                        attachmentCounts.getOrDefault(trip.getId(), 0L),
+                        trip.getFavorite(),
+                        trip.getProcessingStatus() == ProcessingStatus.PROCESSING
+                                ? null
+                                : createThumbnailUrl(trip)
+                ))
+                .toList();
+
+        String nextCursor = null;
+        if (hasNext) {
+            Trip last = page.getLast();
+            nextCursor = new TripListCursor(
+                    request.sort(),
+                    request.favorite(),
+                    last.getFavorite(),
+                    last.getCreatedAt(),
+                    last.getId()
+            ).encode();
+        }
+        return new TripListResponse(items, hasNext, nextCursor);
+    }
+
+    private List<Trip> findTripPage(Long userId, TripListRequest request) {
+        TripListCursor cursor = request.cursor();
+        if (!request.favorite()) {
+            return findGroup(userId, request.sort(), null, cursor, TRIP_LIST_FETCH_SIZE);
+        }
+
+        boolean favoriteGroup = cursor == null || cursor.favoriteGroup();
+        if (!favoriteGroup) {
+            return findGroup(userId, request.sort(), false, cursor, TRIP_LIST_FETCH_SIZE);
+        }
+
+        List<Trip> result = new ArrayList<>(
+                findGroup(userId, request.sort(), true, cursor, TRIP_LIST_FETCH_SIZE)
+        );
+        if (result.size() < TRIP_LIST_FETCH_SIZE) {
+            result.addAll(findGroup(
+                    userId,
+                    request.sort(),
+                    false,
+                    null,
+                    TRIP_LIST_FETCH_SIZE - result.size()
+            ));
+        }
+        return result;
+    }
+
+    private List<Trip> findGroup(
+            Long userId,
+            TripSort sort,
+            Boolean favoriteGroup,
+            TripListCursor cursor,
+            int size
+    ) {
+        var page = PageRequest.of(0, size);
+        var createdAt = cursor == null ? null : cursor.createdAt();
+        var tripId = cursor == null ? null : cursor.tripId();
+
+        if (favoriteGroup == null) {
+            return sort == TripSort.LATEST
+                    ? tripRepository.findListLatest(userId, createdAt, tripId, page)
+                    : tripRepository.findListOldest(userId, createdAt, tripId, page);
+        }
+        return sort == TripSort.LATEST
+                ? tripRepository.findFavoriteGroupLatest(
+                        userId, favoriteGroup, createdAt, tripId, page)
+                : tripRepository.findFavoriteGroupOldest(
+                        userId, favoriteGroup, createdAt, tripId, page);
     }
 
     private String createThumbnailUrl(Trip trip) {

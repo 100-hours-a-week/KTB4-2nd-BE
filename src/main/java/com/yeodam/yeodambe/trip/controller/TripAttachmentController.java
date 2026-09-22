@@ -17,6 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import org.springframework.web.bind.annotation.GetMapping;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
 
 import java.util.List;
 
@@ -25,6 +27,7 @@ import java.util.List;
 public class TripAttachmentController {
     private final TripAttachmentService service;
     private final TripAttachmentListService tripAttachmentListService;
+    private final TripAttachmentDetailService tripAttachmentDetailService;
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> uploadInitialAttachments(
@@ -65,6 +68,24 @@ public class TripAttachmentController {
 
         return ResponseEntity.ok(
                 new ApiResponse<>("ATTACHMENT_LIST_FOUND", result)
+        );
+    }
+
+    @GetMapping("/attachments/{tripAttachmentId}")
+    public ResponseEntity<ApiResponse<TripAttachmentDetailResponse>> findAttachmentDetail(
+            @PathVariable Long tripAttachmentId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        TripAttachmentDetailResponse result =
+                tripAttachmentDetailService.findDetail(
+                        userId,
+                        tripAttachmentId
+                );
+
+        return ResponseEntity.ok(
+                new ApiResponse<>("ATTACHMENT_FOUND", result)
         );
     }
 }

@@ -5,6 +5,8 @@ import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
@@ -33,7 +35,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TripAttachmentControllerTest {
     private final TripAttachmentService service = mock(TripAttachmentService.class);
     private final TripAttachmentListService listService = mock(TripAttachmentListService.class);
-    private final TripAttachmentController controller = new TripAttachmentController(service, listService);
+    private final TripAttachmentDetailService detailService = mock(TripAttachmentDetailService.class);
+    private final TripAttachmentController controller = new TripAttachmentController(
+            service, listService, detailService
+    );
 
     @Test
     void 장소_폴더의_첨부_목록을_조회한다() throws Exception {
@@ -70,6 +75,40 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.data.nextCursor").value("next-cursor"));
 
         verify(listService).findByPlaceFolder(1L, 7L, 3L, "cursor");
+    }
+
+    @Test
+    void 첨부_원본_조회_결과를_반환한다() throws Exception {
+        when(detailService.findDetail(1L, 11L))
+                .thenReturn(new TripAttachmentDetailResponse(
+                        11L,
+                        "https://example.com/original"
+                ));
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(new HandlerMethodArgumentResolver() {
+                    @Override
+                    public boolean supportsParameter(MethodParameter parameter) {
+                        return parameter.hasParameterAnnotation(AuthenticationPrincipal.class);
+                    }
+
+                    @Override
+                    public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer container,
+                                                  NativeWebRequest request, org.springframework.web.bind.support.WebDataBinderFactory binderFactory) {
+                        return jwt();
+                    }
+                })
+                .build()
+                .perform(get("/api/attachments/11")
+                        .contextPath("/api")
+                        .servletPath("/attachments/11"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("ATTACHMENT_FOUND"))
+                .andExpect(jsonPath("$.data.tripAttachmentId").value(11))
+                .andExpect(jsonPath("$.data.originalUrl")
+                        .value("https://example.com/original"));
+
+        verify(detailService).findDetail(1L, 11L);
     }
 
     @Test

@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import java.util.Collection;
 import java.util.List;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 public interface TripAttachmentRepository extends JpaRepository<TripAttachment, Long> {
     List<TripAttachment> findAllByTripId(Long tripId);
@@ -78,5 +79,21 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
             @Param("cursorId") Long cursorId,
             Pageable pageable
+    );
+
+    @Query("""
+        select attachment
+        from TripAttachment attachment
+        join fetch attachment.file file
+        join attachment.trip trip
+        where attachment.id = :tripAttachmentId
+          and trip.userId = :userId
+          and attachment.deletedAt is null
+          and trip.deletedAt is null
+          and file.deletedAt is null
+        """)
+    Optional<TripAttachment> findAccessibleById(
+            @Param("tripAttachmentId") Long tripAttachmentId,
+            @Param("userId") Long userId
     );
 }

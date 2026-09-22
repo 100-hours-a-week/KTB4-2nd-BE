@@ -46,6 +46,7 @@ class GlobalExceptionHandlerTest {
             "attachment-limit, 413, ATTACHMENT_UPLOAD_LIMIT_EXCEEDED",
             "unsupported-attachment, 415, UNSUPPORTED_ATTACHMENT_FORMAT",
             "place-folder-not-found, 404, PLACE_FOLDER_NOT_FOUND",
+            "attachment-not-found, 404, ATTACHMENT_NOT_FOUND",
             "invalid-cursor, 400, INVALID_CURSOR"
     })
     void 초기_첨부_예외를_공개_API_오류로_변환한다(String path, int statusCode, String message) throws Exception {
@@ -256,6 +257,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/place-folder-not-found")
         void placeFolderNotFound() {
             throw new PlaceFolderNotFoundException();
+        }
+
+        @GetMapping("/test/attachment-not-found")
+        void attachmentNotFound() {
+            throw new AttachmentNotFoundException();
         }
 
         @GetMapping("/test/invalid-cursor")

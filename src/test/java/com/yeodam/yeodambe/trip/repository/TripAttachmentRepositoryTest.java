@@ -110,4 +110,30 @@ class TripAttachmentRepositoryTest {
                 .extracting(TripAttachment::getId)
                 .containsExactly(savedAttachments.get(18).getId());
     }
+
+    @Test
+    void 활성_여행의_소유자만_원본_첨부를_조회한다() {
+        User owner = userRepository.save(new User("attachment-owner@yeodam.test", "소유자"));
+        User other = userRepository.save(new User("attachment-other@yeodam.test", "다른사용자"));
+        Trip trip = tripRepository.save(new Trip(
+                owner.getUserId(), "원본 조회", LocalDate.now(), LocalDate.now()
+        ));
+        StoredFile file = storedFileRepository.save(StoredFile.uploaded(
+                owner.getUserId(), "original.jpg", "trip-uploads/original", "image/jpeg"
+        ));
+        TripAttachment attachment = tripAttachmentRepository.save(
+                TripAttachment.initial(
+                        trip.getId(), file.getId(), "analyze", "preview"
+                )
+        );
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(tripAttachmentRepository.findAccessibleById(
+                attachment.getId(), owner.getUserId()
+        )).isPresent();
+        assertThat(tripAttachmentRepository.findAccessibleById(
+                attachment.getId(), other.getUserId()
+        )).isEmpty();
+    }
 }

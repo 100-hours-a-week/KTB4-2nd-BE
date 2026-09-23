@@ -88,7 +88,10 @@ class KakaoLoginCallbackServiceTest {
                         new KakaoUserResponse.KakaoAccount(
                                 true,
                                 true,
-                                "member@example.com"
+                                "member@example.com",
+                                new KakaoUserResponse.Profile(
+                                        "https://k.kakaocdn.net/profile-thumb.jpg"
+                                )
                         )
                 ));
 
@@ -118,7 +121,8 @@ class KakaoLoginCallbackServiceTest {
                         "login-ticket",
                         new KakaoUserIdentity(
                                 "123456789",
-                                "member@example.com"
+                                "member@example.com",
+                                "https://k.kakaocdn.net/profile-thumb.jpg"
                         ),
                         "browser-1"
                 );
@@ -184,7 +188,8 @@ class KakaoLoginCallbackServiceTest {
                         new KakaoUserResponse.KakaoAccount(
                                 true,
                                 true,
-                                "member@example.com"
+                                "member@example.com",
+                                null
                         )
                 ));
     }

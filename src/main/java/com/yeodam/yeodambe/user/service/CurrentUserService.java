@@ -37,6 +37,7 @@ public class CurrentUserService {
                 user.getUserId(),
                 user.getEmail(),
                 user.getNickname(),
+                user.getProfileImageUrl(),
                 oauthProvider,
                 oauthAccount.isPresent()
         );

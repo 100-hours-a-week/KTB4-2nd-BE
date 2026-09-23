@@ -32,6 +32,7 @@ public class LoginTicketStore {
                 tokenHasher.hash(browserContext),
                 identity.providerUserId(),
                 identity.email(),
+                identity.profileImageUrl(),
                 LocalDateTime.now().plus(TICKET_TTL)
         );
 
@@ -76,7 +77,8 @@ public class LoginTicketStore {
 
         KakaoUserIdentity identity = new KakaoUserIdentity(
                 entity.getProviderUserId(),
-                entity.getEmail()
+                entity.getEmail(),
+                entity.getProfileImageUrl()
         );
 
         loginTicketRepository.delete(entity);

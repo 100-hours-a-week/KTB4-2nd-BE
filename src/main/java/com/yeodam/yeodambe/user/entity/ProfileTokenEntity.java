@@ -39,6 +39,9 @@ public class ProfileTokenEntity {
     @Column(name = "email", nullable = false, length = 255)
     private String email;
 
+    @Column(name = "profile_image_url", length = 2048)
+    private String profileImageUrl;
+
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
@@ -55,12 +58,29 @@ public class ProfileTokenEntity {
             String tokenHash,
             String providerUserId,
             String email,
+            String profileImageUrl,
             LocalDateTime expiresAt
     ) {
         this.tokenHash = tokenHash;
         this.providerUserId = providerUserId;
         this.email = email;
+        this.profileImageUrl = profileImageUrl;
         this.expiresAt = expiresAt;
+    }
+
+    public ProfileTokenEntity(
+            String tokenHash,
+            String providerUserId,
+            String email,
+            LocalDateTime expiresAt
+    ) {
+        this(
+                tokenHash,
+                providerUserId,
+                email,
+                null,
+                expiresAt
+        );
     }
 
     public boolean isExpired(LocalDateTime now) {

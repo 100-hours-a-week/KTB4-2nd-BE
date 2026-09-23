@@ -58,7 +58,7 @@ class TripAnalysisResultServiceTest {
     }
 
     @Test
-    void 분류된_사진과_장소를_같은_완료_트랜잭션에서_저장한다() {
+    void AI_분류_결과를_장소와_첨부_저장소에_전달한다() {
         String executionId = executions.reserve(7L);
         TripAttachment photo = TripAttachment.initial(7L, 20L, "analyze", "preview");
         ReflectionTestUtils.setField(photo, "id", 30L);

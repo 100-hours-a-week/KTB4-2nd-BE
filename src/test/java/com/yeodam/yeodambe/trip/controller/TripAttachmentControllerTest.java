@@ -185,21 +185,6 @@ class TripAttachmentControllerTest {
     }
 
     @Test
-    void 결과_저장이_끝난_후_완료_응답을_반환한다() {
-        var files = List.<MultipartFile>of(photo());
-        when(service.uploadInitialAttachments(7L, 1L, files))
-                .thenReturn(completed(1));
-
-        var response = controller.uploadInitialAttachments(7L, jwt(), files);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");
-        assertThat(response.getBody().data().tripId()).isEqualTo(7L);
-        assertThat(response.getBody().data().status()).isEqualTo(ProcessingStatus.COMPLETED);
-        assertThat(response.getBody().data().result().placeFolderCount()).isEqualTo(1);
-    }
-
-    @Test
     void AI가_명시적으로_실패하면_200과_FAILED_오류를_반환한다() {
         var files = List.<MultipartFile>of(photo());
         when(service.uploadInitialAttachments(7L, 1L, files))

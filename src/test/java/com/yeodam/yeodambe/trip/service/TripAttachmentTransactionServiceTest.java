@@ -66,7 +66,7 @@ class TripAttachmentTransactionServiceTest {
     }
 
     @Test
-    void 원본과_첨부_참조를_한_트랜잭션에서_저장한다() {
+    void 원본과_첨부_참조의_매핑을_저장소에_전달한다() {
         String executionId = executions.reserve(7L);
         var upload = new MockMultipartFile("attachments[]", "photo.jpg", "image/jpeg", new byte[]{1});
         var derived = new com.yeodam.yeodambe.trip.service.DerivedPhotoKeys(

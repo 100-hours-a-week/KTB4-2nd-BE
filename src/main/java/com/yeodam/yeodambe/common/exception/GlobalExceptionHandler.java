@@ -259,6 +259,22 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("TRIP_NOT_FOUND", null);
     }
 
+    @ExceptionHandler(InvalidAttachmentIdsException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidAttachmentIds(
+            InvalidAttachmentIdsException exception
+    ) {
+        return new ApiResponse<>("INVALID_ATTACHMENT_IDS", null);
+    }
+
+    @ExceptionHandler(WritePermissionRequiredException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    ApiResponse<Void> handleWritePermissionRequired(
+            WritePermissionRequiredException exception
+    ) {
+        return new ApiResponse<>("WRITE_PERMISSION_REQUIRED", null);
+    }
+
     @ExceptionHandler(AttachmentNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     ApiResponse<Void> handleAttachmentNotFound(

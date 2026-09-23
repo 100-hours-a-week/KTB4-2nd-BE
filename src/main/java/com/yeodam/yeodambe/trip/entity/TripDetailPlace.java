@@ -74,4 +74,8 @@ public class TripDetailPlace {
         place.thumbnailKey = thumbnailKey;
         return place;
     }
+
+    public void changeThumbnailKey(String thumbnailKey) {
+        this.thumbnailKey = thumbnailKey;
+    }
 }

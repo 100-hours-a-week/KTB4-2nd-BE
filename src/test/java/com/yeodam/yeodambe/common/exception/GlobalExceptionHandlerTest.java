@@ -47,7 +47,9 @@ class GlobalExceptionHandlerTest {
             "unsupported-attachment, 415, UNSUPPORTED_ATTACHMENT_FORMAT",
             "place-folder-not-found, 404, PLACE_FOLDER_NOT_FOUND",
             "attachment-not-found, 404, ATTACHMENT_NOT_FOUND",
-            "invalid-cursor, 400, INVALID_CURSOR"
+            "invalid-cursor, 400, INVALID_CURSOR",
+            "invalid-attachment-ids, 400, INVALID_ATTACHMENT_IDS",
+            "write-permission-required, 403, WRITE_PERMISSION_REQUIRED"
     })
     void 초기_첨부_예외를_공개_API_오류로_변환한다(String path, int statusCode, String message) throws Exception {
         mockMvc.perform(get("/test/" + path))
@@ -267,6 +269,16 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/invalid-cursor")
         void invalidCursor() {
             throw new InvalidCursorException();
+        }
+
+        @GetMapping("/test/invalid-attachment-ids")
+        void invalidAttachmentIds() {
+            throw new InvalidAttachmentIdsException();
+        }
+
+        @GetMapping("/test/write-permission-required")
+        void writePermissionRequired() {
+            throw new WritePermissionRequiredException();
         }
 
         @GetMapping("/test/duplicate-email")

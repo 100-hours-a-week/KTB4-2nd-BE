@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
@@ -34,6 +35,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -64,6 +66,9 @@ class TripAttachmentSecurityIntegrationTest {
 
     @MockitoBean
     private TripAttachmentDetailService tripAttachmentDetailService;
+
+    @MockitoBean
+    private TripAttachmentDeletionService tripAttachmentDeletionService;
 
     @MockitoBean
     private ActiveLoginSessionValidator activeLoginSessionValidator;
@@ -134,6 +139,22 @@ class TripAttachmentSecurityIntegrationTest {
 
         then(tripAttachmentService).should(never())
                 .uploadInitialAttachments(any(), any(), anyList());
+    }
+
+    @Test
+    void 유효한_쿠키_Jwt와_CSRF로_첨부를_삭제한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("attachment-delete-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(delete("/attachments/11")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "attachment-delete-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isNoContent());
+
+        then(tripAttachmentDeletionService).should().deleteOne(42L, 11L);
     }
 
     private byte[] jpeg() {

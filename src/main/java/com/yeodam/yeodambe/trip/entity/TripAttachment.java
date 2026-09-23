@@ -142,4 +142,8 @@ public class TripAttachment {
         this.deviceModel = deviceModel;
         if (latitude != null && longitude != null) this.regionOrigin = RegionOrigin.EXIF;
     }
+
+    public void softDelete(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
 }

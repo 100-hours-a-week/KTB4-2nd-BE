@@ -96,4 +96,32 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             @Param("tripAttachmentId") Long tripAttachmentId,
             @Param("userId") Long userId
     );
+
+    @Query("""
+        select attachment
+        from TripAttachment attachment
+        join fetch attachment.file file
+        join fetch attachment.trip trip
+        where attachment.id in :tripAttachmentIds
+          and attachment.deletedAt is null
+          and trip.deletedAt is null
+          and file.deletedAt is null
+        """)
+    List<TripAttachment> findAllActiveWithTripAndFileByIds(
+            @Param("tripAttachmentIds") Collection<Long> tripAttachmentIds
+    );
+
+    @Query("""
+        select attachment
+        from TripAttachment attachment
+        join attachment.file file
+        where attachment.tripPlaceId = :tripPlaceId
+          and attachment.classificationStatus = :classificationStatus
+          and attachment.deletedAt is null
+          and file.deletedAt is null
+        """)
+    List<TripAttachment> findAllActiveByTripPlaceId(
+            @Param("tripPlaceId") Long tripPlaceId,
+            @Param("classificationStatus") ClassificationStatus classificationStatus
+    );
 }

@@ -6,11 +6,13 @@ import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.core.MethodParameter;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,6 +31,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -36,8 +39,9 @@ class TripAttachmentControllerTest {
     private final TripAttachmentService service = mock(TripAttachmentService.class);
     private final TripAttachmentListService listService = mock(TripAttachmentListService.class);
     private final TripAttachmentDetailService detailService = mock(TripAttachmentDetailService.class);
+    private final TripAttachmentDeletionService deletionService = mock(TripAttachmentDeletionService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
-            service, listService, detailService
+            service, listService, detailService, deletionService
     );
 
     @Test
@@ -220,6 +224,49 @@ class TripAttachmentControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_ATTACHMENT_UPLOAD"));
         verifyNoInteractions(service);
+    }
+
+    @Test
+    void 첨부_한_개_삭제를_서비스에_전달한다() throws Exception {
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(delete("/api/attachments/11")
+                        .contextPath("/api")
+                        .servletPath("/attachments/11"))
+                .andExpect(status().isNoContent());
+
+        verify(deletionService).deleteOne(1L, 11L);
+    }
+
+    @Test
+    void 첨부_여러_개_삭제를_서비스에_전달한다() throws Exception {
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(post("/api/attachments/bulk-delete")
+                        .contextPath("/api")
+                        .servletPath("/attachments/bulk-delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tripAttachmentIds\":[11,12]}"))
+                .andExpect(status().isNoContent());
+
+        verify(deletionService).deleteBulk(1L, List.of(11L, 12L));
+    }
+
+    private HandlerMethodArgumentResolver authenticationPrincipalResolver() {
+        return new HandlerMethodArgumentResolver() {
+            @Override
+            public boolean supportsParameter(MethodParameter parameter) {
+                return parameter.hasParameterAnnotation(AuthenticationPrincipal.class);
+            }
+
+            @Override
+            public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer container,
+                                          NativeWebRequest request, org.springframework.web.bind.support.WebDataBinderFactory binderFactory) {
+                return jwt();
+            }
+        };
     }
 
     private MockMultipartFile photo() {

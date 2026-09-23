@@ -67,6 +67,7 @@ class ProfileRegistrationIntegrationTest {
                 "SELECT user_id FROM users WHERE email = ?", Long.class, email
         );
         assertThat(userId).isNotNull();
+        assertThat(csrfTokenStore.find(csrfContext)).isNull();
         assertThat(response.getContentAsString()).contains("\"userId\":" + userId);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM oauth_accounts WHERE user_id = ?", Long.class, userId

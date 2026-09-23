@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
+import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import com.yeodam.yeodambe.user.exception.OnboardingTokenRequiredException;
 import com.yeodam.yeodambe.user.service.ProfileRegistrationService;
 import com.yeodam.yeodambe.user.service.request.ProfileRegistrationRequest;
@@ -23,15 +24,18 @@ import java.time.Duration;
 public class ProfileRegistrationController {
 
     private final ProfileRegistrationService service;
+    private final CsrfTokenStore csrfTokenStore;
     private final boolean cookieSecure;
     private final CookiePathResolver cookiePathResolver;
 
     public ProfileRegistrationController(
             ProfileRegistrationService service,
+            CsrfTokenStore csrfTokenStore,
             @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure,
             CookiePathResolver cookiePathResolver
     ) {
         this.service = service;
+        this.csrfTokenStore = csrfTokenStore;
         this.cookieSecure = cookieSecure;
         this.cookiePathResolver = cookiePathResolver;
     }
@@ -40,7 +44,8 @@ public class ProfileRegistrationController {
     public ResponseEntity<ApiResponse<ProfileRegistrationResponse>> register(
             @RequestBody(required = false) ProfileRegistrationRequest request,
             @CookieValue(name = "profileToken", required = false) String profileToken,
-            @CookieValue(name = "accessToken", required = false) String accessToken
+            @CookieValue(name = "accessToken", required = false) String accessToken,
+            @CookieValue(name = "CSRF_CONTEXT", required = false) String csrfContext
     ) {
         if ((profileToken == null || profileToken.isBlank())
                 && accessToken != null && !accessToken.isBlank()) {
@@ -51,6 +56,7 @@ public class ProfileRegistrationController {
                 profileToken,
                 request == null ? null : request.nickname()
         );
+        csrfTokenStore.delete(csrfContext);
 
         ResponseCookie accessCookie = cookie(
                 "accessToken", result.accessToken(), "/", 1800

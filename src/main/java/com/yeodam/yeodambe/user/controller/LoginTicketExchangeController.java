@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
+import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.service.LoginExchangeDecision;
 import com.yeodam.yeodambe.user.service.LoginTicketExchangeService;
@@ -23,15 +24,18 @@ import java.time.Duration;
 public class LoginTicketExchangeController {
 
     private final LoginTicketExchangeService service;
+    private final CsrfTokenStore csrfTokenStore;
     private final boolean cookieSecure;
     private final CookiePathResolver cookiePathResolver;
 
     public LoginTicketExchangeController(
             LoginTicketExchangeService service,
+            CsrfTokenStore csrfTokenStore,
             @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure,
             CookiePathResolver cookiePathResolver
     ) {
         this.service = service;
+        this.csrfTokenStore = csrfTokenStore;
         this.cookieSecure = cookieSecure;
         this.cookiePathResolver = cookiePathResolver;
     }
@@ -39,7 +43,8 @@ public class LoginTicketExchangeController {
     @PostMapping("/auth/token/exchange")
     public ResponseEntity<ApiResponse<LoginExchangeResponse>> exchange(
             @RequestBody(required = false) LoginTicketExchangeRequest request,
-            @CookieValue(name = "OAUTH_BROWSER_CONTEXT", required = false) String browserContext
+            @CookieValue(name = "OAUTH_BROWSER_CONTEXT", required = false) String browserContext,
+            @CookieValue(name = "CSRF_CONTEXT", required = false) String csrfContext
     ) {
         if (request == null || request.loginTicket() == null || request.loginTicket().isBlank()) {
             throw new LoginTicketInvalidOrExpiredException();
@@ -48,6 +53,7 @@ public class LoginTicketExchangeController {
         LoginExchangeDecision decision = service.exchange(request.loginTicket(), browserContext);
 
         if (decision instanceof LoginExchangeDecision.ExistingMember member) {
+            csrfTokenStore.delete(csrfContext);
             ResponseCookie accessCookie = cookie("accessToken", member.accessToken(), "/", 1800);
             ResponseCookie refreshCookie = cookie("refreshToken", member.refreshToken(), cookiePathResolver.apiPath("/auth"), 604800);
             LoginExchangeResponse data = new LoginExchangeResponse.ExistingMember(

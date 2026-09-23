@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.user.controller;
 import com.yeodam.yeodambe.user.service.LoginExchangeDecision;
 import com.yeodam.yeodambe.user.service.LoginTicketExchangeService;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
+import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -26,12 +29,15 @@ class LoginTicketExchangeControllerTest {
     @Mock
     private LoginTicketExchangeService service;
 
+    @Mock
+    private CsrfTokenStore csrfTokenStore;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         mockMvc = standaloneSetup(new LoginTicketExchangeController(
-                service, false, new CookiePathResolver("/api")
+                service, csrfTokenStore, false, new CookiePathResolver("/api")
         )).build();
     }
 
@@ -43,7 +49,10 @@ class LoginTicketExchangeControllerTest {
                 ));
 
         var response = mockMvc.perform(post("/auth/token/exchange")
-                        .cookie(new Cookie("OAUTH_BROWSER_CONTEXT", "browser-1"))
+                        .cookie(
+                                new Cookie("OAUTH_BROWSER_CONTEXT", "browser-1"),
+                                new Cookie("CSRF_CONTEXT", "csrf-browser-1")
+                        )
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"loginTicket\":\"ticket-1\"}"))
                 .andExpect(status().isOk())
@@ -62,6 +71,7 @@ class LoginTicketExchangeControllerTest {
                         .contains("accessToken=access-1", "Path=/", "Max-Age=1800", "HttpOnly", "SameSite=Lax"))
                 .anySatisfy(cookie -> assertThat(cookie)
                         .contains("refreshToken=refresh-1", "Path=/api/auth", "Max-Age=604800", "HttpOnly", "SameSite=Lax"));
+        then(csrfTokenStore).should().delete("csrf-browser-1");
     }
 
     @Test
@@ -85,5 +95,6 @@ class LoginTicketExchangeControllerTest {
                 .singleElement()
                 .asString()
                 .contains("profileToken=profile-1", "Path=/api/users/me/profile", "Max-Age=600", "HttpOnly", "SameSite=Lax");
+        then(csrfTokenStore).should(never()).delete(org.mockito.ArgumentMatchers.any());
     }
 }

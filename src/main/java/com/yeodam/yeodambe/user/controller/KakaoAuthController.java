@@ -15,6 +15,11 @@ import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
+import com.yeodam.yeodambe.user.exception.LoginTicketIssueFailedException;
+import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
+import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 import java.net.URI;
 import java.time.Duration;
@@ -91,39 +96,74 @@ public class KakaoAuthController {
 
     @GetMapping("/callback")
     public ResponseEntity<Void> callback(
-            @RequestParam String code,
-            @RequestParam String state,
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String error,
             @CookieValue(
                     name = BROWSER_CONTEXT_COOKIE,
                     required = false
             )
             String browserContext
     ) {
-        String loginTicket =
-                loginCallbackService.issueLoginTicket(
-                        code,
-                        state,
-                        browserContext
-                );
+        if (error != null && !error.isBlank()) {
+            String errorCode = "access_denied".equals(error)
+                    ? "KAKAO_LOGIN_CANCELLED"
+                    : "KAKAO_AUTHENTICATION_FAILED";
 
+            return redirectToFrontend("error", errorCode);
+        }
+        try {
+            String loginTicket =
+                    loginCallbackService.issueLoginTicket(
+                            code,
+                            state,
+                            browserContext
+                    );
+
+            return redirectToFrontend("loginTicket", loginTicket);
+        } catch (OAuthStateInvalidOrExpiredException exception) {
+            return redirectToFrontend(
+                    "error",
+                    "OAUTH_STATE_INVALID_OR_EXPIRED"
+            );
+        } catch (KakaoAuthenticationFailedException exception) {
+            return redirectToFrontend(
+                    "error",
+                    "KAKAO_AUTHENTICATION_FAILED"
+            );
+        } catch (OAuthProviderUnavailableException exception) {
+            return redirectToFrontend(
+                    "error",
+                    "OAUTH_PROVIDER_UNAVAILABLE"
+            );
+        } catch (DataAccessResourceFailureException exception) {
+            return redirectToFrontend(
+                    "error",
+                    "AUTH_STORE_UNAVAILABLE"
+            );
+        } catch (LoginTicketIssueFailedException exception) {
+            return redirectToFrontend(
+                    "error",
+                    "LOGIN_TICKET_ISSUE_FAILED"
+            );
+        }
+    }
+    private ResponseEntity<Void> redirectToFrontend(
+            String parameterName,
+            String parameterValue
+    ) {
         URI redirectUri = UriComponentsBuilder
                 .fromUriString(frontendCallbackUri)
-                .queryParam(
-                        "loginTicket",
-                        "{loginTicket}"
-                )
+                .queryParam(parameterName, "{parameterValue}")
                 .encode()
-                .buildAndExpand(loginTicket)
+                .buildAndExpand(parameterValue)
                 .toUri();
 
         return ResponseEntity
                 .status(FOUND)
                 .location(redirectUri)
                 .cacheControl(CacheControl.noStore())
-                .header(
-                        "Referrer-Policy",
-                        "no-referrer"
-                )
+                .header("Referrer-Policy", "no-referrer")
                 .build();
     }
 }

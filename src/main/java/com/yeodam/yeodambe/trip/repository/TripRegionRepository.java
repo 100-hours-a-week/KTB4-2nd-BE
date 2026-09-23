@@ -8,9 +8,21 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Collection;
 import java.time.LocalDateTime;
 
 public interface TripRegionRepository extends JpaRepository<TripRegion, Long> {
+    @Query("""
+            SELECT new com.yeodam.yeodambe.trip.repository.TripRegionName(
+                region.trip.id, region.regionName
+            )
+            FROM TripRegion region
+            WHERE region.trip.id IN :tripIds
+              AND region.deletedAt IS NULL
+            ORDER BY region.trip.id ASC, region.id ASC
+            """)
+    List<TripRegionName> findNamesByTripIds(@Param("tripIds") Collection<Long> tripIds);
+
     @Query("""
             SELECT region
             FROM TripRegion region

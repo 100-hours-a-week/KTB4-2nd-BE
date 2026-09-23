@@ -109,7 +109,10 @@ class KakaoOAuthClientTest {
                           "kakao_account": {
                             "is_email_valid": true,
                             "is_email_verified": true,
-                            "email": "member@example.com"
+                            "email": "member@example.com",
+                            "profile": {
+                              "thumbnail_image_url": "https://k.kakaocdn.net/profile-thumb.jpg"
+                            }
                           }
                         }
                         """,
@@ -127,6 +130,8 @@ class KakaoOAuthClientTest {
                 .isTrue();
         assertThat(response.kakaoAccount().email())
                 .isEqualTo("member@example.com");
+        assertThat(response.kakaoAccount().profile().thumbnailImageUrl())
+                .isEqualTo("https://k.kakaocdn.net/profile-thumb.jpg");
 
         server.verify();
     }

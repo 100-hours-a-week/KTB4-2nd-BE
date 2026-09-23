@@ -30,6 +30,7 @@ public class ProfileTokenStore {
                 tokenHasher.hash(token),
                 identity.providerUserId(),
                 identity.email(),
+                identity.profileImageUrl(),
                 LocalDateTime.now().plus(TOKEN_TTL)
         );
 
@@ -60,7 +61,8 @@ public class ProfileTokenStore {
 
         return Optional.of(new KakaoUserIdentity(
                 entity.getProviderUserId(),
-                entity.getEmail()
+                entity.getEmail(),
+                entity.getProfileImageUrl()
         ));
     }
 

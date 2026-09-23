@@ -69,9 +69,14 @@ public class KakaoLoginCallbackService {
             throw new KakaoAuthenticationFailedException();
         }
 
+        String profileImageUrl = user.kakaoAccount().profile() == null
+                ? null
+                : user.kakaoAccount().profile().thumbnailImageUrl();
+
         KakaoUserIdentity identity = new KakaoUserIdentity(
                 user.id().toString(),
-                user.kakaoAccount().email()
+                user.kakaoAccount().email(),
+                profileImageUrl
         );
 
         try {

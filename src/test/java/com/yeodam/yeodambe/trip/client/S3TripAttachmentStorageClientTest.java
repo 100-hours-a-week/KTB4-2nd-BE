@@ -55,6 +55,13 @@ class S3TripAttachmentStorageClientTest {
                 .contains("X-Amz-Signature=");
     }
 
+    @Test
+    void 로컬_목업_이미지는_S3_서명_URL_대신_정적_리소스_URL을_반환한다() {
+        String url = storageClient.createReadUrl("local-map-mock/seoul.png");
+
+        assertThat(url).isEqualTo("http://localhost:8080/api/mock-assets/seoul.png");
+    }
+
     private void restoreSystemProperty(String name, String previousValue) {
         if (previousValue == null) {
             System.clearProperty(name);

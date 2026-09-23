@@ -42,11 +42,13 @@ public class TripPhotoAnalysisService {
         this.starter = starter;
         JdkClientHttpRequestFactory analysisFactory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
                         .connectTimeout(connectionTimeout)
                         .build()
         );
         JdkClientHttpRequestFactory healthFactory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
                         .connectTimeout(healthConnectionTimeout)
                         .build()
         );

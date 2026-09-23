@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -40,25 +41,33 @@ class TripPhotoAnalysisHttpContractTest {
     }
 
     @Test
-    void 준비된_AI서버에_Bearer인증과_사진분석_요청을_전송한다() throws Exception {
+    void 준비된_AI서버에_HTTP_1_1로_Bearer인증과_사진분석_요청을_전송한다() throws Exception {
         AtomicReference<String> healthMethod = new AtomicReference<>();
         AtomicReference<String> healthPath = new AtomicReference<>();
         AtomicReference<String> healthAuthorization = new AtomicReference<>();
+        AtomicReference<String> healthUpgrade = new AtomicReference<>();
+        AtomicReference<String> healthHttp2Settings = new AtomicReference<>();
         AtomicReference<String> analysisMethod = new AtomicReference<>();
         AtomicReference<String> analysisPath = new AtomicReference<>();
         AtomicReference<String> analysisAuthorization = new AtomicReference<>();
+        AtomicReference<String> analysisUpgrade = new AtomicReference<>();
+        AtomicReference<String> analysisHttp2Settings = new AtomicReference<>();
         AtomicReference<JsonNode> analysisBody = new AtomicReference<>();
 
         server.createContext("/health", exchange -> {
             healthMethod.set(exchange.getRequestMethod());
             healthPath.set(exchange.getRequestURI().getPath());
             healthAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            healthUpgrade.set(exchange.getRequestHeaders().getFirst("Upgrade"));
+            healthHttp2Settings.set(exchange.getRequestHeaders().getFirst("HTTP2-Settings"));
             respond(exchange, "{\"status\":\"ok\",\"model_loaded\":true}");
         });
         server.createContext("/trips/7/process", exchange -> {
             analysisMethod.set(exchange.getRequestMethod());
             analysisPath.set(exchange.getRequestURI().getPath());
             analysisAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            analysisUpgrade.set(exchange.getRequestHeaders().getFirst("Upgrade"));
+            analysisHttp2Settings.set(exchange.getRequestHeaders().getFirst("HTTP2-Settings"));
             analysisBody.set(json.readTree(exchange.getRequestBody()));
             respond(exchange, """
                     {"trip_id":7,"execution_id":"run-1","status":"COMPLETED",
@@ -79,9 +88,13 @@ class TripPhotoAnalysisHttpContractTest {
         assertEquals("GET", healthMethod.get());
         assertEquals("/health", healthPath.get());
         assertEquals("Bearer test-api-key", healthAuthorization.get());
+        assertNull(healthUpgrade.get());
+        assertNull(healthHttp2Settings.get());
         assertEquals("POST", analysisMethod.get());
         assertEquals("/trips/7/process", analysisPath.get());
         assertEquals("Bearer test-api-key", analysisAuthorization.get());
+        assertNull(analysisUpgrade.get());
+        assertNull(analysisHttp2Settings.get());
         assertEquals(json.readTree(json.writeValueAsString(request)), analysisBody.get());
         assertTrue(result.path("places").isArray());
     }

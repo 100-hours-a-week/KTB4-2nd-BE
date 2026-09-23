@@ -16,7 +16,15 @@ public record KakaoUserResponse(
             @JsonProperty("is_email_verified")
             Boolean emailVerified,
 
-            String email
+            String email,
+
+            Profile profile
+    ) {
+    }
+
+    public record Profile(
+            @JsonProperty("thumbnail_image_url")
+            String thumbnailImageUrl
     ) {
     }
 }

@@ -43,6 +43,22 @@ class AuthSchemaMigrationTest {
     }
 
     @Test
+    void addsProfileImageUrlColumnsForTheLoginFlow() {
+        Long columnCount = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name IN ('users', 'login_tickets', 'profile_tokens')
+                  AND column_name = 'profile_image_url'
+                """,
+                Long.class
+        );
+
+        assertThat(columnCount).isEqualTo(3L);
+    }
+
+    @Test
     void oauthStateHashCannotBeDuplicated() {
         String stateHash = "a".repeat(64);
 

@@ -31,7 +31,8 @@ class ProfileTokenStoreTest {
         String token = "profile-token-lookup";
         KakaoUserIdentity identity = new KakaoUserIdentity(
                 "123456789",
-                "member@example.com"
+                "member@example.com",
+                "https://k.kakaocdn.net/profile-token-thumbnail.jpg"
         );
 
         profileTokenStore.save(token, identity);

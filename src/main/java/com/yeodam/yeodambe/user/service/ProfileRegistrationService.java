@@ -30,7 +30,8 @@ public class ProfileRegistrationService {
                 identity.email(),
                 nickname,
                 OAuthProvider.KAKAO,
-                identity.providerUserId()
+                identity.providerUserId(),
+                identity.profileImageUrl()
         );
 
         IssuedLoginSession session = loginSessionIssuer.issue(user.getUserId());

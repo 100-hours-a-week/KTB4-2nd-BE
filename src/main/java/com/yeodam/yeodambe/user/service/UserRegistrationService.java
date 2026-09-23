@@ -36,6 +36,23 @@ public class UserRegistrationService {
             OAuthProvider provider,
             String providerUserId
     ) {
+        return register(
+                email,
+                nickname,
+                provider,
+                providerUserId,
+                null
+        );
+    }
+
+    @Transactional
+    public User register(
+            String email,
+            String nickname,
+            OAuthProvider provider,
+            String providerUserId,
+            String profileImageUrl
+    ) {
         String normalizedEmail = email.strip();
 
         if (normalizedEmail.chars().anyMatch(Character::isWhitespace)) {
@@ -54,7 +71,9 @@ public class UserRegistrationService {
         {
             throw new DuplicateOAuthAccountException();
         }
-        User user = userRepository.save(new User(normalizedEmail, nickname));
+        User user = userRepository.save(
+                new User(normalizedEmail, nickname, profileImageUrl)
+        );
 
         oauthAccountRepository.save(new OAuthAccount(user, provider, providerUserId));
 

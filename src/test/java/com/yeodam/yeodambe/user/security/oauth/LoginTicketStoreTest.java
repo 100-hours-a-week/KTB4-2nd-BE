@@ -33,7 +33,8 @@ class LoginTicketStoreTest {
         KakaoUserIdentity identity =
                 new KakaoUserIdentity(
                         "123456789",
-                        "member@example.com"
+                        "member@example.com",
+                        "https://k.kakaocdn.net/login-ticket-thumbnail.jpg"
                 );
 
         loginTicketStore.save(

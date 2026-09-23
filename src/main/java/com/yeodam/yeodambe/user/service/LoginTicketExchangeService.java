@@ -47,6 +47,7 @@ public class LoginTicketExchangeService {
         }
 
         User user = account.get().getUser();
+        user.updateProfileImageUrl(identity.profileImageUrl());
         IssuedLoginSession session = loginSessionIssuer.issue(user.getUserId());
         String accessToken = accessTokenIssuer.issue(user.getUserId(), session.sid());
 

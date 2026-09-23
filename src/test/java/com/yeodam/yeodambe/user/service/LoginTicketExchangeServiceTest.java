@@ -106,7 +106,11 @@ class LoginTicketExchangeServiceTest {
     @Test
     void returnsExistingMemberDecisionWhenKakaoAccountIsLinked() {
         KakaoUserIdentity identity =
-                new KakaoUserIdentity("kakao-user-2", "kakao@example.com");
+                new KakaoUserIdentity(
+                        "kakao-user-2",
+                        "kakao@example.com",
+                        "https://k.kakaocdn.net/current-thumbnail.jpg"
+                );
         User user = mock(User.class);
         OAuthAccount account = mock(OAuthAccount.class);
 
@@ -141,6 +145,9 @@ class LoginTicketExchangeServiceTest {
         );
         then(loginSessionIssuer).should().issue(42L);
         then(accessTokenIssuer).should().issue(42L, "sid-1");
+        then(user).should().updateProfileImageUrl(
+                "https://k.kakaocdn.net/current-thumbnail.jpg"
+        );
         verifyNoInteractions(profileTokenGenerator, profileTokenStore);
     }
 }

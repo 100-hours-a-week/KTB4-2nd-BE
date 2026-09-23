@@ -46,6 +46,9 @@ public class LoginTicketEntity {
     @Column(name = "email", nullable = false, length = 255)
     private String email;
 
+    @Column(name = "profile_image_url", length = 2048)
+    private String profileImageUrl;
+
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
@@ -63,13 +66,32 @@ public class LoginTicketEntity {
             String browserContextHash,
             String providerUserId,
             String email,
+            String profileImageUrl,
             LocalDateTime expiresAt
     ) {
         this.ticketHash = ticketHash;
         this.browserContextHash = browserContextHash;
         this.providerUserId = providerUserId;
         this.email = email;
+        this.profileImageUrl = profileImageUrl;
         this.expiresAt = expiresAt;
+    }
+
+    public LoginTicketEntity(
+            String ticketHash,
+            String browserContextHash,
+            String providerUserId,
+            String email,
+            LocalDateTime expiresAt
+    ) {
+        this(
+                ticketHash,
+                browserContextHash,
+                providerUserId,
+                email,
+                null,
+                expiresAt
+        );
     }
 
     public boolean matchesBrowserContext(String browserContextHash) {

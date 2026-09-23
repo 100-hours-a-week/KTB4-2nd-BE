@@ -54,12 +54,17 @@ class ProfileRegistrationServiceTest {
     @Test
     void registersMemberAndDeletesProfileTokenAfterIssuingSession() {
         KakaoUserIdentity identity =
-                new KakaoUserIdentity("kakao-1", "member@example.com");
+                new KakaoUserIdentity(
+                        "kakao-1",
+                        "member@example.com",
+                        "https://k.kakaocdn.net/new-thumbnail.jpg"
+                );
         User user = mock(User.class);
         given(profileTokenStore.find("profile-1"))
                 .willReturn(Optional.of(identity));
         given(userRegistrationService.register(
-                "member@example.com", "여행자", OAuthProvider.KAKAO, "kakao-1"
+                "member@example.com", "여행자", OAuthProvider.KAKAO, "kakao-1",
+                "https://k.kakaocdn.net/new-thumbnail.jpg"
         )).willReturn(user);
         given(user.getUserId()).willReturn(42L);
         given(user.getNickname()).willReturn("여행자");
@@ -80,7 +85,8 @@ class ProfileRegistrationServiceTest {
         );
         order.verify(profileTokenStore).find("profile-1");
         order.verify(userRegistrationService).register(
-                "member@example.com", "여행자", OAuthProvider.KAKAO, "kakao-1"
+                "member@example.com", "여행자", OAuthProvider.KAKAO, "kakao-1",
+                "https://k.kakaocdn.net/new-thumbnail.jpg"
         );
         order.verify(loginSessionIssuer).issue(42L);
         order.verify(accessTokenIssuer).issue(42L, "sid-1");
@@ -107,7 +113,7 @@ class ProfileRegistrationServiceTest {
         given(profileTokenStore.find("profile-1"))
                 .willReturn(Optional.of(identity));
         given(userRegistrationService.register(
-                "member@example.com", "잘못 된닉네임", OAuthProvider.KAKAO, "kakao-1"
+                "member@example.com", "잘못 된닉네임", OAuthProvider.KAKAO, "kakao-1", null
         )).willThrow(new InvalidNicknameException());
 
         assertThatThrownBy(() -> service.register("profile-1", "잘못 된닉네임"))

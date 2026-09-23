@@ -51,6 +51,8 @@ class CurrentUserServiceTest {
         given(user.getUserId()).willReturn(42L);
         given(user.getEmail()).willReturn("user@example.com");
         given(user.getNickname()).willReturn("여행자");
+        given(user.getProfileImageUrl())
+                .willReturn("https://k.kakaocdn.net/current-thumbnail.jpg");
         given(oauthAccountRepository
                 .findByUser_UserIdAndDeletedAtIsNull(42L))
                 .willReturn(Optional.of(oauthAccount));
@@ -62,6 +64,7 @@ class CurrentUserServiceTest {
                 42L,
                 "user@example.com",
                 "여행자",
+                "https://k.kakaocdn.net/current-thumbnail.jpg",
                 "KAKAO",
                 true
         ));

@@ -19,6 +19,10 @@ import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentDeleteRequest;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.List;
 
@@ -28,6 +32,7 @@ public class TripAttachmentController {
     private final TripAttachmentService service;
     private final TripAttachmentListService tripAttachmentListService;
     private final TripAttachmentDetailService tripAttachmentDetailService;
+    private final TripAttachmentDeletionService tripAttachmentDeletionService;
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> uploadInitialAttachments(
@@ -87,5 +92,32 @@ public class TripAttachmentController {
         return ResponseEntity.ok(
                 new ApiResponse<>("ATTACHMENT_FOUND", result)
         );
+    }
+
+    @DeleteMapping("/attachments/{tripAttachmentId}")
+    public ResponseEntity<Void> deleteAttachment(
+            @PathVariable Long tripAttachmentId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        tripAttachmentDeletionService.deleteOne(userId, tripAttachmentId);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/attachments/bulk-delete")
+    public ResponseEntity<Void> deleteAttachments(
+            @RequestBody(required = false) BulkAttachmentDeleteRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        tripAttachmentDeletionService.deleteBulk(
+                userId,
+                request == null ? null : request.tripAttachmentIds()
+        );
+
+        return ResponseEntity.noContent().build();
     }
 }

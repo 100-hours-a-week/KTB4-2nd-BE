@@ -85,4 +85,8 @@ public class StoredFile {
         return file;
     }
 
+    public void softDelete(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
+
 }

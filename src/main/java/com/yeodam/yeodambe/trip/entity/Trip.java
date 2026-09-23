@@ -69,4 +69,16 @@ public class Trip {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = this.createdAt;
     }
+
+    public static Trip localMock(
+            Long userId,
+            String tripName,
+            LocalDate startDate,
+            LocalDate endDate,
+            String thumbnailKey
+    ) {
+        Trip trip = new Trip(userId, tripName, startDate, endDate);
+        trip.thumbnailKey = thumbnailKey;
+        return trip;
+    }
 }

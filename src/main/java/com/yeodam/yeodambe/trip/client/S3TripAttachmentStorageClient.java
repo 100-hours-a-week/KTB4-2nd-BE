@@ -23,6 +23,9 @@ import software.amazon.awssdk.services.s3.model.Tagging;
 
 @Component
 public class S3TripAttachmentStorageClient implements TripAttachmentStorageClient {
+    private static final String LOCAL_MOCK_ASSET_PREFIX = "local-map-mock/";
+    private static final String LOCAL_MOCK_ASSET_URL_PREFIX = "http://localhost:8080/api/mock-assets/";
+
     private final S3Client s3;
     private final String bucket;
     private final S3Presigner presigner;
@@ -74,6 +77,11 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
 
     @Override
     public String createReadUrl(String objectKey) {
+        if (objectKey.startsWith(LOCAL_MOCK_ASSET_PREFIX)) {
+            return LOCAL_MOCK_ASSET_URL_PREFIX
+                    + objectKey.substring(LOCAL_MOCK_ASSET_PREFIX.length());
+        }
+
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                 .bucket(bucket)
                 .key(objectKey)

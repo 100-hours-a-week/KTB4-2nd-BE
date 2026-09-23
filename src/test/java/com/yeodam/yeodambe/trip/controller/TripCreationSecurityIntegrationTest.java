@@ -116,6 +116,26 @@ class TripCreationSecurityIntegrationTest {
     }
 
     @Test
+    void 인증된_여행_생성_요청이_CSRF_토큰을_삭제하지_않는다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("repeat-browser")).willReturn("csrf-token");
+        given(tripService.createTrip(eq(42L), any(TripCreateRequest.class)))
+                .willReturn(new TripCreateResponse(7L, ProcessingStatus.PROCESSING));
+
+        mockMvc.perform(post("/trips")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "repeat-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "csrf-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRequest()))
+                .andExpect(status().isCreated());
+
+        then(csrfTokenStore).should(never()).delete("repeat-browser");
+    }
+
+    @Test
     void accessToken이_없거나_유효하지_않으면_공통_401을_반환한다() throws Exception {
         given(csrfTokenStore.find("unauthorized-browser")).willReturn("csrf-token");
 

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
@@ -13,6 +14,7 @@ import com.yeodam.yeodambe.trip.service.request.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import lombok.RequiredArgsConstructor;
@@ -79,6 +81,25 @@ public class TripService {
 
         tripRegionRepository.saveAll(tripRegions);
         return new TripCreateResponse(trip.getId(), ProcessingStatus.PROCESSING);
+    }
+
+    @Transactional
+    public TripFavoriteResponse registerFavorite(Long tripId, Long userId) {
+        Trip trip = tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
+                        tripId, userId, ProcessingStatus.COMPLETED)
+                .orElseThrow(TripNotFoundException::new);
+
+        trip.changeFavorite(true);
+        return new TripFavoriteResponse(trip.getId(), trip.getFavorite());
+    }
+
+    @Transactional
+    public void removeFavorite(Long tripId, Long userId) {
+        Trip trip = tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
+                        tripId, userId, ProcessingStatus.COMPLETED)
+                .orElseThrow(TripNotFoundException::new);
+
+        trip.changeFavorite(false);
     }
 
     @Transactional(readOnly = true)

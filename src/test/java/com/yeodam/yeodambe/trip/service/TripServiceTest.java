@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -20,6 +21,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -115,6 +117,65 @@ class TripServiceTest {
         assertThat(response.tripId()).isEqualTo(7L);
         assertThat(response.status()).isEqualTo(ProcessingStatus.PROCESSING);
         verify(tripRegionRepository).saveAll(anyList());
+    }
+
+    @Test
+    void 완료된_소유_여행을_즐겨찾기로_등록한다() {
+        Trip trip = new Trip(1L, "여행", LocalDate.now(), LocalDate.now());
+        ReflectionTestUtils.setField(trip, "id", 7L);
+        when(tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
+                7L, 1L, ProcessingStatus.COMPLETED)).thenReturn(Optional.of(trip));
+
+        var response = tripService.registerFavorite(7L, 1L);
+
+        assertThat(trip.getFavorite()).isTrue();
+        assertThat(response.tripId()).isEqualTo(7L);
+        assertThat(response.isFavorite()).isTrue();
+    }
+
+    @Test
+    void 이미_즐겨찾기인_여행도_true로_유지한다() {
+        Trip trip = new Trip(1L, "여행", LocalDate.now(), LocalDate.now());
+        ReflectionTestUtils.setField(trip, "id", 7L);
+        ReflectionTestUtils.setField(trip, "favorite", true);
+        when(tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
+                7L, 1L, ProcessingStatus.COMPLETED)).thenReturn(Optional.of(trip));
+
+        var response = tripService.registerFavorite(7L, 1L);
+
+        assertThat(trip.getFavorite()).isTrue();
+        assertThat(response.isFavorite()).isTrue();
+    }
+
+    @Test
+    void 등록할_수_있는_여행이_없으면_찾을_수_없음으로_처리한다() {
+        when(tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
+                7L, 1L, ProcessingStatus.COMPLETED)).thenReturn(Optional.empty());
+
+        assertThrows(TripNotFoundException.class,
+                () -> tripService.registerFavorite(7L, 1L));
+    }
+
+    @Test
+    void 즐겨찾기_삭제를_반복해도_false로_유지한다() {
+        Trip trip = new Trip(1L, "여행", LocalDate.now(), LocalDate.now());
+        ReflectionTestUtils.setField(trip, "favorite", true);
+        when(tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
+                7L, 1L, ProcessingStatus.COMPLETED)).thenReturn(Optional.of(trip));
+
+        tripService.removeFavorite(7L, 1L);
+        tripService.removeFavorite(7L, 1L);
+
+        assertThat(trip.getFavorite()).isFalse();
+    }
+
+    @Test
+    void 삭제할_수_있는_여행이_없으면_찾을_수_없음으로_처리한다() {
+        when(tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
+                7L, 1L, ProcessingStatus.COMPLETED)).thenReturn(Optional.empty());
+
+        assertThrows(TripNotFoundException.class,
+                () -> tripService.removeFavorite(7L, 1L));
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.user.service.LogoutService;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
+import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,12 +22,15 @@ class LogoutControllerTest {
     @Mock
     private LogoutService service;
 
+    @Mock
+    private CsrfTokenStore csrfTokenStore;
+
     private LogoutController controller;
 
     @BeforeEach
     void setUp() {
         controller = new LogoutController(
-                service, false, new CookiePathResolver("/api")
+                service, csrfTokenStore, false, new CookiePathResolver("/api")
         );
     }
 
@@ -36,9 +40,10 @@ class LogoutControllerTest {
         given(jwt.getClaimAsString("sid"))
                 .willReturn("current-session-id");
 
-        ResponseEntity<Void> response = controller.logout(jwt);
+        ResponseEntity<Void> response = controller.logout(jwt, "csrf-logout");
 
         then(service).should().logout("current-session-id");
+        then(csrfTokenStore).should().delete("csrf-logout");
         assertThat(response.getStatusCode().value()).isEqualTo(204);
         assertThat(response.getBody()).isNull();
         assertThat(response.getHeaders().get("Set-Cookie"))

@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -86,6 +87,8 @@ class LogoutIntegrationTest {
                         )
                         .header("X-CSRF-TOKEN", "csrf-token"))
                 .andExpect(status().isNoContent());
+
+        assertThat(csrfTokenStore.find("logout-browser")).isNull();
 
         mockMvc.perform(get("/test/logout-probe")
                         .cookie(new Cookie("accessToken", accessToken)))

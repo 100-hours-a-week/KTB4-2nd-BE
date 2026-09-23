@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
 import com.yeodam.yeodambe.user.exception.OnboardingTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.service.ProfileRegistrationService;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
+import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -28,12 +30,15 @@ class ProfileRegistrationControllerTest {
     @Mock
     private ProfileRegistrationService service;
 
+    @Mock
+    private CsrfTokenStore csrfTokenStore;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         mockMvc = standaloneSetup(new ProfileRegistrationController(
-                service, false, new CookiePathResolver("/api")
+                service, csrfTokenStore, false, new CookiePathResolver("/api")
         ))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -47,7 +52,10 @@ class ProfileRegistrationControllerTest {
                 ));
 
         var response = mockMvc.perform(post("/users/me/profile")
-                        .cookie(new Cookie("profileToken", "profile-1"))
+                        .cookie(
+                                new Cookie("profileToken", "profile-1"),
+                                new Cookie("CSRF_CONTEXT", "csrf-profile-1")
+                        )
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"nickname\":\"여행자\"}"))
                 .andExpect(status().isCreated())
@@ -66,6 +74,7 @@ class ProfileRegistrationControllerTest {
                         .contains("refreshToken=refresh-1", "Path=/api/auth", "Max-Age=604800", "HttpOnly", "SameSite=Lax"))
                 .anySatisfy(cookie -> assertThat(cookie)
                         .contains("profileToken=", "Path=/api/users/me/profile", "Max-Age=0", "HttpOnly", "SameSite=Lax"));
+        then(csrfTokenStore).should().delete("csrf-profile-1");
     }
 
     @Test

@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 @Component
 @RequiredArgsConstructor
@@ -20,6 +21,29 @@ public class CsrfTokenStore {
 
     private final CsrfTokenRepository csrfTokenRepository;
     private final TokenHasher tokenHasher;
+
+    @Transactional
+    public String findOrCreate(String browserContext, Supplier<String> tokenGenerator) {
+        String browserContextHash = tokenHasher.hash(browserContext);
+        Optional<CsrfTokenEntity> result =
+                csrfTokenRepository.findByBrowserContextHashForUpdate(browserContextHash);
+        LocalDateTime now = LocalDateTime.now();
+
+        if (result.isPresent() && !result.get().isExpired(now)) {
+            return result.get().getTokenValue();
+        }
+
+        String token = tokenGenerator.get();
+        LocalDateTime expiresAt = now.plus(TOKEN_TTL);
+        if (result.isPresent()) {
+            result.get().update(token, expiresAt);
+        } else {
+            csrfTokenRepository.saveAndFlush(new CsrfTokenEntity(
+                    browserContextHash, token, expiresAt
+            ));
+        }
+        return token;
+    }
 
     @Transactional
     public void save(

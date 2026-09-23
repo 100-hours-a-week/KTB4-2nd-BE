@@ -34,6 +34,11 @@ class PlaceSearchRequestTest {
     }
 
     @Test
+    void 검색어가_누락되면_거부한다() {
+        assertThat(validator.validate(new PlaceSearchRequest(null, null))).isNotEmpty();
+    }
+
+    @Test
     void 영_페이지를_거부한다() {
         assertThat(validator.validate(new PlaceSearchRequest("제주", 0))).isNotEmpty();
         assertThat(validator.validate(new PlaceSearchRequest("제주", 2))).isEmpty();

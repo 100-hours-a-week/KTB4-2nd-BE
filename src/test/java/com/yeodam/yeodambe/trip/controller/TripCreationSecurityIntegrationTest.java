@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.user.security.SecurityConfig;
@@ -263,6 +264,103 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
 
         then(tripService).should(never()).findTrips(any(), any());
+    }
+
+    @Test
+    void 즐겨찾기_등록_API는_Jwt_subject와_tripId를_서비스에_전달한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("favorite-browser")).willReturn("csrf-token");
+        given(tripService.registerFavorite(7L, 42L))
+                .willReturn(new TripFavoriteResponse(7L, true));
+
+        mockMvc.perform(post("/trips/7/favorite")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "favorite-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("FAVORITE_REGISTERED"))
+                .andExpect(jsonPath("$.data.tripId").value(7))
+                .andExpect(jsonPath("$.data.isFavorite").value(true));
+
+        then(tripService).should().registerFavorite(7L, 42L);
+    }
+
+    @Test
+    void 즐겨찾기_등록_API는_액세스_토큰이_없으면_401을_반환한다() throws Exception {
+        given(csrfTokenStore.find("unauthorized-favorite-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(post("/trips/7/favorite")
+                        .cookie(new Cookie("CSRF_CONTEXT", "unauthorized-favorite-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+
+        then(tripService).should(never()).registerFavorite(any(), any());
+    }
+
+    @Test
+    void 즐겨찾기_등록_API는_CSRF가_일치하지_않으면_403을_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("invalid-favorite-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(post("/trips/7/favorite")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "invalid-favorite-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "wrong-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+
+        then(tripService).should(never()).registerFavorite(any(), any());
+    }
+
+    @Test
+    void 즐겨찾기_삭제_API는_Jwt_subject와_tripId를_서비스에_전달하고_204를_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("remove-favorite-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(delete("/trips/7/favorite")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "remove-favorite-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isNoContent());
+
+        then(tripService).should().removeFavorite(7L, 42L);
+    }
+
+    @Test
+    void 즐겨찾기_삭제_API는_액세스_토큰이_없으면_401을_반환한다() throws Exception {
+        given(csrfTokenStore.find("unauthorized-remove-favorite-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(delete("/trips/7/favorite")
+                        .cookie(new Cookie("CSRF_CONTEXT", "unauthorized-remove-favorite-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+
+        then(tripService).should(never()).removeFavorite(any(), any());
+    }
+
+    @Test
+    void 즐겨찾기_삭제_API는_CSRF가_일치하지_않으면_403을_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("invalid-remove-favorite-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(delete("/trips/7/favorite")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "invalid-remove-favorite-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "wrong-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+
+        then(tripService).should(never()).removeFavorite(any(), any());
     }
 
     private String validRequest() {

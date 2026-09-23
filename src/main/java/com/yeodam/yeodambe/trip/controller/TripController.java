@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
@@ -38,6 +39,26 @@ public class TripController {
     ) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ApiResponse<>("TRIP_CREATED", tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
+    }
+
+    @PostMapping("/trips/{tripId}/favorite")
+    public ResponseEntity<ApiResponse<TripFavoriteResponse>> registerFavorite(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(
+                "FAVORITE_REGISTERED",
+                tripService.registerFavorite(tripId, Long.valueOf(jwt.getSubject()))
+        ));
+    }
+
+    @DeleteMapping("/trips/{tripId}/favorite")
+    public ResponseEntity<Void> removeFavorite(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        tripService.removeFavorite(tripId, Long.valueOf(jwt.getSubject()));
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/trips/{tripId}/processing-status")

@@ -81,4 +81,8 @@ public class Trip {
         trip.thumbnailKey = thumbnailKey;
         return trip;
     }
+
+    public void changeFavorite(boolean favorite) {
+        this.favorite = favorite;
+    }
 }

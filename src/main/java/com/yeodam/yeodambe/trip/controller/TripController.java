@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
+import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
@@ -11,6 +12,7 @@ import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -31,6 +33,7 @@ public class TripController {
     private final TripService tripService;
     private final TripProcessingStatusService processingStatusService;
     private final TripProcessingCancellationService processingCancellationService;
+    private final TripPlaceFolderListService tripPlaceFolderListService;
 
     @PostMapping("/trips")
     public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(
@@ -104,6 +107,19 @@ public class TripController {
         return ResponseEntity.ok(new ApiResponse<>(
                 "TRIP_LIST_FOUND",
                 tripService.findTrips(Long.valueOf(jwt.getSubject()), request)
+        ));
+    }
+
+    @GetMapping("/trips/{tripId}/place-folders")
+    public ResponseEntity<ApiResponse<TripPlaceFolderListResponse>> findPlaceFolders(
+            @PathVariable Long tripId,
+            @RequestParam(required = false) String cursor,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(
+                "PLACE_FOLDER_LIST_FOUND",
+                tripPlaceFolderListService.findPlaceFolders(
+                        Long.valueOf(jwt.getSubject()), tripId, cursor)
         ));
     }
 }

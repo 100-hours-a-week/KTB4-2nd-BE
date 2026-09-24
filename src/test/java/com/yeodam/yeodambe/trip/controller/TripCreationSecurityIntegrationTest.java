@@ -1,9 +1,18 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
+import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
+import com.yeodam.yeodambe.trip.service.TripAccessService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripService;
+import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
+import com.yeodam.yeodambe.trip.service.request.PlaceFolderCursor;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
@@ -27,12 +36,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -40,9 +51,13 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -58,7 +73,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         CookieAccessTokenResolver.class,
         ApiAuthenticationEntryPoint.class,
         CsrfAccessDeniedHandler.class,
-        RdbCsrfTokenRepository.class
+        RdbCsrfTokenRepository.class,
+        TripPlaceFolderListService.class
 })
 class TripCreationSecurityIntegrationTest {
 
@@ -68,6 +84,9 @@ class TripCreationSecurityIntegrationTest {
     @Autowired
     private AccessTokenIssuer accessTokenIssuer;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @MockitoBean
     private TripService tripService;
 
@@ -76,6 +95,18 @@ class TripCreationSecurityIntegrationTest {
 
     @MockitoBean
     private TripProcessingCancellationService processingCancellationService;
+
+    @MockitoBean
+    private TripAccessService tripAccessService;
+
+    @MockitoBean
+    private TripDetailPlaceRepository tripDetailPlaceRepository;
+
+    @MockitoBean
+    private TripAttachmentRepository tripAttachmentRepository;
+
+    @MockitoBean
+    private TripAttachmentStorageClient tripAttachmentStorageClient;
 
     @MockitoBean
     private ActiveLoginSessionValidator activeLoginSessionValidator;
@@ -267,6 +298,93 @@ class TripCreationSecurityIntegrationTest {
     }
 
     @Test
+    void 장소_폴더_목록_API는_Jwt_subject와_커서를_전달하고_응답을_직렬화한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        String cursor = new PlaceFolderCursor(7L, "제주", 11L).encode(objectMapper);
+        List<TripDetailPlace> fetched = List.of(
+                place(1L, "장소 1", "thumb/1.webp"),
+                place(2L, "장소 2", null),
+                place(3L, "장소 3", null),
+                place(4L, "장소 4", null),
+                place(5L, "장소 5", null),
+                place(6L, "장소 6", null),
+                place(7L, "장소 7", null)
+        );
+        given(tripDetailPlaceRepository.findPlaceFoldersWithCursor(
+                eq(7L), eq("제주"), eq(11L), any(Pageable.class))).willReturn(fetched);
+        given(tripAttachmentRepository.countActiveByTripPlaceIds(
+                List.of(1L, 2L, 3L, 4L, 5L, 6L)))
+                .willReturn(List.of(new PlaceFolderAttachmentCount(1L, 2L)));
+        given(tripAttachmentStorageClient.createReadUrl("thumb/1.webp"))
+                .willReturn("https://cdn.test/1");
+        String nextCursor = new PlaceFolderCursor(7L, "장소 6", 6L).encode(objectMapper);
+
+        mockMvc.perform(get("/trips/7/place-folders")
+                        .queryParam("cursor", cursor)
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("PLACE_FOLDER_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.items.length()").value(6))
+                .andExpect(jsonPath("$.data.items[0].tripPlaceId").value(1))
+                .andExpect(jsonPath("$.data.items[0].placeName").value("장소 1"))
+                .andExpect(jsonPath("$.data.items[0].attachmentCount").value(2))
+                .andExpect(jsonPath("$.data.items[0].thumbnailUrl").value("https://cdn.test/1"))
+                .andExpect(jsonPath("$.data.hasNext").value(true))
+                .andExpect(jsonPath("$.data.nextCursor").value(nextCursor));
+
+        then(tripAccessService).should().requireReadableTrip(7L, 42L);
+    }
+
+    @Test
+    void 장소_폴더_목록_API의_커서가_손상되면_400을_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+
+        mockMvc.perform(get("/trips/7/place-folders")
+                        .queryParam("cursor", "bad-cursor")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_PLACE_FOLDER_CURSOR"));
+
+        verifyNoInteractions(tripDetailPlaceRepository, tripAttachmentRepository,
+                tripAttachmentStorageClient);
+    }
+
+    @Test
+    void 장소_폴더_목록_API의_여행에_접근할수없으면_404를_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(tripAccessService.requireReadableTrip(7L, 42L))
+                .willThrow(new TripNotFoundException());
+
+        mockMvc.perform(get("/trips/7/place-folders")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"));
+
+        verifyNoInteractions(tripDetailPlaceRepository, tripAttachmentRepository,
+                tripAttachmentStorageClient);
+    }
+
+    @Test
+    void 장소_폴더_목록_API는_액세스_토큰이_없으면_401을_반환한다() throws Exception {
+        mockMvc.perform(get("/trips/7/place-folders"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+
+        then(tripAccessService).should(never()).requireReadableTrip(any(), any());
+    }
+
+    @Test
+    void 장소_폴더_목록_API의_tripId가_숫자가_아니면_400을_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+
+        mockMvc.perform(get("/trips/not-number/place-folders")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isBadRequest());
+
+        then(tripAccessService).should(never()).requireReadableTrip(any(), any());
+    }
+
+    @Test
     void 즐겨찾기_등록_API는_Jwt_subject와_tripId를_서비스에_전달한다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("favorite-browser")).willReturn("csrf-token");
@@ -372,5 +490,13 @@ class TripCreationSecurityIntegrationTest {
                   "regionCodes": ["50110"]
                 }
                 """;
+    }
+
+    private TripDetailPlace place(Long id, String name, String thumbnailKey) {
+        TripDetailPlace place = mock(TripDetailPlace.class);
+        when(place.getId()).thenReturn(id);
+        when(place.getPlaceName()).thenReturn(name);
+        when(place.getThumbnailKey()).thenReturn(thumbnailKey);
+        return place;
     }
 }

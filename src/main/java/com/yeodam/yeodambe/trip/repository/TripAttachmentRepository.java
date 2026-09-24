@@ -14,6 +14,23 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface TripAttachmentRepository extends JpaRepository<TripAttachment, Long> {
+    @Query("""
+            select new com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount(
+                    attachment.tripPlaceId,
+                    count(attachment)
+            )
+            from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripPlaceId in :tripPlaceIds
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+            group by attachment.tripPlaceId
+            """)
+    List<PlaceFolderAttachmentCount> countActiveByTripPlaceIds(
+            @Param("tripPlaceIds") Collection<Long> tripPlaceIds
+    );
+
     List<TripAttachment> findAllByTripId(Long tripId);
 
     List<TripAttachment> findAllByTripIdAndDeletedAtIsNull(Long tripId);

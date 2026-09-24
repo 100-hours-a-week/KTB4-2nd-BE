@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.InitialUploadExecutionRegistry;
 import com.yeodam.yeodambe.trip.service.TripAnalysisResultService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
@@ -86,6 +87,39 @@ class TripAnalysisResultServiceTest {
                 7L, 1L, ProcessingStatus.PROCESSING, ProcessingStatus.COMPLETED);
         writes.verify(places).save(any(TripDetailPlace.class));
         writes.verify(attachments).saveAll(List.of(photo));
+    }
+
+    @Test
+    void 대표사진은_evaluation이_높고_ID가_작은_첨부로_정한다() {
+        String executionId = executions.reserve(7L);
+        TripAttachment low = TripAttachment.initial(7L, 20L, "analyze-low", "preview-low");
+        TripAttachment highLater = TripAttachment.initial(7L, 21L, "analyze-high-later", "preview-high-later");
+        TripAttachment highFirst = TripAttachment.initial(7L, 22L, "analyze-high-first", "preview-high-first");
+        ReflectionTestUtils.setField(low, "id", 30L);
+        ReflectionTestUtils.setField(highLater, "id", 32L);
+        ReflectionTestUtils.setField(highFirst, "id", 31L);
+        when(places.save(any(TripDetailPlace.class))).thenAnswer(call -> {
+            TripDetailPlace place = call.getArgument(0);
+            ReflectionTestUtils.setField(place, "id", 40L);
+            return place;
+        });
+        when(trips.finishInitialUpload(7L, 1L, ProcessingStatus.PROCESSING,
+                ProcessingStatus.COMPLETED)).thenReturn(1);
+        var result = json.readTree("""
+                {"places":[{"place_id":"p1","latitude":33.45,"longitude":126.94,
+                "first_taken_at":null,"last_taken_at":null,"representative_attachment_id":30,
+                "attachments":[
+                  {"trip_attachment_id":30,"taken_at":null,"latitude":33.45,"longitude":126.94,"region_origin":"EXIF","evaluation":10},
+                  {"trip_attachment_id":32,"taken_at":null,"latitude":33.45,"longitude":126.94,"region_origin":"EXIF","evaluation":90},
+                  {"trip_attachment_id":31,"taken_at":null,"latitude":33.45,"longitude":126.94,"region_origin":"EXIF","evaluation":90}
+                ]}],"unclassified":[]}
+                """);
+
+        service.saveCompleted(7L, 1L, executionId, List.of(low, highLater, highFirst), result);
+
+        ArgumentCaptor<TripDetailPlace> captor = ArgumentCaptor.forClass(TripDetailPlace.class);
+        verify(places).save(captor.capture());
+        assertEquals("preview-high-first", captor.getValue().getThumbnailKey());
     }
 
     @Test

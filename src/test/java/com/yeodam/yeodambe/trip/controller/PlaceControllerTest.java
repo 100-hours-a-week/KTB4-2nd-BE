@@ -1,8 +1,7 @@
 package com.yeodam.yeodambe.trip.controller;
 
-import com.yeodam.yeodambe.trip.client.PlaceClient;
+import com.yeodam.yeodambe.common.exception.PlaceQueryProviderUnavailableException;
 import com.yeodam.yeodambe.trip.service.PlaceService;
-import com.yeodam.yeodambe.trip.service.RegionCatalog;
 import com.yeodam.yeodambe.trip.service.request.PlaceSearchRequest;
 import com.yeodam.yeodambe.trip.service.response.PlaceCandidateResponse;
 import com.yeodam.yeodambe.trip.service.response.PlaceCandidatesResponse;
@@ -31,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -39,9 +39,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @Import({
         SecurityConfig.class,
-        PlaceService.class,
-        PlaceClient.class,
-        RegionCatalog.class,
         JwtConfig.class,
         AccessTokenIssuer.class,
         CookieAccessTokenResolver.class,
@@ -98,6 +95,20 @@ class PlaceControllerTest {
         mockMvc.perform(get("/places").param("query", "제주1"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+
+        then(placeService).should(never()).search(any());
+    }
+
+    @Test
+    @WithMockUser
+    void 제공자_호출에_실패하면_503을_반환한다() throws Exception {
+        given(placeService.search(any(PlaceSearchRequest.class)))
+                .willThrow(new PlaceQueryProviderUnavailableException("장애"));
+
+        mockMvc.perform(get("/places").param("query", "제주"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message").value("MAP_PROVIDER_UNAVAILABLE"))
+                .andExpect(jsonPath("$.data").doesNotExist());
     }
 
     @Test
@@ -105,5 +116,7 @@ class PlaceControllerTest {
         mockMvc.perform(get("/places").param("query", "제주"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+
+        then(placeService).should(never()).search(any());
     }
 }

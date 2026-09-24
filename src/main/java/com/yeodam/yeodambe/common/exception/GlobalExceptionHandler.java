@@ -8,6 +8,7 @@ import org.springframework.validation.BindException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -80,6 +81,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BindException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleBindException(BindException e) {
+        return new ApiResponse<>("INVALID_REQUEST", null);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleMethodArgumentTypeMismatch(MethodArgumentTypeMismatchException e) {
         return new ApiResponse<>("INVALID_REQUEST", null);
     }
 
@@ -297,6 +304,14 @@ public class GlobalExceptionHandler {
             InvalidCursorException exception
     ) {
         return new ApiResponse<>("INVALID_CURSOR", null);
+    }
+
+    @ExceptionHandler(InvalidPlaceFolderCursorException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidPlaceFolderCursor(
+            InvalidPlaceFolderCursorException exception
+    ) {
+        return new ApiResponse<>("INVALID_PLACE_FOLDER_CURSOR", null);
     }
 
     @ExceptionHandler(TripInitialAttachmentUploadNotAllowedException.class)

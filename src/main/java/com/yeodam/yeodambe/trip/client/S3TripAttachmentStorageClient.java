@@ -11,6 +11,8 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 import java.time.Duration;
 import java.io.IOException;
@@ -95,6 +97,31 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         return presigner.presignGetObject(presignRequest)
                 .url()
                 .toString();
+    }
+
+    @Override
+    public String createDownloadUrl(String objectKey, String originalFileName) {
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(bucket)
+                .key(objectKey)
+                .responseContentDisposition(
+                        "attachment; filename*=UTF-8''" + encodeFileName(originalFileName)
+                )
+                .build();
+
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(readUrlTtl)
+                .getObjectRequest(getObjectRequest)
+                .build();
+
+        return presigner.presignGetObject(presignRequest)
+                .url()
+                .toString();
+    }
+
+    private String encodeFileName(String fileName) {
+        return URLEncoder.encode(fileName, StandardCharsets.UTF_8)
+                .replace("+", "%20");
     }
 
     @Override

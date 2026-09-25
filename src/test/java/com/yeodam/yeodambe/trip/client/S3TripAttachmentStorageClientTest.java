@@ -5,6 +5,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,6 +62,25 @@ class S3TripAttachmentStorageClientTest {
         String url = storageClient.createReadUrl("local-map-mock/seoul.png");
 
         assertThat(url).isEqualTo("http://localhost:8080/api/mock-assets/seoul.png");
+    }
+
+    @Test
+    void 원본_파일명으로_다운로드_응답_헤더를_포함한_URL을_만든다() {
+        String url = storageClient.createDownloadUrl(
+                "trip-uploads/execution/original.jpg",
+                "서울 여행.jpg"
+        );
+
+        URI uri = URI.create(url);
+        String query = URLDecoder.decode(uri.getRawQuery(), StandardCharsets.UTF_8);
+
+        assertThat(uri.getHost())
+                .isEqualTo("test-bucket.s3.ap-northeast-2.amazonaws.com");
+        assertThat(uri.getPath())
+                .isEqualTo("/trip-uploads/execution/original.jpg");
+        assertThat(query)
+                .contains("response-content-disposition=attachment; filename*=UTF-8''%EC%84%9C%EC%9A%B8%20%EC%97%AC%ED%96%89.jpg")
+                .contains("X-Amz-Signature=");
     }
 
     private void restoreSystemProperty(String name, String previousValue) {

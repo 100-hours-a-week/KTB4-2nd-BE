@@ -56,4 +56,17 @@ public class UserStats {
         this.deletedAt = withdrawnAt;
     }
 
+    public void replaceActiveTripUsage(
+            long tripCount,
+            long attachmentCount,
+            long storageUsedBytes
+    ) {
+        if (tripCount < 0 || attachmentCount < 0 || storageUsedBytes < 0) {
+            throw new IllegalStateException("사용자 통계는 음수일 수 없습니다.");
+        }
+        this.tripCount = tripCount;
+        this.attachmentCount = attachmentCount;
+        this.storageUsedBytes = storageUsedBytes;
+    }
+
 }

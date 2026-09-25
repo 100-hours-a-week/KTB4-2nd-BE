@@ -9,6 +9,8 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 
 public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
+    boolean existsByObjectKeyAndDeletedAtIsNull(String objectKey);
+
     @Modifying
     @Query("""
             update StoredFile file set file.deletedAt = :deletedAt

@@ -10,6 +10,15 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import org.mockito.ArgumentCaptor;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 class S3TripAttachmentStorageClientTest {
     private static final String ACCESS_KEY_PROPERTY = "aws.accessKeyId";
@@ -81,6 +90,21 @@ class S3TripAttachmentStorageClientTest {
         assertThat(query)
                 .contains("response-content-disposition=attachment; filename*=UTF-8''%EC%84%9C%EC%9A%B8%20%EC%97%AC%ED%96%89.jpg")
                 .contains("X-Amz-Signature=");
+    }
+
+    @Test
+    void 객체_HEAD_응답의_실제_바이트를_반환한다() {
+        S3Client s3 = mock(S3Client.class);
+        S3Presigner presigner = mock(S3Presigner.class);
+        ArgumentCaptor<HeadObjectRequest> request = ArgumentCaptor.forClass(HeadObjectRequest.class);
+        when(s3.headObject(request.capture()))
+                .thenReturn(HeadObjectResponse.builder().contentLength(123L).build());
+        S3TripAttachmentStorageClient client = new S3TripAttachmentStorageClient(
+                s3, "test-bucket", presigner, Duration.ofMinutes(10));
+
+        assertThat(client.size("object-key")).isEqualTo(123L);
+        assertThat(request.getValue().bucket()).isEqualTo("test-bucket");
+        assertThat(request.getValue().key()).isEqualTo("object-key");
     }
 
     private void restoreSystemProperty(String name, String previousValue) {

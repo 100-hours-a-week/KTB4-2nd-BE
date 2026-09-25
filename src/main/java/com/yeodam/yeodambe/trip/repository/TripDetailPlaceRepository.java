@@ -56,4 +56,6 @@ public interface TripDetailPlaceRepository extends JpaRepository<TripDetailPlace
             Long id,
             Long tripId
     );
+
+    boolean existsByThumbnailKeyAndDeletedAtIsNull(String thumbnailKey);
 }

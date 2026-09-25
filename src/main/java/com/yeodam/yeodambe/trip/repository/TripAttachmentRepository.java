@@ -46,6 +46,52 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
 
     List<TripAttachment> findAllByTripIdAndDeletedAtIsNull(Long tripId);
 
+    @Query("""
+            select attachment
+            from TripAttachment attachment
+            join fetch attachment.file file
+            where attachment.id in :ids
+              and attachment.deletedAt is not null
+              and attachment.classificationStatus <> com.yeodam.yeodambe.trip.entity.ClassificationStatus.DELETED
+            """)
+    List<TripAttachment> findPendingCleanupByIds(@Param("ids") Collection<Long> ids);
+
+    @Query("""
+            select attachment
+            from TripAttachment attachment
+            join fetch attachment.file file
+            where attachment.deletedAt is not null
+              and attachment.classificationStatus <> com.yeodam.yeodambe.trip.entity.ClassificationStatus.DELETED
+            order by attachment.id
+            """)
+    List<TripAttachment> findPendingCleanup(Pageable pageable);
+
+    boolean existsByFileIdAndDeletedAtIsNull(Long fileId);
+
+    boolean existsByAnalyzeStorageKeyAndDeletedAtIsNull(String analyzeStorageKey);
+
+    boolean existsByPreviewStorageKeyAndDeletedAtIsNull(String previewStorageKey);
+
+    @Query("""
+            select new com.yeodam.yeodambe.trip.repository.TripStorageObjectKeys(
+                    file.objectKey,
+                    attachment.analyzeStorageKey,
+                    attachment.previewStorageKey
+            )
+            from TripAttachment attachment
+            join attachment.file file
+            join attachment.trip trip
+            where trip.userId = :userId
+              and trip.processingStatus = :status
+              and trip.deletedAt is null
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+            """)
+    List<TripStorageObjectKeys> findAllForStats(
+            @Param("userId") Long userId,
+            @Param("status") com.yeodam.yeodambe.trip.entity.ProcessingStatus status
+    );
+
     @Modifying
     @Query("""
             update TripAttachment attachment set attachment.deletedAt = :deletedAt

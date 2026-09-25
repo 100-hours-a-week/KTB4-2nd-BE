@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.client;
 
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
@@ -10,6 +11,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -33,6 +35,7 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     private final S3Presigner presigner;
     private final Duration readUrlTtl;
 
+    @Autowired
     public S3TripAttachmentStorageClient(
             @Value("${attachment.s3.bucket}") String bucket,
             @Value("${aws.region}") String region,
@@ -46,6 +49,18 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         this.presigner = S3Presigner.builder()
                 .region(Region.of(region))
                 .build();
+    }
+
+    S3TripAttachmentStorageClient(
+            S3Client s3,
+            String bucket,
+            S3Presigner presigner,
+            Duration readUrlTtl
+    ) {
+        this.s3 = s3;
+        this.bucket = bucket;
+        this.presigner = presigner;
+        this.readUrlTtl = readUrlTtl;
     }
 
     @Override
@@ -68,6 +83,15 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         s3.deleteObject(request -> request
                 .bucket(bucket)
                 .key(objectKey));
+    }
+
+    @Override
+    public long size(String objectKey) {
+        return s3.headObject(HeadObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(objectKey)
+                        .build())
+                .contentLength();
     }
 
     @Override

@@ -11,6 +11,8 @@ public interface TripAttachmentStorageClient {
 
     void delete(String objectKey);
 
+    long size(String objectKey);
+
     InputStream open(String objectKey);
 
     String storeDerived(String executionId, Path file, String mimeType);

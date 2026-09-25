@@ -146,4 +146,11 @@ public class TripAttachment {
     public void softDelete(LocalDateTime deletedAt) {
         this.deletedAt = deletedAt;
     }
+
+    public void markObjectCleanupCompleted() {
+        if (deletedAt == null) {
+            throw new IllegalStateException("삭제되지 않은 첨부는 객체 정리를 완료할 수 없습니다.");
+        }
+        this.classificationStatus = ClassificationStatus.DELETED;
+    }
 }

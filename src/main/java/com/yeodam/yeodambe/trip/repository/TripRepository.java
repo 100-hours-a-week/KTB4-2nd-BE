@@ -87,6 +87,8 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
 
     boolean existsByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
 
+    boolean existsByThumbnailKeyAndDeletedAtIsNull(String thumbnailKey);
+
     boolean existsByIdAndUserIdAndDeletedAtIsNullAndProcessingStatus(
             Long id, Long userId, ProcessingStatus processingStatus);
 
@@ -96,6 +98,18 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
             Long id, Long userId, ProcessingStatus processingStatus);
 
     Optional<Trip> findByIdAndUserId(Long id, Long userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select trip from Trip trip
+            where trip.id = :tripId
+              and trip.userId = :userId
+              and trip.deletedAt is null
+            """)
+    Optional<Trip> findOwnedActiveForUpdate(Long tripId, Long userId);
+
+    long countByUserIdAndProcessingStatusAndDeletedAtIsNull(
+            Long userId, ProcessingStatus processingStatus);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

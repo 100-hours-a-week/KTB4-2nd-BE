@@ -85,4 +85,8 @@ public class Trip {
     public void changeFavorite(boolean favorite) {
         this.favorite = favorite;
     }
+
+    public void softDelete(LocalDateTime deletedAt) {
+        if (this.deletedAt == null) this.deletedAt = deletedAt;
+    }
 }

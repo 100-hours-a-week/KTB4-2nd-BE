@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
+import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
@@ -27,8 +28,10 @@ class TripControllerTest {
             mock(TripProcessingStatusService.class);
     private final TripProcessingCancellationService cancellationService =
             mock(TripProcessingCancellationService.class);
+    private final TripPlaceFolderListService placeFolderListService =
+            mock(TripPlaceFolderListService.class);
     private final TripController controller = new TripController(
-            tripService, processingStatusService, cancellationService);
+            tripService, processingStatusService, cancellationService, placeFolderListService);
     private final TripCreateRequest request = new TripCreateRequest(
             "여행", LocalDate.now(), LocalDate.now(), List.of("50110"));
 

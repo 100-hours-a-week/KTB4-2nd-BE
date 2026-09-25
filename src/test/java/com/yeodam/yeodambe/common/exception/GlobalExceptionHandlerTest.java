@@ -48,6 +48,7 @@ class GlobalExceptionHandlerTest {
             "place-folder-not-found, 404, PLACE_FOLDER_NOT_FOUND",
             "attachment-not-found, 404, ATTACHMENT_NOT_FOUND",
             "invalid-cursor, 400, INVALID_CURSOR",
+            "invalid-place-folder-cursor, 400, INVALID_PLACE_FOLDER_CURSOR",
             "invalid-attachment-ids, 400, INVALID_ATTACHMENT_IDS",
             "write-permission-required, 403, WRITE_PERMISSION_REQUIRED"
     })
@@ -269,6 +270,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/invalid-cursor")
         void invalidCursor() {
             throw new InvalidCursorException();
+        }
+
+        @GetMapping("/test/invalid-place-folder-cursor")
+        void invalidPlaceFolderCursor() {
+            throw new InvalidPlaceFolderCursorException();
         }
 
         @GetMapping("/test/invalid-attachment-ids")

@@ -50,7 +50,8 @@ class GlobalExceptionHandlerTest {
             "invalid-cursor, 400, INVALID_CURSOR",
             "invalid-place-folder-cursor, 400, INVALID_PLACE_FOLDER_CURSOR",
             "invalid-attachment-ids, 400, INVALID_ATTACHMENT_IDS",
-            "write-permission-required, 403, WRITE_PERMISSION_REQUIRED"
+            "write-permission-required, 403, WRITE_PERMISSION_REQUIRED",
+            "trip-detail-not-available, 409, TRIP_DETAIL_NOT_AVAILABLE"
     })
     void 초기_첨부_예외를_공개_API_오류로_변환한다(String path, int statusCode, String message) throws Exception {
         mockMvc.perform(get("/test/" + path))
@@ -235,6 +236,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/trip-not-found")
         void tripNotFound() {
             throw new TripNotFoundException();
+        }
+
+        @GetMapping("/test/trip-detail-not-available")
+        void tripDetailNotAvailable() {
+            throw new TripDetailNotAvailableException();
         }
 
         @GetMapping("/test/processing-cannot-be-canceled")

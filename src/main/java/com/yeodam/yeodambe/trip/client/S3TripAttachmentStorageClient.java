@@ -125,6 +125,25 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     }
 
     @Override
+    public String storeDownloadArchive(Path archive) {
+        String key = "trip-downloads/" + UUID.randomUUID() + ".zip";
+
+        try {
+            s3.putObject(
+                    request -> request
+                            .bucket(bucket)
+                            .key(key)
+                            .contentType("application/zip")
+                            .tagging("status=temporary"),
+                    RequestBody.fromFile(archive)
+            );
+            return key;
+        } catch (RuntimeException failure) {
+            throw new AttachmentStorageException(key, failure);
+        }
+    }
+
+    @Override
     public String storeDerived(String executionId, Path file, String mimeType) {
         if (!mimeType.equals("image/jpeg") && !mimeType.equals("image/webp")) {
             throw new IllegalArgumentException("지원하지 않는 파생 파일 형식입니다.");

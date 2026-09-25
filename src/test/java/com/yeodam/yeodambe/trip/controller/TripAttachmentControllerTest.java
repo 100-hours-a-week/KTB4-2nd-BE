@@ -8,8 +8,10 @@ import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
@@ -43,8 +45,9 @@ class TripAttachmentControllerTest {
     private final TripAttachmentDetailService detailService = mock(TripAttachmentDetailService.class);
     private final TripAttachmentDeletionService deletionService = mock(TripAttachmentDeletionService.class);
     private final TripAttachmentDownloadService downloadService = mock(TripAttachmentDownloadService.class);
+    private final BulkAttachmentDownloadService bulkDownloadService = mock(BulkAttachmentDownloadService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
-            service, listService, detailService, deletionService, downloadService
+            service, listService, detailService, deletionService, downloadService, bulkDownloadService
     );
 
     @Test
@@ -278,6 +281,31 @@ class TripAttachmentControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(deletionService).deleteBulk(1L, List.of(11L, 12L));
+    }
+
+    @Test
+    void 첨부_여러_개의_ZIP_다운로드_URL을_반환한다() throws Exception {
+        when(bulkDownloadService.issueDownloadUrl(1L, List.of(11L, 12L)))
+                .thenReturn(new BulkAttachmentDownloadResponse(
+                        "yeodam-attachments.zip",
+                        "https://example.com/archive"
+                ));
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(post("/api/attachments/bulk-download")
+                        .contextPath("/api")
+                        .servletPath("/attachments/bulk-download")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tripAttachmentIds\":[11,12]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("BULK_ATTACHMENT_DOWNLOAD_URL_ISSUED"))
+                .andExpect(jsonPath("$.data.fileName").value("yeodam-attachments.zip"))
+                .andExpect(jsonPath("$.data.downloadUrl")
+                        .value("https://example.com/archive"));
+
+        verify(bulkDownloadService).issueDownloadUrl(1L, List.of(11L, 12L));
     }
 
     private HandlerMethodArgumentResolver authenticationPrincipalResolver() {

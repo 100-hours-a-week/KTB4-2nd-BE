@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
@@ -74,6 +75,9 @@ class TripAttachmentSecurityIntegrationTest {
 
     @MockitoBean
     private TripAttachmentDownloadService tripAttachmentDownloadService;
+
+    @MockitoBean
+    private BulkAttachmentDownloadService bulkAttachmentDownloadService;
 
     @MockitoBean
     private ActiveLoginSessionValidator activeLoginSessionValidator;
@@ -171,6 +175,27 @@ class TripAttachmentSecurityIntegrationTest {
                 .andExpect(status().isOk());
 
         then(tripAttachmentDownloadService).should().issueDownloadUrl(42L, 11L);
+    }
+
+    @Test
+    void 유효한_쿠키_Jwt와_CSRF로_ZIP_다운로드_URL을_요청한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("attachment-bulk-download-browser"))
+                .willReturn("csrf-token");
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/attachments/bulk-download")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "attachment-bulk-download-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "csrf-token")
+                        .contentType("application/json")
+                        .content("{\"tripAttachmentIds\":[11,12]}"))
+                .andExpect(status().isOk());
+
+        then(bulkAttachmentDownloadService).should()
+                .issueDownloadUrl(42L, java.util.List.of(11L, 12L));
     }
 
     private byte[] jpeg() {

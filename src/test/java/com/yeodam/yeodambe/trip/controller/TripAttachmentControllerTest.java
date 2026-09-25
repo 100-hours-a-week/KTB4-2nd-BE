@@ -7,7 +7,9 @@ import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
@@ -40,8 +42,9 @@ class TripAttachmentControllerTest {
     private final TripAttachmentListService listService = mock(TripAttachmentListService.class);
     private final TripAttachmentDetailService detailService = mock(TripAttachmentDetailService.class);
     private final TripAttachmentDeletionService deletionService = mock(TripAttachmentDeletionService.class);
+    private final TripAttachmentDownloadService downloadService = mock(TripAttachmentDownloadService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
-            service, listService, detailService, deletionService
+            service, listService, detailService, deletionService, downloadService
     );
 
     @Test
@@ -113,6 +116,29 @@ class TripAttachmentControllerTest {
                         .value("https://example.com/original"));
 
         verify(detailService).findDetail(1L, 11L);
+    }
+
+    @Test
+    void 첨부_다운로드_URL을_반환한다() throws Exception {
+        when(downloadService.issueDownloadUrl(1L, 11L))
+                .thenReturn(new TripAttachmentDownloadResponse(
+                        11L,
+                        "https://example.com/download"
+                ));
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(get("/api/attachments/11/download")
+                        .contextPath("/api")
+                        .servletPath("/attachments/11/download"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("ATTACHMENT_DOWNLOAD_URL_ISSUED"))
+                .andExpect(jsonPath("$.data.tripAttachmentId").value(11))
+                .andExpect(jsonPath("$.data.downloadUrl")
+                        .value("https://example.com/download"));
+
+        verify(downloadService).issueDownloadUrl(1L, 11L);
     }
 
     @Test

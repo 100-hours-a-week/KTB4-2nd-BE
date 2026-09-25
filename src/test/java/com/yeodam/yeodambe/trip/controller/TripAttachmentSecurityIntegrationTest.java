@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.controller;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
@@ -36,6 +37,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -69,6 +71,9 @@ class TripAttachmentSecurityIntegrationTest {
 
     @MockitoBean
     private TripAttachmentDeletionService tripAttachmentDeletionService;
+
+    @MockitoBean
+    private TripAttachmentDownloadService tripAttachmentDownloadService;
 
     @MockitoBean
     private ActiveLoginSessionValidator activeLoginSessionValidator;
@@ -155,6 +160,17 @@ class TripAttachmentSecurityIntegrationTest {
                 .andExpect(status().isNoContent());
 
         then(tripAttachmentDeletionService).should().deleteOne(42L, 11L);
+    }
+
+    @Test
+    void 유효한_쿠키_Jwt로_CSRF_없이_첨부_다운로드_URL을_요청한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+
+        mockMvc.perform(get("/attachments/11/download")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk());
+
+        then(tripAttachmentDownloadService).should().issueDownloadUrl(42L, 11L);
     }
 
     private byte[] jpeg() {

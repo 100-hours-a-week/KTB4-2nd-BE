@@ -49,7 +49,8 @@ class TripServiceTest {
                 tripRegionRepository,
                 regionCatalog,
                 tripAttachmentRepository,
-                tripAttachmentStorageClient
+                tripAttachmentStorageClient,
+                mock(TripAccessService.class)
         );
     }
 

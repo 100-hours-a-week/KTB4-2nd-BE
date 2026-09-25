@@ -35,6 +35,8 @@ class TripFavoritePersistenceTest {
     private RegionCatalog regionCatalog;
     @MockitoBean
     private TripAttachmentStorageClient tripAttachmentStorageClient;
+    @MockitoBean
+    private TripAccessService tripAccessService;
 
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)

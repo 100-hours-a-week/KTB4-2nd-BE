@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -14,6 +15,7 @@ import com.yeodam.yeodambe.trip.service.request.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
@@ -47,6 +49,7 @@ public class TripService {
     private final RegionCatalog regionCatalog;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
+    private final TripAccessService tripAccessService;
 
     @Transactional
     public TripCreateResponse createTrip(Long userId, TripCreateRequest request) {
@@ -91,6 +94,39 @@ public class TripService {
 
         trip.changeFavorite(true);
         return new TripFavoriteResponse(trip.getId(), trip.getFavorite());
+    }
+
+    @Transactional(readOnly = true)
+    public TripDetailResponse findTripDetail(Long tripId, Long userId) {
+        Trip trip = tripAccessService.requireReadableTrip(tripId, userId);
+
+        if (trip.getProcessingStatus() == ProcessingStatus.CANCELED) {
+            throw new TripNotFoundException();
+        }
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new TripDetailNotAvailableException();
+        }
+
+        List<TripDetailResponse.Region> regions = tripRegionRepository
+                .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId).stream()
+                .map(region -> new TripDetailResponse.Region(
+                        region.getId(),
+                        region.getRegionCode(),
+                        region.getRegionName()
+                ))
+                .toList();
+
+        return new TripDetailResponse(
+                trip.getId(),
+                trip.getTripName(),
+                trip.getStartDate(),
+                trip.getEndDate(),
+                ChronoUnit.DAYS.between(trip.getStartDate(), trip.getEndDate()),
+                regions,
+                tripAttachmentRepository.countActiveByTripId(tripId),
+                false,
+                trip.getFavorite()
+        );
     }
 
     @Transactional

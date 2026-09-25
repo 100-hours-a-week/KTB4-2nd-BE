@@ -266,6 +266,12 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("TRIP_NOT_FOUND", null);
     }
 
+    @ExceptionHandler(TripDetailNotAvailableException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleTripDetailNotAvailable(TripDetailNotAvailableException e) {
+        return new ApiResponse<>("TRIP_DETAIL_NOT_AVAILABLE", null);
+    }
+
     @ExceptionHandler(InvalidAttachmentIdsException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidAttachmentIds(

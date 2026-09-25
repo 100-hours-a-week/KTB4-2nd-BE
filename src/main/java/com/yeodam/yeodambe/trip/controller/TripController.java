@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
@@ -82,6 +83,17 @@ public class TripController {
     ) {
         processingCancellationService.cancel(tripId, Long.valueOf(jwt.getSubject()));
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/trips/{tripId}")
+    public ResponseEntity<ApiResponse<TripDetailResponse>> findTripDetail(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(
+                "TRIP_FOUND",
+                tripService.findTripDetail(tripId, Long.valueOf(jwt.getSubject()))
+        ));
     }
 
     @GetMapping("/trips/map")

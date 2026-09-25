@@ -136,4 +136,42 @@ class TripAttachmentRepositoryTest {
                 attachment.getId(), other.getUserId()
         )).isEmpty();
     }
+
+    @Test
+    void 여행의_활성_첨부만_집계하고_삭제된_파일은_제외한다() {
+        User user = userRepository.save(new User("detail-count@yeodam.test", "상세조회"));
+        Trip trip = tripRepository.save(new Trip(
+                user.getUserId(), "상세 조회", LocalDate.now(), LocalDate.now()
+        ));
+        StoredFile activeFile = storedFileRepository.save(StoredFile.uploaded(
+                user.getUserId(), "active.jpg", "active", "image/jpeg"
+        ));
+        StoredFile deletedFile = storedFileRepository.save(StoredFile.uploaded(
+                user.getUserId(), "deleted.jpg", "deleted", "image/jpeg"
+        ));
+        deletedFile.softDelete(LocalDateTime.now());
+
+        TripAttachment active = TripAttachment.initial(
+                trip.getId(), activeFile.getId(), "active-analyze", "active-preview");
+        active.classify(null, RegionOrigin.UNKNOWN, null, null, null, 80);
+        tripAttachmentRepository.save(active);
+
+        tripAttachmentRepository.save(TripAttachment.initial(
+                trip.getId(), activeFile.getId(), "unclassified-analyze", "unclassified-preview"));
+
+        TripAttachment deletedAttachment = TripAttachment.initial(
+                trip.getId(), activeFile.getId(), "removed-analyze", "removed-preview");
+        deletedAttachment.classify(null, RegionOrigin.UNKNOWN, null, null, null, 80);
+        deletedAttachment.softDelete(LocalDateTime.now());
+        tripAttachmentRepository.save(deletedAttachment);
+
+        TripAttachment deletedFileAttachment = TripAttachment.initial(
+                trip.getId(), deletedFile.getId(), "deleted-analyze", "deleted-preview");
+        deletedFileAttachment.classify(null, RegionOrigin.UNKNOWN, null, null, null, 80);
+        tripAttachmentRepository.save(deletedFileAttachment);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(tripAttachmentRepository.countActiveByTripId(trip.getId())).isEqualTo(1L);
+    }
 }

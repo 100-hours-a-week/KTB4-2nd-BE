@@ -17,6 +17,7 @@ import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
@@ -295,6 +296,35 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
 
         then(tripService).should(never()).findTrips(any(), any());
+    }
+
+    @Test
+    void 상세_API는_CSRF_없이_Jwt_subject를_전달한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(tripService.findTripDetail(7L, 42L)).willReturn(new TripDetailResponse(
+                7L, "제주 여행", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2),
+                1L, List.of(), 3L, false, true));
+
+        mockMvc.perform(get("/trips/7")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_FOUND"))
+                .andExpect(jsonPath("$.data.tripId").value(7))
+                .andExpect(jsonPath("$.data.nightCount").value(1))
+                .andExpect(jsonPath("$.data.attachmentCount").value(3))
+                .andExpect(jsonPath("$.data.hasStory").value(false));
+
+        then(tripService).should().findTripDetail(7L, 42L);
+        verifyNoInteractions(csrfTokenStore);
+    }
+
+    @Test
+    void 상세_API는_액세스_토큰이_없으면_401을_반환한다() throws Exception {
+        mockMvc.perform(get("/trips/7"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+
+        then(tripService).should(never()).findTripDetail(any(), any());
     }
 
     @Test

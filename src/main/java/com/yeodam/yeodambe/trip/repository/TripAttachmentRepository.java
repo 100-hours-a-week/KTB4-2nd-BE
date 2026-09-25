@@ -31,6 +31,17 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             @Param("tripPlaceIds") Collection<Long> tripPlaceIds
     );
 
+    @Query("""
+            select count(attachment)
+            from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripId = :tripId
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+            """)
+    long countActiveByTripId(@Param("tripId") Long tripId);
+
     List<TripAttachment> findAllByTripId(Long tripId);
 
     List<TripAttachment> findAllByTripIdAndDeletedAtIsNull(Long tripId);

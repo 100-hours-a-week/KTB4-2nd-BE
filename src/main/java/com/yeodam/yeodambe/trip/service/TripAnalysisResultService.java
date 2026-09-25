@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.user.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +22,7 @@ public class TripAnalysisResultService {
     private final TripAttachmentRepository attachmentRepository;
     private final TripDetailPlaceRepository placeRepository;
     private final InitialUploadExecutionRegistry executions;
+    private final UserStatsService userStats;
 
     @Transactional
     public void saveCompleted(
@@ -138,6 +140,7 @@ public class TripAnalysisResultService {
         }
 
         attachmentRepository.saveAll(attachments);
+        userStats.refreshFromActiveTrips(userId);
     }
 
     private RegionOrigin origin(JsonNode photo) {

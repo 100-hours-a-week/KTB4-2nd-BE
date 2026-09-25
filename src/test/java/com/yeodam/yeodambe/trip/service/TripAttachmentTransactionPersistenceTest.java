@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -12,7 +13,10 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.user.entity.User;
+import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserRepository;
+import com.yeodam.yeodambe.user.repository.UserStatsRepository;
+import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -20,6 +24,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
@@ -35,7 +40,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import({
         InitialUploadExecutionRegistry.class,
         TripAttachmentTransactionService.class,
-        TripAnalysisResultService.class
+        TripAnalysisResultService.class,
+        UserStatsService.class
 })
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripAttachmentTransactionPersistenceTest {
@@ -49,6 +55,8 @@ class TripAttachmentTransactionPersistenceTest {
     @Autowired
     private UserRepository users;
     @Autowired
+    private UserStatsRepository stats;
+    @Autowired
     private TripRepository trips;
     @Autowired
     private StoredFileRepository files;
@@ -59,9 +67,13 @@ class TripAttachmentTransactionPersistenceTest {
 
     private final ObjectMapper json = new ObjectMapper();
 
+    @MockitoBean
+    private TripAttachmentStorageClient storage;
+
     @Test
     void 파생_키_검증이_실패하면_먼저_저장한_원본도_롤백한다() {
         User user = users.saveAndFlush(new User("attachment-rollback@yeodam.test", "첨부롤백"));
+        stats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(
                 user.getUserId(), "첨부롤백", LocalDate.now(), LocalDate.now()));
         String executionId = executions.reserve(trip.getId());
@@ -90,6 +102,7 @@ class TripAttachmentTransactionPersistenceTest {
     @Test
     void AI_결과_저장_중_검증이_실패하면_완료_상태와_장소를_롤백한다() {
         User user = users.saveAndFlush(new User("analysis-rollback@yeodam.test", "결과롤백"));
+        stats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(
                 user.getUserId(), "결과롤백", LocalDate.now(), LocalDate.now()));
         StoredFile file = files.saveAndFlush(StoredFile.uploaded(
@@ -154,6 +167,7 @@ class TripAttachmentTransactionPersistenceTest {
     @Test
     void 대표사진키는_최고평가중_ID가_작은_첨부로_저장한다() {
         User user = users.saveAndFlush(new User("thumbnail@yeodam.test", "대표사진"));
+        stats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(
                 user.getUserId(), "대표사진", LocalDate.now(), LocalDate.now()));
         StoredFile file = files.saveAndFlush(StoredFile.uploaded(

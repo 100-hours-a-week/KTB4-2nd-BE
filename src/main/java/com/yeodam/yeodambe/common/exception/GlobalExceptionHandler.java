@@ -266,6 +266,12 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>("TRIP_NOT_FOUND", null);
     }
 
+    @ExceptionHandler(TripDeletionNotAllowedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleTripDeletionNotAllowed(TripDeletionNotAllowedException e) {
+        return new ApiResponse<>("TRIP_DELETION_NOT_ALLOWED", null);
+    }
+
     @ExceptionHandler(TripDetailNotAvailableException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     ApiResponse<Void> handleTripDetailNotAvailable(TripDetailNotAvailableException e) {

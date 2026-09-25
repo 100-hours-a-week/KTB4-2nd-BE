@@ -96,14 +96,26 @@ public class TripAnalysisResultService {
                     time(place.path("first_taken_at")), time(place.path("last_taken_at")),
                     representative.getPreviewStorageKey()));
 
+            List<TripAttachment> placeAttachments = new ArrayList<>();
             for (JsonNode photo : place.path("attachments")) {
-                byId.get(
-                        photo.path("trip_attachment_id").asLong(-1)).classify(savedPlace.getId(),
+                TripAttachment attachment = byId.get(photo.path("trip_attachment_id").asLong(-1));
+                attachment.classify(savedPlace.getId(),
                         origin(photo), time(photo.path("taken_at")),
                         coordinate(photo, "latitude"), coordinate(photo, "longitude"),
                         evaluation(photo)
                 );
+                placeAttachments.add(attachment);
             }
+
+            TripAttachment thumbnail = placeAttachments.stream()
+                    .min(
+                            Comparator.comparing(
+                            TripAttachment::getEvaluation,
+                            Comparator.nullsLast(Comparator.reverseOrder())
+                    )
+                    .thenComparing(TripAttachment::getId))
+                    .orElseThrow(() -> new IllegalStateException("대표 사진이 없습니다."));
+            savedPlace.changeThumbnailKey(thumbnail.getPreviewStorageKey());
         }
 
 

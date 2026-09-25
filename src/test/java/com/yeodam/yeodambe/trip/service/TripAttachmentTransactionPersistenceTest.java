@@ -150,4 +150,38 @@ class TripAttachmentTransactionPersistenceTest {
                     assertThat(attachment.getIssue()).isEqualTo(AttachmentIssue.NONE);
                 });
     }
+
+    @Test
+    void 대표사진키는_최고평가중_ID가_작은_첨부로_저장한다() {
+        User user = users.saveAndFlush(new User("thumbnail@yeodam.test", "대표사진"));
+        Trip trip = trips.saveAndFlush(new Trip(
+                user.getUserId(), "대표사진", LocalDate.now(), LocalDate.now()));
+        StoredFile file = files.saveAndFlush(StoredFile.uploaded(
+                user.getUserId(), "photo.jpg", "thumbnail-original", "image/jpeg"));
+        TripAttachment low = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), file.getId(), "analyze-low", "preview-low"));
+        TripAttachment highFirst = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), file.getId(), "analyze-high-first", "preview-high-first"));
+        TripAttachment highLater = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), file.getId(), "analyze-high-later", "preview-high-later"));
+        String executionId = executions.reserve(trip.getId());
+        var result = json.readTree("""
+                {"places":[{"place_id":"p1","latitude":33.45,"longitude":126.94,
+                "first_taken_at":null,"last_taken_at":null,"representative_attachment_id":%d,
+                "attachments":[
+                  {"trip_attachment_id":%d,"taken_at":null,"latitude":33.45,"longitude":126.94,"region_origin":"EXIF","evaluation":10},
+                  {"trip_attachment_id":%d,"taken_at":null,"latitude":33.45,"longitude":126.94,"region_origin":"EXIF","evaluation":90},
+                  {"trip_attachment_id":%d,"taken_at":null,"latitude":33.45,"longitude":126.94,"region_origin":"EXIF","evaluation":90}
+                ]}],"unclassified":[]}
+                """.formatted(
+                low.getId(), low.getId(), highFirst.getId(), highLater.getId()));
+
+        analysisResults.saveCompleted(
+                trip.getId(), user.getUserId(), executionId,
+                List.of(low, highFirst, highLater), result);
+
+        assertThat(places.findAll()).singleElement()
+                .extracting(place -> place.getThumbnailKey())
+                .isEqualTo("preview-high-first");
+    }
 }

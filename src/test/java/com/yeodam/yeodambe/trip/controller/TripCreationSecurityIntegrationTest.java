@@ -12,6 +12,7 @@ import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
+import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.request.PlaceFolderCursor;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
@@ -96,6 +97,9 @@ class TripCreationSecurityIntegrationTest {
 
     @MockitoBean
     private TripProcessingCancellationService processingCancellationService;
+
+    @MockitoBean
+    private TripDeletionService tripDeletionService;
 
     @MockitoBean
     private TripAccessService tripAccessService;
@@ -244,6 +248,60 @@ class TripCreationSecurityIntegrationTest {
                         .header("X-CSRF-TOKEN", "wrong-token"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+    }
+
+    @Test
+    void 여행_삭제_API는_쿠키_Jwt와_CSRF를_검증한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("delete-trip-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(delete("/trips/7")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "delete-trip-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isNoContent());
+
+        then(tripDeletionService).should().delete(7L, 42L);
+    }
+
+    @Test
+    void 여행_삭제_API는_액세스_토큰이_없으면_401을_반환한다() throws Exception {
+        given(csrfTokenStore.find("unauthorized-delete-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(delete("/trips/7")
+                        .cookie(new Cookie("CSRF_CONTEXT", "unauthorized-delete-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+
+        then(tripDeletionService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void 여행_삭제_API는_CSRF가_없거나_일치하지_않으면_403을_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("invalid-delete-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(delete("/trips/7")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "invalid-delete-browser")
+                        ))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+
+        mockMvc.perform(delete("/trips/7")
+                        .cookie(
+                                new Cookie("accessToken", accessToken),
+                                new Cookie("CSRF_CONTEXT", "invalid-delete-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "wrong-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+
+        then(tripDeletionService).shouldHaveNoInteractions();
     }
 
     @Test

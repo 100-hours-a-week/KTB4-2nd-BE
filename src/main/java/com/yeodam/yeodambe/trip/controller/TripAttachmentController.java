@@ -25,6 +25,9 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
+import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentDownloadRequest;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 
 import java.util.List;
 
@@ -36,6 +39,7 @@ public class TripAttachmentController {
     private final TripAttachmentDetailService tripAttachmentDetailService;
     private final TripAttachmentDeletionService tripAttachmentDeletionService;
     private final TripAttachmentDownloadService tripAttachmentDownloadService;
+    private final BulkAttachmentDownloadService bulkAttachmentDownloadService;
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> uploadInitialAttachments(
@@ -140,5 +144,23 @@ public class TripAttachmentController {
         );
 
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/attachments/bulk-download")
+    public ResponseEntity<ApiResponse<BulkAttachmentDownloadResponse>> issueBulkDownloadUrl(
+            @RequestBody(required = false) BulkAttachmentDownloadRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        BulkAttachmentDownloadResponse result =
+                bulkAttachmentDownloadService.issueDownloadUrl(
+                        userId,
+                        request == null ? null : request.tripAttachmentIds()
+                );
+
+        return ResponseEntity.ok(
+                new ApiResponse<>("BULK_ATTACHMENT_DOWNLOAD_URL_ISSUED", result)
+        );
     }
 }

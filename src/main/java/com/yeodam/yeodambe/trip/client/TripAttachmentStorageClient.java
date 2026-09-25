@@ -20,4 +20,6 @@ public interface TripAttachmentStorageClient {
     String createReadUrl(String objectKey);
 
     String createDownloadUrl(String objectKey, String originalFileName);
+
+    String storeDownloadArchive(Path archive);
 }

@@ -36,7 +36,7 @@ class TripProcessingCancellationServiceTest {
     private final TripDetailPlaceRepository places = mock(TripDetailPlaceRepository.class);
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final StoredFileRepository files = mock(StoredFileRepository.class);
-    private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
+    private final TripObjectCleanupService cleanup = mock(TripObjectCleanupService.class);
     private final TripPhotoAnalysisService analysis = mock(TripPhotoAnalysisService.class);
     private final InitialUploadExecutionRegistry executions = mock(InitialUploadExecutionRegistry.class);
     private final TransactionOperations transactions = mock(TransactionOperations.class);
@@ -45,11 +45,14 @@ class TripProcessingCancellationServiceTest {
     @BeforeEach
     void setUp() {
         when(transactions.execute(any())).thenAnswer(invocation -> {
+            verifyNoInteractions(cleanup);
             TransactionCallback<?> callback = invocation.getArgument(0);
-            return callback.doInTransaction(mock(TransactionStatus.class));
+            Object result = callback.doInTransaction(mock(TransactionStatus.class));
+            verifyNoInteractions(cleanup);
+            return result;
         });
         service = new TripProcessingCancellationService(
-                trips, regions, places, attachments, files, storage, analysis, executions, transactions);
+                trips, regions, places, attachments, files, cleanup, analysis, executions, transactions);
     }
 
     @Test
@@ -57,6 +60,7 @@ class TripProcessingCancellationServiceTest {
         StoredFile file = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
         ReflectionTestUtils.setField(file, "id", 20L);
         TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
+        ReflectionTestUtils.setField(attachment, "id", 30L);
         when(trips.cancelProcessing(eq(7L), eq(1L), eq(ProcessingStatus.PROCESSING),
                 eq(ProcessingStatus.CANCELED), any(LocalDateTime.class))).thenReturn(1);
         when(attachments.findAllByTripIdAndDeletedAtIsNull(7L)).thenReturn(List.of(attachment));
@@ -67,9 +71,7 @@ class TripProcessingCancellationServiceTest {
 
         verify(analysis).cancel(7L);
         verify(executions).cancel(7L);
-        verify(storage).delete("original");
-        verify(storage).delete("analyze");
-        verify(storage).delete("preview");
+        verify(cleanup).process(List.of(30L));
         verify(regions).softDeleteByTripId(eq(7L), any(LocalDateTime.class));
         verify(places).softDeleteByTripId(eq(7L), any(LocalDateTime.class));
         verify(attachments).softDeleteByTripId(eq(7L), any(LocalDateTime.class));
@@ -82,7 +84,7 @@ class TripProcessingCancellationServiceTest {
 
         assertThrows(TripNotFoundException.class, () -> service.cancel(7L, 1L));
 
-        verifyNoInteractions(storage, analysis);
+        verifyNoInteractions(cleanup, analysis);
     }
 
     @Test
@@ -115,7 +117,7 @@ class TripProcessingCancellationServiceTest {
         when(files.findAllById(List.of(20L))).thenReturn(List.of(file));
         when(executions.cancel(7L)).thenReturn(true);
         doThrow(new IllegalStateException("AI")).when(analysis).cancel(7L);
-        doThrow(new IllegalStateException("S3")).when(storage).delete(any());
+        doThrow(new IllegalStateException("S3")).when(cleanup).process(any());
 
         assertDoesNotThrow(() -> service.cancel(7L, 1L));
     }

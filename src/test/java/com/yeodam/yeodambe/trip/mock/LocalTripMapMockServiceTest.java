@@ -14,7 +14,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -66,14 +69,23 @@ class LocalTripMapMockServiceTest {
     }
 
     @Test
-    void 목업_여행과_지역과_첨부를_만들고_완료_상태로_변경한다() {
+    void 목록_페이지네이션과_즐겨찾기_정렬을_확인할_목업을_만든다() {
+        List<Trip> savedTrips = new ArrayList<>();
+        when(tripRepository.save(any(Trip.class))).thenAnswer(invocation -> {
+            Trip trip = invocation.getArgument(0);
+            ReflectionTestUtils.setField(trip, "id", 100L);
+            savedTrips.add(trip);
+            return trip;
+        });
+
         service.createIfMissing(1L);
 
-        verify(tripRepository, times(5)).save(any(Trip.class));
-        verify(tripRegionRepository, times(5)).saveAll(anyList());
-        verify(storedFileRepository, times(10)).save(any(StoredFile.class));
-        verify(tripAttachmentRepository, times(5)).saveAll(anyList());
-        verify(tripRepository, times(5)).finishInitialUpload(
+        assertEquals(8, savedTrips.size());
+        assertEquals(2, savedTrips.stream().filter(Trip::getFavorite).count());
+        verify(tripRegionRepository, times(8)).saveAll(anyList());
+        verify(storedFileRepository, times(16)).save(any(StoredFile.class));
+        verify(tripAttachmentRepository, times(8)).saveAll(anyList());
+        verify(tripRepository, times(8)).finishInitialUpload(
                 anyLong(),
                 eq(1L),
                 eq(ProcessingStatus.PROCESSING),

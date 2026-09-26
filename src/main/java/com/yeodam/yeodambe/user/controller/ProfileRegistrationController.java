@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import com.yeodam.yeodambe.user.exception.OnboardingTokenRequiredException;
@@ -82,7 +83,7 @@ public class ProfileRegistrationController {
                         refreshCookie.toString(),
                         clearedProfileCookie.toString()
                 )
-                .body(new ApiResponse<>("ONBOARDING_SUCCESS", data));
+                .body(new ApiResponse<>(SuccessMessage.ONBOARDING_SUCCESS, data));
     }
 
     private ResponseCookie cookie(

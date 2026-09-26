@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.user.service.CurrentUserService;
 import com.yeodam.yeodambe.user.service.response.CurrentUserResponse;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +26,7 @@ public class CurrentUserController {
         CurrentUserResponse data = service.find(userId);
 
         return ResponseEntity.ok(
-                new ApiResponse<>("USER_FOUND", data)
+                new ApiResponse<>(SuccessMessage.USER_FOUND, data)
         );
     }
 }

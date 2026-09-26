@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.user.service.CsrfTokenService;
 import com.yeodam.yeodambe.user.service.response.CsrfTokenResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,7 +57,7 @@ public class CsrfController {
         }
 
         return response.body(new ApiResponse<>(
-                "CSRF_TOKEN_ISSUED",
+                SuccessMessage.CSRF_TOKEN_ISSUED,
                 new CsrfTokenResponse("X-CSRF-TOKEN", token)
         ));
     }

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.common.exception;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.user.exception.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -26,23 +27,23 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handleAiStatusUnavailable(AiStatusUnavailableException e) {
         log.warn("AI 사진 분석 상태를 조회할 수 없습니다.", e);
-        return new ApiResponse<>("AI_STATUS_UNAVAILABLE", null);
+        return new ApiResponse<>(ErrorMessage.AI_STATUS_UNAVAILABLE, null);
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     ResponseEntity<ApiResponse<Void>> handleUnsupportedContentType(
             HttpMediaTypeNotSupportedException e, HttpServletRequest request) {
         if (request.getServletPath().matches("^/trips/[^/]+/initial-attachments$")) {
-            return ResponseEntity.badRequest().body(new ApiResponse<>("INVALID_ATTACHMENT_UPLOAD", null));
+            return ResponseEntity.badRequest().body(new ApiResponse<>(ErrorMessage.INVALID_ATTACHMENT_UPLOAD, null));
         }
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
-                .body(new ApiResponse<>("UNSUPPORTED_MEDIA_TYPE", null));
+                .body(new ApiResponse<>(ErrorMessage.UNSUPPORTED_MEDIA_TYPE, null));
     }
 
     @ExceptionHandler(MultipartException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidMultipart(MultipartException e) {
-        return new ApiResponse<>("INVALID_ATTACHMENT_UPLOAD", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_ATTACHMENT_UPLOAD, null);
     }
 
     @ExceptionHandler(DataAccessResourceFailureException.class)
@@ -51,56 +52,56 @@ public class GlobalExceptionHandler {
             DataAccessResourceFailureException e
     ) {
         log.warn("인증 저장소에 연결할 수 없습니다.", e);
-        return new ApiResponse<>("AUTH_STORE_UNAVAILABLE", null);
+        return new ApiResponse<>(ErrorMessage.AUTH_STORE_UNAVAILABLE, null);
     }
 
     @ExceptionHandler(AuthenticationCredentialsNotFoundException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     ApiResponse<Void> handleAuthenticationMissing(AuthenticationCredentialsNotFoundException e) {
-        return new ApiResponse<>("UNAUTHORIZED", null);
+        return new ApiResponse<>(ErrorMessage.UNAUTHORIZED, null);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleUnreadableRequest(HttpMessageNotReadableException e) {
-        return new ApiResponse<>("INVALID_REQUEST", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
     }
 
     @ExceptionHandler(InvalidTripRequestException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidTripRequest(InvalidTripRequestException e) {
-        return new ApiResponse<>("INVALID_TRIP_REQUEST", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_TRIP_REQUEST, null);
     }
 
     @ExceptionHandler(InvalidTripListFilterException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidTripListFilter(InvalidTripListFilterException e) {
-        return new ApiResponse<>("INVALID_TRIP_LIST_FILTER", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_TRIP_LIST_FILTER, null);
     }
 
     @ExceptionHandler(BindException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleBindException(BindException e) {
-        return new ApiResponse<>("INVALID_REQUEST", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleMethodArgumentTypeMismatch(MethodArgumentTypeMismatchException e) {
-        return new ApiResponse<>("INVALID_REQUEST", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
     }
 
     @ExceptionHandler(TripNameDuplicatedException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     ApiResponse<Void> handleTripNameDuplicatedException(TripNameDuplicatedException e) {
-        return new ApiResponse<>("TRIP_NAME_DUPLICATED", null);
+        return new ApiResponse<>(ErrorMessage.TRIP_NAME_DUPLICATED, null);
     }
 
     @ExceptionHandler(PlaceQueryProviderUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handlePlaceQueryProviderUnavailableException(PlaceQueryProviderUnavailableException e) {
         log.warn("지역 검색 제공자 호출에 실패했습니다.", e);
-        return new ApiResponse<>("MAP_PROVIDER_UNAVAILABLE", null);
+        return new ApiResponse<>(ErrorMessage.MAP_PROVIDER_UNAVAILABLE, null);
     }
 
     @ExceptionHandler(DuplicateEmailException.class)
@@ -108,7 +109,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleDuplicateEmailException(
             DuplicateEmailException e
     ) {
-        return new ApiResponse<>("EMAIL_ALREADY_IN_USE", null);
+        return new ApiResponse<>(ErrorMessage.EMAIL_ALREADY_IN_USE, null);
     }
 
     @ExceptionHandler(InvalidNicknameException.class)
@@ -116,13 +117,13 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleInvalidNicknameException(
             InvalidNicknameException e
     ) {
-        return new ApiResponse<>("INVALID_NICKNAME", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_NICKNAME, null);
     }
 
     @ExceptionHandler(InvalidEmailException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidEmailException(InvalidEmailException e) {
-        return new ApiResponse<>("INVALID_EMAIL_FORMAT", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_EMAIL_FORMAT, null);
     }
 
     @ExceptionHandler(DuplicateOAuthAccountException.class)
@@ -130,7 +131,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleDuplicateOAuthAccountException(
             DuplicateOAuthAccountException e
     ) {
-        return new ApiResponse<>("ACCOUNT_ALREADY_REGISTERED", null);
+        return new ApiResponse<>(ErrorMessage.ACCOUNT_ALREADY_REGISTERED, null);
     }
 
     @ExceptionHandler(OAuthStateInvalidOrExpiredException.class)
@@ -139,7 +140,7 @@ public class GlobalExceptionHandler {
             OAuthStateInvalidOrExpiredException e
     ) {
         return new ApiResponse<>(
-                "OAUTH_STATE_INVALID_OR_EXPIRED",
+                ErrorMessage.OAUTH_STATE_INVALID_OR_EXPIRED,
                 null
         );
     }
@@ -150,7 +151,7 @@ public class GlobalExceptionHandler {
             OAuthStateCreateFailedException e
     ) {
         log.error("OAuth state 생성에 실패했습니다.", e);
-        return new ApiResponse<>("OAUTH_STATE_CREATE_FAILED", null);
+        return new ApiResponse<>(ErrorMessage.OAUTH_STATE_CREATE_FAILED, null);
     }
 
     @ExceptionHandler(KakaoAuthenticationFailedException.class)
@@ -159,7 +160,7 @@ public class GlobalExceptionHandler {
             KakaoAuthenticationFailedException e
     ) {
         return new ApiResponse<>(
-                "KAKAO_AUTHENTICATION_FAILED",
+                ErrorMessage.KAKAO_AUTHENTICATION_FAILED,
                 null
         );
     }
@@ -172,7 +173,7 @@ public class GlobalExceptionHandler {
         log.warn("OAuth 제공자 호출에 실패했습니다.", e);
 
         return new ApiResponse<>(
-                "OAUTH_PROVIDER_UNAVAILABLE",
+                ErrorMessage.OAUTH_PROVIDER_UNAVAILABLE,
                 null
         );
     }
@@ -184,7 +185,7 @@ public class GlobalExceptionHandler {
     ) {
 
         return new ApiResponse<>(
-                "LOGIN_TICKET_INVALID_OR_EXPIRED",
+                ErrorMessage.LOGIN_TICKET_INVALID_OR_EXPIRED,
                 null
         );
     }
@@ -195,7 +196,7 @@ public class GlobalExceptionHandler {
             LoginTicketIssueFailedException e
     ) {
         log.error("로그인 티켓 발급에 실패했습니다.", e);
-        return new ApiResponse<>("LOGIN_TICKET_ISSUE_FAILED", null);
+        return new ApiResponse<>(ErrorMessage.LOGIN_TICKET_ISSUE_FAILED, null);
     }
 
     @ExceptionHandler(OnboardingTokenInvalidOrExpiredException.class)
@@ -203,7 +204,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleOnboardingTokenInvalidOrExpired(
             OnboardingTokenInvalidOrExpiredException e
     ) {
-        return new ApiResponse<>("ONBOARDING_TOKEN_INVALID_OR_EXPIRED", null);
+        return new ApiResponse<>(ErrorMessage.ONBOARDING_TOKEN_INVALID_OR_EXPIRED, null);
     }
 
     @ExceptionHandler(OnboardingTokenRequiredException.class)
@@ -211,7 +212,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleOnboardingTokenRequired(
             OnboardingTokenRequiredException e
     ) {
-        return new ApiResponse<>("ONBOARDING_TOKEN_REQUIRED", null);
+        return new ApiResponse<>(ErrorMessage.ONBOARDING_TOKEN_REQUIRED, null);
     }
 
     @ExceptionHandler(RefreshTokenInvalidOrExpiredException.class)
@@ -219,7 +220,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleRefreshTokenInvalidOrExpired(
             RefreshTokenInvalidOrExpiredException e
     ) {
-        return new ApiResponse<>("REFRESH_TOKEN_INVALID_OR_EXPIRED", null);
+        return new ApiResponse<>(ErrorMessage.REFRESH_TOKEN_INVALID_OR_EXPIRED, null);
     }
 
     @ExceptionHandler(UserNotFoundException.class)
@@ -227,7 +228,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleUserNotFound(
             UserNotFoundException e
     ) {
-        return new ApiResponse<>("USER_NOT_FOUND", null);
+        return new ApiResponse<>(ErrorMessage.USER_NOT_FOUND, null);
     }
 
     @ExceptionHandler(WithdrawalFailedException.class)
@@ -236,46 +237,46 @@ public class GlobalExceptionHandler {
             WithdrawalFailedException exception
     ) {
         log.error("회원 탈퇴 처리에 실패했습니다.", exception);
-        return new ApiResponse<>("WITHDRAWAL_FAILED", null);
+        return new ApiResponse<>(ErrorMessage.WITHDRAWAL_FAILED, null);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleIllegalArgumentException(IllegalArgumentException e) {
         log.error("잘못된 내부 인자가 전달됐습니다.", e);
-        return new ApiResponse<>("INTERNAL_SERVER_ERROR", null);
+        return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
     }
 
     @ExceptionHandler(IllegalStateException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleIllegalStateException(IllegalStateException e) {
         log.error("잘못된 내부 상태가 발생했습니다.", e);
-        return new ApiResponse<>("INTERNAL_SERVER_ERROR", null);
+        return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
     }
 
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleUnexpectedException(Exception e) {
         log.error("예상하지 못한 서버 오류가 발생했습니다.", e);
-        return new ApiResponse<>("INTERNAL_SERVER_ERROR", null);
+        return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
     }
 
     @ExceptionHandler(TripNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     ApiResponse<Void> handleTripNotFound(TripNotFoundException e) {
-        return new ApiResponse<>("TRIP_NOT_FOUND", null);
+        return new ApiResponse<>(ErrorMessage.TRIP_NOT_FOUND, null);
     }
 
     @ExceptionHandler(TripDeletionNotAllowedException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     ApiResponse<Void> handleTripDeletionNotAllowed(TripDeletionNotAllowedException e) {
-        return new ApiResponse<>("TRIP_DELETION_NOT_ALLOWED", null);
+        return new ApiResponse<>(ErrorMessage.TRIP_DELETION_NOT_ALLOWED, null);
     }
 
     @ExceptionHandler(TripDetailNotAvailableException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     ApiResponse<Void> handleTripDetailNotAvailable(TripDetailNotAvailableException e) {
-        return new ApiResponse<>("TRIP_DETAIL_NOT_AVAILABLE", null);
+        return new ApiResponse<>(ErrorMessage.TRIP_DETAIL_NOT_AVAILABLE, null);
     }
 
     @ExceptionHandler(InvalidAttachmentIdsException.class)
@@ -283,7 +284,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleInvalidAttachmentIds(
             InvalidAttachmentIdsException exception
     ) {
-        return new ApiResponse<>("INVALID_ATTACHMENT_IDS", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_ATTACHMENT_IDS, null);
     }
 
     @ExceptionHandler(WritePermissionRequiredException.class)
@@ -291,7 +292,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleWritePermissionRequired(
             WritePermissionRequiredException exception
     ) {
-        return new ApiResponse<>("WRITE_PERMISSION_REQUIRED", null);
+        return new ApiResponse<>(ErrorMessage.WRITE_PERMISSION_REQUIRED, null);
     }
 
     @ExceptionHandler(AttachmentNotFoundException.class)
@@ -299,7 +300,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleAttachmentNotFound(
             AttachmentNotFoundException exception
     ) {
-        return new ApiResponse<>("ATTACHMENT_NOT_FOUND", null);
+        return new ApiResponse<>(ErrorMessage.ATTACHMENT_NOT_FOUND, null);
     }
 
     @ExceptionHandler(PlaceFolderNotFoundException.class)
@@ -307,7 +308,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handlePlaceFolderNotFound(
             PlaceFolderNotFoundException exception
     ) {
-        return new ApiResponse<>("PLACE_FOLDER_NOT_FOUND", null);
+        return new ApiResponse<>(ErrorMessage.PLACE_FOLDER_NOT_FOUND, null);
     }
 
     @ExceptionHandler(InvalidCursorException.class)
@@ -315,7 +316,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleInvalidCursor(
             InvalidCursorException exception
     ) {
-        return new ApiResponse<>("INVALID_CURSOR", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_CURSOR, null);
     }
 
     @ExceptionHandler(InvalidPlaceFolderCursorException.class)
@@ -323,7 +324,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleInvalidPlaceFolderCursor(
             InvalidPlaceFolderCursorException exception
     ) {
-        return new ApiResponse<>("INVALID_PLACE_FOLDER_CURSOR", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_PLACE_FOLDER_CURSOR, null);
     }
 
     @ExceptionHandler(TripInitialAttachmentUploadNotAllowedException.class)
@@ -331,7 +332,7 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleInitialAttachmentUploadNotAllowed(
             TripInitialAttachmentUploadNotAllowedException e
     ) {
-        return new ApiResponse<>("TRIP_INITIAL_ATTACHMENT_UPLOAD_NOT_ALLOWED", null);
+        return new ApiResponse<>(ErrorMessage.TRIP_INITIAL_ATTACHMENT_UPLOAD_NOT_ALLOWED, null);
     }
 
     @ExceptionHandler(TripProcessingCannotBeCanceledException.class)
@@ -339,13 +340,13 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleProcessingCannotBeCanceled(
             TripProcessingCannotBeCanceledException e
     ) {
-        return new ApiResponse<>("TRIP_PROCESSING_CANNOT_BE_CANCELED", null);
+        return new ApiResponse<>(ErrorMessage.TRIP_PROCESSING_CANNOT_BE_CANCELED, null);
     }
 
     @ExceptionHandler(InvalidAttachmentUploadException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidAttachmentUpload(InvalidAttachmentUploadException e) {
-        return new ApiResponse<>("INVALID_ATTACHMENT_UPLOAD", null);
+        return new ApiResponse<>(ErrorMessage.INVALID_ATTACHMENT_UPLOAD, null);
     }
 
     @ExceptionHandler({
@@ -354,12 +355,12 @@ public class GlobalExceptionHandler {
     })
     @ResponseStatus(HttpStatus.CONTENT_TOO_LARGE)
     ApiResponse<Void> handleAttachmentUploadLimitExceeded(Exception e) {
-        return new ApiResponse<>("ATTACHMENT_UPLOAD_LIMIT_EXCEEDED", null);
+        return new ApiResponse<>(ErrorMessage.ATTACHMENT_UPLOAD_LIMIT_EXCEEDED, null);
     }
 
     @ExceptionHandler(UnsupportedAttachmentFormatException.class)
     @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
     ApiResponse<Void> handleUnsupportedAttachmentFormat(UnsupportedAttachmentFormatException e) {
-        return new ApiResponse<>("UNSUPPORTED_ATTACHMENT_FORMAT", null);
+        return new ApiResponse<>(ErrorMessage.UNSUPPORTED_ATTACHMENT_FORMAT, null);
     }
 }

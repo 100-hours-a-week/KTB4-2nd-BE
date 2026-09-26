@@ -75,6 +75,22 @@ public class TripDetailPlace {
         return place;
     }
 
+    public static TripDetailPlace localMock(
+            Long tripId,
+            int order,
+            String placeName,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            LocalDateTime takenAt,
+            String thumbnailKey
+    ) {
+        TripDetailPlace place = fromAnalysis(
+                tripId, order, latitude, longitude, takenAt, takenAt, thumbnailKey
+        );
+        place.placeName = placeName;
+        return place;
+    }
+
     public void changeThumbnailKey(String thumbnailKey) {
         this.thumbnailKey = thumbnailKey;
     }

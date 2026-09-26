@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.trip.service.PlaceService;
 import com.yeodam.yeodambe.trip.service.request.PlaceSearchRequest;
 import com.yeodam.yeodambe.trip.service.response.PlaceCandidatesResponse;
@@ -22,7 +23,7 @@ public class PlaceController {
     ) {
         return ResponseEntity.ok().body(
                 new ApiResponse<>(
-                        "PLACE_CANDIDATES_FOUND",
+                        SuccessMessage.PLACE_CANDIDATES_FOUND,
                         placeService.search(request)
                 )
         );

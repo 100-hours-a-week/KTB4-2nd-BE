@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.service.AccessTokenRefreshService;
 import com.yeodam.yeodambe.user.service.response.AccessTokenRefreshResponse;
@@ -67,7 +68,7 @@ public class AccessTokenRefreshController {
                         refreshCookie.toString()
                 )
                 .body(new ApiResponse<>(
-                        "TOKEN_REFRESH_SUCCESS",
+                        SuccessMessage.TOKEN_REFRESH_SUCCESS,
                         data
                 ));
     }

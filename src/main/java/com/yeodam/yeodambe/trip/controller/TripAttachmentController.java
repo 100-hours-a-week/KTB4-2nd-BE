@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import lombok.RequiredArgsConstructor;
@@ -49,16 +51,16 @@ public class TripAttachmentController {
     ) {
         if (files == null || files.isEmpty() || files.stream().anyMatch(file -> file == null || file.isEmpty())) {
             return ResponseEntity.badRequest()
-                    .body(new ApiResponse<>("INVALID_ATTACHMENT_UPLOAD", null));
+                    .body(new ApiResponse<>(ErrorMessage.INVALID_ATTACHMENT_UPLOAD, null));
         }
         if (files.size() > 200) {
             return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
-                    .body(new ApiResponse<>("ATTACHMENT_UPLOAD_LIMIT_EXCEEDED", null));
+                    .body(new ApiResponse<>(ErrorMessage.ATTACHMENT_UPLOAD_LIMIT_EXCEEDED, null));
         }
 
         TripProcessingStatusResponse result = service.uploadInitialAttachments(
                 tripId, Long.valueOf(jwt.getSubject()), files);
-        return ResponseEntity.ok(new ApiResponse<>("TRIP_PROCESSING_STATUS_FOUND", result));
+        return ResponseEntity.ok(new ApiResponse<>(SuccessMessage.TRIP_PROCESSING_STATUS_FOUND, result));
     }
 
     @GetMapping("/trips/{tripId}/place-folders/{tripPlaceId}/attachments")
@@ -79,7 +81,7 @@ public class TripAttachmentController {
                 );
 
         return ResponseEntity.ok(
-                new ApiResponse<>("ATTACHMENT_LIST_FOUND", result)
+                new ApiResponse<>(SuccessMessage.ATTACHMENT_LIST_FOUND, result)
         );
     }
 
@@ -97,7 +99,7 @@ public class TripAttachmentController {
                 );
 
         return ResponseEntity.ok(
-                new ApiResponse<>("ATTACHMENT_FOUND", result)
+                new ApiResponse<>(SuccessMessage.ATTACHMENT_FOUND, result)
         );
     }
 
@@ -115,7 +117,7 @@ public class TripAttachmentController {
                 );
 
         return ResponseEntity.ok(
-                new ApiResponse<>("ATTACHMENT_DOWNLOAD_URL_ISSUED", result)
+                new ApiResponse<>(SuccessMessage.ATTACHMENT_DOWNLOAD_URL_ISSUED, result)
         );
     }
 
@@ -160,7 +162,7 @@ public class TripAttachmentController {
                 );
 
         return ResponseEntity.ok(
-                new ApiResponse<>("BULK_ATTACHMENT_DOWNLOAD_URL_ISSUED", result)
+                new ApiResponse<>(SuccessMessage.BULK_ATTACHMENT_DOWNLOAD_URL_ISSUED, result)
         );
     }
 }

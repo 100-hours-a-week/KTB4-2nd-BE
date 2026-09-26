@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
@@ -44,7 +45,7 @@ public class TripController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new ApiResponse<>("TRIP_CREATED", tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
+                .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
     }
 
     @PostMapping("/trips/{tripId}/favorite")
@@ -53,7 +54,7 @@ public class TripController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.ok(new ApiResponse<>(
-                "FAVORITE_REGISTERED",
+                SuccessMessage.FAVORITE_REGISTERED,
                 tripService.registerFavorite(tripId, Long.valueOf(jwt.getSubject()))
         ));
     }
@@ -73,7 +74,7 @@ public class TripController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.ok(new ApiResponse<>(
-                "TRIP_PROCESSING_STATUS_FOUND",
+                SuccessMessage.TRIP_PROCESSING_STATUS_FOUND,
                 processingStatusService.findStatus(tripId, Long.valueOf(jwt.getSubject()))
         ));
     }
@@ -102,7 +103,7 @@ public class TripController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.ok(new ApiResponse<>(
-                "TRIP_FOUND",
+                SuccessMessage.TRIP_FOUND,
                 tripService.findTripDetail(tripId, Long.valueOf(jwt.getSubject()))
         ));
     }
@@ -115,7 +116,7 @@ public class TripController {
         TripMapResponse data = tripService.findMap(userId);
 
         return ResponseEntity.ok(
-                new ApiResponse<>("TRIP_MAP_FOUND", data)
+                new ApiResponse<>(SuccessMessage.TRIP_MAP_FOUND, data)
         );
     }
 
@@ -128,7 +129,7 @@ public class TripController {
     ) {
         TripListRequest request = TripListRequest.from(cursor, sort, favorite);
         return ResponseEntity.ok(new ApiResponse<>(
-                "TRIP_LIST_FOUND",
+                SuccessMessage.TRIP_LIST_FOUND,
                 tripService.findTrips(Long.valueOf(jwt.getSubject()), request)
         ));
     }
@@ -140,7 +141,7 @@ public class TripController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.ok(new ApiResponse<>(
-                "PLACE_FOLDER_LIST_FOUND",
+                SuccessMessage.PLACE_FOLDER_LIST_FOUND,
                 tripPlaceFolderListService.findPlaceFolders(
                         Long.valueOf(jwt.getSubject()), tripId, cursor)
         ));

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
+import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
@@ -65,7 +66,7 @@ public class LoginTicketExchangeController {
             return ResponseEntity.ok()
                     .cacheControl(CacheControl.noStore())
                     .header(HttpHeaders.SET_COOKIE, accessCookie.toString(), refreshCookie.toString())
-                    .body(new ApiResponse<>("LOGIN_SUCCESS", data));
+                    .body(new ApiResponse<>(SuccessMessage.LOGIN_SUCCESS, data));
         }
 
         LoginExchangeDecision.Onboarding onboarding = (LoginExchangeDecision.Onboarding) decision;
@@ -75,7 +76,7 @@ public class LoginTicketExchangeController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.SET_COOKIE, profileCookie.toString())
-                .body(new ApiResponse<>("ONBOARDING_REQUIRED", data));
+                .body(new ApiResponse<>(SuccessMessage.ONBOARDING_REQUIRED, data));
     }
 
     private ResponseCookie cookie(String name, String value, String path, long maxAgeSeconds) {

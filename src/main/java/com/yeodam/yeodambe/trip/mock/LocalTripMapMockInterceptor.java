@@ -23,6 +23,10 @@ public class LocalTripMapMockInterceptor implements HandlerInterceptor {
             HttpServletResponse response,
             Object handler
     ) {
+        if (!"GET".equals(request.getMethod())) {
+            return true;
+        }
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {

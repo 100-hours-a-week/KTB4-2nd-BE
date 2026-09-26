@@ -39,7 +39,8 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 3, 3),
                 List.of("11000"),
                 "seoul.png",
-                3
+                3,
+                true
         ));
         createIfMissing(userId, new MockTrip(
                 "목업서울2",
@@ -47,7 +48,8 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 4, 12),
                 List.of("11000"),
                 "seoul.png",
-                1
+                1,
+                false
         ));
         createIfMissing(userId, new MockTrip(
                 "목업광주",
@@ -55,7 +57,8 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 5, 7),
                 List.of("12000"),
                 "seoul.png",
-                0
+                0,
+                false
         ));
         createIfMissing(userId, new MockTrip(
                 "목업부산",
@@ -63,7 +66,8 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 6, 18),
                 List.of("26000"),
                 "busan.png",
-                2
+                2,
+                true
         ));
         createIfMissing(userId, new MockTrip(
                 "목업서울부산",
@@ -71,7 +75,35 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 7, 24),
                 List.of("11000", "26000"),
                 "busan.png",
-                4
+                4,
+                false
+        ));
+        createIfMissing(userId, new MockTrip(
+                "목업대구",
+                LocalDate.of(2026, 8, 1),
+                LocalDate.of(2026, 8, 2),
+                List.of("27000"),
+                "seoul.png",
+                1,
+                false
+        ));
+        createIfMissing(userId, new MockTrip(
+                "목업인천",
+                LocalDate.of(2026, 8, 10),
+                LocalDate.of(2026, 8, 12),
+                List.of("28000"),
+                "busan.png",
+                2,
+                false
+        ));
+        createIfMissing(userId, new MockTrip(
+                "목업전국여행",
+                LocalDate.of(2026, 8, 20),
+                LocalDate.of(2026, 8, 24),
+                List.of("11000", "26000", "27000"),
+                "seoul.png",
+                3,
+                false
         ));
     }
 
@@ -84,13 +116,15 @@ public class LocalTripMapMockService {
         }
 
         String assetKey = ASSET_KEY_PREFIX + mockTrip.thumbnailFileName();
-        Trip trip = tripRepository.save(Trip.localMock(
+        Trip trip = Trip.localMock(
                 userId,
                 mockTrip.tripName(),
                 mockTrip.startDate(),
                 mockTrip.endDate(),
                 assetKey
-        ));
+        );
+        trip.changeFavorite(mockTrip.favorite());
+        tripRepository.save(trip);
 
         List<TripRegion> regions = mockTrip.regionCodes().stream()
                 .map(regionCatalog::getRequired)
@@ -147,7 +181,8 @@ public class LocalTripMapMockService {
             LocalDate endDate,
             List<String> regionCodes,
             String thumbnailFileName,
-            int attachmentCount
+            int attachmentCount,
+            boolean favorite
     ) {
     }
 }

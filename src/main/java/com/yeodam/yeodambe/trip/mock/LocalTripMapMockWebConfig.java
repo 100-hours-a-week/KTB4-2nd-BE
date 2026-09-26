@@ -16,6 +16,6 @@ public class LocalTripMapMockWebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(localTripMapMockInterceptor)
-                .addPathPatterns("/trips/map");
+                .addPathPatterns("/trips", "/trips/map");
     }
 }

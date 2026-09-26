@@ -3,10 +3,13 @@ package com.yeodam.yeodambe.trip.mock;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.entity.RegionOrigin;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.RegionCatalog;
@@ -27,6 +30,7 @@ public class LocalTripMapMockService {
 
     private final TripRepository tripRepository;
     private final TripRegionRepository tripRegionRepository;
+    private final TripDetailPlaceRepository tripDetailPlaceRepository;
     private final StoredFileRepository storedFileRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final RegionCatalog regionCatalog;
@@ -39,7 +43,7 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 3, 3),
                 List.of("11000"),
                 "seoul.png",
-                3,
+                List.of("경복궁", "북촌한옥마을", "남산서울타워"),
                 true
         ));
         createIfMissing(userId, new MockTrip(
@@ -48,7 +52,7 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 4, 12),
                 List.of("11000"),
                 "seoul.png",
-                1,
+                List.of("성수동"),
                 false
         ));
         createIfMissing(userId, new MockTrip(
@@ -57,7 +61,7 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 5, 7),
                 List.of("12000"),
                 "seoul.png",
-                0,
+                List.of(),
                 false
         ));
         createIfMissing(userId, new MockTrip(
@@ -66,7 +70,7 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 6, 18),
                 List.of("26000"),
                 "busan.png",
-                2,
+                List.of("해운대", "감천문화마을"),
                 true
         ));
         createIfMissing(userId, new MockTrip(
@@ -75,7 +79,7 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 7, 24),
                 List.of("11000", "26000"),
                 "busan.png",
-                4,
+                List.of("광화문", "익선동", "해운대", "광안리"),
                 false
         ));
         createIfMissing(userId, new MockTrip(
@@ -84,7 +88,7 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 8, 2),
                 List.of("27000"),
                 "seoul.png",
-                1,
+                List.of("서문시장"),
                 false
         ));
         createIfMissing(userId, new MockTrip(
@@ -93,7 +97,7 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 8, 12),
                 List.of("28000"),
                 "busan.png",
-                2,
+                List.of("차이나타운", "송도센트럴파크"),
                 false
         ));
         createIfMissing(userId, new MockTrip(
@@ -102,7 +106,7 @@ public class LocalTripMapMockService {
                 LocalDate.of(2026, 8, 24),
                 List.of("11000", "26000", "27000"),
                 "seoul.png",
-                3,
+                List.of("서울숲", "해운대", "동성로"),
                 false
         ));
     }
@@ -138,7 +142,7 @@ public class LocalTripMapMockService {
                 .toList();
 
         tripRegionRepository.saveAll(regions);
-        createAttachments(userId, trip.getId(), assetKey, mockTrip.attachmentCount());
+        createPlaceFolders(userId, trip, regions, assetKey, mockTrip.placeNames());
 
         tripRepository.finishInitialUpload(
                 trip.getId(),
@@ -148,28 +152,49 @@ public class LocalTripMapMockService {
         );
     }
 
-    private void createAttachments(
+    private void createPlaceFolders(
             Long userId,
-            Long tripId,
+            Trip trip,
+            List<TripRegion> regions,
             String assetKey,
-            int attachmentCount
+            List<String> placeNames
     ) {
         List<TripAttachment> attachments = new ArrayList<>();
+        TripRegion region = regions.getFirst();
 
-        for (int index = 1; index <= attachmentCount; index++) {
+        for (int index = 1; index <= placeNames.size(); index++) {
+            var takenAt = trip.getStartDate().atTime(9 + index, 0);
+            TripDetailPlace place = tripDetailPlaceRepository.save(TripDetailPlace.localMock(
+                    trip.getId(),
+                    index,
+                    placeNames.get(index - 1),
+                    region.getLatitude(),
+                    region.getLongitude(),
+                    takenAt,
+                    assetKey
+            ));
             StoredFile file = storedFileRepository.save(StoredFile.uploaded(
                     userId,
-                    "map-mock-" + tripId + "-" + index + ".png",
+                    "map-mock-" + trip.getId() + "-" + index + ".png",
                     assetKey,
                     "image/png"
             ));
 
-            attachments.add(TripAttachment.initial(
-                    tripId,
+            TripAttachment attachment = TripAttachment.initial(
+                    trip.getId(),
                     file.getId(),
                     assetKey,
                     assetKey
-            ));
+            );
+            attachment.classify(
+                    place.getId(),
+                    RegionOrigin.EXIF,
+                    takenAt,
+                    region.getLatitude(),
+                    region.getLongitude(),
+                    100
+            );
+            attachments.add(attachment);
         }
 
         tripAttachmentRepository.saveAll(attachments);
@@ -181,7 +206,7 @@ public class LocalTripMapMockService {
             LocalDate endDate,
             List<String> regionCodes,
             String thumbnailFileName,
-            int attachmentCount,
+            List<String> placeNames,
             boolean favorite
     ) {
     }

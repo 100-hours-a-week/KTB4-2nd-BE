@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.InitialUploadExecutionRegistry;
 import com.yeodam.yeodambe.trip.service.TripAnalysisResultService;
+import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -19,8 +20,9 @@ class TripAnalysisResultServiceTest {
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final TripDetailPlaceRepository places = mock(TripDetailPlaceRepository.class);
     private final InitialUploadExecutionRegistry executions = new InitialUploadExecutionRegistry();
+    private final UserStatsService userStats = mock(UserStatsService.class);
     private final TripAnalysisResultService service = new TripAnalysisResultService(
-            trips, attachments, places, executions);
+            trips, attachments, places, executions, userStats);
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
@@ -42,6 +44,7 @@ class TripAnalysisResultServiceTest {
         verify(attachments).saveAll(List.of(photo));
         verify(trips).finishInitialUpload(7L, 1L, ProcessingStatus.PROCESSING,
                 ProcessingStatus.COMPLETED);
+        verify(userStats).refreshFromActiveTrips(1L);
     }
 
     @Test

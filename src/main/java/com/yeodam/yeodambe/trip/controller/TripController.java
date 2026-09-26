@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
+import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
@@ -35,6 +36,7 @@ public class TripController {
     private final TripProcessingStatusService processingStatusService;
     private final TripProcessingCancellationService processingCancellationService;
     private final TripPlaceFolderListService tripPlaceFolderListService;
+    private final TripDeletionService tripDeletionService;
 
     @PostMapping("/trips")
     public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(
@@ -82,6 +84,15 @@ public class TripController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         processingCancellationService.cancel(tripId, Long.valueOf(jwt.getSubject()));
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/trips/{tripId}")
+    public ResponseEntity<Void> deleteTrip(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        tripDeletionService.delete(tripId, Long.valueOf(jwt.getSubject()));
         return ResponseEntity.noContent().build();
     }
 

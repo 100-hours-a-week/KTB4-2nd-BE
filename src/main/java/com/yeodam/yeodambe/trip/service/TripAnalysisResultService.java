@@ -18,6 +18,12 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 public class TripAnalysisResultService {
+    private static final Comparator<TripAttachment> THUMBNAIL_ORDER = Comparator.comparing(
+                    TripAttachment::getEvaluation,
+                    Comparator.nullsLast(Comparator.reverseOrder())
+            )
+            .thenComparing(TripAttachment::getId);
+
     private final TripRepository trips;
     private final TripAttachmentRepository attachmentRepository;
     private final TripDetailPlaceRepository placeRepository;
@@ -73,6 +79,7 @@ public class TripAnalysisResultService {
 
         Set<String> placeIds = new HashSet<>();
         int order = 0;
+        TripAttachment tripThumbnail = null;
 
         for (JsonNode place : result.path("places")) {
             String placeId = place.path("place_id").asString();
@@ -110,14 +117,13 @@ public class TripAnalysisResultService {
             }
 
             TripAttachment thumbnail = placeAttachments.stream()
-                    .min(
-                            Comparator.comparing(
-                            TripAttachment::getEvaluation,
-                            Comparator.nullsLast(Comparator.reverseOrder())
-                    )
-                    .thenComparing(TripAttachment::getId))
+                    .min(THUMBNAIL_ORDER)
                     .orElseThrow(() -> new IllegalStateException("대표 사진이 없습니다."));
             savedPlace.changeThumbnailKey(thumbnail.getPreviewStorageKey());
+
+            if (tripThumbnail == null || THUMBNAIL_ORDER.compare(representative, tripThumbnail) < 0) {
+                tripThumbnail = representative;
+            }
         }
 
 
@@ -137,6 +143,15 @@ public class TripAnalysisResultService {
                     optionalCoordinate(photo, "latitude"), optionalCoordinate(photo, "longitude"),
                     evaluation(photo)
             );
+        }
+
+        if (tripThumbnail != null && trips.updateThumbnailKey(
+                tripId,
+                userId,
+                ProcessingStatus.COMPLETED,
+                tripThumbnail.getPreviewStorageKey()
+        ) != 1) {
+            throw new IllegalStateException("현재 실행과 AI 결과가 일치하지 않습니다.");
         }
 
         attachmentRepository.saveAll(attachments);

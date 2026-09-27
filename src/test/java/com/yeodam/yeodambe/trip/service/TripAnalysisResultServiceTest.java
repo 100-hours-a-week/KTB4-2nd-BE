@@ -73,6 +73,8 @@ class TripAnalysisResultServiceTest {
         });
         when(trips.finishInitialUpload(7L, 1L, ProcessingStatus.PROCESSING,
                 ProcessingStatus.COMPLETED)).thenReturn(1);
+        when(trips.updateThumbnailKey(7L, 1L, ProcessingStatus.COMPLETED,
+                "preview")).thenReturn(1);
         var result = json.readTree("""
                 {"places":[{"place_id":"p1","latitude":33.45,"longitude":126.94,
                 "first_taken_at":null,"last_taken_at":null,"representative_attachment_id":30,
@@ -108,6 +110,8 @@ class TripAnalysisResultServiceTest {
         });
         when(trips.finishInitialUpload(7L, 1L, ProcessingStatus.PROCESSING,
                 ProcessingStatus.COMPLETED)).thenReturn(1);
+        when(trips.updateThumbnailKey(7L, 1L, ProcessingStatus.COMPLETED,
+                "preview-low")).thenReturn(1);
         var result = json.readTree("""
                 {"places":[{"place_id":"p1","latitude":33.45,"longitude":126.94,
                 "first_taken_at":null,"last_taken_at":null,"representative_attachment_id":30,

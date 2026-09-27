@@ -194,8 +194,58 @@ class TripAttachmentTransactionPersistenceTest {
                 trip.getId(), user.getUserId(), executionId,
                 List.of(low, highFirst, highLater), result);
 
-        assertThat(places.findAll()).singleElement()
+        assertThat(places.findAll())
+                .filteredOn(place -> place.getTripId().equals(trip.getId()))
+                .singleElement()
                 .extracting(place -> place.getThumbnailKey())
+                .isEqualTo("preview-high-first");
+    }
+
+    @Test
+    void 여행_썸네일은_장소_대표사진중_최고평가와_작은_ID로_저장한다() {
+        User user = users.saveAndFlush(new User("trip-thumbnail@yeodam.test", "여행대표"));
+        stats.saveAndFlush(new UserStats(user));
+        Trip trip = trips.saveAndFlush(new Trip(
+                user.getUserId(), "여행대표", LocalDate.now(), LocalDate.now()));
+        StoredFile file = files.saveAndFlush(StoredFile.uploaded(
+                user.getUserId(), "photo.jpg", "trip-thumbnail-original", "image/jpeg"));
+        TripAttachment lowRepresentative = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), file.getId(), "analyze-low", "preview-low"));
+        TripAttachment excludedHigh = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), file.getId(), "analyze-excluded", "preview-excluded"));
+        TripAttachment highFirst = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), file.getId(), "analyze-high-first", "preview-high-first"));
+        TripAttachment highLater = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), file.getId(), "analyze-high-later", "preview-high-later"));
+        String executionId = executions.reserve(trip.getId());
+        var result = json.readTree("""
+                {"places":[
+                  {"place_id":"p1","latitude":33.45,"longitude":126.94,
+                   "first_taken_at":null,"last_taken_at":null,"representative_attachment_id":%d,
+                   "attachments":[
+                     {"trip_attachment_id":%d,"taken_at":null,"latitude":33.45,"longitude":126.94,"region_origin":"EXIF","evaluation":80},
+                     {"trip_attachment_id":%d,"taken_at":null,"latitude":33.45,"longitude":126.94,"region_origin":"EXIF","evaluation":100}
+                   ]},
+                  {"place_id":"p2","latitude":35.18,"longitude":129.07,
+                   "first_taken_at":null,"last_taken_at":null,"representative_attachment_id":%d,
+                   "attachments":[
+                     {"trip_attachment_id":%d,"taken_at":null,"latitude":35.18,"longitude":129.07,"region_origin":"EXIF","evaluation":90}
+                   ]},
+                  {"place_id":"p3","latitude":37.56,"longitude":126.97,
+                   "first_taken_at":null,"last_taken_at":null,"representative_attachment_id":%d,
+                   "attachments":[
+                     {"trip_attachment_id":%d,"taken_at":null,"latitude":37.56,"longitude":126.97,"region_origin":"EXIF","evaluation":90}
+                   ]}
+                ],"unclassified":[]}
+                """.formatted(
+                lowRepresentative.getId(), lowRepresentative.getId(), excludedHigh.getId(),
+                highFirst.getId(), highFirst.getId(), highLater.getId(), highLater.getId()));
+
+        analysisResults.saveCompleted(
+                trip.getId(), user.getUserId(), executionId,
+                List.of(lowRepresentative, excludedHigh, highFirst, highLater), result);
+
+        assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo("preview-high-first");
     }
 }

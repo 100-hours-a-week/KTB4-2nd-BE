@@ -148,6 +148,15 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
 
     @Modifying
     @Query("""
+        update Trip t set t.thumbnailKey = :thumbnailKey
+        where t.id = :tripId and t.userId = :userId and t.deletedAt is null
+          and t.processingStatus = :status
+    """)
+    int updateThumbnailKey(Long tripId, Long userId, ProcessingStatus status,
+                           String thumbnailKey);
+
+    @Modifying
+    @Query("""
             update Trip trip
             set trip.deletedAt = :deletedAt
             where trip.userId = :userId

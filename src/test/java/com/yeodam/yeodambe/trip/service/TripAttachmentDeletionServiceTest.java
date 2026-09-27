@@ -58,11 +58,13 @@ class TripAttachmentDeletionServiceTest {
     void 대표사진을_삭제하면_점수가_가장_높은_사진으로_교체한다() {
         TripAttachment deletedAttachment = mock(TripAttachment.class);
         StoredFile deletedFile = mock(StoredFile.class);
+        Trip trip = mock(Trip.class);
         TripDetailPlace place = mock(TripDetailPlace.class);
         TripAttachment lowerEvaluation = mock(TripAttachment.class);
         TripAttachment replacement = mock(TripAttachment.class);
 
         when(deletedAttachment.getTripPlace()).thenReturn(place);
+        when(deletedAttachment.getTrip()).thenReturn(trip);
         when(deletedAttachment.getId()).thenReturn(11L);
         when(deletedAttachment.getPreviewStorageKey()).thenReturn("old-preview");
         when(place.getThumbnailKey()).thenReturn("old-preview");
@@ -93,8 +95,10 @@ class TripAttachmentDeletionServiceTest {
     void 커밋_후_객체_정리_실패는_첨부_삭제_성공을_바꾸지_않는다() {
         TripAttachment attachment = mock(TripAttachment.class);
         StoredFile file = mock(StoredFile.class);
+        Trip trip = mock(Trip.class);
         when(attachment.getId()).thenReturn(11L);
         when(attachment.getFile()).thenReturn(file);
+        when(attachment.getTrip()).thenReturn(trip);
         when(tripAttachmentRepository.findAccessibleById(11L, 1L))
                 .thenReturn(Optional.of(attachment));
         doThrow(new IllegalStateException("S3")).when(cleanup).process(List.of(11L));

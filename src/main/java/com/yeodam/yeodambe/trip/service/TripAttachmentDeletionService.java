@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
 import com.yeodam.yeodambe.common.exception.WritePermissionRequiredException;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
+import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
@@ -24,6 +25,11 @@ import java.util.List;
 @Slf4j
 @RequiredArgsConstructor
 public class TripAttachmentDeletionService {
+    private static final Comparator<TripAttachment> THUMBNAIL_ORDER = Comparator.comparing(
+                    TripAttachment::getEvaluation,
+                    Comparator.nullsLast(Comparator.reverseOrder())
+            )
+            .thenComparing(TripAttachment::getId);
 
     private final TripAttachmentRepository tripAttachmentRepository;
     private final UserStatsService userStats;
@@ -77,6 +83,13 @@ public class TripAttachmentDeletionService {
                         .equals(attachment.getTripPlace().getThumbnailKey()))
                 .map(TripAttachment::getTripPlace)
                 .toList();
+        List<Trip> affectedTrips = attachments.stream()
+                .filter(attachment -> attachment.getTrip().getThumbnailKey() != null)
+                .filter(attachment -> attachment.getTrip().getThumbnailKey()
+                        .equals(attachment.getPreviewStorageKey()))
+                .map(TripAttachment::getTrip)
+                .distinct()
+                .toList();
 
         attachments.forEach(attachment -> {
             attachment.softDelete(deletedAt);
@@ -86,6 +99,7 @@ public class TripAttachmentDeletionService {
         tripAttachmentRepository.flush();
 
         affectedPlaces.forEach(this::refreshThumbnail);
+        affectedTrips.forEach(this::refreshThumbnail);
         userStats.refreshFromActiveTrips(userId);
         cleanupAfterCommit(attachments.stream().map(TripAttachment::getId).toList());
     }
@@ -116,15 +130,22 @@ public class TripAttachmentDeletionService {
         TripAttachment replacement = tripAttachmentRepository
                 .findAllActiveByTripPlaceId(place.getId(), ClassificationStatus.ACTIVE)
                 .stream()
-                .min(Comparator
-                        .comparing(
-                                TripAttachment::getEvaluation,
-                                Comparator.nullsLast(Comparator.reverseOrder())
-                        )
-                        .thenComparing(TripAttachment::getId))
+                .min(THUMBNAIL_ORDER)
                 .orElse(null);
 
         place.changeThumbnailKey(
+                replacement == null ? null : replacement.getPreviewStorageKey()
+        );
+    }
+
+    private void refreshThumbnail(Trip trip) {
+        TripAttachment replacement = tripAttachmentRepository
+                .findAllActiveByTripId(trip.getId(), ClassificationStatus.ACTIVE)
+                .stream()
+                .min(THUMBNAIL_ORDER)
+                .orElse(null);
+
+        trip.changeThumbnailKey(
                 replacement == null ? null : replacement.getPreviewStorageKey()
         );
     }

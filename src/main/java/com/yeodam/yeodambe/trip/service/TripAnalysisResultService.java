@@ -18,6 +18,12 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 public class TripAnalysisResultService {
+    private static final Comparator<TripAttachment> THUMBNAIL_ORDER = Comparator.comparing(
+                    TripAttachment::getEvaluation,
+                    Comparator.nullsLast(Comparator.reverseOrder())
+            )
+            .thenComparing(TripAttachment::getId);
+
     private final TripRepository trips;
     private final TripAttachmentRepository attachmentRepository;
     private final TripDetailPlaceRepository placeRepository;
@@ -110,12 +116,7 @@ public class TripAnalysisResultService {
             }
 
             TripAttachment thumbnail = placeAttachments.stream()
-                    .min(
-                            Comparator.comparing(
-                            TripAttachment::getEvaluation,
-                            Comparator.nullsLast(Comparator.reverseOrder())
-                    )
-                    .thenComparing(TripAttachment::getId))
+                    .min(THUMBNAIL_ORDER)
                     .orElseThrow(() -> new IllegalStateException("대표 사진이 없습니다."));
             savedPlace.changeThumbnailKey(thumbnail.getPreviewStorageKey());
         }
@@ -137,6 +138,20 @@ public class TripAnalysisResultService {
                     optionalCoordinate(photo, "latitude"), optionalCoordinate(photo, "longitude"),
                     evaluation(photo)
             );
+        }
+
+        String thumbnailKey = attachments.stream()
+                .filter(attachment -> attachment.getClassificationStatus() == ClassificationStatus.ACTIVE)
+                .min(THUMBNAIL_ORDER)
+                .map(TripAttachment::getPreviewStorageKey)
+                .orElse(null);
+        if (trips.updateThumbnailKey(
+                tripId,
+                userId,
+                ProcessingStatus.COMPLETED,
+                thumbnailKey
+        ) != 1) {
+            throw new IllegalStateException("현재 실행과 AI 결과가 일치하지 않습니다.");
         }
 
         attachmentRepository.saveAll(attachments);

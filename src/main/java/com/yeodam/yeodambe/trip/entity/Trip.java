@@ -86,6 +86,10 @@ public class Trip {
         this.favorite = favorite;
     }
 
+    public void changeThumbnailKey(String thumbnailKey) {
+        this.thumbnailKey = thumbnailKey;
+    }
+
     public void softDelete(LocalDateTime deletedAt) {
         if (this.deletedAt == null) this.deletedAt = deletedAt;
     }

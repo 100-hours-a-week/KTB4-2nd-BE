@@ -202,7 +202,7 @@ class TripAttachmentTransactionPersistenceTest {
     }
 
     @Test
-    void 여행_썸네일은_장소_대표사진중_최고평가와_작은_ID로_저장한다() {
+    void 여행_썸네일은_전체_활성_사진중_최고평가와_작은_ID로_저장한다() {
         User user = users.saveAndFlush(new User("trip-thumbnail@yeodam.test", "여행대표"));
         stats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(
@@ -246,6 +246,6 @@ class TripAttachmentTransactionPersistenceTest {
                 List.of(lowRepresentative, excludedHigh, highFirst, highLater), result);
 
         assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
-                .isEqualTo("preview-high-first");
+                .isEqualTo("preview-excluded");
     }
 }

@@ -79,7 +79,6 @@ public class TripAnalysisResultService {
 
         Set<String> placeIds = new HashSet<>();
         int order = 0;
-        TripAttachment tripThumbnail = null;
 
         for (JsonNode place : result.path("places")) {
             String placeId = place.path("place_id").asString();
@@ -120,10 +119,6 @@ public class TripAnalysisResultService {
                     .min(THUMBNAIL_ORDER)
                     .orElseThrow(() -> new IllegalStateException("대표 사진이 없습니다."));
             savedPlace.changeThumbnailKey(thumbnail.getPreviewStorageKey());
-
-            if (tripThumbnail == null || THUMBNAIL_ORDER.compare(representative, tripThumbnail) < 0) {
-                tripThumbnail = representative;
-            }
         }
 
 
@@ -145,11 +140,16 @@ public class TripAnalysisResultService {
             );
         }
 
-        if (tripThumbnail != null && trips.updateThumbnailKey(
+        String thumbnailKey = attachments.stream()
+                .filter(attachment -> attachment.getClassificationStatus() == ClassificationStatus.ACTIVE)
+                .min(THUMBNAIL_ORDER)
+                .map(TripAttachment::getPreviewStorageKey)
+                .orElse(null);
+        if (trips.updateThumbnailKey(
                 tripId,
                 userId,
                 ProcessingStatus.COMPLETED,
-                tripThumbnail.getPreviewStorageKey()
+                thumbnailKey
         ) != 1) {
             throw new IllegalStateException("현재 실행과 AI 결과가 일치하지 않습니다.");
         }

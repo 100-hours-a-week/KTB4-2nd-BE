@@ -198,4 +198,18 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             @Param("tripPlaceId") Long tripPlaceId,
             @Param("classificationStatus") ClassificationStatus classificationStatus
     );
+
+    @Query("""
+        select attachment
+        from TripAttachment attachment
+        join attachment.file file
+        where attachment.tripId = :tripId
+          and attachment.classificationStatus = :classificationStatus
+          and attachment.deletedAt is null
+          and file.deletedAt is null
+        """)
+    List<TripAttachment> findAllActiveByTripId(
+            @Param("tripId") Long tripId,
+            @Param("classificationStatus") ClassificationStatus classificationStatus
+    );
 }

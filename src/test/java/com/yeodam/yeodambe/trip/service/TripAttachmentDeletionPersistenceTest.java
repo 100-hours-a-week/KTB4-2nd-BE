@@ -27,6 +27,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -51,8 +52,8 @@ class TripAttachmentDeletionPersistenceTest {
     void 대표사진을_삭제하면_남은_사진중_최고평가_사진키를_저장한다() {
         User owner = users.saveAndFlush(new User("delete-thumbnail@test.com", "대표삭제"));
         stats.saveAndFlush(new UserStats(owner));
-        Trip trip = trips.saveAndFlush(new Trip(
-                owner.getUserId(), "대표삭제", LocalDate.now(), LocalDate.now()));
+        Trip trip = trips.saveAndFlush(Trip.localMock(
+                owner.getUserId(), "대표삭제", LocalDate.now(), LocalDate.now(), "preview-old"));
         TripDetailPlace place = savePlace(trip.getId(), "preview-old");
         TripAttachment old = saveAttachment(owner.getUserId(), trip.getId(), place.getId(),
                 "old", 100);
@@ -64,6 +65,8 @@ class TripAttachmentDeletionPersistenceTest {
 
         assertThat(places.findById(place.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo(replacement.getPreviewStorageKey());
+        assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
+                .isEqualTo(replacement.getPreviewStorageKey());
         assertThat(attachments.findById(old.getId()).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(files.findById(old.getFileId()).orElseThrow().getDeletedAt()).isNotNull();
     }
@@ -72,8 +75,8 @@ class TripAttachmentDeletionPersistenceTest {
     void 마지막_대표사진을_삭제하면_대표사진키를_null로_저장한다() {
         User owner = users.saveAndFlush(new User("delete-last@test.com", "마지막삭제"));
         stats.saveAndFlush(new UserStats(owner));
-        Trip trip = trips.saveAndFlush(new Trip(
-                owner.getUserId(), "마지막삭제", LocalDate.now(), LocalDate.now()));
+        Trip trip = trips.saveAndFlush(Trip.localMock(
+                owner.getUserId(), "마지막삭제", LocalDate.now(), LocalDate.now(), "preview-only"));
         TripDetailPlace place = savePlace(trip.getId(), "preview-only");
         TripAttachment only = saveAttachment(
                 owner.getUserId(), trip.getId(), place.getId(), "only", 100);
@@ -81,8 +84,29 @@ class TripAttachmentDeletionPersistenceTest {
         service.deleteOne(owner.getUserId(), only.getId());
 
         assertThat(places.findById(place.getId()).orElseThrow().getThumbnailKey()).isNull();
+        assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey()).isNull();
         assertThat(attachments.countByTripIdAndDeletedAtIsNullAndClassificationStatus(
                 trip.getId(), ClassificationStatus.ACTIVE)).isZero();
+    }
+
+    @Test
+    void 여행_대표사진을_일괄_삭제하면_남은_최고평가_사진으로_교체한다() {
+        User owner = users.saveAndFlush(new User("bulk-trip-thumbnail@test.com", "일괄삭제"));
+        stats.saveAndFlush(new UserStats(owner));
+        Trip trip = trips.saveAndFlush(Trip.localMock(
+                owner.getUserId(), "일괄삭제", LocalDate.now(), LocalDate.now(), "preview-old"));
+        TripDetailPlace place = savePlace(trip.getId(), "preview-old");
+        TripAttachment old = saveAttachment(
+                owner.getUserId(), trip.getId(), place.getId(), "old", 100);
+        TripAttachment alsoDeleted = saveAttachment(
+                owner.getUserId(), trip.getId(), place.getId(), "also-deleted", 95);
+        TripAttachment replacement = saveAttachment(
+                owner.getUserId(), trip.getId(), place.getId(), "replacement", 70);
+
+        service.deleteBulk(owner.getUserId(), List.of(old.getId(), alsoDeleted.getId()));
+
+        assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
+                .isEqualTo(replacement.getPreviewStorageKey());
     }
 
     private TripDetailPlace savePlace(Long tripId, String thumbnailKey) {

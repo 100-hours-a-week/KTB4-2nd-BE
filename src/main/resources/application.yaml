@@ -4,7 +4,7 @@ spring:
   servlet:
     multipart:
       max-file-size: 15MB
-      max-request-size: 3GB
+      max-request-size: 150MB
       file-size-threshold: 0B
   profiles:
     default: local
@@ -15,7 +15,7 @@ server:
   servlet:
     context-path: /api
   tomcat:
-    max-part-count: 200
+    max-part-count: 13
 
 place:
   provider:

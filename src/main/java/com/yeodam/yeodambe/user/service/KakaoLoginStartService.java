@@ -47,6 +47,7 @@ public class KakaoLoginStartService {
                 .queryParam("client_id", "{clientId}")
                 .queryParam("redirect_uri", "{redirectUri}")
                 .queryParam("state", "{state}")
+                .queryParam("scope", "profile_image")
                 .encode()
                 .buildAndExpand(clientId, redirectUri, state)
                 .toUriString();

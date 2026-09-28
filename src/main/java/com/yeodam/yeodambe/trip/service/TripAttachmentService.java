@@ -108,6 +108,17 @@ public class TripAttachmentService {
         return statuses.findStatus(tripId, userId);
     }
 
+    public Optional<TripProcessingStatusResponse> uploadInitialAttachments(
+            Long tripId,
+            Long userId,
+            List<MultipartFile> files,
+            int batchNo,
+            int totalAttachmentCount,
+            boolean complete
+    ) {
+        return Optional.of(uploadInitialAttachments(tripId, userId, files));
+    }
+
     private void requireProcessing(Long tripId, Long userId) {
         if (!trips.existsByIdAndUserIdAndDeletedAtIsNullAndProcessingStatus(
                 tripId, userId, ProcessingStatus.PROCESSING)) {

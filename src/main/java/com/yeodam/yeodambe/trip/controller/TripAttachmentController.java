@@ -32,6 +32,7 @@ import com.yeodam.yeodambe.trip.service.request.BulkAttachmentDownloadRequest;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequiredArgsConstructor
@@ -47,20 +48,29 @@ public class TripAttachmentController {
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> uploadInitialAttachments(
             @PathVariable Long tripId,
             @AuthenticationPrincipal Jwt jwt,
-            @RequestParam(value = "attachments[]", required = false) List<MultipartFile> files
+            @RequestParam(value = "attachments[]", required = false) List<MultipartFile> files,
+            @RequestParam(required = false) Integer batchNo,
+            @RequestParam(required = false) Integer totalAttachmentCount,
+            @RequestParam(required = false) Boolean complete
     ) {
-        if (files == null || files.isEmpty() || files.stream().anyMatch(file -> file == null || file.isEmpty())) {
+        if (files == null || files.isEmpty() || files.stream().anyMatch(file -> file == null || file.isEmpty())
+                || batchNo == null || batchNo < 1
+                || totalAttachmentCount == null || totalAttachmentCount < 1 || totalAttachmentCount > 200
+                || complete == null) {
             return ResponseEntity.badRequest()
                     .body(new ApiResponse<>(ErrorMessage.INVALID_ATTACHMENT_UPLOAD, null));
         }
-        if (files.size() > 200) {
+        if (files.size() > 10) {
             return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
                     .body(new ApiResponse<>(ErrorMessage.ATTACHMENT_UPLOAD_LIMIT_EXCEEDED, null));
         }
 
-        TripProcessingStatusResponse result = service.uploadInitialAttachments(
-                tripId, Long.valueOf(jwt.getSubject()), files);
-        return ResponseEntity.ok(new ApiResponse<>(SuccessMessage.TRIP_PROCESSING_STATUS_FOUND, result));
+        Optional<TripProcessingStatusResponse> result = service.uploadInitialAttachments(
+                tripId, Long.valueOf(jwt.getSubject()), files, batchNo, totalAttachmentCount, complete);
+        return result
+                .map(status -> ResponseEntity.ok(
+                        new ApiResponse<>(SuccessMessage.TRIP_PROCESSING_STATUS_FOUND, status)))
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @GetMapping("/trips/{tripId}/place-folders/{tripPlaceId}/attachments")

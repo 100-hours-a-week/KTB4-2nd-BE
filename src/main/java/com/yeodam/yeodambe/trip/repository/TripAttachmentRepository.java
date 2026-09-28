@@ -50,21 +50,15 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             select attachment
             from TripAttachment attachment
             join fetch attachment.file file
-            where attachment.id in :ids
-              and attachment.deletedAt is not null
-              and attachment.classificationStatus <> com.yeodam.yeodambe.trip.entity.ClassificationStatus.DELETED
-            """)
-    List<TripAttachment> findPendingCleanupByIds(@Param("ids") Collection<Long> ids);
-
-    @Query("""
-            select attachment
-            from TripAttachment attachment
-            join fetch attachment.file file
             where attachment.deletedAt is not null
+              and attachment.deletedAt <= :deletedBefore
               and attachment.classificationStatus <> com.yeodam.yeodambe.trip.entity.ClassificationStatus.DELETED
             order by attachment.id
             """)
-    List<TripAttachment> findPendingCleanup(Pageable pageable);
+    List<TripAttachment> findExpiredPendingCleanup(
+            @Param("deletedBefore") LocalDateTime deletedBefore,
+            Pageable pageable
+    );
 
     boolean existsByFileIdAndDeletedAtIsNull(Long fileId);
 

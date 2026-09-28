@@ -34,16 +34,16 @@ class TripObjectCleanupServiceTest {
     void setUp() {
         StoredFile file = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
         attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
-        attachment.softDelete(LocalDateTime.now());
+        attachment.softDelete(LocalDateTime.now().minusDays(31));
         ReflectionTestUtils.setField(attachment, "id", 30L);
         ReflectionTestUtils.setField(attachment, "file", file);
-        when(attachments.findPendingCleanupByIds(List.of(30L)))
+        when(attachments.findExpiredPendingCleanup(any(LocalDateTime.class), any()))
                 .thenReturn(List.of(attachment));
     }
 
     @Test
-    void 참조되지_않은_세_객체를_삭제하고_첨부를_DELETED로_표시한다() {
-        service.process(List.of(30L));
+    void 삼십일이_지난_참조되지_않은_세_객체를_삭제하고_첨부를_DELETED로_표시한다() {
+        service.retryPending();
 
         verify(storage).delete("original");
         verify(storage).delete("analyze");
@@ -66,7 +66,7 @@ class TripObjectCleanupServiceTest {
                     .thenReturn(true);
         }
 
-        service.process(List.of(30L));
+        service.retryPending();
 
         verify(storage, never()).delete("original");
         verify(storage).delete("analyze");
@@ -76,9 +76,10 @@ class TripObjectCleanupServiceTest {
 
     @Test
     void 하나라도_삭제에_실패하면_DELETED로_표시하지_않아_재시도한다() {
-        doThrow(new IllegalStateException("S3")).when(storage).delete("preview");
+        doThrow(new IllegalStateException("S3"))
+                .when(storage).delete("preview");
 
-        service.process(List.of(30L));
+        service.retryPending();
 
         assertThat(attachment.getClassificationStatus()).isNotEqualTo(ClassificationStatus.DELETED);
     }

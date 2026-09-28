@@ -17,13 +17,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -36,7 +36,6 @@ class TripProcessingCancellationServiceTest {
     private final TripDetailPlaceRepository places = mock(TripDetailPlaceRepository.class);
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final StoredFileRepository files = mock(StoredFileRepository.class);
-    private final TripObjectCleanupService cleanup = mock(TripObjectCleanupService.class);
     private final TripPhotoAnalysisService analysis = mock(TripPhotoAnalysisService.class);
     private final InitialUploadExecutionRegistry executions = mock(InitialUploadExecutionRegistry.class);
     private final TransactionOperations transactions = mock(TransactionOperations.class);
@@ -44,19 +43,17 @@ class TripProcessingCancellationServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(transactions.execute(any())).thenAnswer(invocation -> {
-            verifyNoInteractions(cleanup);
-            TransactionCallback<?> callback = invocation.getArgument(0);
-            Object result = callback.doInTransaction(mock(TransactionStatus.class));
-            verifyNoInteractions(cleanup);
-            return result;
-        });
+        doAnswer(invocation -> {
+            Consumer<TransactionStatus> callback = invocation.getArgument(0);
+            callback.accept(mock(TransactionStatus.class));
+            return null;
+        }).when(transactions).executeWithoutResult(any());
         service = new TripProcessingCancellationService(
-                trips, regions, places, attachments, files, cleanup, analysis, executions, transactions);
+                trips, regions, places, attachments, files, analysis, executions, transactions);
     }
 
     @Test
-    void 처리중_여행과_연관_데이터를_같은_시각에_취소하고_커밋_후_외부_객체를_정리한다() {
+    void 처리중_여행과_연관_데이터를_같은_시각에_취소하고_S3_객체는_보관한다() {
         StoredFile file = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
         ReflectionTestUtils.setField(file, "id", 20L);
         TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
@@ -71,7 +68,6 @@ class TripProcessingCancellationServiceTest {
 
         verify(analysis).cancel(7L);
         verify(executions).cancel(7L);
-        verify(cleanup).process(List.of(30L));
         verify(regions).softDeleteByTripId(eq(7L), any(LocalDateTime.class));
         verify(places).softDeleteByTripId(eq(7L), any(LocalDateTime.class));
         verify(attachments).softDeleteByTripId(eq(7L), any(LocalDateTime.class));
@@ -84,7 +80,7 @@ class TripProcessingCancellationServiceTest {
 
         assertThrows(TripNotFoundException.class, () -> service.cancel(7L, 1L));
 
-        verifyNoInteractions(cleanup, analysis);
+        verifyNoInteractions(analysis);
     }
 
     @Test
@@ -107,7 +103,7 @@ class TripProcessingCancellationServiceTest {
     }
 
     @Test
-    void 커밋_후_AI와_S3_정리_실패는_취소_성공을_되돌리지_않는다() {
+    void 커밋_후_AI_취소_실패는_취소_성공을_되돌리지_않는다() {
         StoredFile file = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
         ReflectionTestUtils.setField(file, "id", 20L);
         TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
@@ -117,8 +113,6 @@ class TripProcessingCancellationServiceTest {
         when(files.findAllById(List.of(20L))).thenReturn(List.of(file));
         when(executions.cancel(7L)).thenReturn(true);
         doThrow(new IllegalStateException("AI")).when(analysis).cancel(7L);
-        doThrow(new IllegalStateException("S3")).when(cleanup).process(any());
-
         assertDoesNotThrow(() -> service.cancel(7L, 1L));
     }
 

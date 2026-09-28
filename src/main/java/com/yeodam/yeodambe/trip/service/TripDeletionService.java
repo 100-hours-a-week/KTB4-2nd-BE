@@ -12,15 +12,12 @@ import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Objects;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TripDeletionService {
@@ -30,20 +27,13 @@ public class TripDeletionService {
     private final TripAttachmentRepository attachments;
     private final StoredFileRepository files;
     private final UserStatsService userStats;
-    private final TripObjectCleanupService cleanup;
     private final TransactionOperations transactions;
 
     public void delete(Long tripId, Long userId) {
-        List<Long> attachmentIds = Objects.requireNonNull(
-                transactions.execute(status -> deleteInTransaction(tripId, userId)));
-        try {
-            cleanup.process(attachmentIds);
-        } catch (RuntimeException failure) {
-            log.warn("삭제된 여행의 객체 정리에 실패했습니다. tripId={}", tripId, failure);
-        }
+        transactions.executeWithoutResult(status -> deleteInTransaction(tripId, userId));
     }
 
-    private List<Long> deleteInTransaction(Long tripId, Long userId) {
+    private void deleteInTransaction(Long tripId, Long userId) {
         Trip trip = trips.findOwnedActiveForUpdate(tripId, userId)
                 .orElseThrow(TripNotFoundException::new);
 
@@ -70,8 +60,5 @@ public class TripDeletionService {
         if (!unreferencedFileIds.isEmpty()) files.softDeleteByIds(unreferencedFileIds, deletedAt);
 
         userStats.refreshFromActiveTrips(userId);
-        return tripAttachments.stream()
-                .map(TripAttachment::getId)
-                .toList();
     }
 }

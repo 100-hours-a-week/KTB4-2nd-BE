@@ -196,7 +196,6 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         }
     }
 
-
     @PreDestroy
     void close() {
         s3.close();

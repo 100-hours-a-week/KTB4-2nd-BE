@@ -136,6 +136,7 @@ public class TripAttachmentService {
         List<DerivedPhotoKeys> derivedKeys = List.of();
         TripAttachmentTransactionService.SavedAttachments persisted = null;
         InitialUploadExecutionRegistry.Snapshot snapshot = null;
+        boolean finalBatchReady = false;
         boolean resultSaved = false;
 
         try {
@@ -154,6 +155,7 @@ public class TripAttachmentService {
                     complete
             );
             if (!complete) return Optional.empty();
+            finalBatchReady = true;
 
             requireProcessing(tripId, userId);
             List<TripAttachment> allAttachments = snapshot.photos().stream()
@@ -191,7 +193,7 @@ public class TripAttachmentService {
 
         } catch (RuntimeException failure) {
             if (!resultSaved) {
-                if (snapshot != null && snapshot.state() == InitialUploadExecutionRegistry.State.ANALYZING) {
+                if (finalBatchReady) {
                     cleanupExecution(tripId, userId, executionId, snapshot, failure);
                 } else {
                     cleanupBatch(tripId, executionId, batchNo, originalKeys, derivedKeys, persisted, failure);
@@ -200,7 +202,7 @@ public class TripAttachmentService {
             throw failure;
 
         } finally {
-            if (snapshot != null && snapshot.state() == InitialUploadExecutionRegistry.State.ANALYZING) {
+            if (finalBatchReady) {
                 executions.release(tripId, executionId);
             }
         }

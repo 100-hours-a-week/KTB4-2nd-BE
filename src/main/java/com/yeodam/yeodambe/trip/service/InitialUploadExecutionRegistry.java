@@ -70,7 +70,7 @@ public class InitialUploadExecutionRegistry {
             List<StoredPhoto> photos = new ArrayList<>(current.photos());
             photos.addAll(batchPhotos);
             return new Execution(
-                    current.id(), complete ? State.ANALYZING : State.UPLOADING,
+                    current.id(), complete ? State.STORING : State.UPLOADING,
                     batchNo + 1, 0, current.totalAttachmentCount(), attachmentCount,
                     uploadedBytes, List.copyOf(photos));
         });

@@ -116,7 +116,158 @@ public class TripAttachmentService {
             int totalAttachmentCount,
             boolean complete
     ) {
-        return Optional.of(uploadInitialAttachments(tripId, userId, files));
+        Trip trip = trips.findById(tripId)
+                .orElseThrow(TripNotFoundException::new);
+
+        if (trip.getDeletedAt() != null || !trip.getUserId().equals(userId)) throw new TripNotFoundException();
+        if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING
+                && trip.getProcessingStatus() != ProcessingStatus.FAILED) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+
+        List<String> types = validate(files);
+        long batchBytes = files.stream().mapToLong(MultipartFile::getSize).sum();
+        TripAttachmentTransactionService.Reservation reservation = transactions.reserveBatch(
+                tripId, userId, batchNo, totalAttachmentCount);
+        String executionId = reservation.executionId();
+        deleteStaleObjects(reservation.staleObjectKeys());
+
+        List<String> originalKeys = new ArrayList<>();
+        List<DerivedPhotoKeys> derivedKeys = List.of();
+        TripAttachmentTransactionService.SavedAttachments persisted = null;
+        InitialUploadExecutionRegistry.Snapshot snapshot = null;
+        boolean resultSaved = false;
+
+        try {
+            storeOriginals(executionId, files, originalKeys);
+            derivedKeys = createDerived(executionId, originalKeys, files.size());
+            persisted = transactions.saveFilesAndAttachments(
+                    tripId, userId, executionId, files, originalKeys, types, derivedKeys);
+
+            storage.retain(List.copyOf(objectKeys(originalKeys, derivedKeys)));
+            snapshot = executions.completeBatch(
+                    tripId,
+                    executionId,
+                    batchNo,
+                    batchBytes,
+                    storedPhotos(persisted, derivedKeys),
+                    complete
+            );
+            if (!complete) return Optional.empty();
+
+            requireProcessing(tripId, userId);
+            List<TripAttachment> allAttachments = snapshot.photos().stream()
+                    .map(InitialUploadExecutionRegistry.StoredPhoto::attachment)
+                    .toList();
+            List<DerivedPhotoKeys> allMetadata = snapshot.photos().stream()
+                    .map(InitialUploadExecutionRegistry.StoredPhoto::metadata)
+                    .toList();
+            JsonNode result = analysis.analyze(
+                    tripId,
+                    executionId,
+                    analysisRequest(executionId, trip, allAttachments, allMetadata),
+                    () -> executions.markAnalysisStarted(tripId, executionId)
+            );
+            results.saveCompleted(tripId, userId, executionId, allAttachments, result);
+            resultSaved = true;
+            return Optional.of(statuses.findStatus(tripId, userId));
+
+        } catch (AiProcessingFailedException failure) {
+            InitialUploadExecutionRegistry.Snapshot failed = snapshot;
+            if (failed == null) {
+                cleanupBatch(tripId, executionId, batchNo, originalKeys, derivedKeys, persisted, failure);
+                throw failure;
+            }
+            cleanupExecution(tripId, userId, executionId, failed, failure);
+            if (failure.getSuppressed().length > 0) throw failure;
+            return Optional.of(new TripProcessingStatusResponse(
+                    failure.getTripId(),
+                    ProcessingStatus.FAILED,
+                    new TripProcessingStatusResponse.Progress(failure.getDone(), failure.getTotal()),
+                    failure.getCurrentStep(),
+                    null,
+                    new TripProcessingStatusResponse.Error(failure.getCode(), failure.getPublicMessage())
+            ));
+
+        } catch (RuntimeException failure) {
+            if (!resultSaved) {
+                if (snapshot != null && snapshot.state() == InitialUploadExecutionRegistry.State.ANALYZING) {
+                    cleanupExecution(tripId, userId, executionId, snapshot, failure);
+                } else {
+                    cleanupBatch(tripId, executionId, batchNo, originalKeys, derivedKeys, persisted, failure);
+                }
+            }
+            throw failure;
+
+        } finally {
+            if (snapshot != null && snapshot.state() == InitialUploadExecutionRegistry.State.ANALYZING) {
+                executions.release(tripId, executionId);
+            }
+        }
+    }
+
+    private List<InitialUploadExecutionRegistry.StoredPhoto> storedPhotos(
+            TripAttachmentTransactionService.SavedAttachments persisted,
+            List<DerivedPhotoKeys> metadata
+    ) {
+        List<InitialUploadExecutionRegistry.StoredPhoto> photos = new ArrayList<>(metadata.size());
+        for (int i = 0; i < metadata.size(); i++) {
+            photos.add(new InitialUploadExecutionRegistry.StoredPhoto(
+                    persisted.originals().get(i), persisted.attachments().get(i), metadata.get(i)));
+        }
+        return List.copyOf(photos);
+    }
+
+    private void cleanupBatch(
+            Long tripId,
+            String executionId,
+            int batchNo,
+            List<String> originalKeys,
+            List<DerivedPhotoKeys> derivedKeys,
+            TripAttachmentTransactionService.SavedAttachments persisted,
+            RuntimeException failure
+    ) {
+        try {
+            if (persisted != null) {
+                transactions.deleteBatchReferences(
+                        persisted.originals().stream().map(StoredFile::getId).toList(),
+                        persisted.attachments().stream().map(TripAttachment::getId).toList());
+            }
+        } catch (RuntimeException cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+        }
+        for (String key : objectKeys(originalKeys, derivedKeys)) delete(key, failure);
+        executions.failBatch(tripId, executionId, batchNo);
+    }
+
+    private void cleanupExecution(
+            Long tripId,
+            Long userId,
+            String executionId,
+            InitialUploadExecutionRegistry.Snapshot snapshot,
+            RuntimeException failure
+    ) {
+        List<StoredFile> originals = snapshot.photos().stream()
+                .map(InitialUploadExecutionRegistry.StoredPhoto::original)
+                .toList();
+        List<TripAttachment> attachments = snapshot.photos().stream()
+                .map(InitialUploadExecutionRegistry.StoredPhoto::attachment)
+                .toList();
+        try {
+            transactions.failAndDeleteReference(
+                    tripId,
+                    userId,
+                    executionId,
+                    originals.stream().map(StoredFile::getId).toList(),
+                    attachments.stream().map(TripAttachment::getId).toList());
+        } catch (RuntimeException cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+        }
+        for (InitialUploadExecutionRegistry.StoredPhoto photo : snapshot.photos()) {
+            delete(photo.original().getObjectKey(), failure);
+            delete(photo.metadata().analyzeKey(), failure);
+            delete(photo.metadata().previewKey(), failure);
+        }
     }
 
     private void requireProcessing(Long tripId, Long userId) {
@@ -200,7 +351,7 @@ public class TripAttachmentService {
         if (files == null || files.isEmpty() || files.stream().anyMatch(f -> f == null || f.isEmpty())) {
             throw new InvalidAttachmentUploadException();
         }
-        if (files.size() > 200) throw new AttachmentUploadLimitExceededException();
+        if (files.size() > 10) throw new AttachmentUploadLimitExceededException();
 
         long total = 0;
         List<String> types = new ArrayList<>(files.size());
@@ -208,7 +359,7 @@ public class TripAttachmentService {
         for (MultipartFile file : files) {
             if (file.getSize() > 15L * 1024 * 1024) throw new AttachmentUploadLimitExceededException();
             total += file.getSize();
-            if (total > 3L * 1024 * 1024 * 1024) throw new AttachmentUploadLimitExceededException();
+            if (total > 145L * 1024 * 1024) throw new AttachmentUploadLimitExceededException();
 
             String name = file.getOriginalFilename();
             if (name == null || name.isBlank() || name.length() > 255) throw new InvalidAttachmentUploadException();

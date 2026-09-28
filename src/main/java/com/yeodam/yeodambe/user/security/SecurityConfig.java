@@ -95,8 +95,10 @@ public class SecurityConfig {
         ));
         configuration.setAllowedHeaders(List.of(
                 "Content-Type",
-                "X-CSRF-TOKEN"
+                "X-CSRF-TOKEN",
+                "X-Request-ID"
         ));
+        configuration.setExposedHeaders(List.of("X-Request-ID"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 

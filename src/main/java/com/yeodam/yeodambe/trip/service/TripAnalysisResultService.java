@@ -36,7 +36,8 @@ public class TripAnalysisResultService {
             Long userId,
             String executionId,
             List<TripAttachment> attachments,
-            JsonNode result
+            JsonNode result,
+            Map<String, String> placeNames
     ) {
         if (!executions.isCurrent(tripId, executionId)) {
             throw new IllegalStateException("현재 실행과 AI 결과가 일치하지 않습니다.");
@@ -49,8 +50,15 @@ public class TripAnalysisResultService {
                 .map(TripAttachment::getId)
                 .toList());
         Set<Long> actual = new HashSet<>();
+        Set<String> placeIds = new HashSet<>();
 
         for (JsonNode place : result.path("places")) {
+            String placeId = place.path("place_id").asString();
+
+            if (placeId.isBlank() || !placeIds.add(placeId) || !place.path("attachments").isArray()) {
+                throw new IllegalStateException("AI 장소 결과가 올바르지 않습니다.");
+            }
+
             for (JsonNode photo : place.path("attachments")) {
                 if (!actual.add(photo.path("trip_attachment_id").asLong(-1))) {
                     throw new IllegalStateException("AI 결과에 중복된 사진이 있습니다.");
@@ -65,6 +73,9 @@ public class TripAnalysisResultService {
         }
 
         if (!expected.equals(actual)) throw new IllegalStateException("AI 결과의 사진 목록이 다릅니다.");
+
+        validatePlaceNames(placeIds, placeNames);
+
         if (trips.finishInitialUpload(
                 tripId,
                 userId,
@@ -77,15 +88,10 @@ public class TripAnalysisResultService {
         Map<Long, TripAttachment> byId = new HashMap<>();
         for (TripAttachment attachment : attachments) byId.put(attachment.getId(), attachment);
 
-        Set<String> placeIds = new HashSet<>();
         int order = 0;
 
         for (JsonNode place : result.path("places")) {
             String placeId = place.path("place_id").asString();
-
-            if (placeId.isBlank() || !placeIds.add(placeId) || !place.path("attachments").isArray()) {
-                throw new IllegalStateException("AI 장소 결과가 올바르지 않습니다.");
-            }
 
             long representativeId = place.path("representative_attachment_id").asLong(-1);
             TripAttachment representative = byId.get(representativeId);
@@ -100,7 +106,8 @@ public class TripAnalysisResultService {
             if (!representativeInPlace) throw new IllegalStateException("대표 사진이 장소에 없습니다.");
 
             TripDetailPlace savedPlace = placeRepository.save(TripDetailPlace.fromAnalysis(
-                    tripId, ++order, coordinate(place, "latitude"), coordinate(place, "longitude"),
+                    tripId, ++order, placeNames.get(placeId),
+                    coordinate(place, "latitude"), coordinate(place, "longitude"),
                     time(place.path("first_taken_at")), time(place.path("last_taken_at")),
                     representative.getPreviewStorageKey()));
 
@@ -156,6 +163,17 @@ public class TripAnalysisResultService {
 
         attachmentRepository.saveAll(attachments);
         userStats.refreshFromActiveTrips(userId);
+    }
+
+    private void validatePlaceNames(Set<String> placeIds, Map<String, String> placeNames) {
+        if (placeNames == null || !placeIds.equals(placeNames.keySet())) {
+            throw new IllegalStateException("AI 장소명 결과가 올바르지 않습니다.");
+        }
+        for (String name : placeNames.values()) {
+            if (name == null || name.isBlank() || name.codePointCount(0, name.length()) > 50) {
+                throw new IllegalStateException("AI 장소명 결과가 올바르지 않습니다.");
+            }
+        }
     }
 
     private RegionOrigin origin(JsonNode photo) {

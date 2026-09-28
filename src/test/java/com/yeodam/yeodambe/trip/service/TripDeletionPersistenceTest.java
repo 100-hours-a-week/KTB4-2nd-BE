@@ -67,7 +67,7 @@ class TripDeletionPersistenceTest {
         TripRegion region = regions.saveAndFlush(new TripRegion(
                 target, "50110", "제주시", new BigDecimal("33.5"), new BigDecimal("126.5")));
         TripDetailPlace place = places.saveAndFlush(TripDetailPlace.fromAnalysis(
-                target.getId(), 1, new BigDecimal("33.5"), new BigDecimal("126.5"),
+                target.getId(), 1, "제주시", new BigDecimal("33.5"), new BigDecimal("126.5"),
                 LocalDateTime.now(), LocalDateTime.now(), "target-preview"));
         TripAttachment deletedAttachment = attachment(owner, target, place.getId(), "target");
         TripAttachment remainingAttachment = attachment(owner, remaining, null, "remaining");

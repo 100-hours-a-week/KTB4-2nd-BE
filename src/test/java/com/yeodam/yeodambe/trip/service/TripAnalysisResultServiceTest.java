@@ -11,6 +11,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -40,7 +41,7 @@ class TripAnalysisResultServiceTest {
                 "longitude":null,"evaluation":31}]}
                 """);
 
-        service.saveCompleted(7L, 1L, executionId, List.of(photo), result);
+        service.saveCompleted(7L, 1L, executionId, List.of(photo), result, Map.of());
 
         assertEquals(AttachmentIssue.BLURRY, photo.getIssue());
         verify(attachments).saveAll(List.of(photo));
@@ -59,7 +60,7 @@ class TripAnalysisResultServiceTest {
                 """);
 
         assertThrows(IllegalStateException.class,
-                () -> service.saveCompleted(7L, 1L, executionId, List.of(photo), result));
+                () -> service.saveCompleted(7L, 1L, executionId, List.of(photo), result, Map.of()));
         verifyNoInteractions(trips, attachments, places);
     }
 
@@ -85,7 +86,8 @@ class TripAnalysisResultServiceTest {
                 "unclassified":[]}
                 """);
 
-        service.saveCompleted(7L, 1L, executionId, List.of(photo), result);
+        service.saveCompleted(7L, 1L, executionId, List.of(photo), result,
+                Map.of("p1", "성산일출봉"));
 
         assertEquals(40L, photo.getTripPlaceId());
         assertEquals(ClassificationStatus.ACTIVE, photo.getClassificationStatus());
@@ -94,6 +96,9 @@ class TripAnalysisResultServiceTest {
                 7L, 1L, ProcessingStatus.PROCESSING, ProcessingStatus.COMPLETED);
         writes.verify(places).save(any(TripDetailPlace.class));
         writes.verify(attachments).saveAll(List.of(photo));
+        ArgumentCaptor<TripDetailPlace> placeCaptor = ArgumentCaptor.forClass(TripDetailPlace.class);
+        verify(places).save(placeCaptor.capture());
+        assertEquals("성산일출봉", placeCaptor.getValue().getPlaceName());
     }
 
     @Test
@@ -124,7 +129,8 @@ class TripAnalysisResultServiceTest {
                 ]}],"unclassified":[]}
                 """);
 
-        service.saveCompleted(7L, 1L, executionId, List.of(low, highLater, highFirst), result);
+        service.saveCompleted(7L, 1L, executionId, List.of(low, highLater, highFirst), result,
+                Map.of("p1", "성산일출봉"));
 
         ArgumentCaptor<TripDetailPlace> captor = ArgumentCaptor.forClass(TripDetailPlace.class);
         verify(places).save(captor.capture());
@@ -139,7 +145,7 @@ class TripAnalysisResultServiceTest {
 
         assertThrows(IllegalStateException.class,
                 () -> service.saveCompleted(7L, 1L, "old-run", List.of(), json.readTree(
-                        "{\"places\":[],\"unclassified\":[]}")));
+                        "{\"places\":[],\"unclassified\":[]}"), Map.of()));
 
         verifyNoInteractions(trips, attachments, places);
     }
@@ -156,10 +162,36 @@ class TripAnalysisResultServiceTest {
                 """);
 
         assertThrows(IllegalStateException.class,
-                () -> service.saveCompleted(7L, 1L, executionId, List.of(photo), result));
+                () -> service.saveCompleted(7L, 1L, executionId, List.of(photo), result, Map.of()));
 
         verify(trips).finishInitialUpload(
                 7L, 1L, ProcessingStatus.PROCESSING, ProcessingStatus.COMPLETED);
         verifyNoInteractions(attachments, places);
+    }
+
+    @Test
+    void 장소명_매핑이_AI_장소와_정확히_일치하지_않으면_완료하지_않는다() {
+        String executionId = executions.reserve(7L);
+        TripAttachment photo = TripAttachment.initial(7L, 20L, "analyze", "preview");
+        ReflectionTestUtils.setField(photo, "id", 30L);
+        var result = json.readTree("""
+                {"places":[{"place_id":"p1","latitude":33.45,"longitude":126.94,
+                "first_taken_at":null,"last_taken_at":null,"representative_attachment_id":30,
+                "attachments":[{"trip_attachment_id":30,"taken_at":null,"latitude":33.45,
+                "longitude":126.94,"region_origin":"EXIF","evaluation":91}]}],
+                "unclassified":[]}
+                """);
+
+        for (Map<String, String> names : List.of(
+                Map.<String, String>of(),
+                Map.of("p1", " "),
+                Map.of("p1", "가".repeat(51)),
+                Map.of("p1", "제주", "p2", "서울")
+        )) {
+            assertThrows(IllegalStateException.class,
+                    () -> service.saveCompleted(7L, 1L, executionId, List.of(photo), result, names));
+        }
+
+        verifyNoInteractions(trips, attachments, places);
     }
 }

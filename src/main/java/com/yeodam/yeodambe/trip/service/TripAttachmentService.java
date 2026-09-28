@@ -28,6 +28,7 @@ public class TripAttachmentService {
     private final TripAttachmentTransactionService transactions;
     private final TripAttachmentDerivativeService derivatives;
     private final TripPhotoAnalysisService analysis;
+    private final TripPlaceNameService placeNames;
     private final TripAnalysisResultService results;
     private final InitialUploadExecutionRegistry executions;
     private final TripProcessingStatusService statuses;
@@ -78,9 +79,10 @@ public class TripAttachmentService {
                     analysisRequest(executionId, trip, savedAttachments, derivedKeys),
                     () -> executions.markAnalysisStarted(tripId, executionId)
             );
+            Map<String, String> resolvedNames = placeNames.resolve(tripId, executionId, result);
 
             storage.retain(List.copyOf(objectKeys(originalsKeys, derivedKeys)));
-            results.saveCompleted(tripId, userId, executionId, savedAttachments, result);
+            results.saveCompleted(tripId, userId, executionId, savedAttachments, result, resolvedNames);
 
         } catch (AiProcessingFailedException failure) {
             cleanupFailure(tripId, userId, executionId, originalsKeys, derivedKeys,
@@ -170,7 +172,8 @@ public class TripAttachmentService {
                     analysisRequest(executionId, trip, allAttachments, allMetadata),
                     () -> executions.markAnalysisStarted(tripId, executionId)
             );
-            results.saveCompleted(tripId, userId, executionId, allAttachments, result);
+            Map<String, String> resolvedNames = placeNames.resolve(tripId, executionId, result);
+            results.saveCompleted(tripId, userId, executionId, allAttachments, result, resolvedNames);
             resultSaved = true;
             return Optional.of(statuses.findStatus(tripId, userId));
 

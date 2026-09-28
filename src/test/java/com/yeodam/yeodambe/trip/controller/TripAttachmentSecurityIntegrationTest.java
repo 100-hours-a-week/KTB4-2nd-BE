@@ -30,7 +30,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.Optional;
+
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -98,11 +102,15 @@ class TripAttachmentSecurityIntegrationTest {
     void 유효한_쿠키_Jwt와_CSRF로_첨부_서비스를_호출한다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("attachment-browser")).willReturn("csrf-token");
-        given(tripAttachmentService.uploadInitialAttachments(eq(7L), eq(42L), anyList()))
-                .willReturn(completed());
+        given(tripAttachmentService.uploadInitialAttachments(
+                eq(7L), eq(42L), anyList(), eq(1), eq(1), eq(true)))
+                .willReturn(Optional.of(completed()));
 
-        mockMvc.perform(multipart("/trips/7/initial-attachments")
+                mockMvc.perform(multipart("/trips/7/initial-attachments")
                         .file("attachments[]", jpeg())
+                        .param("batchNo", "1")
+                        .param("totalAttachmentCount", "1")
+                        .param("complete", "true")
                         .cookie(
                                 new Cookie("accessToken", accessToken),
                                 new Cookie("CSRF_CONTEXT", "attachment-browser")
@@ -113,7 +121,7 @@ class TripAttachmentSecurityIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
 
         then(tripAttachmentService).should()
-                .uploadInitialAttachments(eq(7L), eq(42L), anyList());
+                .uploadInitialAttachments(eq(7L), eq(42L), anyList(), eq(1), eq(1), eq(true));
     }
 
     @Test
@@ -121,8 +129,11 @@ class TripAttachmentSecurityIntegrationTest {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("invalid-attachment-browser")).willReturn("csrf-token");
 
-        mockMvc.perform(multipart("/trips/7/initial-attachments")
+                mockMvc.perform(multipart("/trips/7/initial-attachments")
                         .file("attachments[]", jpeg())
+                        .param("batchNo", "1")
+                        .param("totalAttachmentCount", "1")
+                        .param("complete", "true")
                         .cookie(
                                 new Cookie("accessToken", accessToken),
                                 new Cookie("CSRF_CONTEXT", "invalid-attachment-browser")
@@ -132,22 +143,25 @@ class TripAttachmentSecurityIntegrationTest {
                 .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
 
         then(tripAttachmentService).should(never())
-                .uploadInitialAttachments(any(), any(), anyList());
+                .uploadInitialAttachments(any(), any(), anyList(), anyInt(), anyInt(), anyBoolean());
     }
 
     @Test
     void 인증_쿠키가_없으면_401이고_첨부_서비스를_호출하지_않는다() throws Exception {
         given(csrfTokenStore.find("unauthorized-attachment-browser")).willReturn("csrf-token");
 
-        mockMvc.perform(multipart("/trips/7/initial-attachments")
+                mockMvc.perform(multipart("/trips/7/initial-attachments")
                         .file("attachments[]", jpeg())
+                        .param("batchNo", "1")
+                        .param("totalAttachmentCount", "1")
+                        .param("complete", "true")
                         .cookie(new Cookie("CSRF_CONTEXT", "unauthorized-attachment-browser"))
                         .header("X-CSRF-TOKEN", "csrf-token"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
 
         then(tripAttachmentService).should(never())
-                .uploadInitialAttachments(any(), any(), anyList());
+                .uploadInitialAttachments(any(), any(), anyList(), anyInt(), anyInt(), anyBoolean());
     }
 
     @Test

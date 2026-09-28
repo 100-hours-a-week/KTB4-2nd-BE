@@ -59,13 +59,12 @@ public class TripDetailPlace {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
-    public static TripDetailPlace fromAnalysis(Long tripId, int order, BigDecimal latitude,
-                                               BigDecimal longitude, LocalDateTime first,
+    public static TripDetailPlace fromAnalysis(Long tripId, int order, String placeName,
+                                               BigDecimal latitude, BigDecimal longitude, LocalDateTime first,
                                                LocalDateTime last, String thumbnailKey) {
         TripDetailPlace place = new TripDetailPlace();
         place.tripId = tripId;
-        // ponytail: V1 분석 응답에는 장소명이 없어 임시 이름을 쓴다. 역지오코딩 계약 확정 시 교체한다.
-        place.placeName = "장소 " + order;
+        place.placeName = placeName;
         place.latitude = latitude;
         place.longitude = longitude;
         place.startedAt = first == null ? LocalDateTime.now() : first;
@@ -85,9 +84,8 @@ public class TripDetailPlace {
             String thumbnailKey
     ) {
         TripDetailPlace place = fromAnalysis(
-                tripId, order, latitude, longitude, takenAt, takenAt, thumbnailKey
+                tripId, order, placeName, latitude, longitude, takenAt, takenAt, thumbnailKey
         );
-        place.placeName = placeName;
         return place;
     }
 

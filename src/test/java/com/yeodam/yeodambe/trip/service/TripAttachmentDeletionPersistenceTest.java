@@ -113,6 +113,7 @@ class TripAttachmentDeletionPersistenceTest {
         return places.saveAndFlush(TripDetailPlace.fromAnalysis(
                 tripId,
                 1,
+                "제주시",
                 new BigDecimal("33.45000000"),
                 new BigDecimal("126.94000000"),
                 LocalDateTime.of(2026, 9, 1, 10, 0),

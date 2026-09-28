@@ -53,7 +53,7 @@ class TripProcessingCancellationRepositoryTest {
                 trip, "50110", "제주특별자치도 제주시",
                 new BigDecimal("33.5"), new BigDecimal("126.5")));
         TripDetailPlace place = places.save(TripDetailPlace.fromAnalysis(
-                trip.getId(), 1, new BigDecimal("33.5"), new BigDecimal("126.5"),
+                trip.getId(), 1, "제주시", new BigDecimal("33.5"), new BigDecimal("126.5"),
                 LocalDateTime.now(), LocalDateTime.now(), "preview"));
         StoredFile file = files.save(StoredFile.uploaded(
                 user.getUserId(), "photo.jpg", "original", "image/jpeg"));

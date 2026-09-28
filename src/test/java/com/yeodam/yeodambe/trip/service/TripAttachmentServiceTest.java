@@ -17,6 +17,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
@@ -35,6 +36,7 @@ class TripAttachmentServiceTest {
     private final TripAttachmentDerivativeService derivatives = mock(TripAttachmentDerivativeService.class);
     private final TripPhotoAnalysisService analysis = mock(TripPhotoAnalysisService.class);
     private final TripAnalysisResultService results = mock(TripAnalysisResultService.class);
+    private final TripPlaceNameService placeNames = mock(TripPlaceNameService.class);
     private final InitialUploadExecutionRegistry executions = mock(InitialUploadExecutionRegistry.class);
     private final TripProcessingStatusService statuses = mock(TripProcessingStatusService.class);
     private TripAttachmentService service;
@@ -42,7 +44,8 @@ class TripAttachmentServiceTest {
     @BeforeEach
     void setUp() {
         service = new TripAttachmentService(trips, regions, storage, transactions,
-                derivatives, analysis, results, executions, statuses);
+                derivatives, analysis, placeNames, results, executions, statuses);
+        when(placeNames.resolve(anyLong(), anyString(), any())).thenReturn(Map.of());
         when(trips.existsByIdAndUserIdAndDeletedAtIsNullAndProcessingStatus(
                 7L, 1L, ProcessingStatus.PROCESSING)).thenReturn(true);
     }
@@ -180,7 +183,8 @@ class TripAttachmentServiceTest {
         assertEquals(ProcessingStatus.COMPLETED, response.status());
         assertEquals(1, response.result().placeFolderCount());
         verify(storage).retain(List.of("original", "analyze", "preview"));
-        verify(results).saveCompleted(7L, 1L, "run", List.of(attachment), aiResult);
+        verify(placeNames).resolve(7L, "run", aiResult);
+        verify(results).saveCompleted(7L, 1L, "run", List.of(attachment), aiResult, Map.of());
         verify(executions).markAnalysisStarted(7L, "run");
         verify(executions).release(7L, "run");
     }
@@ -250,7 +254,7 @@ class TripAttachmentServiceTest {
         assertThrows(IllegalStateException.class,
                 () -> service.uploadInitialAttachments(7L, 1L, List.of(file)));
 
-        verify(results).saveCompleted(7L, 1L, "run", List.of(attachment), aiResult);
+        verify(results).saveCompleted(7L, 1L, "run", List.of(attachment), aiResult, Map.of());
         verify(transactions, never()).failAndDeleteReference(anyLong(), anyLong(), anyString(), anyList(), anyList());
         verify(storage, never()).delete(anyString());
         verify(executions).release(7L, "run");
@@ -303,7 +307,7 @@ class TripAttachmentServiceTest {
     void 중간_배치는_저장만_완료하고_AI를_호출하지_않는다() {
         InitialUploadExecutionRegistry registry = new InitialUploadExecutionRegistry();
         TripAttachmentService batchService = new TripAttachmentService(
-                trips, regions, storage, transactions, derivatives, analysis, results, registry, statuses);
+                trips, regions, storage, transactions, derivatives, analysis, placeNames, results, registry, statuses);
         MockMultipartFile file = jpeg();
         StoredFile original = original(20L, "original-1");
         TripAttachment attachment = attachment(30L, 20L, "analyze-1", "preview-1");
@@ -333,7 +337,7 @@ class TripAttachmentServiceTest {
     void 마지막_배치는_모든_배치의_첨부로_AI를_한번_호출한다() {
         InitialUploadExecutionRegistry registry = new InitialUploadExecutionRegistry();
         TripAttachmentService batchService = new TripAttachmentService(
-                trips, regions, storage, transactions, derivatives, analysis, results, registry, statuses);
+                trips, regions, storage, transactions, derivatives, analysis, placeNames, results, registry, statuses);
         Trip trip = trip(1L);
         MockMultipartFile firstFile = jpeg("first.jpg");
         MockMultipartFile secondFile = jpeg("second.jpg");
@@ -385,7 +389,8 @@ class TripAttachmentServiceTest {
         assertEquals(List.of(30L, 31L), request.getValue().attachments().stream()
                 .map(TripPhotoAnalysisRequest.Photo::tripAttachmentId).toList());
         verify(results).saveCompleted(eq(7L), eq(1L), anyString(),
-                eq(List.of(firstAttachment, secondAttachment)), eq(aiResult));
+                eq(List.of(firstAttachment, secondAttachment)), eq(aiResult), eq(Map.of()));
+        verify(placeNames).resolve(eq(7L), anyString(), eq(aiResult));
     }
 
     @Test

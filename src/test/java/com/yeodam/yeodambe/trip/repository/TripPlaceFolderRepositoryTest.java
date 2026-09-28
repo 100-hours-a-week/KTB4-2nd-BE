@@ -86,13 +86,13 @@ class TripPlaceFolderRepositoryTest {
         TripDetailPlace place = TripDetailPlace.fromAnalysis(
                 tripId,
                 1,
+                name,
                 new BigDecimal("33.45000000"),
                 new BigDecimal("126.94000000"),
                 LocalDateTime.of(2026, 9, 1, 10, 0),
                 LocalDateTime.of(2026, 9, 1, 11, 0),
                 null
         );
-        ReflectionTestUtils.setField(place, "placeName", name);
         ReflectionTestUtils.setField(place, "deletedAt", deletedAt);
         return places.save(place);
     }

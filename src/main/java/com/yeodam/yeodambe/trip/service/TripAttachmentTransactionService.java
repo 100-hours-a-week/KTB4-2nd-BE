@@ -55,13 +55,13 @@ public class TripAttachmentTransactionService {
         try {
             if (!batch.firstBatch()) {
                 if (tripRepository.findProcessableForUpdate(
-                        tripId, userId, ProcessingStatus.PROCESSING).isEmpty()) {
-                    if (!tripRepository.existsByIdAndUserIdAndDeletedAtIsNull(tripId, userId)) {
-                        throw new TripNotFoundException();
-                    }
-                    throw new TripInitialAttachmentUploadNotAllowedException();
+                        tripId, userId, ProcessingStatus.PROCESSING).isPresent()) {
+                    return new Reservation(executionId, List.of());
                 }
-                return new Reservation(executionId, List.of());
+                if (!tripRepository.existsByIdAndUserIdAndDeletedAtIsNull(tripId, userId)) {
+                    throw new TripNotFoundException();
+                }
+                throw new TripInitialAttachmentUploadNotAllowedException();
             }
 
             if (

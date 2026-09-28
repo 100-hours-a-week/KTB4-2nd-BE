@@ -19,6 +19,8 @@ public interface TripAttachmentStorageClient {
 
     void retain(List<String> objectKeys);
 
+    void markForDeletion(List<String> objectKeys);
+
     String createReadUrl(String objectKey);
 
     String createDownloadUrl(String objectKey, String originalFileName);

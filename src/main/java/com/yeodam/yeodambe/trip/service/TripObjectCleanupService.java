@@ -61,10 +61,10 @@ public class TripObjectCleanupService {
         if (isActivelyReferenced(objectKey)) return true;
 
         try {
-            storage.delete(objectKey);
+            storage.markForDeletion(List.of(objectKey));
             return true;
         } catch (RuntimeException failure) {
-            log.warn("여행 첨부 객체 삭제에 실패했습니다. objectKey={}", objectKey, failure);
+            log.warn("여행 첨부 객체 삭제 예약에 실패했습니다. objectKey={}", objectKey, failure);
             return false;
         }
     }

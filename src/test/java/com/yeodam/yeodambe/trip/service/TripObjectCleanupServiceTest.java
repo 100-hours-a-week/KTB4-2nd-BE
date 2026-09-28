@@ -42,12 +42,13 @@ class TripObjectCleanupServiceTest {
     }
 
     @Test
-    void 참조되지_않은_세_객체를_삭제하고_첨부를_DELETED로_표시한다() {
+    void 참조되지_않은_세_객체의_삭제를_예약하고_첨부를_DELETED로_표시한다() {
         service.process(List.of(30L));
 
-        verify(storage).delete("original");
-        verify(storage).delete("analyze");
-        verify(storage).delete("preview");
+        verify(storage).markForDeletion(List.of("original"));
+        verify(storage).markForDeletion(List.of("analyze"));
+        verify(storage).markForDeletion(List.of("preview"));
+        verify(storage, never()).delete(anyString());
         assertThat(attachment.getClassificationStatus()).isEqualTo(ClassificationStatus.DELETED);
     }
 
@@ -68,15 +69,16 @@ class TripObjectCleanupServiceTest {
 
         service.process(List.of(30L));
 
-        verify(storage, never()).delete("original");
-        verify(storage).delete("analyze");
-        verify(storage).delete("preview");
+        verify(storage, never()).markForDeletion(List.of("original"));
+        verify(storage).markForDeletion(List.of("analyze"));
+        verify(storage).markForDeletion(List.of("preview"));
         assertThat(attachment.getClassificationStatus()).isEqualTo(ClassificationStatus.DELETED);
     }
 
     @Test
     void 하나라도_삭제에_실패하면_DELETED로_표시하지_않아_재시도한다() {
-        doThrow(new IllegalStateException("S3")).when(storage).delete("preview");
+        doThrow(new IllegalStateException("S3"))
+                .when(storage).markForDeletion(List.of("preview"));
 
         service.process(List.of(30L));
 

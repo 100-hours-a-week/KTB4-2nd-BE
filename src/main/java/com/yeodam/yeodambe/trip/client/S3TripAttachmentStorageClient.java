@@ -196,6 +196,16 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         }
     }
 
+    @Override
+    public void markForDeletion(List<String> objectKeys) {
+        Tagging tagging = Tagging.builder()
+                .tagSet(Tag.builder().key("status").value("deleted").build())
+                .build();
+        for (String objectKey : objectKeys) {
+            s3.putObjectTagging(request -> request.bucket(bucket).key(objectKey).tagging(tagging));
+        }
+    }
+
 
     @PreDestroy
     void close() {

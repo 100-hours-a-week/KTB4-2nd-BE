@@ -28,20 +28,42 @@ public class TripAttachmentTransactionService {
 
     @Transactional
     public Reservation reserve(Long tripId, Long userId) {
-        String executionId = executions.reserve(tripId);
+        return reserveBatch(tripId, userId, 1, 200);
+    }
+
+    @Transactional
+    public Reservation reserveBatch(
+            Long tripId, Long userId, int batchNo, int totalAttachmentCount
+    ) {
+        InitialUploadExecutionRegistry.Reservation batch = executions.reserveBatch(
+                tripId, batchNo, totalAttachmentCount);
+        String executionId = batch.executionId();
 
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(
                     new TransactionSynchronization() {
                         @Override
                         public void afterCompletion(int status) {
-                            if (status != STATUS_COMMITTED) executions.release(tripId, executionId);
+                            if (status != STATUS_COMMITTED) {
+                                executions.failBatch(tripId, executionId, batchNo);
+                            }
                         }
                     }
             );
         }
 
         try {
+            if (!batch.firstBatch()) {
+                if (tripRepository.findProcessableForUpdate(
+                        tripId, userId, ProcessingStatus.PROCESSING).isEmpty()) {
+                    if (!tripRepository.existsByIdAndUserIdAndDeletedAtIsNull(tripId, userId)) {
+                        throw new TripNotFoundException();
+                    }
+                    throw new TripInitialAttachmentUploadNotAllowedException();
+                }
+                return new Reservation(executionId, List.of());
+            }
+
             if (
                     tripRepository.prepareInitialUpload(
                             tripId, userId, ProcessingStatus.PROCESSING, ProcessingStatus.FAILED
@@ -74,7 +96,7 @@ public class TripAttachmentTransactionService {
             return new Reservation(executionId, List.copyOf(staleKeys));
 
         } catch (RuntimeException failure) {
-            executions.release(tripId, executionId);
+            executions.failBatch(tripId, executionId, batchNo);
             throw failure;
         }
     }
@@ -126,6 +148,12 @@ public class TripAttachmentTransactionService {
             attachments.add(attachment);
         }
         return new SavedAttachments(originals, attachmentRepository.saveAll(attachments));
+    }
+
+    @Transactional
+    public void deleteBatchReferences(List<Long> fileIds, List<Long> attachmentIds) {
+        attachmentRepository.deleteAllByIdInBatch(attachmentIds);
+        storedFileRepository.deleteAllByIdInBatch(fileIds);
     }
 
     @Transactional

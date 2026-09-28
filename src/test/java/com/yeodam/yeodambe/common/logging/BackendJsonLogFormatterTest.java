@@ -44,7 +44,9 @@ class BackendJsonLogFormatterTest {
                 new KeyValuePair("result", "failure"),
                 new KeyValuePair("duration_ms", 8241),
                 new KeyValuePair("failure_stage", "archive_upload"),
-                new KeyValuePair("error_code", "INTERNAL_SERVER_ERROR")
+                new KeyValuePair("error_code", "INTERNAL_SERVER_ERROR"),
+                new KeyValuePair("expected_count", 5),
+                new KeyValuePair("saved_count", 3)
         ));
         event.setThrowableProxy(new ThrowableProxy(new IllegalStateException("S3 업로드 실패")));
 
@@ -63,6 +65,8 @@ class BackendJsonLogFormatterTest {
         assertThat(json.path("duration_ms").asLong()).isEqualTo(8241L);
         assertThat(json.path("failure_stage").asString()).isEqualTo("archive_upload");
         assertThat(json.path("error_code").asString()).isEqualTo("INTERNAL_SERVER_ERROR");
+        assertThat(json.path("expected_count").asLong()).isEqualTo(5L);
+        assertThat(json.path("saved_count").asLong()).isEqualTo(3L);
         assertThat(json.path("release").asString()).isEqualTo("sha-123");
         assertThat(json.path("stack_trace").asString()).contains("S3 업로드 실패");
     }

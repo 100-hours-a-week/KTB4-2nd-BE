@@ -35,6 +35,8 @@ public class BackendJsonLogFormatter
         members.add("duration_ms", event -> numberValue(contextValue(event, "duration_ms")));
         members.add("failure_stage", event -> contextValue(event, "failure_stage"));
         members.add("error_code", event -> contextValue(event, "error_code"));
+        members.add("expected_count", event -> numberValue(contextValue(event, "expected_count")));
+        members.add("saved_count", event -> numberValue(contextValue(event, "saved_count")));
         members.add("release", environment.getProperty("RELEASE", "unknown"));
         members.add("stack_trace", event -> event.getThrowableProxy() == null
                 ? null

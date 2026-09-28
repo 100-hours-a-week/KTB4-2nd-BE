@@ -23,6 +23,12 @@ place:
     service-key: ${DATA_GO_KR_SERVICE_KEY:}
     timeout: ${DATA_GO_KR_TIMEOUT:3s}
 
+kakao:
+  local:
+    base-url: ${KAKAO_LOCAL_BASE_URL:https://dapi.kakao.com}
+    timeout: ${KAKAO_LOCAL_TIMEOUT:3s}
+    max-concurrency: ${KAKAO_LOCAL_MAX_CONCURRENCY:5}
+
 management:
   endpoints:
     web:

@@ -8,7 +8,12 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -38,9 +43,21 @@ class BulkAttachmentDownloadServiceTest {
                     tripAttachmentRepository,
                     tripAttachmentStorageClient
             );
+    private final Logger logger =
+            (Logger) LoggerFactory.getLogger(BulkAttachmentDownloadService.class);
+    private ListAppender<ILoggingEvent> logAppender;
+
+    @AfterEach
+    void detachLogAppender() {
+        if (logAppender != null) {
+            logger.detachAppender(logAppender);
+            logAppender.stop();
+        }
+    }
 
     @Test
     void 접근_가능한_첨부를_ZIP으로_저장하고_다운로드_URL을_반환한다() throws IOException {
+        startLogAppender();
         TripAttachment first = attachment(501L, 1L, "first-key", "photo.jpg");
         TripAttachment second = attachment(502L, 1L, "second-key", "photo.jpg");
         AtomicReference<byte[]> archiveBytes = new AtomicReference<>();
@@ -78,6 +95,37 @@ class BulkAttachmentDownloadServiceTest {
                 "trip-downloads/archive.zip",
                 "yeodam-attachments.zip"
         );
+
+        ILoggingEvent success = logAppender.list.stream()
+                .filter(event -> "attachment_bulk_download".equals(keyValue(event, "event")))
+                .filter(event -> "success".equals(keyValue(event, "result")))
+                .findFirst()
+                .orElseThrow();
+        assertThat(keyValue(success, "expected_count")).isEqualTo(2);
+    }
+
+    @Test
+    void 임시_ZIP_업로드가_실패하면_업로드_단계_로그를_남긴다() {
+        startLogAppender();
+        TripAttachment attachment = attachment(501L, 1L, "first-key", "photo.jpg");
+
+        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+                .thenReturn(List.of(attachment));
+        when(tripAttachmentStorageClient.open("first-key"))
+                .thenReturn(new ByteArrayInputStream("first".getBytes()));
+        when(tripAttachmentStorageClient.storeDownloadArchive(any(Path.class)))
+                .thenThrow(new IllegalStateException("S3 업로드 실패"));
+
+        assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L)))
+                .isInstanceOf(IllegalStateException.class);
+
+        ILoggingEvent failure = logAppender.list.stream()
+                .filter(event -> "attachment_bulk_download".equals(keyValue(event, "event")))
+                .filter(event -> "failure".equals(keyValue(event, "result")))
+                .findFirst()
+                .orElseThrow();
+        assertThat(keyValue(failure, "failure_stage")).isEqualTo("archive_upload");
+        assertThat(keyValue(failure, "error_code")).isEqualTo("INTERNAL_SERVER_ERROR");
     }
 
     @Test
@@ -143,5 +191,20 @@ class BulkAttachmentDownloadServiceTest {
         }
 
         return names;
+    }
+
+    private void startLogAppender() {
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logAppender = appender;
+    }
+
+    private Object keyValue(ILoggingEvent event, String key) {
+        return event.getKeyValuePairs().stream()
+                .filter(pair -> key.equals(pair.key))
+                .map(pair -> pair.value)
+                .findFirst()
+                .orElse(null);
     }
 }

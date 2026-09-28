@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -46,24 +47,52 @@ public class BulkAttachmentDownloadService {
             throw new AttachmentNotFoundException();
         }
 
+        int expectedCount = attachments.size();
+        long startedAt = System.nanoTime();
+        String failureStage = "zip_create";
+
+        log.atInfo()
+                .addKeyValue("event", "attachment_bulk_download")
+                .addKeyValue("result", "started")
+                .addKeyValue("expected_count", expectedCount)
+                .log("첨부 일괄 다운로드를 시작했습니다.");
+
         Path archive = null;
 
         try {
             archive = Files.createTempFile("yeodam-attachments-", ".zip");
+
+            failureStage = "source_read";
             createArchive(archive, attachments);
 
+            failureStage = "archive_upload";
             String archiveKey = tripAttachmentStorageClient.storeDownloadArchive(archive);
+
+            failureStage = "presign";
             String downloadUrl = tripAttachmentStorageClient.createDownloadUrl(
                     archiveKey,
                     ARCHIVE_FILE_NAME
             );
+
+            long durationMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+            log.atInfo()
+                    .addKeyValue("event", "attachment_bulk_download")
+                    .addKeyValue("result", "success")
+                    .addKeyValue("expected_count", expectedCount)
+                    .addKeyValue("duration_ms", durationMillis)
+                    .log("첨부 일괄 다운로드 URL을 발급했습니다.");
 
             return new BulkAttachmentDownloadResponse(
                     ARCHIVE_FILE_NAME,
                     downloadUrl
             );
         } catch (IOException failure) {
+            logBulkDownloadFailure(expectedCount, failureStage, failure);
             throw new IllegalStateException("첨부 ZIP 생성에 실패했습니다.", failure);
+        } catch (RuntimeException failure) {
+            logBulkDownloadFailure(expectedCount, failureStage, failure);
+            throw failure;
         } finally {
             deleteArchive(archive);
         }
@@ -167,6 +196,21 @@ public class BulkAttachmentDownloadService {
                 + " (" + sequence + ")"
                 + fileName.substring(extensionIndex);
     }
+
+    private void logBulkDownloadFailure(
+            int expectedCount,
+            String failureStage,
+            Throwable failure
+    ) {
+        log.atError()
+                .addKeyValue("event", "attachment_bulk_download")
+                .addKeyValue("result", "failure")
+                .addKeyValue("expected_count", expectedCount)
+                .addKeyValue("failure_stage", failureStage)
+                .addKeyValue("error_code", ErrorMessage.INTERNAL_SERVER_ERROR.name())
+                .log("첨부 일괄 다운로드 처리에 실패했습니다.", failure);
+    }
+
 
     private void deleteArchive(Path archive) {
         if (archive == null) {

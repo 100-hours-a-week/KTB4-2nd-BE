@@ -24,6 +24,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.function.BooleanSupplier;
 
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Service
 public class TripPhotoAnalysisService {
     private final RestClient restClient;
@@ -68,13 +72,60 @@ public class TripPhotoAnalysisService {
         this.apiKey = apiKey;
     }
 
-    public JsonNode analyze(Long tripId, String executionId, TripPhotoAnalysisRequest request,
-                            BooleanSupplier analysisStarted) {
-        JsonNode response;
+    public JsonNode analyze(
+            Long tripId,
+            String executionId,
+            TripPhotoAnalysisRequest request,
+            BooleanSupplier analysisStarted
+    ) {
+        long workerReadyStartedAt = System.nanoTime();
+        String workerFailureStage = "ec2_start";
 
-        starter.ensureRunning();
-        waitUntilReady();
+        log.atInfo()
+                .addKeyValue("event", "worker_ready")
+                .addKeyValue("result", "started")
+                .addKeyValue("trip_id", tripId)
+                .addKeyValue("job_id", executionId)
+                .log("AI Worker 준비를 시작했습니다.");
+
+        try {
+            starter.ensureRunning();
+
+            workerFailureStage = "health_check";
+            waitUntilReady();
+
+            log.atInfo()
+                    .addKeyValue("event", "worker_ready")
+                    .addKeyValue("result", "success")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("duration_ms", elapsedMillis(workerReadyStartedAt))
+                    .log("AI Worker 준비를 완료했습니다.");
+        } catch (RuntimeException failure) {
+            log.atError()
+                    .addKeyValue("event", "worker_ready")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("duration_ms", elapsedMillis(workerReadyStartedAt))
+                    .addKeyValue("failure_stage", workerFailureStage)
+                    .addKeyValue("error_code", "INTERNAL_SERVER_ERROR")
+                    .log("AI Worker 준비에 실패했습니다.", failure);
+            throw failure;
+        }
+
         requireAnalysisStart(analysisStarted);
+
+        long aiJobStartedAt = System.nanoTime();
+
+        log.atInfo()
+                .addKeyValue("event", "ai_job")
+                .addKeyValue("result", "started")
+                .addKeyValue("trip_id", tripId)
+                .addKeyValue("job_id", executionId)
+                .log("AI 사진 분석을 요청했습니다.");
+
+        JsonNode response;
 
         try {
             response = restClient.post()
@@ -84,11 +135,54 @@ public class TripPhotoAnalysisService {
                     .body(request)
                     .retrieve()
                     .body(JsonNode.class);
-        } catch (RestClientException e) {
-            throw new IllegalStateException("AI 사진 분석 호출에 실패했습니다.", e);
+        } catch (RestClientException failure) {
+            log.atError()
+                    .addKeyValue("event", "ai_job")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("duration_ms", elapsedMillis(aiJobStartedAt))
+                    .addKeyValue("failure_stage", "ai_request")
+                    .addKeyValue("error_code", "INTERNAL_SERVER_ERROR")
+                    .log("AI 사진 분석 요청에 실패했습니다.", failure);
+            throw new IllegalStateException("AI 사진 분석 호출에 실패했습니다.", failure);
         }
 
-        return validateResponse(tripId, executionId, response);
+        try {
+            JsonNode result = validateResponse(tripId, executionId, response);
+
+            log.atInfo()
+                    .addKeyValue("event", "ai_job")
+                    .addKeyValue("result", "success")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("duration_ms", elapsedMillis(aiJobStartedAt))
+                    .log("AI 사진 분석을 완료했습니다.");
+
+            return result;
+        } catch (AiProcessingFailedException failure) {
+            log.atWarn()
+                    .addKeyValue("event", "ai_job")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("duration_ms", elapsedMillis(aiJobStartedAt))
+                    .addKeyValue("failure_stage", "ai_request")
+                    .addKeyValue("error_code", failure.getCode())
+                    .log("AI 사진 분석이 실패했습니다.", failure);
+            throw failure;
+        } catch (RuntimeException failure) {
+            log.atError()
+                    .addKeyValue("event", "ai_job")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("duration_ms", elapsedMillis(aiJobStartedAt))
+                    .addKeyValue("failure_stage", "result_validation")
+                    .addKeyValue("error_code", "INTERNAL_SERVER_ERROR")
+                    .log("AI 사진 분석 응답 검증에 실패했습니다.", failure);
+            throw failure;
+        }
     }
 
     static void requireAnalysisStart(BooleanSupplier analysisStarted) {
@@ -247,6 +341,10 @@ public class TripPhotoAnalysisService {
                 result,
                 error
         );
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
     }
 
     private void setAiHeaders(HttpHeaders headers) {

@@ -12,7 +12,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collection;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,14 +31,11 @@ public class TripObjectCleanupService {
     private final TripAttachmentStorageClient storage;
 
     @Transactional
-    public void process(Collection<Long> attachmentIds) {
-        if (attachmentIds == null || attachmentIds.isEmpty()) return;
-        cleanup(attachments.findPendingCleanupByIds(attachmentIds));
-    }
-
-    @Transactional
     public void retryPending() {
-        cleanup(attachments.findPendingCleanup(PageRequest.of(0, RETRY_BATCH_SIZE)));
+        cleanup(attachments.findExpiredPendingCleanup(
+                LocalDateTime.now().minusDays(30),
+                PageRequest.of(0, RETRY_BATCH_SIZE)
+        ));
     }
 
     private void cleanup(List<TripAttachment> pending) {
@@ -61,10 +58,10 @@ public class TripObjectCleanupService {
         if (isActivelyReferenced(objectKey)) return true;
 
         try {
-            storage.markForDeletion(List.of(objectKey));
+            storage.delete(objectKey);
             return true;
         } catch (RuntimeException failure) {
-            log.warn("여행 첨부 객체 삭제 예약에 실패했습니다. objectKey={}", objectKey, failure);
+            log.warn("여행 첨부 객체 삭제에 실패했습니다. objectKey={}", objectKey, failure);
             return false;
         }
     }

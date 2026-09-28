@@ -8,21 +8,16 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.List;
-import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.mockito.ArgumentCaptor;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import software.amazon.awssdk.services.s3.model.PutObjectTaggingRequest;
-import software.amazon.awssdk.services.s3.model.Tag;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 class S3TripAttachmentStorageClientTest {
@@ -110,30 +105,6 @@ class S3TripAttachmentStorageClientTest {
         assertThat(client.size("object-key")).isEqualTo(123L);
         assertThat(request.getValue().bucket()).isEqualTo("test-bucket");
         assertThat(request.getValue().key()).isEqualTo("object-key");
-    }
-
-    @Test
-    void 삭제할_객체에_deleted_상태_태그를_설정한다() {
-        S3Client s3 = mock(S3Client.class);
-        S3Presigner presigner = mock(S3Presigner.class);
-        ArgumentCaptor<Consumer<PutObjectTaggingRequest.Builder>> requestConsumer =
-                ArgumentCaptor.forClass(
-                        Consumer.class
-                );
-        S3TripAttachmentStorageClient client = new S3TripAttachmentStorageClient(
-                s3, "test-bucket", presigner, Duration.ofMinutes(10));
-
-        client.markForDeletion(List.of("trip-uploads/run/original.jpg"));
-
-        verify(s3).putObjectTagging(requestConsumer.capture());
-        PutObjectTaggingRequest.Builder requestBuilder = PutObjectTaggingRequest.builder();
-        requestConsumer.getValue().accept(requestBuilder);
-        PutObjectTaggingRequest request = requestBuilder.build();
-
-        assertThat(request.bucket()).isEqualTo("test-bucket");
-        assertThat(request.key()).isEqualTo("trip-uploads/run/original.jpg");
-        assertThat(request.tagging().tagSet())
-                .containsExactly(Tag.builder().key("status").value("deleted").build());
     }
 
     private void restoreSystemProperty(String name, String previousValue) {

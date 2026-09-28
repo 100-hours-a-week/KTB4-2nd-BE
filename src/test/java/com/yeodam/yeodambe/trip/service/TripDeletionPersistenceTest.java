@@ -169,23 +169,27 @@ class TripDeletionPersistenceTest {
     }
 
     @Test
-    void 객체_정리_재조회는_삭제됐지만_정리되지_않은_첨부만_반환한다() {
+    void 객체_정리_재조회는_삼십일_지난_삭제_첨부만_반환한다() {
         User owner = owner("cleanup-query@test.com");
         Trip trip = completedTrip(owner, "정리여행");
         TripAttachment pending = attachment(owner, trip, null, "pending");
-        pending.softDelete(LocalDateTime.now());
+        pending.softDelete(LocalDateTime.now().minusDays(31));
         attachments.saveAndFlush(pending);
         TripAttachment completed = attachment(owner, trip, null, "completed");
         completed.softDelete(LocalDateTime.now());
         completed.markObjectCleanupCompleted();
         attachments.saveAndFlush(completed);
         TripAttachment active = attachment(owner, trip, null, "active");
+        TripAttachment recent = attachment(owner, trip, null, "recent");
+        recent.softDelete(LocalDateTime.now().minusDays(29));
+        attachments.saveAndFlush(recent);
 
-        List<TripAttachment> result = attachments.findPendingCleanup(PageRequest.of(0, 100));
+        List<TripAttachment> result = attachments.findExpiredPendingCleanup(
+                LocalDateTime.now().minusDays(30), PageRequest.of(0, 100));
 
         assertThat(result).extracting(TripAttachment::getId)
                 .contains(pending.getId())
-                .doesNotContain(completed.getId(), active.getId());
+                .doesNotContain(completed.getId(), active.getId(), recent.getId());
         assertThat(result).allMatch(found ->
                 found.getDeletedAt() != null
                         && found.getClassificationStatus() != ClassificationStatus.DELETED);

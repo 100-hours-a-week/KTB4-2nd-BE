@@ -10,8 +10,6 @@ import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.junit.jupiter.api.Test;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.Optional;
@@ -26,9 +24,8 @@ class TripAttachmentDeletionServiceTest {
 
     private final TripAttachmentRepository tripAttachmentRepository = mock(TripAttachmentRepository.class);
     private final UserStatsService userStats = mock(UserStatsService.class);
-    private final TripObjectCleanupService cleanup = mock(TripObjectCleanupService.class);
     private final TripAttachmentDeletionService service =
-            new TripAttachmentDeletionService(tripAttachmentRepository, userStats, cleanup);
+            new TripAttachmentDeletionService(tripAttachmentRepository, userStats);
 
     @Test
     void 중복된_첨부_ID는_조회_전에_거부한다() {
@@ -88,32 +85,5 @@ class TripAttachmentDeletionServiceTest {
         verify(deletedAttachment).softDelete(any());
         verify(deletedFile).softDelete(any());
         verify(userStats).refreshFromActiveTrips(1L);
-        verify(cleanup).process(List.of(11L));
-    }
-
-    @Test
-    void 커밋_후_객체_정리_실패는_첨부_삭제_성공을_바꾸지_않는다() {
-        TripAttachment attachment = mock(TripAttachment.class);
-        StoredFile file = mock(StoredFile.class);
-        Trip trip = mock(Trip.class);
-        when(attachment.getId()).thenReturn(11L);
-        when(attachment.getFile()).thenReturn(file);
-        when(attachment.getTrip()).thenReturn(trip);
-        when(tripAttachmentRepository.findAccessibleById(11L, 1L))
-                .thenReturn(Optional.of(attachment));
-        doThrow(new IllegalStateException("S3")).when(cleanup).process(List.of(11L));
-
-        TransactionSynchronizationManager.initSynchronization();
-        try {
-            service.deleteOne(1L, 11L);
-
-            verifyNoInteractions(cleanup);
-            assertDoesNotThrow(() -> TransactionSynchronizationManager.getSynchronizations()
-                    .forEach(TransactionSynchronization::afterCommit));
-            verify(cleanup).process(List.of(11L));
-            verify(attachment).softDelete(any());
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
     }
 }

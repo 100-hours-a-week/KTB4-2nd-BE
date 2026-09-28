@@ -16,6 +16,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
+import org.slf4j.MDC;
+import org.springframework.http.HttpHeaders;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -77,7 +79,7 @@ public class TripPhotoAnalysisService {
         try {
             response = restClient.post()
                     .uri("/trips/{tripId}/process", tripId)
-                    .headers(headers -> headers.setBearerAuth(apiKey))
+                    .headers(this::setAiHeaders)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(request)
                     .retrieve()
@@ -99,7 +101,7 @@ public class TripPhotoAnalysisService {
         try {
             JsonNode response = restClient.get()
                     .uri("/trips/{tripId}/process", tripId)
-                    .headers(headers -> headers.setBearerAuth(apiKey))
+                    .headers(this::setAiHeaders)
                     .retrieve()
                     .body(JsonNode.class);
             return validateStatusResponse(tripId, response);
@@ -115,7 +117,7 @@ public class TripPhotoAnalysisService {
         try {
             response = restClient.delete()
                     .uri("/trips/{tripId}/process", tripId)
-                    .headers(headers -> headers.setBearerAuth(apiKey))
+                    .headers(this::setAiHeaders)
                     .retrieve()
                     .body(JsonNode.class);
         } catch (RestClientException e) {
@@ -247,6 +249,15 @@ public class TripPhotoAnalysisService {
         );
     }
 
+    private void setAiHeaders(HttpHeaders headers) {
+        headers.setBearerAuth(apiKey);
+
+        String requestId = MDC.get("request_id");
+        if (requestId != null) {
+            headers.set("X-Request-ID", requestId);
+        }
+    }
+
     private void waitUntilReady() {
         Instant deadline = Instant.now().plusSeconds(180);
 
@@ -254,7 +265,7 @@ public class TripPhotoAnalysisService {
             try {
                 JsonNode health = healthClient.get()
                         .uri("/health")
-                        .headers(headers -> headers.setBearerAuth(apiKey))
+                        .headers(this::setAiHeaders)
                         .retrieve()
                         .body(JsonNode.class);
 

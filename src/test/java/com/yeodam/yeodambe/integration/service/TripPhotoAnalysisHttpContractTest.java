@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.integration.service.request.TripPhotoAnalysisRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -37,6 +38,7 @@ class TripPhotoAnalysisHttpContractTest {
 
     @AfterEach
     void tearDown() {
+        MDC.clear();
         server.stop(0);
     }
 
@@ -47,11 +49,13 @@ class TripPhotoAnalysisHttpContractTest {
         AtomicReference<String> healthAuthorization = new AtomicReference<>();
         AtomicReference<String> healthUpgrade = new AtomicReference<>();
         AtomicReference<String> healthHttp2Settings = new AtomicReference<>();
+        AtomicReference<String> healthRequestId = new AtomicReference<>();
         AtomicReference<String> analysisMethod = new AtomicReference<>();
         AtomicReference<String> analysisPath = new AtomicReference<>();
         AtomicReference<String> analysisAuthorization = new AtomicReference<>();
         AtomicReference<String> analysisUpgrade = new AtomicReference<>();
         AtomicReference<String> analysisHttp2Settings = new AtomicReference<>();
+        AtomicReference<String> analysisRequestId = new AtomicReference<>();
         AtomicReference<JsonNode> analysisBody = new AtomicReference<>();
 
         server.createContext("/health", exchange -> {
@@ -60,6 +64,7 @@ class TripPhotoAnalysisHttpContractTest {
             healthAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             healthUpgrade.set(exchange.getRequestHeaders().getFirst("Upgrade"));
             healthHttp2Settings.set(exchange.getRequestHeaders().getFirst("HTTP2-Settings"));
+            healthRequestId.set(exchange.getRequestHeaders().getFirst("X-Request-ID"));
             respond(exchange, "{\"status\":\"ok\",\"model_loaded\":true}");
         });
         server.createContext("/trips/7/process", exchange -> {
@@ -68,6 +73,7 @@ class TripPhotoAnalysisHttpContractTest {
             analysisAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             analysisUpgrade.set(exchange.getRequestHeaders().getFirst("Upgrade"));
             analysisHttp2Settings.set(exchange.getRequestHeaders().getFirst("HTTP2-Settings"));
+            analysisRequestId.set(exchange.getRequestHeaders().getFirst("X-Request-ID"));
             analysisBody.set(json.readTree(exchange.getRequestBody()));
             respond(exchange, """
                     {"trip_id":7,"execution_id":"run-1","status":"COMPLETED",
@@ -82,6 +88,8 @@ class TripPhotoAnalysisHttpContractTest {
                 Duration.ofSeconds(1), Duration.ofSeconds(1),
                 Duration.ofSeconds(1), Duration.ofSeconds(1));
 
+        MDC.put("request_id", "request-123");
+
         JsonNode result = service.analyze(7L, "run-1", request, () -> true);
 
         verify(starter).ensureRunning();
@@ -90,13 +98,47 @@ class TripPhotoAnalysisHttpContractTest {
         assertEquals("Bearer test-api-key", healthAuthorization.get());
         assertNull(healthUpgrade.get());
         assertNull(healthHttp2Settings.get());
+        assertEquals("request-123", healthRequestId.get());
         assertEquals("POST", analysisMethod.get());
         assertEquals("/trips/7/process", analysisPath.get());
         assertEquals("Bearer test-api-key", analysisAuthorization.get());
         assertNull(analysisUpgrade.get());
         assertNull(analysisHttp2Settings.get());
+        assertEquals("request-123", analysisRequestId.get());
         assertEquals(json.readTree(json.writeValueAsString(request)), analysisBody.get());
         assertTrue(result.path("places").isArray());
+    }
+
+    @Test
+    void AI_상태조회와_취소에도_요청_ID를_전달한다() {
+        AtomicReference<String> statusRequestId = new AtomicReference<>();
+        AtomicReference<String> cancelRequestId = new AtomicReference<>();
+
+        server.createContext("/trips/7/process", exchange -> {
+            if ("GET".equals(exchange.getRequestMethod())) {
+                statusRequestId.set(exchange.getRequestHeaders().getFirst("X-Request-ID"));
+                respond(exchange, """
+                        {"trip_id":7,"status":"QUEUED","progress":null,
+                         "current_step":null,"result":null,"error":null}
+                        """);
+                return;
+            }
+
+            cancelRequestId.set(exchange.getRequestHeaders().getFirst("X-Request-ID"));
+            respond(exchange, "{" + "\"trip_id\":7,\"status\":\"CANCELED\"}");
+        });
+
+        TripPhotoAnalysisService service = new TripPhotoAnalysisService(
+                RestClient.builder(), mock(AiEc2Starter.class), baseUrl(), "test-api-key",
+                Duration.ofSeconds(1), Duration.ofSeconds(1),
+                Duration.ofSeconds(1), Duration.ofSeconds(1));
+        MDC.put("request_id", "request-456");
+
+        service.findStatus(7L);
+        service.cancel(7L);
+
+        assertEquals("request-456", statusRequestId.get());
+        assertEquals("request-456", cancelRequestId.get());
     }
 
     private TripPhotoAnalysisRequest request() {

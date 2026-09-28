@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
+import com.yeodam.yeodambe.integration.service.request.TripPhotoAnalysisRequest;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.entity.*;
@@ -22,6 +23,7 @@ import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -297,6 +299,109 @@ class TripAttachmentServiceTest {
         verifyNoInteractions(statuses);
     }
 
+    @Test
+    void 중간_배치는_저장만_완료하고_AI를_호출하지_않는다() {
+        InitialUploadExecutionRegistry registry = new InitialUploadExecutionRegistry();
+        TripAttachmentService batchService = new TripAttachmentService(
+                trips, regions, storage, transactions, derivatives, analysis, results, registry, statuses);
+        MockMultipartFile file = jpeg();
+        StoredFile original = original(20L, "original-1");
+        TripAttachment attachment = attachment(30L, 20L, "analyze-1", "preview-1");
+        DerivedPhotoKeys keys = new DerivedPhotoKeys("original-1", "analyze-1", "preview-1");
+        when(trips.findById(7L)).thenReturn(Optional.of(trip(1L)));
+        when(transactions.reserveBatch(7L, 1L, 1, 2)).thenAnswer(invocation -> {
+            var reserved = registry.reserveBatch(7L, 1, 2);
+            return new TripAttachmentTransactionService.Reservation(reserved.executionId(), List.of());
+        });
+        when(storage.store(anyString(), eq(file))).thenReturn("original-1");
+        when(derivatives.createAll(anyString(), eq(List.of("original-1"))))
+                .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
+        when(transactions.saveFilesAndAttachments(eq(7L), eq(1L), anyString(), eq(List.of(file)),
+                eq(List.of("original-1")), eq(List.of("image/jpeg")), eq(List.of(keys))))
+                .thenReturn(new TripAttachmentTransactionService.SavedAttachments(
+                        List.of(original), List.of(attachment)));
+
+        var response = batchService.uploadInitialAttachments(7L, 1L, List.of(file), 1, 2, false);
+
+        assertTrue(response.isEmpty());
+        verifyNoInteractions(analysis, results);
+        verify(storage).retain(List.of("original-1", "analyze-1", "preview-1"));
+        assertEquals(InitialUploadExecutionRegistry.State.UPLOADING, registry.snapshot(7L).state());
+    }
+
+    @Test
+    void 마지막_배치는_모든_배치의_첨부로_AI를_한번_호출한다() {
+        InitialUploadExecutionRegistry registry = new InitialUploadExecutionRegistry();
+        TripAttachmentService batchService = new TripAttachmentService(
+                trips, regions, storage, transactions, derivatives, analysis, results, registry, statuses);
+        Trip trip = trip(1L);
+        MockMultipartFile firstFile = jpeg("first.jpg");
+        MockMultipartFile secondFile = jpeg("second.jpg");
+        StoredFile firstOriginal = original(20L, "original-1");
+        StoredFile secondOriginal = original(21L, "original-2");
+        TripAttachment firstAttachment = attachment(30L, 20L, "analyze-1", "preview-1");
+        TripAttachment secondAttachment = attachment(31L, 21L, "analyze-2", "preview-2");
+        DerivedPhotoKeys firstKeys = new DerivedPhotoKeys("original-1", "analyze-1", "preview-1");
+        DerivedPhotoKeys secondKeys = new DerivedPhotoKeys("original-2", "analyze-2", "preview-2");
+        TripRegion region = new TripRegion(trip, "50110", "제주특별자치도 제주시",
+                new BigDecimal("33.5"), new BigDecimal("126.5"));
+        var aiResult = mock(tools.jackson.databind.JsonNode.class);
+
+        when(trips.findById(7L)).thenReturn(Optional.of(trip));
+        when(transactions.reserveBatch(eq(7L), eq(1L), anyInt(), eq(2))).thenAnswer(invocation -> {
+            int batchNo = invocation.getArgument(2);
+            var reserved = registry.reserveBatch(7L, batchNo, 2);
+            return new TripAttachmentTransactionService.Reservation(reserved.executionId(), List.of());
+        });
+        when(storage.store(anyString(), eq(firstFile))).thenReturn("original-1");
+        when(storage.store(anyString(), eq(secondFile))).thenReturn("original-2");
+        when(derivatives.createAll(anyString(), eq(List.of("original-1"))))
+                .thenReturn(CompletableFuture.completedFuture(List.of(firstKeys)));
+        when(derivatives.createAll(anyString(), eq(List.of("original-2"))))
+                .thenReturn(CompletableFuture.completedFuture(List.of(secondKeys)));
+        when(transactions.saveFilesAndAttachments(eq(7L), eq(1L), anyString(), eq(List.of(firstFile)),
+                eq(List.of("original-1")), eq(List.of("image/jpeg")), eq(List.of(firstKeys))))
+                .thenReturn(new TripAttachmentTransactionService.SavedAttachments(
+                        List.of(firstOriginal), List.of(firstAttachment)));
+        when(transactions.saveFilesAndAttachments(eq(7L), eq(1L), anyString(), eq(List.of(secondFile)),
+                eq(List.of("original-2")), eq(List.of("image/jpeg")), eq(List.of(secondKeys))))
+                .thenReturn(new TripAttachmentTransactionService.SavedAttachments(
+                        List.of(secondOriginal), List.of(secondAttachment)));
+        when(regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L)).thenReturn(List.of(region));
+        when(analysis.analyze(eq(7L), anyString(), any(), any())).thenReturn(aiResult);
+        when(statuses.findStatus(7L, 1L)).thenReturn(new TripProcessingStatusResponse(
+                7L, ProcessingStatus.COMPLETED,
+                new TripProcessingStatusResponse.Progress(2, 2), null,
+                new TripProcessingStatusResponse.Result(7L, 1, 2, 0), null));
+
+        assertTrue(batchService.uploadInitialAttachments(
+                7L, 1L, List.of(firstFile), 1, 2, false).isEmpty());
+        var response = batchService.uploadInitialAttachments(
+                7L, 1L, List.of(secondFile), 2, 2, true);
+
+        assertEquals(ProcessingStatus.COMPLETED, response.orElseThrow().status());
+        var request = org.mockito.ArgumentCaptor.forClass(TripPhotoAnalysisRequest.class);
+        verify(analysis, times(1)).analyze(eq(7L), anyString(), request.capture(), any());
+        assertEquals(List.of(30L, 31L), request.getValue().attachments().stream()
+                .map(TripPhotoAnalysisRequest.Photo::tripAttachmentId).toList());
+        verify(results).saveCompleted(eq(7L), eq(1L), anyString(),
+                eq(List.of(firstAttachment, secondAttachment)), eq(aiResult));
+    }
+
+    @Test
+    void 배치_파일_합계가_145MiB를_넘으면_413으로_거부한다() {
+        when(trips.findById(7L)).thenReturn(Optional.of(trip(1L)));
+        var first = mock(org.springframework.web.multipart.MultipartFile.class);
+        var second = mock(org.springframework.web.multipart.MultipartFile.class);
+        when(first.getSize()).thenReturn(100L * 1024 * 1024);
+        when(second.getSize()).thenReturn(45L * 1024 * 1024 + 1);
+
+        assertThrows(AttachmentUploadLimitExceededException.class,
+                () -> service.uploadInitialAttachments(
+                        7L, 1L, List.of(first, second), 1, 2, true));
+        verifyNoInteractions(storage, transactions);
+    }
+
     private Trip trip(Long owner) {
         Trip trip = new Trip(owner, "여행", LocalDate.now(), LocalDate.now());
         ReflectionTestUtils.setField(trip, "id", 7L);
@@ -304,8 +409,24 @@ class TripAttachmentServiceTest {
     }
 
     private MockMultipartFile jpeg() {
-        return new MockMultipartFile("attachments[]", "photo.jpg", "image/jpeg",
+        return jpeg("photo.jpg");
+    }
+
+    private MockMultipartFile jpeg(String name) {
+        return new MockMultipartFile("attachments[]", name, "image/jpeg",
                 new byte[]{(byte) 0xff, (byte) 0xd8, (byte) 0xff, (byte) 0xd9});
+    }
+
+    private StoredFile original(Long id, String key) {
+        StoredFile file = StoredFile.uploaded(1L, "photo.jpg", key, "image/jpeg");
+        ReflectionTestUtils.setField(file, "id", id);
+        return file;
+    }
+
+    private TripAttachment attachment(Long id, Long fileId, String analyzeKey, String previewKey) {
+        TripAttachment attachment = TripAttachment.initial(7L, fileId, analyzeKey, previewKey);
+        ReflectionTestUtils.setField(attachment, "id", id);
+        return attachment;
     }
 
     private TripAttachmentTransactionService.Reservation reservation() {

@@ -29,6 +29,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -145,9 +146,9 @@ class TripAttachmentControllerTest {
     }
 
     @Test
-    void multipart_attachments_필드를_여행_아이디와_함께_받는다() throws Exception {
-        when(service.uploadInitialAttachments(eq(7L), eq(1L), anyList()))
-                .thenReturn(completed(1));
+    void 마지막_배치_필드를_서비스에_전달하고_완료_응답을_반환한다() throws Exception {
+        when(service.uploadInitialAttachments(eq(7L), eq(1L), anyList(), eq(2), eq(11), eq(true)))
+                .thenReturn(Optional.of(completed(11)));
 
         MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(new HandlerMethodArgumentResolver() {
@@ -163,41 +164,64 @@ class TripAttachmentControllerTest {
                     }
                 })
                 .build()
-                .perform(multipart("/trips/7/initial-attachments").file(photo()))
+                .perform(multipart("/trips/7/initial-attachments")
+                        .file(photo())
+                        .param("batchNo", "2")
+                        .param("totalAttachmentCount", "11")
+                        .param("complete", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("TRIP_PROCESSING_STATUS_FOUND"))
                 .andExpect(jsonPath("$.data.tripId").value(7))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"))
-                .andExpect(jsonPath("$.data.progress.done").value(1))
-                .andExpect(jsonPath("$.data.progress.total").value(1))
+                .andExpect(jsonPath("$.data.progress.done").value(11))
+                .andExpect(jsonPath("$.data.progress.total").value(11))
                 .andExpect(jsonPath("$.data.currentStep").doesNotExist())
                 .andExpect(jsonPath("$.data.result.tripId").value(7))
                 .andExpect(jsonPath("$.data.result.placeFolderCount").value(1))
-                .andExpect(jsonPath("$.data.result.classifiedAttachmentCount").value(1))
+                .andExpect(jsonPath("$.data.result.classifiedAttachmentCount").value(11))
                 .andExpect(jsonPath("$.data.result.unclassifiedAttachmentCount").value(0))
                 .andExpect(jsonPath("$.data.error").doesNotExist());
 
         verify(service).uploadInitialAttachments(eq(7L), eq(1L), argThat(files ->
-                files.size() == 1 && files.getFirst().getOriginalFilename().equals("photo.jpg")));
+                        files.size() == 1 && files.getFirst().getOriginalFilename().equals("photo.jpg")),
+                eq(2), eq(11), eq(true));
+    }
+
+    @Test
+    void 중간_배치가_저장되면_본문_없이_204를_반환한다() throws Exception {
+        when(service.uploadInitialAttachments(eq(7L), eq(1L), anyList(), eq(1), eq(11), eq(false)))
+                .thenReturn(Optional.empty());
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(multipart("/trips/7/initial-attachments")
+                        .file(photo())
+                        .param("batchNo", "1")
+                        .param("totalAttachmentCount", "11")
+                        .param("complete", "false"))
+                .andExpect(status().isNoContent())
+                .andExpect(jsonPath("$").doesNotExist());
     }
 
     @Test
     void 첨부가_누락되거나_비어_있으면_업로드를_시작하지_않는다() {
         for (List<MultipartFile> files : List.of(Collections.<MultipartFile>emptyList(), List.<MultipartFile>of(emptyPhoto()))) {
-            var response = controller.uploadInitialAttachments(7L, jwt(), files);
+            var response = controller.uploadInitialAttachments(7L, jwt(), files, 1, 1, true);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
             assertThat(response.getBody().message()).isEqualTo("INVALID_ATTACHMENT_UPLOAD");
         }
-        var missing = controller.uploadInitialAttachments(7L, jwt(), null);
+        var missing = controller.uploadInitialAttachments(7L, jwt(), null, 1, 1, true);
         assertThat(missing.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(missing.getBody().message()).isEqualTo("INVALID_ATTACHMENT_UPLOAD");
         verifyNoInteractions(service);
     }
 
     @Test
-    void 이백한_장은_서비스에_전달하지_않는다() {
-        var response = controller.uploadInitialAttachments(7L, jwt(), Collections.nCopies(201, photo()));
+    void 열한_장은_서비스에_전달하지_않는다() {
+        var response = controller.uploadInitialAttachments(
+                7L, jwt(), Collections.nCopies(11, photo()), 1, 11, true);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONTENT_TOO_LARGE);
         assertThat(response.getBody().message()).isEqualTo("ATTACHMENT_UPLOAD_LIMIT_EXCEEDED");
@@ -205,23 +229,27 @@ class TripAttachmentControllerTest {
     }
 
     @Test
-    void 이백_장은_서비스에_전달한다() {
-        var files = Collections.<MultipartFile>nCopies(200, photo());
-        when(service.uploadInitialAttachments(7L, 1L, files))
-                .thenReturn(completed(200));
-
-        var response = controller.uploadInitialAttachments(7L, jwt(), files);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody().data().progress().total()).isEqualTo(200);
-        verify(service).uploadInitialAttachments(7L, 1L, files);
+    void 배치_필드가_누락되거나_범위를_벗어나면_400을_반환한다() {
+        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), null, 1, true)
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), 0, 1, true)
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), 1, null, true)
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), 1, 0, true)
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), 1, 201, true)
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), 1, 1, null)
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(service);
     }
 
     @Test
     void AI가_명시적으로_실패하면_200과_FAILED_오류를_반환한다() {
         var files = List.<MultipartFile>of(photo());
-        when(service.uploadInitialAttachments(7L, 1L, files))
-                .thenReturn(new TripProcessingStatusResponse(
+        when(service.uploadInitialAttachments(7L, 1L, files, 1, 1, true))
+                .thenReturn(Optional.of(new TripProcessingStatusResponse(
                         7L,
                         ProcessingStatus.FAILED,
                         new TripProcessingStatusResponse.Progress(12, 128),
@@ -229,9 +257,9 @@ class TripAttachmentControllerTest {
                         null,
                         new TripProcessingStatusResponse.Error(
                                 "AI_PROCESSING_FAILED", "첨부 처리에 실패했습니다.")
-                ));
+                )));
 
-        var response = controller.uploadInitialAttachments(7L, jwt(), files);
+        var response = controller.uploadInitialAttachments(7L, jwt(), files, 1, 1, true);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");

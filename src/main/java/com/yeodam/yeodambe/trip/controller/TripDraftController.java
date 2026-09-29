@@ -11,13 +11,11 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
 @RestController
 @RequiredArgsConstructor
 public class TripDraftController {
     private final TripDraftService drafts;
-    private final ObjectMapper mapper;
 
     @GetMapping("/trip-drafts/me")
     public ResponseEntity<ApiResponse<TripDraftResponse>> find(@AuthenticationPrincipal Jwt jwt) {
@@ -29,7 +27,7 @@ public class TripDraftController {
     public ResponseEntity<ApiResponse<TripDraftResponse>> save(@RequestBody JsonNode body,
                                                                @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(new ApiResponse<>(SuccessMessage.TRIP_DRAFT_SAVED,
-                drafts.save(Long.valueOf(jwt.getSubject()), TripDraftSaveRequest.fromJson(body, mapper))));
+                drafts.save(Long.valueOf(jwt.getSubject()), TripDraftSaveRequest.fromJson(body))));
     }
 
     @DeleteMapping("/trip-drafts/me")

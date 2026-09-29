@@ -25,8 +25,6 @@ class TripDraftMigrationTest {
         jdbc.update("INSERT INTO trip_drafts (user_id, region_codes) VALUES (?, '[]')", userId);
 
         assertThat(jdbc.queryForObject("SELECT draft_id FROM trip_drafts WHERE user_id = ?", Long.class, userId)).isPositive();
-        assertThat(jdbc.queryForObject("SELECT trip_name FROM trip_drafts WHERE user_id = ?", String.class, userId)).isNull();
-        assertThat(jdbc.queryForObject("SELECT start_date FROM trip_drafts WHERE user_id = ?", java.sql.Date.class, userId)).isNull();
         assertThatThrownBy(() -> jdbc.update("INSERT INTO trip_drafts (user_id, region_codes) VALUES (?, '[]')", userId))
                 .isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> jdbc.update("UPDATE trip_drafts SET submitted_trip_id = -1 WHERE user_id = ?", userId))

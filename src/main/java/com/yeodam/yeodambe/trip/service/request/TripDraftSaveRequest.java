@@ -2,14 +2,13 @@ package com.yeodam.yeodambe.trip.service.request;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripDraftRequestException;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
 public record TripDraftSaveRequest(String tripName, List<String> regionCodes, LocalDate startDate, LocalDate endDate) {
-    public static TripDraftSaveRequest fromJson(JsonNode root, ObjectMapper mapper) {
+    public static TripDraftSaveRequest fromJson(JsonNode root) {
         if (root == null || !root.isObject() || root.size() != 4 || !root.has("tripName")
                 || !root.has("regionCodes") || !root.has("startDate") || !root.has("endDate")) {
             throw new InvalidTripDraftRequestException();

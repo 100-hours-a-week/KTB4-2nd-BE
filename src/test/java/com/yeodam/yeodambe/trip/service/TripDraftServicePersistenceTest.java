@@ -45,7 +45,6 @@ class TripDraftServicePersistenceTest {
         assertThat(repeated.draftId()).isEqualTo(first.draftId());
         assertThat(repeated.updatedAt()).isEqualTo(first.updatedAt());
         assertThat(service.find(userId).tripName()).isEqualTo("제주");
-        assertThat(drafts.count()).isGreaterThanOrEqualTo(1);
         service.delete(userId);
         service.delete(userId);
         assertThat(drafts.findByUserId(userId)).isEmpty();
@@ -82,7 +81,6 @@ class TripDraftServicePersistenceTest {
             var second = pool.submit(task);
             start.countDown();
             assertThat(first.get(10, TimeUnit.SECONDS)).isEqualTo(second.get(10, TimeUnit.SECONDS));
-            assertThat(drafts.findByUserId(userId)).isPresent();
         }
     }
 

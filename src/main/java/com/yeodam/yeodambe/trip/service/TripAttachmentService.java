@@ -31,6 +31,7 @@ public class TripAttachmentService {
     private final TripAttachmentTransactionService transactions;
     private final TripAttachmentDerivativeService derivatives;
     private final TripPhotoAnalysisService analysis;
+    private final TripPlaceNameService placeNames;
     private final TripAnalysisResultService results;
     private final InitialUploadExecutionRegistry executions;
     private final TripProcessingStatusService statuses;
@@ -114,12 +115,13 @@ public class TripAttachmentService {
                     analysisRequest(executionId, trip, savedAttachments, derivedKeys),
                     () -> executions.markAnalysisStarted(tripId, executionId)
             );
+            Map<String, String> resolvedNames = placeNames.resolve(tripId, executionId, result);
 
             failureStage = "storage_retain";
             storage.retain(List.copyOf(objectKeys(originalsKeys, derivedKeys)));
 
             failureStage = "result_persist";
-            results.saveCompleted(tripId, userId, executionId, savedAttachments, result);
+            results.saveCompleted(tripId, userId, executionId, savedAttachments, result, resolvedNames);
             log.atInfo()
                     .addKeyValue("event", "trip_creation")
                     .addKeyValue("result", "success")
@@ -287,9 +289,9 @@ public class TripAttachmentService {
                     analysisRequest(executionId, trip, allAttachments, allMetadata),
                     () -> executions.markAnalysisStarted(tripId, executionId)
             );
-
             failureStage = "result_persist";
-            results.saveCompleted(tripId, userId, executionId, allAttachments, result);
+            Map<String, String> resolvedNames = placeNames.resolve(tripId, executionId, result);
+            results.saveCompleted(tripId, userId, executionId, allAttachments, result, resolvedNames);
             resultSaved = true;
 
             log.atInfo()

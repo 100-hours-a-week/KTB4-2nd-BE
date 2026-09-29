@@ -95,6 +95,7 @@ class WithdrawalIntegrationTest {
                 TripDetailPlace.fromAnalysis(
                         trip.getId(),
                         1,
+                        "제주시",
                         new BigDecimal("33.5"),
                         new BigDecimal("126.5"),
                         LocalDateTime.now(),

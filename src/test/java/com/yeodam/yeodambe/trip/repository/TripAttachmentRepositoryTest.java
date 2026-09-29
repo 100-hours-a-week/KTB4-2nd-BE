@@ -51,6 +51,7 @@ class TripAttachmentRepositoryTest {
         TripDetailPlace place = tripDetailPlaceRepository.save(TripDetailPlace.fromAnalysis(
                 trip.getId(),
                 1,
+                "제주시",
                 new BigDecimal("33.50000000"),
                 new BigDecimal("126.50000000"),
                 LocalDateTime.of(2026, 9, 22, 10, 0),

@@ -29,6 +29,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -148,7 +149,8 @@ class TripAttachmentTransactionPersistenceTest {
                 user.getUserId(),
                 executionId,
                 List.of(classified, invalid),
-                result
+                result,
+                Map.of("p1", "성산일출봉")
         )).isInstanceOf(IllegalStateException.class)
                 .hasMessage("AI 사진 이슈가 올바르지 않습니다.");
 
@@ -192,7 +194,8 @@ class TripAttachmentTransactionPersistenceTest {
 
         analysisResults.saveCompleted(
                 trip.getId(), user.getUserId(), executionId,
-                List.of(low, highFirst, highLater), result);
+                List.of(low, highFirst, highLater), result,
+                Map.of("p1", "성산일출봉"));
 
         assertThat(places.findAll())
                 .filteredOn(place -> place.getTripId().equals(trip.getId()))
@@ -243,7 +246,8 @@ class TripAttachmentTransactionPersistenceTest {
 
         analysisResults.saveCompleted(
                 trip.getId(), user.getUserId(), executionId,
-                List.of(lowRepresentative, excludedHigh, highFirst, highLater), result);
+                List.of(lowRepresentative, excludedHigh, highFirst, highLater), result,
+                Map.of("p1", "제주", "p2", "부산", "p3", "서울"));
 
         assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo("preview-excluded");

@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.client.KakaoLocalClient;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
@@ -79,6 +80,7 @@ public class TripPlaceNameService {
             List<Map.Entry<Coordinate, Place>> coordinates
     ) {
         Map<Coordinate, KakaoLocalClient.LookupResult> results = new HashMap<>();
+        Map<String, String> callerMdc = MDC.getCopyOfContextMap();
         ExecutorService executor = Executors.newFixedThreadPool(maxConcurrency);
         try {
             for (int from = 0; from < coordinates.size(); from += maxConcurrency) {
@@ -89,7 +91,15 @@ public class TripPlaceNameService {
                 List<Map.Entry<Coordinate, Place>> chunk = coordinates.subList(
                         from, Math.min(from + maxConcurrency, coordinates.size()));
                 List<Future<KakaoLocalClient.LookupResult>> futures = chunk.stream()
-                        .map(entry -> executor.submit(() -> lookup(tripId, executionId, entry.getValue())))
+                        .map(entry -> executor.submit(() -> {
+                            if (callerMdc == null) MDC.clear();
+                            else MDC.setContextMap(callerMdc);
+                            try {
+                                return lookup(tripId, executionId, entry.getValue());
+                            } finally {
+                                MDC.clear();
+                            }
+                        }))
                         .toList();
 
                 for (int i = 0; i < chunk.size(); i++) {

@@ -31,5 +31,7 @@ class TripDraftMigrationTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> jdbc.update("UPDATE trip_drafts SET submitted_trip_id = -1 WHERE user_id = ?", userId))
                 .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("INSERT INTO trip_drafts (user_id, region_codes) VALUES (-1, '[]')"))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 }

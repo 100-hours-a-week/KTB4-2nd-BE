@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -12,7 +13,8 @@ import java.time.LocalDateTime;
 import java.util.Objects;
 
 @Entity
-@Table(name = "trip_drafts")
+@Table(name = "trip_drafts", uniqueConstraints = @UniqueConstraint(
+        name = "uk_trip_drafts_user", columnNames = "user_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class TripDraft {
@@ -21,8 +23,13 @@ public class TripDraft {
     @Column(name = "draft_id")
     private Long id;
 
-    @Column(name = "user_id", nullable = false, unique = true)
+    @Column(name = "user_id", nullable = false)
     private Long userId;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false, insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "fk_trip_drafts_user"))
+    private User user;
 
     @Column(name = "trip_name", length = 10)
     private String tripName;
@@ -38,6 +45,11 @@ public class TripDraft {
 
     @Column(name = "submitted_trip_id")
     private Long submittedTripId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "submitted_trip_id", insertable = false, updatable = false,
+            foreignKey = @ForeignKey(name = "fk_trip_drafts_submitted_trip"))
+    private Trip submittedTrip;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

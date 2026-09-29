@@ -10,6 +10,7 @@ import com.yeodam.yeodambe.user.service.UserRegistrationService;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -64,6 +65,22 @@ class YeodamBeApplicationTests {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
+    }
+
+    @Test
+    void 실제_필터_체인에서_정상_요청과_인증_거부_요청의_ID를_격리한다() throws Exception {
+        mockMvc.perform(get("/actuator/health")
+                        .header("X-Request-ID", "request-123"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Request-ID", "request-123"));
+        assertThat(MDC.get("request_id")).isNull();
+
+        MvcResult unauthorized = mockMvc.perform(get("/trips"))
+                .andExpect(status().isUnauthorized())
+                .andReturn();
+        assertThat(UUID.fromString(unauthorized.getResponse().getHeader("X-Request-ID")))
+                .isNotNull();
+        assertThat(MDC.get("request_id")).isNull();
     }
 
     @Test

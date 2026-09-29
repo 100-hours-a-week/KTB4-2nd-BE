@@ -1,8 +1,13 @@
 package com.yeodam.yeodambe.trip.service;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.trip.client.KakaoLocalClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -10,6 +15,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -24,6 +30,7 @@ class TripPlaceNameServiceTest {
     @AfterEach
     void clearInterrupt() {
         Thread.interrupted();
+        MDC.clear();
     }
 
     @Test
@@ -149,6 +156,55 @@ class TripPlaceNameServiceTest {
 
         assertThat(names).containsExactly(Map.entry("p1", "장소 1"), Map.entry("p2", "장소 2"));
         verify(client, times(2)).lookup(any(), any());
+    }
+
+    @Test
+    void 요청_ID를_장소_조회_작업과_실패_로그에_전달한다() {
+        TripPlaceNameService service = service(1);
+        when(executions.isCurrent(7L, "run")).thenReturn(true);
+        AtomicReference<String> workerRequestId = new AtomicReference<>();
+        when(client.lookup(any(), any())).thenAnswer(call -> {
+            workerRequestId.set(MDC.get("request_id"));
+            return failure(KakaoLocalClient.Failure.AUTH);
+        });
+        Logger logger = (Logger) LoggerFactory.getLogger(TripPlaceNameService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            MDC.put("request_id", "request-123");
+            assertThat(service.resolve(7L, "run", onePlace())).containsEntry("p1", "장소 1");
+
+            assertThat(workerRequestId.get()).isEqualTo("request-123");
+            ILoggingEvent event = appender.list.stream()
+                    .filter(log -> log.getFormattedMessage().startsWith("Kakao 장소명 인증 실패"))
+                    .findFirst().orElseThrow();
+            assertThat(event.getMDCPropertyMap()).containsEntry("request_id", "request-123");
+            assertThat(MDC.get("request_id")).isEqualTo("request-123");
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    @Test
+    void 요청_ID가_없으면_이전_작업의_MDC를_다음_조회에_남기지_않는다() {
+        TripPlaceNameService service = service(1);
+        when(executions.isCurrent(7L, "run")).thenReturn(true);
+        AtomicInteger calls = new AtomicInteger();
+        AtomicReference<String> secondRequestId = new AtomicReference<>();
+        when(client.lookup(any(), any())).thenAnswer(call -> {
+            if (calls.incrementAndGet() == 1) MDC.put("request_id", "stale-request");
+            else secondRequestId.set(MDC.get("request_id"));
+            return success("이름", "지역");
+        });
+
+        MDC.clear();
+        service.resolve(7L, "run", places(2));
+
+        assertThat(calls).hasValue(2);
+        assertThat(secondRequestId.get()).isNull();
     }
 
     @Test

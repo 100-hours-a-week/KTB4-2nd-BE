@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.common.logging;
 
+import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
@@ -10,6 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RequestIdFilterTest {
 
@@ -57,9 +59,29 @@ class RequestIdFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-Request-ID", "invalid request id");
         MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<String> requestIdDuringProcessing = new AtomicReference<>();
 
-        filter.doFilter(request, response, (ignoredRequest, ignoredResponse) -> { });
+        filter.doFilter(request, response, (ignoredRequest, ignoredResponse) ->
+                requestIdDuringProcessing.set(MDC.get("request_id"))
+        );
 
-        assertThat(UUID.fromString(response.getHeader("X-Request-ID"))).isNotNull();
+        String responseRequestId = response.getHeader("X-Request-ID");
+        assertThat(UUID.fromString(responseRequestId)).isNotNull();
+        assertThat(requestIdDuringProcessing.get()).isEqualTo(responseRequestId);
+        assertThat(MDC.get("request_id")).isNull();
+    }
+
+    @Test
+    void 후속_처리에서_예외가_나도_MDC를_비운다() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("X-Request-ID", "request-123");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThatThrownBy(() -> filter.doFilter(request, response, (ignoredRequest, ignoredResponse) -> {
+            assertThat(MDC.get("request_id")).isEqualTo("request-123");
+            throw new ServletException("처리 실패");
+        })).isInstanceOf(ServletException.class);
+
+        assertThat(MDC.get("request_id")).isNull();
     }
 }

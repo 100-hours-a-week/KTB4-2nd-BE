@@ -47,7 +47,7 @@ class KakaoLoginStartServiceTest {
                         + "&client_id=test-client-id"
                         + "&redirect_uri=https%3A%2F%2Fapi.yeodam.test%2Fauth%2Fkakao%2Fcallback"
                         + "&state=fixed-state"
-                        + "&scope=profile_image"
+                        + "&scope=account_email,profile_image"
         );
 
         then(stateStore).should()

@@ -8,7 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import org.slf4j.MDC;
 
+import java.util.Map;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -36,8 +38,25 @@ public class TripAttachmentDerivativeService {
             new ArrayBlockingQueue<>(2)
     );
 
-    public CompletableFuture<List<DerivedPhotoKeys>> createAll(String executionId, List<String> originalKeys) {
-        return CompletableFuture.supplyAsync(() -> generateAll(executionId, originalKeys), worker);
+    public CompletableFuture<List<DerivedPhotoKeys>> createAll(
+            String executionId,
+            List<String> originalKeys
+    ) {
+        Map<String, String> callerMdc = MDC.getCopyOfContextMap();
+
+        return CompletableFuture.supplyAsync(() -> {
+            if (callerMdc == null) {
+                MDC.clear();
+            } else {
+                MDC.setContextMap(callerMdc);
+            }
+
+            try {
+                return generateAll(executionId, originalKeys);
+            } finally {
+                MDC.clear();
+            }
+        }, worker);
     }
 
     private List<DerivedPhotoKeys> generateAll(String executionId, List<String> originalKeys) {

@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
@@ -11,6 +14,7 @@ import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -66,6 +70,38 @@ class TripAttachmentServiceTest {
         assertThrows(TripInitialAttachmentUploadNotAllowedException.class,
                 () -> service.uploadInitialAttachments(7L, 1L, List.of(jpeg())));
         verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 예약_성공_후_여행_생성_시작_이벤트를_남긴다() {
+        when(trips.findById(7L)).thenReturn(Optional.of(trip(1L)));
+        when(transactions.reserve(7L, 1L)).thenReturn(reservation());
+        when(storage.store(eq("run"), any())).thenThrow(new IllegalStateException("S3"));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(TripAttachmentService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            assertThrows(IllegalStateException.class,
+                    () -> service.uploadInitialAttachments(7L, 1L, List.of(jpeg(), jpeg())));
+
+            ILoggingEvent event = appender.list.stream()
+                    .filter(logEvent -> "여행 생성 사진 처리를 시작했습니다."
+                            .equals(logEvent.getFormattedMessage()))
+                    .findFirst()
+                    .orElseThrow();
+
+            assertEquals("trip_creation", keyValue(event, "event"));
+            assertEquals("started", keyValue(event, "result"));
+            assertEquals(7L, keyValue(event, "trip_id"));
+            assertEquals("run", keyValue(event, "job_id"));
+            assertEquals(2, keyValue(event, "expected_count"));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 
     @Test
@@ -260,6 +296,14 @@ class TripAttachmentServiceTest {
         verify(executions).release(7L, "run");
     }
 
+    private Object keyValue(ILoggingEvent event, String key) {
+        return event.getKeyValuePairs().stream()
+                .filter(pair -> key.equals(pair.key))
+                .map(pair -> pair.value)
+                .findFirst()
+                .orElse(null);
+    }
+
     @Test
     void AI가_명시적으로_실패하면_정리한_뒤_FAILED_응답을_반환한다() {
         Trip trip = trip(1L);
@@ -378,19 +422,43 @@ class TripAttachmentServiceTest {
                 new TripProcessingStatusResponse.Progress(2, 2), null,
                 new TripProcessingStatusResponse.Result(7L, 1, 2, 0), null));
 
-        assertTrue(batchService.uploadInitialAttachments(
-                7L, 1L, List.of(firstFile), 1, 2, false).isEmpty());
-        var response = batchService.uploadInitialAttachments(
-                7L, 1L, List.of(secondFile), 2, 2, true);
+        Logger logger = (Logger) LoggerFactory.getLogger(TripAttachmentService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
 
-        assertEquals(ProcessingStatus.COMPLETED, response.orElseThrow().status());
-        var request = org.mockito.ArgumentCaptor.forClass(TripPhotoAnalysisRequest.class);
-        verify(analysis, times(1)).analyze(eq(7L), anyString(), request.capture(), any());
-        assertEquals(List.of(30L, 31L), request.getValue().attachments().stream()
-                .map(TripPhotoAnalysisRequest.Photo::tripAttachmentId).toList());
-        verify(results).saveCompleted(eq(7L), eq(1L), anyString(),
-                eq(List.of(firstAttachment, secondAttachment)), eq(aiResult), eq(Map.of()));
-        verify(placeNames).resolve(eq(7L), anyString(), eq(aiResult));
+        try {
+            assertTrue(batchService.uploadInitialAttachments(
+                    7L, 1L, List.of(firstFile), 1, 2, false).isEmpty());
+            var response = batchService.uploadInitialAttachments(
+                    7L, 1L, List.of(secondFile), 2, 2, true);
+
+            assertEquals(ProcessingStatus.COMPLETED, response.orElseThrow().status());
+            var request = org.mockito.ArgumentCaptor.forClass(TripPhotoAnalysisRequest.class);
+            verify(analysis, times(1)).analyze(eq(7L), anyString(), request.capture(), any());
+            assertEquals(List.of(30L, 31L), request.getValue().attachments().stream()
+                    .map(TripPhotoAnalysisRequest.Photo::tripAttachmentId).toList());
+            verify(results).saveCompleted(eq(7L), eq(1L), anyString(),
+                    eq(List.of(firstAttachment, secondAttachment)), eq(aiResult), eq(Map.of()));
+            verify(placeNames).resolve(eq(7L), anyString(), eq(aiResult));
+
+            ILoggingEvent started = appender.list.stream()
+                    .filter(event -> "trip_creation".equals(keyValue(event, "event")))
+                    .filter(event -> "started".equals(keyValue(event, "result")))
+                    .findFirst()
+                    .orElseThrow();
+            ILoggingEvent success = appender.list.stream()
+                    .filter(event -> "trip_creation".equals(keyValue(event, "event")))
+                    .filter(event -> "success".equals(keyValue(event, "result")))
+                    .findFirst()
+                    .orElseThrow();
+
+            assertEquals(2, keyValue(started, "expected_count"));
+            assertEquals(2, keyValue(success, "saved_count"));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 
     @Test

@@ -14,8 +14,14 @@ import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.RegionCatalog;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -35,7 +41,18 @@ class TripServiceTest {
     private TripAttachmentRepository tripAttachmentRepository;
     private TripAttachmentStorageClient tripAttachmentStorageClient;
     private RegionCatalog regionCatalog;
+    private TripAccessService tripAccessService;
     private TripService tripService;
+    private final Logger logger = (Logger) LoggerFactory.getLogger(TripService.class);
+    private ListAppender<ILoggingEvent> logAppender;
+
+    @AfterEach
+    void detachLogAppender() {
+        if (logAppender != null) {
+            logger.detachAppender(logAppender);
+            logAppender.stop();
+        }
+    }
 
     @BeforeEach
     void setUp() {
@@ -44,14 +61,60 @@ class TripServiceTest {
         tripAttachmentRepository = mock(TripAttachmentRepository.class);
         tripAttachmentStorageClient = mock(TripAttachmentStorageClient.class);
         regionCatalog = mock(RegionCatalog.class);
+        tripAccessService = mock(TripAccessService.class);
         tripService = new TripService(
                 tripRepository,
                 tripRegionRepository,
                 regionCatalog,
                 tripAttachmentRepository,
                 tripAttachmentStorageClient,
-                mock(TripAccessService.class)
+                tripAccessService
         );
+    }
+
+    @Test
+    void 완료된_여행_상세를_조회하면_성공_로그를_남긴다() {
+        startLogAppender();
+        Trip trip = mock(Trip.class);
+        when(trip.getId()).thenReturn(7L);
+        when(trip.getTripName()).thenReturn("제주 여행");
+        when(trip.getStartDate()).thenReturn(LocalDate.of(2026, 9, 1));
+        when(trip.getEndDate()).thenReturn(LocalDate.of(2026, 9, 3));
+        when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
+        when(trip.getFavorite()).thenReturn(true);
+        when(tripAccessService.requireReadableTrip(7L, 1L)).thenReturn(trip);
+        when(tripRegionRepository.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L))
+                .thenReturn(List.of());
+        when(tripAttachmentRepository.countActiveByTripId(7L)).thenReturn(3L);
+
+        var response = tripService.findTripDetail(7L, 1L);
+
+        assertThat(response.attachmentCount()).isEqualTo(3L);
+        ILoggingEvent success = logAppender.list.stream()
+                .filter(event -> "trip_view".equals(keyValue(event, "event")))
+                .filter(event -> "success".equals(keyValue(event, "result")))
+                .findFirst()
+                .orElseThrow();
+        assertThat(keyValue(success, "trip_id")).isEqualTo(7L);
+        assertThat(keyValue(success, "attachment_count")).isEqualTo(3L);
+    }
+
+    @Test
+    void 조회할_수_없는_여행이면_예상_실패_로그를_남긴다() {
+        startLogAppender();
+        when(tripAccessService.requireReadableTrip(7L, 1L))
+                .thenThrow(new TripNotFoundException());
+
+        assertThrows(TripNotFoundException.class,
+                () -> tripService.findTripDetail(7L, 1L));
+
+        ILoggingEvent failure = logAppender.list.stream()
+                .filter(event -> "trip_view".equals(keyValue(event, "event")))
+                .filter(event -> "failure".equals(keyValue(event, "result")))
+                .findFirst()
+                .orElseThrow();
+        assertThat(failure.getLevel()).isEqualTo(Level.WARN);
+        assertThat(keyValue(failure, "error_code")).isEqualTo("TRIP_NOT_FOUND");
     }
 
     @Test
@@ -343,5 +406,20 @@ class TripServiceTest {
         when(region.getLatitude()).thenReturn(new BigDecimal(latitude));
         when(region.getLongitude()).thenReturn(new BigDecimal(longitude));
         return region;
+    }
+
+    private void startLogAppender() {
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logAppender = appender;
+    }
+
+    private Object keyValue(ILoggingEvent event, String key) {
+        return event.getKeyValuePairs().stream()
+                .filter(pair -> key.equals(pair.key))
+                .map(pair -> pair.value)
+                .findFirst()
+                .orElse(null);
     }
 }

@@ -16,11 +16,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -75,6 +77,33 @@ class TripAttachmentDerivativeServiceTest {
         assertEquals("WEBP", new String(previewBytes.get(), 8, 4, StandardCharsets.US_ASCII));
         assertFalse(Files.exists(analyzePath.get()));
         assertFalse(Files.exists(previewPath.get()));
+    }
+
+    @Test
+    void Worker에_요청_ID를_전달하고_작업_종료_후_비운다() {
+        AtomicReference<String> firstRequestId = new AtomicReference<>();
+        AtomicReference<String> secondRequestId = new AtomicReference<>();
+
+        when(storage.open("original/key"))
+                .thenAnswer(invocation -> {
+                    if (firstRequestId.get() == null) {
+                        firstRequestId.set(org.slf4j.MDC.get("request_id"));
+                    } else {
+                        secondRequestId.set(org.slf4j.MDC.get("request_id"));
+                    }
+                    throw new IllegalStateException("테스트에서 작업을 중단합니다.");
+                });
+
+        org.slf4j.MDC.put("request_id", "request-789");
+        assertThrows(CompletionException.class,
+                () -> service.createAll("run-1", List.of("original/key")).join());
+
+        org.slf4j.MDC.clear();
+        assertThrows(CompletionException.class,
+                () -> service.createAll("run-2", List.of("original/key")).join());
+
+        assertEquals("request-789", firstRequestId.get());
+        assertEquals(null, secondRequestId.get());
     }
 
     private static byte[] jpeg() throws IOException {

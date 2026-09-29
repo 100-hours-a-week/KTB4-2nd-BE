@@ -1,5 +1,9 @@
 package com.yeodam.yeodambe.user.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.entity.OAuthAccount;
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
@@ -12,11 +16,13 @@ import com.yeodam.yeodambe.user.security.session.IssuedLoginSession;
 import com.yeodam.yeodambe.user.security.session.LoginSessionIssuer;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 
@@ -49,6 +55,8 @@ class LoginTicketExchangeServiceTest {
     private AccessTokenIssuer accessTokenIssuer;
 
     private LoginTicketExchangeService service;
+    private Logger serviceLogger;
+    private ListAppender<ILoggingEvent> logAppender;
 
     @BeforeEach
     void setUp() {
@@ -60,6 +68,16 @@ class LoginTicketExchangeServiceTest {
                 loginSessionIssuer,
                 accessTokenIssuer
         );
+        serviceLogger = (Logger) LoggerFactory.getLogger(LoginTicketExchangeService.class);
+        logAppender = new ListAppender<>();
+        logAppender.start();
+        serviceLogger.addAppender(logAppender);
+    }
+
+    @AfterEach
+    void tearDown() {
+        serviceLogger.detachAppender(logAppender);
+        logAppender.stop();
     }
 
     @Test
@@ -73,6 +91,13 @@ class LoginTicketExchangeServiceTest {
         then(loginTicketStore).should()
                 .consume("expired-ticket", "browser-1");
         verifyNoInteractions(oauthAccountRepository, loginSessionIssuer, accessTokenIssuer);
+
+        ILoggingEvent event = findAuthLoginEvent("failure");
+        assertThat(event.getLevel()).isEqualTo(Level.WARN);
+        assertThat(keyValue(event, "failure_stage")).isEqualTo("ticket_exchange");
+        assertThat(keyValue(event, "error_code")).isEqualTo("LOGIN_TICKET_INVALID_OR_EXPIRED");
+        assertThat(event.getFormattedMessage())
+                .doesNotContain("expired-ticket");
     }
 
     @Test
@@ -101,6 +126,12 @@ class LoginTicketExchangeServiceTest {
         then(profileTokenStore).should()
                 .save("new-profile-token", identity);
         verifyNoInteractions(loginSessionIssuer, accessTokenIssuer);
+
+        ILoggingEvent event = findAuthLoginEvent("onboarding_required");
+        assertThat(event.getLevel()).isEqualTo(Level.INFO);
+        assertThat(event.getFormattedMessage())
+                .doesNotContain("new-profile-token")
+                .doesNotContain("user@example.com");
     }
 
     @Test
@@ -149,5 +180,28 @@ class LoginTicketExchangeServiceTest {
                 "https://k.kakaocdn.net/current-thumbnail.jpg"
         );
         verifyNoInteractions(profileTokenGenerator, profileTokenStore);
+
+        ILoggingEvent event = findAuthLoginEvent("success");
+        assertThat(event.getLevel()).isEqualTo(Level.INFO);
+        assertThat(event.getFormattedMessage())
+                .doesNotContain("access-1")
+                .doesNotContain("refresh-1")
+                .doesNotContain("member@example.com");
+    }
+
+    private ILoggingEvent findAuthLoginEvent(String result) {
+        return logAppender.list.stream()
+                .filter(event -> "auth_login".equals(keyValue(event, "event")))
+                .filter(event -> result.equals(keyValue(event, "result")))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private Object keyValue(ILoggingEvent event, String key) {
+        return event.getKeyValuePairs().stream()
+                .filter(pair -> key.equals(pair.key))
+                .map(pair -> pair.value)
+                .findFirst()
+                .orElse(null);
     }
 }

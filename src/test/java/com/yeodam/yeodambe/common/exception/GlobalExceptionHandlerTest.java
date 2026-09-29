@@ -1,5 +1,9 @@
 package com.yeodam.yeodambe.common.exception;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
 import com.yeodam.yeodambe.user.exception.InvalidEmailException;
 import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
@@ -11,6 +15,7 @@ import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
 import com.yeodam.yeodambe.user.exception.OAuthStateCreateFailedException;
 import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.exception.UserNotFoundException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -20,6 +25,7 @@ import org.springframework.security.authentication.AuthenticationCredentialsNotF
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.slf4j.LoggerFactory;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -29,12 +35,24 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standal
 class GlobalExceptionHandlerTest {
 
     private MockMvc mockMvc;
+    private Logger handlerLogger;
+    private ListAppender<ILoggingEvent> logAppender;
 
     @BeforeEach
     void setUp() {
         mockMvc = standaloneSetup(new TestController())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
+        handlerLogger = (Logger) LoggerFactory.getLogger(GlobalExceptionHandler.class);
+        logAppender = new ListAppender<>();
+        logAppender.start();
+        handlerLogger.addAppender(logAppender);
+    }
+
+    @AfterEach
+    void tearDown() {
+        handlerLogger.detachAppender(logAppender);
+        logAppender.stop();
     }
 
     @ParameterizedTest
@@ -220,6 +238,21 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void 내부_오류는_구조화된_오류_코드와_stack_trace를_로그에_남긴다() throws Exception {
+        mockMvc.perform(get("/test/illegal-state"))
+                .andExpect(status().isInternalServerError());
+
+        ILoggingEvent event = logAppender.list.stream()
+                .filter(logEvent -> "api_exception".equals(keyValue(logEvent, "event")))
+                .filter(logEvent -> "INTERNAL_SERVER_ERROR".equals(keyValue(logEvent, "error_code")))
+                .findFirst()
+                .orElseThrow();
+
+        org.assertj.core.api.Assertions.assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+        org.assertj.core.api.Assertions.assertThat(event.getThrowableProxy()).isNotNull();
+    }
+
+    @Test
     void returnsUnauthorizedWhenAuthenticationIsMissing() throws Exception {
         mockMvc.perform(get("/test/authentication-missing"))
                 .andExpect(status().isUnauthorized())
@@ -384,5 +417,13 @@ class GlobalExceptionHandlerTest {
         void authenticationMissing() {
             throw new AuthenticationCredentialsNotFoundException("인증된 사용자가 없습니다.");
         }
+    }
+
+    private Object keyValue(ILoggingEvent event, String key) {
+        return event.getKeyValuePairs().stream()
+                .filter(pair -> key.equals(pair.key))
+                .map(pair -> pair.value)
+                .findFirst()
+                .orElse(null);
     }
 }

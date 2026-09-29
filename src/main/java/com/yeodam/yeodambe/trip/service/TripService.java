@@ -23,10 +23,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.PageRequest;
+import org.slf4j.spi.LoggingEventBuilder;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
 import java.time.LocalDate;
@@ -40,6 +43,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TripService {
     private static final int TRIP_LIST_SIZE = 7;
     private static final int TRIP_LIST_FETCH_SIZE = TRIP_LIST_SIZE + 1;
@@ -98,35 +102,80 @@ public class TripService {
 
     @Transactional(readOnly = true)
     public TripDetailResponse findTripDetail(Long tripId, Long userId) {
-        Trip trip = tripAccessService.requireReadableTrip(tripId, userId);
+        long startedAt = System.nanoTime();
 
-        if (trip.getProcessingStatus() == ProcessingStatus.CANCELED) {
-            throw new TripNotFoundException();
+        log.atInfo()
+                .addKeyValue("event", "trip_view")
+                .addKeyValue("result", "started")
+                .addKeyValue("trip_id", tripId)
+                .log("여행 상세 조회를 시작했습니다.");
+
+        try {
+            Trip trip = tripAccessService.requireReadableTrip(tripId, userId);
+
+            if (trip.getProcessingStatus() == ProcessingStatus.CANCELED) {
+                throw new TripNotFoundException();
+            }
+            if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+                throw new TripDetailNotAvailableException();
+            }
+
+            List<TripDetailResponse.Region> regions = tripRegionRepository
+                    .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId).stream()
+                    .map(region -> new TripDetailResponse.Region(
+                            region.getId(),
+                            region.getRegionCode(),
+                            region.getRegionName()
+                    ))
+                    .toList();
+
+            long attachmentCount = tripAttachmentRepository.countActiveByTripId(tripId);
+
+            TripDetailResponse response = new TripDetailResponse(
+                    trip.getId(),
+                    trip.getTripName(),
+                    trip.getStartDate(),
+                    trip.getEndDate(),
+                    ChronoUnit.DAYS.between(trip.getStartDate(), trip.getEndDate()),
+                    regions,
+                    attachmentCount,
+                    false,
+                    trip.getFavorite()
+            );
+
+            long durationMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+            log.atInfo()
+                    .addKeyValue("event", "trip_view")
+                    .addKeyValue("result", "success")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("attachment_count", attachmentCount)
+                    .addKeyValue("duration_ms", durationMillis)
+                    .log("여행 상세 조회를 완료했습니다.");
+
+            return response;
+        } catch (RuntimeException failure) {
+            ErrorMessage errorCode = ErrorMessage.INTERNAL_SERVER_ERROR;
+
+            if (failure instanceof TripNotFoundException) {
+                errorCode = ErrorMessage.TRIP_NOT_FOUND;
+            } else if (failure instanceof TripDetailNotAvailableException) {
+                errorCode = ErrorMessage.TRIP_DETAIL_NOT_AVAILABLE;
+            }
+
+            LoggingEventBuilder logEvent = errorCode == ErrorMessage.INTERNAL_SERVER_ERROR
+                    ? log.atError()
+                    : log.atWarn();
+
+            logEvent
+                    .addKeyValue("event", "trip_view")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("error_code", errorCode.name())
+                    .log("여행 상세 조회에 실패했습니다.", failure);
+
+            throw failure;
         }
-        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
-            throw new TripDetailNotAvailableException();
-        }
-
-        List<TripDetailResponse.Region> regions = tripRegionRepository
-                .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId).stream()
-                .map(region -> new TripDetailResponse.Region(
-                        region.getId(),
-                        region.getRegionCode(),
-                        region.getRegionName()
-                ))
-                .toList();
-
-        return new TripDetailResponse(
-                trip.getId(),
-                trip.getTripName(),
-                trip.getStartDate(),
-                trip.getEndDate(),
-                ChronoUnit.DAYS.between(trip.getStartDate(), trip.getEndDate()),
-                regions,
-                tripAttachmentRepository.countActiveByTripId(tripId),
-                false,
-                trip.getFavorite()
-        );
     }
 
     @Transactional

@@ -9,10 +9,12 @@ import com.yeodam.yeodambe.user.security.session.IssuedLoginSession;
 import com.yeodam.yeodambe.user.security.session.LoginSessionIssuer;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class ProfileRegistrationService {
 
@@ -23,6 +25,7 @@ public class ProfileRegistrationService {
 
     @Transactional
     public Result register(String profileToken, String nickname) {
+        long startedAt = System.nanoTime();
         KakaoUserIdentity identity = profileTokenStore.find(profileToken)
                 .orElseThrow(OnboardingTokenInvalidOrExpiredException::new);
 
@@ -38,6 +41,11 @@ public class ProfileRegistrationService {
         String accessToken = accessTokenIssuer.issue(user.getUserId(), session.sid());
 
         profileTokenStore.delete(profileToken);
+        log.atInfo()
+                .addKeyValue("event", "auth_login")
+                .addKeyValue("result", "success")
+                .addKeyValue("duration_ms", elapsedMillis(startedAt))
+                .log("신규 회원 가입과 로그인을 완료했습니다.");
 
         return new Result(
                 user.getUserId(),
@@ -45,6 +53,10 @@ public class ProfileRegistrationService {
                 accessToken,
                 session.refreshToken()
         );
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     public record Result(

@@ -9,16 +9,19 @@ import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
+import org.slf4j.spi.LoggingEventBuilder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.databind.JsonNode;
-
+import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TripAttachmentService {
@@ -47,18 +50,48 @@ public class TripAttachmentService {
         List<String> types = validate(files);
         TripAttachmentTransactionService.Reservation reservation = transactions.reserve(tripId, userId);
         String executionId = reservation.executionId();
-
+        log.atInfo()
+                .addKeyValue("event", "trip_creation")
+                .addKeyValue("result", "started")
+                .addKeyValue("trip_id", tripId)
+                .addKeyValue("job_id", executionId)
+                .addKeyValue("expected_count", files.size())
+                .log("여행 생성 사진 처리를 시작했습니다.");
         deleteStaleObjects(reservation.staleObjectKeys());
 
         List<String> originalsKeys = new ArrayList<>();
         List<StoredFile> originalFiles = List.of();
         List<DerivedPhotoKeys> derivedKeys = List.of();
         List<TripAttachment> savedAttachments = List.of();
+        boolean originalsSaved = false;
+        String failureStage = "original_store";
 
         try {
+            log.atInfo()
+                    .addKeyValue("event", "photo_originals_saved")
+                    .addKeyValue("result", "started")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("expected_count", files.size())
+                    .addKeyValue("saved_count", 0)
+                    .log("사진 원본 저장을 시작했습니다.");
+
             storeOriginals(executionId, files, originalsKeys);
+            originalsSaved = true;
+
+            log.atInfo()
+                    .addKeyValue("event", "photo_originals_saved")
+                    .addKeyValue("result", "success")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("expected_count", files.size())
+                    .addKeyValue("saved_count", originalsKeys.size())
+                    .log("사진 원본 저장을 완료했습니다.");
+
+            failureStage = "derivative_create";
             derivedKeys = createDerived(executionId, originalsKeys, files.size());
 
+            failureStage = "attachment_persist";
             TripAttachmentTransactionService.SavedAttachments persisted = transactions
                     .saveFilesAndAttachments(
                             tripId,
@@ -72,7 +105,10 @@ public class TripAttachmentService {
             originalFiles = persisted.originals();
             savedAttachments = persisted.attachments();
 
+            failureStage = "processing_check";
             requireProcessing(tripId, userId);
+
+            failureStage = "ai_request";
             JsonNode result = analysis.analyze(
                     tripId,
                     executionId,
@@ -81,10 +117,30 @@ public class TripAttachmentService {
             );
             Map<String, String> resolvedNames = placeNames.resolve(tripId, executionId, result);
 
+            failureStage = "storage_retain";
             storage.retain(List.copyOf(objectKeys(originalsKeys, derivedKeys)));
-            results.saveCompleted(tripId, userId, executionId, savedAttachments, result, resolvedNames);
 
+            failureStage = "result_persist";
+            results.saveCompleted(tripId, userId, executionId, savedAttachments, result, resolvedNames);
+            log.atInfo()
+                    .addKeyValue("event", "trip_creation")
+                    .addKeyValue("result", "success")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("expected_count", files.size())
+                    .addKeyValue("saved_count", originalsKeys.size())
+                    .log("여행 생성 사진 처리를 완료했습니다.");
         } catch (AiProcessingFailedException failure) {
+            log.atWarn()
+                    .addKeyValue("event", "trip_creation")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("expected_count", files.size())
+                    .addKeyValue("saved_count", originalsKeys.size())
+                    .addKeyValue("failure_stage", "ai_request")
+                    .addKeyValue("error_code", failure.getCode())
+                    .log("AI 사진 분석이 실패했습니다.", failure);
             cleanupFailure(tripId, userId, executionId, originalsKeys, derivedKeys,
                     originalFiles, savedAttachments, failure);
             if (failure.getSuppressed().length > 0) throw failure;
@@ -99,6 +155,27 @@ public class TripAttachmentService {
             );
 
         } catch (RuntimeException failure) {
+            logTripCreationRuntimeFailure(
+                    tripId,
+                    executionId,
+                    files.size(),
+                    originalsKeys.size(),
+                    failureStage,
+                    failure
+            );
+            if (!originalsSaved) {
+                log.atWarn()
+                        .addKeyValue("event", "photo_originals_saved")
+                        .addKeyValue("result", "failure")
+                        .addKeyValue("trip_id", tripId)
+                        .addKeyValue("job_id", executionId)
+                        .addKeyValue("expected_count", files.size())
+                        .addKeyValue("saved_count", originalsKeys.size())
+                        .addKeyValue("failure_stage", "original_store")
+                        .addKeyValue("error_code", "INTERNAL_SERVER_ERROR")
+                        .log("사진 원본 저장에 실패했습니다.", failure);
+            }
+
             cleanupFailure(tripId, userId, executionId, originalsKeys, derivedKeys,
                     originalFiles, savedAttachments, failure);
             throw failure;
@@ -132,6 +209,15 @@ public class TripAttachmentService {
         TripAttachmentTransactionService.Reservation reservation = transactions.reserveBatch(
                 tripId, userId, batchNo, totalAttachmentCount);
         String executionId = reservation.executionId();
+        if (batchNo == 1) {
+            log.atInfo()
+                    .addKeyValue("event", "trip_creation")
+                    .addKeyValue("result", "started")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("expected_count", totalAttachmentCount)
+                    .log("여행 생성 사진 처리를 시작했습니다.");
+        }
         deleteStaleObjects(reservation.staleObjectKeys());
 
         List<String> originalKeys = new ArrayList<>();
@@ -140,14 +226,42 @@ public class TripAttachmentService {
         InitialUploadExecutionRegistry.Snapshot snapshot = null;
         boolean finalBatchReady = false;
         boolean resultSaved = false;
+        boolean originalsSaved = false;
+        String failureStage = "original_store";
 
         try {
+            log.atInfo()
+                    .addKeyValue("event", "photo_originals_saved")
+                    .addKeyValue("result", "started")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("expected_count", files.size())
+                    .addKeyValue("saved_count", 0)
+                    .log("사진 원본 저장을 시작했습니다.");
+
             storeOriginals(executionId, files, originalKeys);
+            originalsSaved = true;
+
+            log.atInfo()
+                    .addKeyValue("event", "photo_originals_saved")
+                    .addKeyValue("result", "success")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("expected_count", files.size())
+                    .addKeyValue("saved_count", originalKeys.size())
+                    .log("사진 원본 저장을 완료했습니다.");
+
+            failureStage = "derivative_create";
             derivedKeys = createDerived(executionId, originalKeys, files.size());
+
+            failureStage = "attachment_persist";
             persisted = transactions.saveFilesAndAttachments(
                     tripId, userId, executionId, files, originalKeys, types, derivedKeys);
 
+            failureStage = "storage_retain";
             storage.retain(List.copyOf(objectKeys(originalKeys, derivedKeys)));
+
+            failureStage = "execution_checkpoint";
             snapshot = executions.completeBatch(
                     tripId,
                     executionId,
@@ -159,6 +273,7 @@ public class TripAttachmentService {
             if (!complete) return Optional.empty();
             finalBatchReady = true;
 
+            failureStage = "processing_check";
             requireProcessing(tripId, userId);
             List<TripAttachment> allAttachments = snapshot.photos().stream()
                     .map(InitialUploadExecutionRegistry.StoredPhoto::attachment)
@@ -166,18 +281,42 @@ public class TripAttachmentService {
             List<DerivedPhotoKeys> allMetadata = snapshot.photos().stream()
                     .map(InitialUploadExecutionRegistry.StoredPhoto::metadata)
                     .toList();
+
+            failureStage = "ai_request";
             JsonNode result = analysis.analyze(
                     tripId,
                     executionId,
                     analysisRequest(executionId, trip, allAttachments, allMetadata),
                     () -> executions.markAnalysisStarted(tripId, executionId)
             );
+            failureStage = "result_persist";
             Map<String, String> resolvedNames = placeNames.resolve(tripId, executionId, result);
             results.saveCompleted(tripId, userId, executionId, allAttachments, result, resolvedNames);
             resultSaved = true;
+
+            log.atInfo()
+                    .addKeyValue("event", "trip_creation")
+                    .addKeyValue("result", "success")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("expected_count", totalAttachmentCount)
+                    .addKeyValue("saved_count", snapshot.photos().size())
+                    .log("여행 생성 사진 처리를 완료했습니다.");
+
             return Optional.of(statuses.findStatus(tripId, userId));
 
         } catch (AiProcessingFailedException failure) {
+            log.atWarn()
+                    .addKeyValue("event", "trip_creation")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("trip_id", tripId)
+                    .addKeyValue("job_id", executionId)
+                    .addKeyValue("expected_count", totalAttachmentCount)
+                    .addKeyValue("saved_count", snapshot.photos().size())
+                    .addKeyValue("failure_stage", "ai_request")
+                    .addKeyValue("error_code", failure.getCode())
+                    .log("AI 사진 분석이 실패했습니다.", failure);
+
             InitialUploadExecutionRegistry.Snapshot failed = snapshot;
             if (failed == null) {
                 cleanupBatch(tripId, executionId, batchNo, originalKeys, derivedKeys, persisted, failure);
@@ -195,6 +334,32 @@ public class TripAttachmentService {
             ));
 
         } catch (RuntimeException failure) {
+            int savedCount = snapshot == null
+                    ? originalKeys.size()
+                    : snapshot.photos().size();
+
+            logTripCreationRuntimeFailure(
+                    tripId,
+                    executionId,
+                    totalAttachmentCount,
+                    savedCount,
+                    failureStage,
+                    failure
+            );
+
+            if (!originalsSaved) {
+                log.atWarn()
+                        .addKeyValue("event", "photo_originals_saved")
+                        .addKeyValue("result", "failure")
+                        .addKeyValue("trip_id", tripId)
+                        .addKeyValue("job_id", executionId)
+                        .addKeyValue("expected_count", files.size())
+                        .addKeyValue("saved_count", originalKeys.size())
+                        .addKeyValue("failure_stage", "original_store")
+                        .addKeyValue("error_code", "INTERNAL_SERVER_ERROR")
+                        .log("사진 원본 저장에 실패했습니다.", failure);
+            }
+
             if (!resultSaved) {
                 if (finalBatchReady) {
                     cleanupExecution(tripId, userId, executionId, snapshot, failure);
@@ -273,6 +438,35 @@ public class TripAttachmentService {
             delete(photo.metadata().analyzeKey(), failure);
             delete(photo.metadata().previewKey(), failure);
         }
+    }
+
+    private void logTripCreationRuntimeFailure(
+            Long tripId,
+            String executionId,
+            int expectedCount,
+            int savedCount,
+            String failureStage,
+            RuntimeException failure
+    ) {
+        ErrorMessage errorMessage =
+                failure instanceof TripInitialAttachmentUploadNotAllowedException
+                        ? ErrorMessage.TRIP_INITIAL_ATTACHMENT_UPLOAD_NOT_ALLOWED
+                        : ErrorMessage.INTERNAL_SERVER_ERROR;
+
+        LoggingEventBuilder logEvent =
+                errorMessage == ErrorMessage.INTERNAL_SERVER_ERROR
+                        ? log.atError()
+                        : log.atWarn();
+
+        logEvent.addKeyValue("event", "trip_creation")
+                .addKeyValue("result", "failure")
+                .addKeyValue("trip_id", tripId)
+                .addKeyValue("job_id", executionId)
+                .addKeyValue("expected_count", expectedCount)
+                .addKeyValue("saved_count", savedCount)
+                .addKeyValue("failure_stage", failureStage)
+                .addKeyValue("error_code", errorMessage.name())
+                .log("여행 생성 사진 처리에 실패했습니다.", failure);
     }
 
     private void requireProcessing(Long tripId, Long userId) {

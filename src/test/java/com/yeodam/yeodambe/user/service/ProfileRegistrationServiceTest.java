@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.user.service;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
@@ -9,12 +12,14 @@ import com.yeodam.yeodambe.user.security.oauth.ProfileTokenStore;
 import com.yeodam.yeodambe.user.security.session.IssuedLoginSession;
 import com.yeodam.yeodambe.user.security.session.LoginSessionIssuer;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 
@@ -40,6 +45,8 @@ class ProfileRegistrationServiceTest {
     private AccessTokenIssuer accessTokenIssuer;
 
     private ProfileRegistrationService service;
+    private Logger serviceLogger;
+    private ListAppender<ILoggingEvent> logAppender;
 
     @BeforeEach
     void setUp() {
@@ -49,6 +56,16 @@ class ProfileRegistrationServiceTest {
                 loginSessionIssuer,
                 accessTokenIssuer
         );
+        serviceLogger = (Logger) LoggerFactory.getLogger(ProfileRegistrationService.class);
+        logAppender = new ListAppender<>();
+        logAppender.start();
+        serviceLogger.addAppender(logAppender);
+    }
+
+    @AfterEach
+    void tearDown() {
+        serviceLogger.detachAppender(logAppender);
+        logAppender.stop();
     }
 
     @Test
@@ -91,6 +108,17 @@ class ProfileRegistrationServiceTest {
         order.verify(loginSessionIssuer).issue(42L);
         order.verify(accessTokenIssuer).issue(42L, "sid-1");
         order.verify(profileTokenStore).delete("profile-1");
+
+        ILoggingEvent event = logAppender.list.stream()
+                .filter(logEvent -> "auth_login".equals(keyValue(logEvent, "event")))
+                .filter(logEvent -> "success".equals(keyValue(logEvent, "result")))
+                .findFirst()
+                .orElseThrow();
+        assertThat(event.getFormattedMessage())
+                .doesNotContain("profile-1")
+                .doesNotContain("access-1")
+                .doesNotContain("refresh-1")
+                .doesNotContain("member@example.com");
     }
 
     @Test
@@ -122,5 +150,13 @@ class ProfileRegistrationServiceTest {
         then(profileTokenStore).should().find("profile-1");
         verifyNoInteractions(loginSessionIssuer, accessTokenIssuer);
         verifyNoMoreInteractions(profileTokenStore);
+    }
+
+    private Object keyValue(ILoggingEvent event, String key) {
+        return event.getKeyValuePairs().stream()
+                .filter(pair -> key.equals(pair.key))
+                .map(pair -> pair.value)
+                .findFirst()
+                .orElse(null);
     }
 }

@@ -25,9 +25,11 @@ public class TripAttachmentDetailService {
                 .findAccessibleById(tripAttachmentId, userId)
                 .orElseThrow(AttachmentNotFoundException::new);
 
-        String originalUrl = tripAttachmentStorageClient.createReadUrl(
-                attachment.getFile().getObjectKey()
-        );
+        String displayKey = attachment.getDisplayStorageKey();
+        String readKey = displayKey == null || displayKey.isBlank()
+                ? attachment.getFile().getObjectKey()
+                : displayKey;
+        String originalUrl = tripAttachmentStorageClient.createReadUrl(readKey);
 
         return new TripAttachmentDetailResponse(
                 attachment.getId(),

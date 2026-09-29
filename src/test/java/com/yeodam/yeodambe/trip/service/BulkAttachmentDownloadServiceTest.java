@@ -58,8 +58,9 @@ class BulkAttachmentDownloadServiceTest {
     @Test
     void 접근_가능한_첨부를_ZIP으로_저장하고_다운로드_URL을_반환한다() throws IOException {
         startLogAppender();
-        TripAttachment first = attachment(501L, 1L, "first-key", "photo.jpg");
+        TripAttachment first = attachment(501L, 1L, "first-key", "photo.heic");
         TripAttachment second = attachment(502L, 1L, "second-key", "photo.jpg");
+        when(first.getDisplayStorageKey()).thenReturn("display-key");
         AtomicReference<byte[]> archiveBytes = new AtomicReference<>();
         AtomicReference<Path> archivePath = new AtomicReference<>();
 
@@ -89,7 +90,7 @@ class BulkAttachmentDownloadServiceTest {
         assertThat(response.fileName()).isEqualTo("yeodam-attachments.zip");
         assertThat(response.downloadUrl()).isEqualTo("https://example.com/archive");
         assertThat(entryNames(archiveBytes.get()))
-                .containsExactly("photo.jpg", "photo (2).jpg");
+                .containsExactly("photo.heic", "photo.jpg");
         assertThat(Files.exists(archivePath.get())).isFalse();
         verify(tripAttachmentStorageClient).createDownloadUrl(
                 "trip-downloads/archive.zip",

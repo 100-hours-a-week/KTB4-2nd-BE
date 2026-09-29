@@ -53,6 +53,25 @@ class TripAttachmentDetailServiceTest {
     }
 
     @Test
+    void 표시본이_있으면_표시본_읽기_URL을_originalUrl로_반환한다() {
+        TripAttachment attachment = mock(TripAttachment.class);
+        StoredFile file = mock(StoredFile.class);
+        when(tripAttachmentRepository.findAccessibleById(501L, 1L))
+                .thenReturn(Optional.of(attachment));
+        when(attachment.getId()).thenReturn(501L);
+        when(attachment.getDisplayStorageKey()).thenReturn("display-501");
+        when(attachment.getFile()).thenReturn(file);
+        when(file.getObjectKey()).thenReturn("original-501");
+        when(tripAttachmentStorageClient.createReadUrl("display-501"))
+                .thenReturn("https://example.com/display-501");
+
+        TripAttachmentDetailResponse response = service.findDetail(1L, 501L);
+
+        assertThat(response.originalUrl()).isEqualTo("https://example.com/display-501");
+        verify(tripAttachmentStorageClient).createReadUrl("display-501");
+    }
+
+    @Test
     void 접근할_수_없는_첨부는_찾을_수_없음으로_처리한다() {
         when(tripAttachmentRepository.findAccessibleById(501L, 2L))
                 .thenReturn(Optional.empty());

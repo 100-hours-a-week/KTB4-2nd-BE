@@ -66,11 +66,14 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
 
     boolean existsByPreviewStorageKeyAndDeletedAtIsNull(String previewStorageKey);
 
+    boolean existsByDisplayStorageKeyAndDeletedAtIsNull(String displayStorageKey);
+
     @Query("""
             select new com.yeodam.yeodambe.trip.repository.TripStorageObjectKeys(
                     file.objectKey,
                     attachment.analyzeStorageKey,
-                    attachment.previewStorageKey
+                    attachment.previewStorageKey,
+                    attachment.displayStorageKey
             )
             from TripAttachment attachment
             join attachment.file file

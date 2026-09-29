@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -45,7 +46,10 @@ public class TripObjectCleanupService {
             boolean completed = Stream.of(
                             attachment.getFile().getObjectKey(),
                             attachment.getAnalyzeStorageKey(),
-                            attachment.getPreviewStorageKey())
+                            attachment.getPreviewStorageKey(),
+                            attachment.getDisplayStorageKey())
+                    .filter(Objects::nonNull)
+                    .filter(key -> !key.isBlank())
                     .distinct()
                     .map(key -> results.computeIfAbsent(key, this::cleanupKey))
                     .reduce(true, Boolean::logicalAnd);
@@ -70,6 +74,7 @@ public class TripObjectCleanupService {
         return files.existsByObjectKeyAndDeletedAtIsNull(objectKey)
                 || attachments.existsByAnalyzeStorageKeyAndDeletedAtIsNull(objectKey)
                 || attachments.existsByPreviewStorageKeyAndDeletedAtIsNull(objectKey)
+                || attachments.existsByDisplayStorageKeyAndDeletedAtIsNull(objectKey)
                 || trips.existsByThumbnailKeyAndDeletedAtIsNull(objectKey)
                 || places.existsByThumbnailKeyAndDeletedAtIsNull(objectKey);
     }

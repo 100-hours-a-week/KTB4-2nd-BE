@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Stream;
 
 @Service
@@ -29,7 +30,10 @@ public class UserStatsService {
 
         long storageUsedBytes = active.stream()
                 .flatMap(keys -> Stream.of(
-                        keys.originalKey(), keys.analyzeKey(), keys.previewKey()))
+                        keys.originalKey(), keys.analyzeKey(), keys.previewKey(),
+                        keys.displayKey()))
+                .filter(Objects::nonNull)
+                .filter(key -> !key.isBlank())
                 .distinct()
                 .mapToLong(storage::size)
                 .sum();

@@ -7,12 +7,26 @@ public record DerivedPhotoKeys(
         String originalKey,
         String analyzeKey,
         String previewKey,
+        String displayKey,
         OffsetDateTime takenAt,
         BigDecimal latitude,
         BigDecimal longitude,
         String deviceModel
 ) {
     public DerivedPhotoKeys(String originalKey, String analyzeKey, String previewKey) {
-        this(originalKey, analyzeKey, previewKey, null, null, null, null);
+        this(originalKey, analyzeKey, previewKey, null, null, null, null, null);
+    }
+
+    public DerivedPhotoKeys(
+            String originalKey,
+            String analyzeKey,
+            String previewKey,
+            OffsetDateTime takenAt,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            String deviceModel
+    ) {
+        this(originalKey, analyzeKey, previewKey, null,
+                takenAt, latitude, longitude, deviceModel);
     }
 }

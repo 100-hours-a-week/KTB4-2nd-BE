@@ -34,8 +34,8 @@ class UserStatsServiceTest {
 
     @Test
     void 조회된_여행과_첨부의_세_객체키로_통계를_교체한다() {
-        TripStorageObjectKeys active = keys("original-1", "analyze-1", "preview-1");
-        TripStorageObjectKeys unclassified = keys("original-2", "analyze-2", "preview-2");
+        TripStorageObjectKeys active = keys("original-1", "analyze-1", "preview-1", "display-1");
+        TripStorageObjectKeys unclassified = keys("original-2", "analyze-2", "preview-2", null);
         when(trips.countByUserIdAndProcessingStatusAndDeletedAtIsNull(
                 1L, ProcessingStatus.COMPLETED)).thenReturn(2L);
         when(attachments.findAllForStats(1L, ProcessingStatus.COMPLETED))
@@ -46,13 +46,14 @@ class UserStatsServiceTest {
 
         assertThat(stats.getTripCount()).isEqualTo(2L);
         assertThat(stats.getAttachmentCount()).isEqualTo(2L);
-        assertThat(stats.getStorageUsedBytes()).isEqualTo(60L);
+        assertThat(stats.getStorageUsedBytes()).isEqualTo(70L);
+        verify(storage, never()).size(null);
     }
 
     @Test
     void 중복_객체키는_한번만_합산한다() {
-        TripStorageObjectKeys first = keys("shared", "shared", "preview-1");
-        TripStorageObjectKeys second = keys("shared", "analyze-2", "preview-2");
+        TripStorageObjectKeys first = keys("shared", "shared", "preview-1", "shared");
+        TripStorageObjectKeys second = keys("shared", "analyze-2", "preview-2", null);
         when(attachments.findAllForStats(1L, ProcessingStatus.COMPLETED))
                 .thenReturn(List.of(first, second));
         when(storage.size(anyString())).thenReturn(10L);
@@ -69,7 +70,9 @@ class UserStatsServiceTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
-    private TripStorageObjectKeys keys(String originalKey, String analyzeKey, String previewKey) {
-        return new TripStorageObjectKeys(originalKey, analyzeKey, previewKey);
+    private TripStorageObjectKeys keys(
+            String originalKey, String analyzeKey, String previewKey, String displayKey
+    ) {
+        return new TripStorageObjectKeys(originalKey, analyzeKey, previewKey, displayKey);
     }
 }

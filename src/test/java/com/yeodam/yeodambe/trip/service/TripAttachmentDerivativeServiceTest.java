@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,15 +18,20 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class TripAttachmentDerivativeServiceTest {
@@ -66,7 +72,8 @@ class TripAttachmentDerivativeServiceTest {
                     return "derived/preview.webp";
                 });
 
-        List<DerivedPhotoKeys> result = service.createAll("run-1", List.of("original/key")).join();
+        List<DerivedPhotoKeys> result = service.createAll(
+                "run-1", List.of("original/key"), List.of("image/jpeg")).join();
 
         assertEquals("original/key", result.getFirst().originalKey());
         assertEquals("derived/analyze.jpg", result.getFirst().analyzeKey());
@@ -96,14 +103,125 @@ class TripAttachmentDerivativeServiceTest {
 
         org.slf4j.MDC.put("request_id", "request-789");
         assertThrows(CompletionException.class,
-                () -> service.createAll("run-1", List.of("original/key")).join());
+                () -> service.createAll(
+                        "run-1", List.of("original/key"), List.of("image/jpeg")).join());
 
         org.slf4j.MDC.clear();
         assertThrows(CompletionException.class,
-                () -> service.createAll("run-2", List.of("original/key")).join());
+                () -> service.createAll(
+                        "run-2", List.of("original/key"), List.of("image/jpeg")).join());
 
         assertEquals("request-789", firstRequestId.get());
         assertEquals(null, secondRequestId.get());
+    }
+
+    @Test
+    void HEIC는_원본_해상도_JPEG_표시본을_생성하고_EXIF를_제거한다() throws Exception {
+        AtomicReference<byte[]> displayBytes = new AtomicReference<>();
+        byte[] heic = Files.readAllBytes(Path.of(
+                "src/test/resources/images/heic/oriented-with-exif.heic"));
+        when(storage.open("original/heic")).thenReturn(new ByteArrayInputStream(heic));
+        when(storage.storeDerived(eq("run-heic"), any(Path.class), any(String.class)))
+                .thenAnswer(invocation -> {
+                    Path path = invocation.getArgument(1);
+                    if (path.getFileName().toString().equals("display.jpg")) {
+                        displayBytes.set(Files.readAllBytes(path));
+                        return "derived/display.jpg";
+                    }
+                    return path.getFileName().toString().equals("analyze.jpg")
+                            ? "derived/analyze.jpg" : "derived/preview.webp";
+                });
+
+        DerivedPhotoKeys result = service.createAll(
+                "run-heic", List.of("original/heic"), List.of("image/heic")).join().getFirst();
+
+        assertEquals("derived/display.jpg", result.displayKey());
+        assertArrayEquals(new byte[]{(byte) 0xff, (byte) 0xd8},
+                Arrays.copyOf(displayBytes.get(), 2));
+        BufferedImage display = ImageIO.read(new ByteArrayInputStream(displayBytes.get()));
+        assertEquals(2, display.getWidth());
+        assertEquals(3, display.getHeight());
+
+        Path output = Files.createTempFile("heic-display", ".jpg");
+        try {
+            Files.write(output, displayBytes.get());
+            assertEquals("95", command("identify", "-format", "%Q", output.toString()));
+            assertEquals("icc", command("identify", "-format", "%[profiles]", output.toString()));
+            var metadata = new ObjectMapper().readTree(command(
+                    "exiftool", "-j", "-Orientation", "-GPSLatitude", "-GPSLongitude",
+                    "-DateTimeOriginal", "-Make", "-Model", output.toString())).get(0);
+            assertFalse(metadata.has("Orientation"));
+            assertFalse(metadata.has("GPSLatitude"));
+            assertFalse(metadata.has("GPSLongitude"));
+            assertFalse(metadata.has("DateTimeOriginal"));
+            assertFalse(metadata.has("Make"));
+            assertFalse(metadata.has("Model"));
+        } finally {
+            Files.deleteIfExists(output);
+        }
+    }
+
+    @Test
+    void JPEG는_표시본을_생성하지_않는다() {
+        when(storage.open("original/jpeg")).thenReturn(new ByteArrayInputStream(uncheckedJpeg()));
+        when(storage.storeDerived(eq("run-jpeg"), any(Path.class), eq("image/jpeg")))
+                .thenReturn("derived/analyze.jpg");
+        when(storage.storeDerived(eq("run-jpeg"), any(Path.class), eq("image/webp")))
+                .thenReturn("derived/preview.webp");
+
+        DerivedPhotoKeys result = service.createAll(
+                "run-jpeg", List.of("original/jpeg"), List.of("image/jpeg")).join().getFirst();
+
+        assertNull(result.displayKey());
+        verify(storage, never()).storeDerived(eq("run-jpeg"),
+                org.mockito.ArgumentMatchers.argThat(path -> path.getFileName().toString().equals("display.jpg")),
+                eq("image/jpeg"));
+    }
+
+    @Test
+    void 원본키와_MIME_개수가_다르면_생성을_시작하지_않는다() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.createAll("run-mismatch", List.of("one"), List.of()).join());
+
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 표시본_저장에_실패하면_앞서_저장한_파생객체도_삭제한다() throws Exception {
+        byte[] heic = Files.readAllBytes(Path.of(
+                "src/test/resources/images/heic/oriented-with-exif.heic"));
+        when(storage.open("original/heic")).thenReturn(new ByteArrayInputStream(heic));
+        when(storage.storeDerived(eq("run-fail"), any(Path.class), any(String.class)))
+                .thenAnswer(invocation -> switch (((Path) invocation.getArgument(1)).getFileName().toString()) {
+                    case "analyze.jpg" -> "derived/analyze.jpg";
+                    case "preview.webp" -> "derived/preview.webp";
+                    default -> throw new AttachmentStorageException(
+                            "derived/display-failed.jpg", new RuntimeException("S3 failure"));
+                });
+
+        assertThrows(RuntimeException.class, () -> service.createAll(
+                "run-fail", List.of("original/heic"), List.of("image/heic")).join());
+
+        verify(storage).delete("derived/analyze.jpg");
+        verify(storage).delete("derived/preview.webp");
+        verify(storage).delete("derived/display-failed.jpg");
+    }
+
+    private static String command(String... command) throws Exception {
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        if (!process.waitFor(10, TimeUnit.SECONDS) || process.exitValue() != 0) {
+            throw new IllegalStateException(output);
+        }
+        return output.trim();
+    }
+
+    private static byte[] uncheckedJpeg() {
+        try {
+            return jpeg();
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static byte[] jpeg() throws IOException {

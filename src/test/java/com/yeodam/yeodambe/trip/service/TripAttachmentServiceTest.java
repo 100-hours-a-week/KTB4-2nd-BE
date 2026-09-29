@@ -143,7 +143,8 @@ class TripAttachmentServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(trip(1L)));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store(eq("run"), any())).thenReturn("first");
-        when(derivatives.createAll("run", List.of("first"))).thenReturn(CompletableFuture.completedFuture(List.of()));
+        when(derivatives.createAll("run", List.of("first"), List.of("image/jpeg")))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
         assertThrows(IllegalStateException.class,
                 () -> service.uploadInitialAttachments(7L, 1L, List.of(jpeg())));
         verify(storage).delete("first");
@@ -179,13 +180,14 @@ class TripAttachmentServiceTest {
     @Test
     void 성공하면_S3_객체를_보존하고_메모리_예약을_해제한다() {
         Trip trip = trip(1L);
-        MockMultipartFile file = jpeg();
-        StoredFile original = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
+        MockMultipartFile file = heic();
+        StoredFile original = StoredFile.uploaded(1L, "photo.heic", "original", "image/heic");
         ReflectionTestUtils.setField(original, "id", 20L);
-        TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
+        TripAttachment attachment = TripAttachment.initial(
+                7L, 20L, "analyze", "preview", "display");
         ReflectionTestUtils.setField(attachment, "id", 30L);
         DerivedPhotoKeys keys = new DerivedPhotoKeys(
-                "original", "analyze", "preview", null, null, null, null);
+                "original", "analyze", "preview", "display", null, null, null, null);
         TripRegion region = new TripRegion(trip, "50110", "제주특별자치도 제주시",
                 new BigDecimal("33.5"), new BigDecimal("126.5"));
         var aiResult = mock(tools.jackson.databind.JsonNode.class);
@@ -193,10 +195,10 @@ class TripAttachmentServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(trip));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store("run", file)).thenReturn("original");
-        when(derivatives.createAll("run", List.of("original")))
+        when(derivatives.createAll("run", List.of("original"), List.of("image/heic")))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
         when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
-                List.of("original"), List.of("image/jpeg"), List.of(keys)))
+                List.of("original"), List.of("image/heic"), List.of(keys)))
                 .thenReturn(new TripAttachmentTransactionService.SavedAttachments(
                         List.of(original), List.of(attachment)));
         when(regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L)).thenReturn(List.of(region));
@@ -218,11 +220,30 @@ class TripAttachmentServiceTest {
 
         assertEquals(ProcessingStatus.COMPLETED, response.status());
         assertEquals(1, response.result().placeFolderCount());
-        verify(storage).retain(List.of("original", "analyze", "preview"));
+        verify(storage).retain(List.of("original", "analyze", "preview", "display"));
         verify(placeNames).resolve(7L, "run", aiResult);
         verify(results).saveCompleted(7L, 1L, "run", List.of(attachment), aiResult, Map.of());
         verify(executions).markAnalysisStarted(7L, "run");
         verify(executions).release(7L, "run");
+    }
+
+    @Test
+    void HEIC_표시본_키가_없으면_DB저장과_AI호출_전에_실패한다() {
+        MockMultipartFile file = heic();
+        DerivedPhotoKeys keys = new DerivedPhotoKeys(
+                "original", "analyze", "preview", null, null, null, null, null);
+        when(trips.findById(7L)).thenReturn(Optional.of(trip(1L)));
+        when(transactions.reserve(7L, 1L)).thenReturn(reservation());
+        when(storage.store("run", file)).thenReturn("original");
+        when(derivatives.createAll("run", List.of("original"), List.of("image/heic")))
+                .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.uploadInitialAttachments(7L, 1L, List.of(file)));
+
+        verify(transactions, never()).saveFilesAndAttachments(
+                anyLong(), anyLong(), anyString(), anyList(), anyList(), anyList(), anyList());
+        verifyNoInteractions(analysis, results);
     }
 
     @Test
@@ -241,7 +262,7 @@ class TripAttachmentServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(trip));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store("run", file)).thenReturn("original");
-        when(derivatives.createAll("run", List.of("original")))
+        when(derivatives.createAll("run", List.of("original"), List.of("image/jpeg")))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
         when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
                 List.of("original"), List.of("image/jpeg"), List.of(keys)))
@@ -277,7 +298,7 @@ class TripAttachmentServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(trip));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store("run", file)).thenReturn("original");
-        when(derivatives.createAll("run", List.of("original")))
+        when(derivatives.createAll("run", List.of("original"), List.of("image/jpeg")))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
         when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
                 List.of("original"), List.of("image/jpeg"), List.of(keys)))
@@ -313,14 +334,14 @@ class TripAttachmentServiceTest {
         TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
         ReflectionTestUtils.setField(attachment, "id", 30L);
         DerivedPhotoKeys keys = new DerivedPhotoKeys(
-                "original", "analyze", "preview", null, null, null, null);
+                "original", "analyze", "preview", "display", null, null, null, null);
         TripRegion region = new TripRegion(trip, "50110", "제주특별자치도 제주시",
                 new BigDecimal("33.5"), new BigDecimal("126.5"));
 
         when(trips.findById(7L)).thenReturn(Optional.of(trip));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store("run", file)).thenReturn("original");
-        when(derivatives.createAll("run", List.of("original")))
+        when(derivatives.createAll("run", List.of("original"), List.of("image/jpeg")))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
         when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
                 List.of("original"), List.of("image/jpeg"), List.of(keys)))
@@ -343,6 +364,7 @@ class TripAttachmentServiceTest {
         verify(storage).delete("original");
         verify(storage).delete("analyze");
         verify(storage).delete("preview");
+        verify(storage).delete("display");
         verify(executions).release(7L, "run");
         verifyNoInteractions(statuses);
     }
@@ -362,7 +384,7 @@ class TripAttachmentServiceTest {
             return new TripAttachmentTransactionService.Reservation(reserved.executionId(), List.of());
         });
         when(storage.store(anyString(), eq(file))).thenReturn("original-1");
-        when(derivatives.createAll(anyString(), eq(List.of("original-1"))))
+        when(derivatives.createAll(anyString(), eq(List.of("original-1")), eq(List.of("image/jpeg"))))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
         when(transactions.saveFilesAndAttachments(eq(7L), eq(1L), anyString(), eq(List.of(file)),
                 eq(List.of("original-1")), eq(List.of("image/jpeg")), eq(List.of(keys))))
@@ -403,9 +425,9 @@ class TripAttachmentServiceTest {
         });
         when(storage.store(anyString(), eq(firstFile))).thenReturn("original-1");
         when(storage.store(anyString(), eq(secondFile))).thenReturn("original-2");
-        when(derivatives.createAll(anyString(), eq(List.of("original-1"))))
+        when(derivatives.createAll(anyString(), eq(List.of("original-1")), eq(List.of("image/jpeg"))))
                 .thenReturn(CompletableFuture.completedFuture(List.of(firstKeys)));
-        when(derivatives.createAll(anyString(), eq(List.of("original-2"))))
+        when(derivatives.createAll(anyString(), eq(List.of("original-2")), eq(List.of("image/jpeg"))))
                 .thenReturn(CompletableFuture.completedFuture(List.of(secondKeys)));
         when(transactions.saveFilesAndAttachments(eq(7L), eq(1L), anyString(), eq(List.of(firstFile)),
                 eq(List.of("original-1")), eq(List.of("image/jpeg")), eq(List.of(firstKeys))))
@@ -488,6 +510,11 @@ class TripAttachmentServiceTest {
     private MockMultipartFile jpeg(String name) {
         return new MockMultipartFile("attachments[]", name, "image/jpeg",
                 new byte[]{(byte) 0xff, (byte) 0xd8, (byte) 0xff, (byte) 0xd9});
+    }
+
+    private MockMultipartFile heic() {
+        return new MockMultipartFile("attachments[]", "photo.heic", "image/heic",
+                new byte[]{0, 0, 0, 12, 'f', 't', 'y', 'p', 'h', 'e', 'i', 'c'});
     }
 
     private StoredFile original(Long id, String key) {

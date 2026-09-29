@@ -71,6 +71,9 @@ public class TripAttachment {
     @Column(name = "preview_storage_key", nullable = false, length = 500)
     private String previewStorageKey;
 
+    @Column(name = "display_storage_key", length = 500)
+    private String displayStorageKey;
+
     @Column(name = "evaluation")
     private Integer evaluation;
 
@@ -100,6 +103,12 @@ public class TripAttachment {
     public static TripAttachment initial(
             Long tripId, Long fileId, String analyzeKey, String previewKey
     ) {
+        return initial(tripId, fileId, analyzeKey, previewKey, null);
+    }
+
+    public static TripAttachment initial(
+            Long tripId, Long fileId, String analyzeKey, String previewKey, String displayKey
+    ) {
         TripAttachment attachment = new TripAttachment();
         attachment.tripId = tripId;
         attachment.fileId = fileId;
@@ -108,6 +117,7 @@ public class TripAttachment {
         attachment.classificationStatus = ClassificationStatus.UNCLASSIFIED;
         attachment.analyzeStorageKey = analyzeKey;
         attachment.previewStorageKey = previewKey;
+        attachment.displayStorageKey = displayKey;
         return attachment;
     }
 

@@ -87,7 +87,7 @@ class TripDeletionPersistenceTest {
         UserStats refreshed = stats.findByUser_UserId(owner.getUserId()).orElseThrow();
         assertThat(refreshed.getTripCount()).isOne();
         assertThat(refreshed.getAttachmentCount()).isOne();
-        assertThat(refreshed.getStorageUsedBytes()).isEqualTo(30L);
+        assertThat(refreshed.getStorageUsedBytes()).isEqualTo(40L);
         assertThat(files.findById(remainingAttachment.getFileId()).orElseThrow().getDeletedAt())
                 .isNull();
     }
@@ -165,7 +165,7 @@ class TripDeletionPersistenceTest {
                 owner.getUserId(), ProcessingStatus.COMPLETED);
 
         assertThat(result).containsExactly(new TripStorageObjectKeys(
-                "original/included", "analyze/included", "preview/included"));
+                "original/included", "analyze/included", "preview/included", "display/included"));
     }
 
     @Test
@@ -193,6 +193,8 @@ class TripDeletionPersistenceTest {
         assertThat(result).allMatch(found ->
                 found.getDeletedAt() != null
                         && found.getClassificationStatus() != ClassificationStatus.DELETED);
+        assertThat(result).extracting(TripAttachment::getDisplayStorageKey)
+                .containsExactly("display/pending");
     }
 
     private User owner(String email) {
@@ -211,7 +213,8 @@ class TripDeletionPersistenceTest {
         StoredFile file = files.saveAndFlush(StoredFile.uploaded(
                 owner.getUserId(), key + ".jpg", "original/" + key, "image/jpeg"));
         TripAttachment attachment = TripAttachment.initial(
-                trip.getId(), file.getId(), "analyze/" + key, "preview/" + key);
+                trip.getId(), file.getId(), "analyze/" + key, "preview/" + key,
+                "display/" + key);
         if (placeId != null) {
             attachment.classify(placeId, RegionOrigin.EXIF, LocalDateTime.now(), null, null, 100);
         }

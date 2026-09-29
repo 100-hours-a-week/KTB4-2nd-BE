@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.RegionOrigin;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripDraft;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
@@ -15,6 +16,7 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.TripDraftRepository;
 import com.yeodam.yeodambe.trip.repository.TripStorageObjectKeys;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
@@ -52,6 +54,7 @@ class TripDeletionPersistenceTest {
     @Autowired private UserRepository users;
     @Autowired private UserStatsRepository stats;
     @Autowired private TripRepository trips;
+    @Autowired private TripDraftRepository drafts;
     @Autowired private TripRegionRepository regions;
     @Autowired private TripDetailPlaceRepository places;
     @Autowired private StoredFileRepository files;
@@ -63,6 +66,9 @@ class TripDeletionPersistenceTest {
     void 여행과_연관_데이터를_같은_시각에_삭제하고_남은_통계를_저장한다() {
         User owner = owner("trip-delete@test.com");
         Trip target = completedTrip(owner, "삭제여행");
+        TripDraft draft = new TripDraft(owner.getUserId(), "삭제여행", "[\"50110\"]", LocalDate.now(), LocalDate.now());
+        draft.attach(target.getId());
+        drafts.saveAndFlush(draft);
         Trip remaining = completedTrip(owner, "남은여행");
         TripRegion region = regions.saveAndFlush(new TripRegion(
                 target, "50110", "제주시", new BigDecimal("33.5"), new BigDecimal("126.5")));
@@ -77,6 +83,7 @@ class TripDeletionPersistenceTest {
 
         LocalDateTime deletedAt = trips.findById(target.getId()).orElseThrow().getDeletedAt();
         assertThat(deletedAt).isNotNull();
+        assertThat(drafts.findByUserId(owner.getUserId()).orElseThrow().getSubmittedTripId()).isNull();
         assertThat(regions.findById(region.getId()).orElseThrow().getDeletedAt()).isEqualTo(deletedAt);
         assertThat(places.findById(place.getId()).orElseThrow().getDeletedAt()).isEqualTo(deletedAt);
         assertThat(attachments.findById(deletedAttachment.getId()).orElseThrow().getDeletedAt())

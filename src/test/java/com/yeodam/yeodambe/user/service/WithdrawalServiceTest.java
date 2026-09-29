@@ -55,8 +55,7 @@ class WithdrawalServiceTest {
         OAuthAccount oauthAccount = org.mockito.Mockito.mock(OAuthAccount.class);
         Consent consent = org.mockito.Mockito.mock(Consent.class);
         UserStats userStats = org.mockito.Mockito.mock(UserStats.class);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
-        given(user.getDeletedAt()).willReturn(null);
+        given(userRepository.findActiveByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(oauthAccountRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .willReturn(Optional.of(oauthAccount));
         given(consentRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
@@ -80,8 +79,7 @@ class WithdrawalServiceTest {
     void failsBeforeDeletingTripsWhenActiveConsentIsMissing() {
         User user = org.mockito.Mockito.mock(User.class);
         OAuthAccount oauthAccount = org.mockito.Mockito.mock(OAuthAccount.class);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
-        given(user.getDeletedAt()).willReturn(null);
+        given(userRepository.findActiveByIdForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(oauthAccountRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .willReturn(Optional.of(oauthAccount));
         given(consentRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))

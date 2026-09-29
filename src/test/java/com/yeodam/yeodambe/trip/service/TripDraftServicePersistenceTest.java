@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.util.List;
 import java.time.LocalDate;
@@ -32,6 +33,7 @@ class TripDraftServicePersistenceTest {
     @Autowired TripDraftRepository drafts;
     @Autowired UserRepository users;
     @Autowired TripRepository trips;
+    @Autowired TransactionOperations transactions;
 
     @Test
     void 부분_초안을_저장하고_같은_PUT은_시각을_유지한다() {
@@ -97,5 +99,24 @@ class TripDraftServicePersistenceTest {
         assertThatThrownBy(() -> service.save(userId, input)).isInstanceOf(TripDraftAlreadySubmittedException.class);
         assertThatThrownBy(() -> service.delete(userId)).isInstanceOf(TripDraftAlreadySubmittedException.class);
         assertThat(service.find(userId).submittedTripId()).isEqualTo(tripId);
+    }
+
+    @Test
+    void 연결_해제와_완료_삭제는_소유자와_여행_ID가_모두_맞아야_한다() {
+        Long userId = users.save(new User(System.nanoTime() + "@draft.invalid", "초안")).getUserId();
+        Long otherId = users.save(new User(System.nanoTime() + "@draft.invalid", "다른이")).getUserId();
+        Long tripId = trips.save(new Trip(userId, "제주", LocalDate.now(), LocalDate.now())).getId();
+        var draft = drafts.save(new com.yeodam.yeodambe.trip.entity.TripDraft(
+                userId, "제주", "[\"50110\"]", LocalDate.now(), LocalDate.now()));
+        draft.attach(tripId);
+        drafts.saveAndFlush(draft);
+
+        transactions.executeWithoutResult(status -> {
+            assertThat(drafts.clearSubmittedTripId(tripId + 1, userId)).isZero();
+            assertThat(drafts.deleteBySubmittedTripIdAndUserId(tripId, otherId)).isZero();
+        });
+        assertThat(drafts.findByUserId(userId).orElseThrow().getSubmittedTripId()).isEqualTo(tripId);
+        transactions.executeWithoutResult(status -> assertThat(drafts.clearSubmittedTripId(tripId, userId)).isOne());
+        assertThat(drafts.findByUserId(userId).orElseThrow().getSubmittedTripId()).isNull();
     }
 }

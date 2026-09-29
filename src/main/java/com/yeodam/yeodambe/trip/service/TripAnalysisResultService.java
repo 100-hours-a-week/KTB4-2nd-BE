@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.TripDraftRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class TripAnalysisResultService {
     private final TripDetailPlaceRepository placeRepository;
     private final InitialUploadExecutionRegistry executions;
     private final UserStatsService userStats;
+    private final TripDraftRepository drafts;
 
     @Transactional
     public void saveCompleted(
@@ -163,6 +165,7 @@ public class TripAnalysisResultService {
 
         attachmentRepository.saveAll(attachments);
         userStats.refreshFromActiveTrips(userId);
+        drafts.deleteBySubmittedTripIdAndUserId(tripId, userId);
     }
 
     private void validatePlaceNames(Set<String> placeIds, Map<String, String> placeNames) {

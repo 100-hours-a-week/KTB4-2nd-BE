@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.TripDraftRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ public class TripProcessingCancellationService {
     private final TripPhotoAnalysisService analysis;
     private final InitialUploadExecutionRegistry executions;
     private final TransactionOperations transactions;
+    private final TripDraftRepository drafts;
 
     public void cancel(Long tripId, Long userId) {
         transactions.executeWithoutResult(status -> cancelInTransaction(tripId, userId));
@@ -54,6 +56,7 @@ public class TripProcessingCancellationService {
         attachments.softDeleteByTripId(tripId, canceledAt);
 
         if (!fileIds.isEmpty()) files.softDeleteByIds(fileIds, canceledAt);
+        drafts.clearSubmittedTripId(tripId, userId);
 
     }
 

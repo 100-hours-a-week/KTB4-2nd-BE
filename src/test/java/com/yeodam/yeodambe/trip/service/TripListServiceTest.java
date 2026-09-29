@@ -136,9 +136,11 @@ class TripListServiceTest {
         assertThat(response.items().getFirst().placeSummary()).isEqualTo("제주, 부산, 서울");
         assertThat(response.items().getFirst().attachmentCount()).isEqualTo(4L);
         assertThat(response.items().getFirst().thumbnailUrl()).isEqualTo("https://cdn.test/7");
+        assertThat(response.items().getFirst().status()).isEqualTo(ProcessingStatus.COMPLETED);
         assertThat(response.items().get(1).placeSummary()).isEqualTo("강릉");
         assertThat(response.items().get(1).attachmentCount()).isZero();
         assertThat(response.items().get(1).thumbnailUrl()).isNull();
+        assertThat(response.items().get(1).status()).isEqualTo(ProcessingStatus.PROCESSING);
         verify(storageClient, never()).createReadUrl("thumb/6.webp");
     }
 

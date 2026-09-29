@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.integration.client;
 
+import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,7 +35,7 @@ public class AiEc2Starter {
             var response = ec2.describeInstances(request -> request.instanceIds(instanceId));
             var instances = response.reservations().stream().flatMap(r -> r.instances().stream()).toList();
 
-            if (instances.size() != 1) throw new IllegalStateException("AI EC2 인스턴스를 찾을 수 없습니다.");
+            if (instances.size() != 1) throw new IllegalStateException(IntegrationInternalErrorMessage.AI_EC2_INSTANCE_NOT_FOUND.message());
 
             InstanceStateName state = instances.getFirst().state().name();
 
@@ -49,17 +50,17 @@ public class AiEc2Starter {
                 }
 
             } else if (state != InstanceStateName.PENDING && state != InstanceStateName.STOPPING) {
-                throw new IllegalStateException("AI EC2를 시작할 수 없는 상태입니다: " + state);
+                throw new IllegalStateException(IntegrationInternalErrorMessage.AI_EC2_INVALID_START_STATE.message().formatted(state));
             }
 
             try {
                 Thread.sleep(5_000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new IllegalStateException("AI EC2 기동 대기가 중단됐습니다.", e);
+                throw new IllegalStateException(IntegrationInternalErrorMessage.AI_EC2_START_INTERRUPTED.message(), e);
             }
         }
-        throw new IllegalStateException("AI EC2 기동 시간이 초과됐습니다.");
+        throw new IllegalStateException(IntegrationInternalErrorMessage.AI_EC2_START_TIMEOUT.message());
     }
 
     @PreDestroy

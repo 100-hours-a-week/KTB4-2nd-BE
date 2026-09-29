@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.entity;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -62,7 +63,7 @@ public class UserStats {
             long storageUsedBytes
     ) {
         if (tripCount < 0 || attachmentCount < 0 || storageUsedBytes < 0) {
-            throw new IllegalStateException("사용자 통계는 음수일 수 없습니다.");
+            throw new IllegalStateException(UserInternalErrorMessage.USER_STATS_NEGATIVE.message());
         }
         this.tripCount = tripCount;
         this.attachmentCount = attachmentCount;

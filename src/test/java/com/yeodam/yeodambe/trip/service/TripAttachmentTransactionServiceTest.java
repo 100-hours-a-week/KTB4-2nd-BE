@@ -51,7 +51,8 @@ class TripAttachmentTransactionServiceTest {
     void 재시작_후_남은_첨부_참조를_정리하고_객체_키를_반환한다() {
         StoredFile file = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
         ReflectionTestUtils.setField(file, "id", 20L);
-        TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
+        TripAttachment attachment = TripAttachment.initial(
+                7L, 20L, "analyze", "preview", "display");
         ReflectionTestUtils.setField(attachment, "id", 30L);
         when(trips.prepareInitialUpload(7L, 1L, ProcessingStatus.PROCESSING, ProcessingStatus.FAILED))
                 .thenReturn(1);
@@ -60,7 +61,7 @@ class TripAttachmentTransactionServiceTest {
 
         var reservation = service.reserve(7L, 1L);
 
-        assertEquals(List.of("original", "analyze", "preview"), reservation.staleObjectKeys());
+        assertEquals(List.of("original", "analyze", "preview", "display"), reservation.staleObjectKeys());
         verify(attachments).deleteAllInBatch(List.of(attachment));
         verify(files).deleteAllInBatch(List.of(file));
     }
@@ -104,7 +105,7 @@ class TripAttachmentTransactionServiceTest {
         String executionId = executions.reserve(7L);
         var upload = new MockMultipartFile("attachments[]", "photo.jpg", "image/jpeg", new byte[]{1});
         var derived = new com.yeodam.yeodambe.trip.service.DerivedPhotoKeys(
-                "original", "analyze", "preview", null, null, null, null);
+                "original", "analyze", "preview", "display", null, null, null, null);
         when(trips.findProcessableForUpdate(
                 7L, 1L, ProcessingStatus.PROCESSING)).thenReturn(java.util.Optional.of(mock(
                 com.yeodam.yeodambe.trip.entity.Trip.class)));
@@ -120,6 +121,7 @@ class TripAttachmentTransactionServiceTest {
 
         assertEquals(20L, saved.attachments().getFirst().getFileId());
         assertEquals("analyze", saved.attachments().getFirst().getAnalyzeStorageKey());
+        assertEquals("display", saved.attachments().getFirst().getDisplayStorageKey());
         verify(files).saveAll(anyList());
         verify(attachments).saveAll(anyList());
     }

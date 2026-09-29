@@ -88,6 +88,10 @@ public class TripAttachmentTransactionService {
             for (TripAttachment attachment : staleAttachments) {
                 staleKeys.add(attachment.getAnalyzeStorageKey());
                 staleKeys.add(attachment.getPreviewStorageKey());
+                if (attachment.getDisplayStorageKey() != null
+                        && !attachment.getDisplayStorageKey().isBlank()) {
+                    staleKeys.add(attachment.getDisplayStorageKey());
+                }
             }
 
             attachmentRepository.deleteAllInBatch(staleAttachments);
@@ -143,7 +147,8 @@ public class TripAttachmentTransactionService {
             }
 
             TripAttachment attachment = TripAttachment.initial(
-                    tripId, original.getId(), photo.analyzeKey(), photo.previewKey());
+                    tripId, original.getId(), photo.analyzeKey(), photo.previewKey(),
+                    photo.displayKey());
             attachment.originalMetadata(photo.takenAt(), photo.latitude(), photo.longitude(), photo.deviceModel());
             attachments.add(attachment);
         }

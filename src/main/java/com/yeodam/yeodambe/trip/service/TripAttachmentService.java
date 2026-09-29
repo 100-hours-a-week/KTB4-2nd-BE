@@ -89,7 +89,7 @@ public class TripAttachmentService {
                     .log("사진 원본 저장을 완료했습니다.");
 
             failureStage = "derivative_create";
-            derivedKeys = createDerived(executionId, originalsKeys, files.size());
+            derivedKeys = createDerived(executionId, originalsKeys, types);
 
             failureStage = "attachment_persist";
             TripAttachmentTransactionService.SavedAttachments persisted = transactions
@@ -252,7 +252,7 @@ public class TripAttachmentService {
                     .log("사진 원본 저장을 완료했습니다.");
 
             failureStage = "derivative_create";
-            derivedKeys = createDerived(executionId, originalKeys, files.size());
+            derivedKeys = createDerived(executionId, originalKeys, types);
 
             failureStage = "attachment_persist";
             persisted = transactions.saveFilesAndAttachments(
@@ -437,6 +437,10 @@ public class TripAttachmentService {
             delete(photo.original().getObjectKey(), failure);
             delete(photo.metadata().analyzeKey(), failure);
             delete(photo.metadata().previewKey(), failure);
+            if (photo.metadata().displayKey() != null
+                    && !photo.metadata().displayKey().isBlank()) {
+                delete(photo.metadata().displayKey(), failure);
+            }
         }
     }
 
@@ -500,15 +504,22 @@ public class TripAttachmentService {
         }
     }
 
-    private List<DerivedPhotoKeys> createDerived(String executionId, List<String> originalsKeys, int count) {
-        List<DerivedPhotoKeys> derived = derivatives.createAll(executionId, List.copyOf(originalsKeys)).join();
-        if (derived == null || derived.size() != count) throw new IllegalStateException("파생 사진 수가 다릅니다.");
+    private List<DerivedPhotoKeys> createDerived(
+            String executionId, List<String> originalsKeys, List<String> mimeTypes
+    ) {
+        List<DerivedPhotoKeys> derived = derivatives.createAll(
+                executionId, List.copyOf(originalsKeys), mimeTypes).join();
+        if (derived == null || derived.size() != mimeTypes.size()) {
+            throw new IllegalStateException("파생 사진 수가 다릅니다.");
+        }
 
         for (int i = 0; i < derived.size(); i++) {
             DerivedPhotoKeys keys = derived.get(i);
             if (keys == null || !originalsKeys.get(i).equals(keys.originalKey())
                     || keys.analyzeKey() == null || keys.analyzeKey().isBlank()
-                    || keys.previewKey() == null || keys.previewKey().isBlank()) {
+                    || keys.previewKey() == null || keys.previewKey().isBlank()
+                    || ("image/heic".equals(mimeTypes.get(i))
+                    && (keys.displayKey() == null || keys.displayKey().isBlank()))) {
                 throw new IllegalStateException("파생 사진 결과가 올바르지 않습니다.");
             }
         }
@@ -520,6 +531,9 @@ public class TripAttachmentService {
         for (DerivedPhotoKeys photo : derivedKeys) {
             keys.add(photo.analyzeKey());
             keys.add(photo.previewKey());
+            if (photo.displayKey() != null && !photo.displayKey().isBlank()) {
+                keys.add(photo.displayKey());
+            }
         }
         return keys;
     }

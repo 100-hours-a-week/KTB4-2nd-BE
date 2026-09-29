@@ -35,7 +35,8 @@ public class WithdrawalService {
         try {
             LocalDateTime withdrawnAt = LocalDateTime.now();
 
-            User user = userRepository.findActiveByIdForUpdate(userId)
+            User user = userRepository.findById(userId)
+                    .filter(found -> found.getDeletedAt() == null)
                     .orElseThrow(UserNotFoundException::new);
 
             OAuthAccount oauthAccount = oauthAccountRepository

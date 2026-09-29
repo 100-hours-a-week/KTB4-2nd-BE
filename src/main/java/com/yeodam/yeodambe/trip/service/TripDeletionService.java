@@ -10,7 +10,6 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.repository.TripDraftRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,7 +28,6 @@ public class TripDeletionService {
     private final StoredFileRepository files;
     private final UserStatsService userStats;
     private final TransactionOperations transactions;
-    private final TripDraftRepository drafts;
 
     public void delete(Long tripId, Long userId) {
         transactions.executeWithoutResult(status -> deleteInTransaction(tripId, userId));
@@ -60,8 +58,6 @@ public class TripDeletionService {
                 .filter(fileId -> !attachments.existsByFileIdAndDeletedAtIsNull(fileId))
                 .toList();
         if (!unreferencedFileIds.isEmpty()) files.softDeleteByIds(unreferencedFileIds, deletedAt);
-
-        drafts.clearSubmittedTripId(tripId, userId);
 
         userStats.refreshFromActiveTrips(userId);
     }

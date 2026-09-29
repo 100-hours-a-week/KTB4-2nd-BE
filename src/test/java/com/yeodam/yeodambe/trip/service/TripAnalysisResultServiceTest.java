@@ -22,9 +22,8 @@ class TripAnalysisResultServiceTest {
     private final TripDetailPlaceRepository places = mock(TripDetailPlaceRepository.class);
     private final InitialUploadExecutionRegistry executions = new InitialUploadExecutionRegistry();
     private final UserStatsService userStats = mock(UserStatsService.class);
-    private final TripDraftRepository drafts = mock(TripDraftRepository.class);
     private final TripAnalysisResultService service = new TripAnalysisResultService(
-            trips, attachments, places, executions, userStats, drafts);
+            trips, attachments, places, executions, userStats);
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
@@ -49,7 +48,6 @@ class TripAnalysisResultServiceTest {
         verify(trips).finishInitialUpload(7L, 1L, ProcessingStatus.PROCESSING,
                 ProcessingStatus.COMPLETED);
         verify(userStats).refreshFromActiveTrips(1L);
-        verify(drafts).deleteBySubmittedTripIdAndUserId(7L, 1L);
     }
 
     @Test
@@ -64,7 +62,6 @@ class TripAnalysisResultServiceTest {
         assertThrows(IllegalStateException.class,
                 () -> service.saveCompleted(7L, 1L, executionId, List.of(photo), result, Map.of()));
         verifyNoInteractions(trips, attachments, places);
-        verifyNoInteractions(drafts);
     }
 
     @Test

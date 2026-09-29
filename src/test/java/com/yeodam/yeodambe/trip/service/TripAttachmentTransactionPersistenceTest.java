@@ -8,12 +8,10 @@ import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.RegionOrigin;
 import com.yeodam.yeodambe.trip.entity.Trip;
-import com.yeodam.yeodambe.trip.entity.TripDraft;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.repository.TripDraftRepository;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserRepository;
@@ -61,8 +59,6 @@ class TripAttachmentTransactionPersistenceTest {
     private UserStatsRepository stats;
     @Autowired
     private TripRepository trips;
-    @Autowired
-    private TripDraftRepository drafts;
     @Autowired
     private StoredFileRepository files;
     @Autowired
@@ -130,9 +126,6 @@ class TripAttachmentTransactionPersistenceTest {
         stats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(
                 user.getUserId(), "결과롤백", LocalDate.now(), LocalDate.now()));
-        TripDraft draft = new TripDraft(user.getUserId(), "결과롤백", "[\"50110\"]", LocalDate.now(), LocalDate.now());
-        draft.attach(trip.getId());
-        drafts.saveAndFlush(draft);
         StoredFile file = files.saveAndFlush(StoredFile.uploaded(
                 user.getUserId(), "photo.jpg", "original", "image/jpeg"));
         TripAttachment classified = attachments.saveAndFlush(TripAttachment.initial(
@@ -183,7 +176,6 @@ class TripAttachmentTransactionPersistenceTest {
 
         assertThat(trips.findById(trip.getId()).orElseThrow().getProcessingStatus())
                 .isEqualTo(ProcessingStatus.PROCESSING);
-        assertThat(drafts.findByUserId(user.getUserId())).isPresent();
         assertThat(places.countByTripIdAndDeletedAtIsNull(trip.getId())).isZero();
         assertThat(attachments.findAllById(List.of(classified.getId(), invalid.getId())))
                 .allSatisfy(attachment -> {
@@ -200,9 +192,6 @@ class TripAttachmentTransactionPersistenceTest {
         stats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(
                 user.getUserId(), "대표사진", LocalDate.now(), LocalDate.now()));
-        TripDraft draft = new TripDraft(user.getUserId(), "대표사진", "[\"50110\"]", LocalDate.now(), LocalDate.now());
-        draft.attach(trip.getId());
-        drafts.saveAndFlush(draft);
         StoredFile file = files.saveAndFlush(StoredFile.uploaded(
                 user.getUserId(), "photo.jpg", "thumbnail-original", "image/jpeg"));
         TripAttachment low = attachments.saveAndFlush(TripAttachment.initial(
@@ -227,8 +216,6 @@ class TripAttachmentTransactionPersistenceTest {
                 trip.getId(), user.getUserId(), executionId,
                 List.of(low, highFirst, highLater), result,
                 Map.of("p1", "성산일출봉"));
-
-        assertThat(drafts.findByUserId(user.getUserId())).isEmpty();
 
         assertThat(places.findAll())
                 .filteredOn(place -> place.getTripId().equals(trip.getId()))

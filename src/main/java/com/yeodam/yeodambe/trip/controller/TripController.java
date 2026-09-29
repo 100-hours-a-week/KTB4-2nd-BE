@@ -2,15 +2,12 @@ package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
-import com.yeodam.yeodambe.common.response.ErrorMessage;
-import com.yeodam.yeodambe.trip.service.TripDraftService;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
-import com.yeodam.yeodambe.trip.service.request.TripCreateCommandRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
@@ -19,7 +16,7 @@ import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
-import jakarta.validation.Validator;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -41,30 +38,14 @@ public class TripController {
     private final TripProcessingCancellationService processingCancellationService;
     private final TripPlaceFolderListService tripPlaceFolderListService;
     private final TripDeletionService tripDeletionService;
-    private final TripDraftService tripDraftService;
-    private final Validator validator;
 
     @PostMapping("/trips")
     public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(
-            @RequestBody TripCreateCommandRequest body,
+            @Valid @RequestBody TripCreateRequest request,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        if (body == null) return invalidCreateRequest();
-        Long userId = Long.valueOf(jwt.getSubject());
-        if (body.isDraftRequest()) {
-            var result = tripDraftService.submit(userId, body.requiredDraftId());
-            return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
-                    .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, result.trip()));
-        }
-        if (body.hasUnknownFields()) return invalidCreateRequest();
-        TripCreateRequest request = body.directRequest();
-        if (!validator.validate(request).isEmpty()) return invalidCreateRequest();
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(userId, request)));
-    }
-
-    private ResponseEntity<ApiResponse<TripCreateResponse>> invalidCreateRequest() {
-        return ResponseEntity.badRequest().body(new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null));
+                .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
     }
 
     @PostMapping("/trips/{tripId}/favorite")

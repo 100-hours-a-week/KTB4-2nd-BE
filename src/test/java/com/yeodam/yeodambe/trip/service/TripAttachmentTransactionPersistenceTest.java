@@ -72,6 +72,26 @@ class TripAttachmentTransactionPersistenceTest {
     private TripAttachmentStorageClient storage;
 
     @Test
+    void 표시본_키를_저장하고_기존_첨부는_NULL을_허용한다() {
+        User user = users.saveAndFlush(new User("display-key@yeodam.test", "표시본"));
+        stats.saveAndFlush(new UserStats(user));
+        Trip trip = trips.saveAndFlush(new Trip(
+                user.getUserId(), "표시본", LocalDate.now(), LocalDate.now()));
+        StoredFile file = files.saveAndFlush(StoredFile.uploaded(
+                user.getUserId(), "photo.heic", "original", "image/heic"));
+
+        TripAttachment heic = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), file.getId(), "analyze", "preview", "display"));
+        TripAttachment legacy = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), file.getId(), "legacy-analyze", "legacy-preview"));
+
+        assertThat(attachments.findById(heic.getId()).orElseThrow().getDisplayStorageKey())
+                .isEqualTo("display");
+        assertThat(attachments.findById(legacy.getId()).orElseThrow().getDisplayStorageKey())
+                .isNull();
+    }
+
+    @Test
     void 파생_키_검증이_실패하면_먼저_저장한_원본도_롤백한다() {
         User user = users.saveAndFlush(new User("attachment-rollback@yeodam.test", "첨부롤백"));
         stats.saveAndFlush(new UserStats(user));

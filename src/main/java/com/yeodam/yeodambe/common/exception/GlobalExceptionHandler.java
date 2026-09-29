@@ -76,6 +76,24 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.INVALID_TRIP_REQUEST, null);
     }
 
+    @ExceptionHandler(InvalidTripDraftRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidTripDraftRequest(InvalidTripDraftRequestException e) {
+        return new ApiResponse<>(ErrorMessage.INVALID_TRIP_DRAFT_REQUEST, null);
+    }
+
+    @ExceptionHandler(TripDraftNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleTripDraftNotFound(TripDraftNotFoundException e) {
+        return new ApiResponse<>(ErrorMessage.TRIP_DRAFT_NOT_FOUND, null);
+    }
+
+    @ExceptionHandler(TripDraftAlreadySubmittedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleTripDraftAlreadySubmitted(TripDraftAlreadySubmittedException e) {
+        return new ApiResponse<>(ErrorMessage.TRIP_DRAFT_ALREADY_SUBMITTED, null);
+    }
+
     @ExceptionHandler(InvalidTripListFilterException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidTripListFilter(InvalidTripListFilterException e) {

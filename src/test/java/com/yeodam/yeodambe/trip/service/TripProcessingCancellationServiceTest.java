@@ -13,6 +13,7 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.TripDraftRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -39,6 +40,7 @@ class TripProcessingCancellationServiceTest {
     private final TripPhotoAnalysisService analysis = mock(TripPhotoAnalysisService.class);
     private final InitialUploadExecutionRegistry executions = mock(InitialUploadExecutionRegistry.class);
     private final TransactionOperations transactions = mock(TransactionOperations.class);
+    private final TripDraftRepository drafts = mock(TripDraftRepository.class);
     private TripProcessingCancellationService service;
 
     @BeforeEach
@@ -49,7 +51,7 @@ class TripProcessingCancellationServiceTest {
             return null;
         }).when(transactions).executeWithoutResult(any());
         service = new TripProcessingCancellationService(
-                trips, regions, places, attachments, files, analysis, executions, transactions);
+                trips, regions, places, attachments, files, analysis, executions, transactions, drafts);
     }
 
     @Test
@@ -72,6 +74,7 @@ class TripProcessingCancellationServiceTest {
         verify(places).softDeleteByTripId(eq(7L), any(LocalDateTime.class));
         verify(attachments).softDeleteByTripId(eq(7L), any(LocalDateTime.class));
         verify(files).softDeleteByIds(eq(List.of(20L)), any(LocalDateTime.class));
+        verify(drafts).clearSubmittedTripId(7L, 1L);
     }
 
     @Test
@@ -81,6 +84,7 @@ class TripProcessingCancellationServiceTest {
         assertThrows(TripNotFoundException.class, () -> service.cancel(7L, 1L));
 
         verifyNoInteractions(analysis);
+        verifyNoInteractions(drafts);
     }
 
     @Test

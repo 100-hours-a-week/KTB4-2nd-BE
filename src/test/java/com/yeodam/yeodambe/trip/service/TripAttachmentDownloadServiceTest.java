@@ -37,12 +37,13 @@ class TripAttachmentDownloadServiceTest {
         when(tripAttachmentRepository.findAccessibleById(501L, 1L))
                 .thenReturn(Optional.of(attachment));
         when(attachment.getId()).thenReturn(501L);
+        when(attachment.getDisplayStorageKey()).thenReturn("trip-displays/display-501.jpg");
         when(attachment.getFile()).thenReturn(file);
         when(file.getObjectKey()).thenReturn("trip-uploads/original-501");
-        when(file.getOriginalFileName()).thenReturn("서울 여행.jpg");
+        when(file.getOriginalFileName()).thenReturn("서울 여행.heic");
         when(tripAttachmentStorageClient.createDownloadUrl(
                 "trip-uploads/original-501",
-                "서울 여행.jpg"
+                "서울 여행.heic"
         )).thenReturn("https://example.com/download-501");
 
         TripAttachmentDownloadResponse response = service.issueDownloadUrl(1L, 501L);
@@ -52,7 +53,7 @@ class TripAttachmentDownloadServiceTest {
                 .isEqualTo("https://example.com/download-501");
         verify(tripAttachmentStorageClient).createDownloadUrl(
                 "trip-uploads/original-501",
-                "서울 여행.jpg"
+                "서울 여행.heic"
         );
     }
 

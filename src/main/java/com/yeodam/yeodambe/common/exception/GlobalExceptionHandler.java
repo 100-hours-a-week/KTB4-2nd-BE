@@ -18,6 +18,7 @@ import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
+import org.slf4j.spi.LoggingEventBuilder;
 
 @Slf4j
 @RestControllerAdvice
@@ -26,7 +27,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AiStatusUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handleAiStatusUnavailable(AiStatusUnavailableException e) {
-        log.warn("AI 사진 분석 상태를 조회할 수 없습니다.", e);
+        logFailure(log.atWarn(), ErrorMessage.AI_STATUS_UNAVAILABLE,
+                "AI 사진 분석 상태를 조회할 수 없습니다.", e);
         return new ApiResponse<>(ErrorMessage.AI_STATUS_UNAVAILABLE, null);
     }
 
@@ -51,7 +53,8 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleAuthenticationStoreUnavailable(
             DataAccessResourceFailureException e
     ) {
-        log.warn("인증 저장소에 연결할 수 없습니다.", e);
+        logFailure(log.atWarn(), ErrorMessage.AUTH_STORE_UNAVAILABLE,
+                "인증 저장소에 연결할 수 없습니다.", e);
         return new ApiResponse<>(ErrorMessage.AUTH_STORE_UNAVAILABLE, null);
     }
 
@@ -100,7 +103,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(PlaceQueryProviderUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handlePlaceQueryProviderUnavailableException(PlaceQueryProviderUnavailableException e) {
-        log.warn("지역 검색 제공자 호출에 실패했습니다.", e);
+        logFailure(log.atWarn(), ErrorMessage.MAP_PROVIDER_UNAVAILABLE,
+                "지역 검색 제공자 호출에 실패했습니다.", e);
         return new ApiResponse<>(ErrorMessage.MAP_PROVIDER_UNAVAILABLE, null);
     }
 
@@ -150,7 +154,8 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleOAuthStateCreateFailed(
             OAuthStateCreateFailedException e
     ) {
-        log.error("OAuth state 생성에 실패했습니다.", e);
+        logFailure(log.atError(), ErrorMessage.OAUTH_STATE_CREATE_FAILED,
+                "OAuth state 생성에 실패했습니다.", e);
         return new ApiResponse<>(ErrorMessage.OAUTH_STATE_CREATE_FAILED, null);
     }
 
@@ -170,7 +175,8 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleOAuthProviderUnavailableException(
             OAuthProviderUnavailableException e
     ) {
-        log.warn("OAuth 제공자 호출에 실패했습니다.", e);
+        logFailure(log.atWarn(), ErrorMessage.OAUTH_PROVIDER_UNAVAILABLE,
+                "OAuth 제공자 호출에 실패했습니다.", e);
 
         return new ApiResponse<>(
                 ErrorMessage.OAUTH_PROVIDER_UNAVAILABLE,
@@ -195,7 +201,8 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleLoginTicketIssueFailed(
             LoginTicketIssueFailedException e
     ) {
-        log.error("로그인 티켓 발급에 실패했습니다.", e);
+        logFailure(log.atError(), ErrorMessage.LOGIN_TICKET_ISSUE_FAILED,
+                "로그인 티켓 발급에 실패했습니다.", e);
         return new ApiResponse<>(ErrorMessage.LOGIN_TICKET_ISSUE_FAILED, null);
     }
 
@@ -236,28 +243,32 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleWithdrawalFailed(
             WithdrawalFailedException exception
     ) {
-        log.error("회원 탈퇴 처리에 실패했습니다.", exception);
+        logFailure(log.atError(), ErrorMessage.WITHDRAWAL_FAILED,
+                "회원 탈퇴 처리에 실패했습니다.", exception);
         return new ApiResponse<>(ErrorMessage.WITHDRAWAL_FAILED, null);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleIllegalArgumentException(IllegalArgumentException e) {
-        log.error("잘못된 내부 인자가 전달됐습니다.", e);
+        logFailure(log.atError(), ErrorMessage.INTERNAL_SERVER_ERROR,
+                "잘못된 내부 인자가 전달됐습니다.", e);
         return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
     }
 
     @ExceptionHandler(IllegalStateException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleIllegalStateException(IllegalStateException e) {
-        log.error("잘못된 내부 상태가 발생했습니다.", e);
+        logFailure(log.atError(), ErrorMessage.INTERNAL_SERVER_ERROR,
+                "잘못된 내부 상태가 발생했습니다.", e);
         return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
     }
 
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleUnexpectedException(Exception e) {
-        log.error("예상하지 못한 서버 오류가 발생했습니다.", e);
+        logFailure(log.atError(), ErrorMessage.INTERNAL_SERVER_ERROR,
+                "예상하지 못한 서버 오류가 발생했습니다.", e);
         return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
     }
 
@@ -362,5 +373,18 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
     ApiResponse<Void> handleUnsupportedAttachmentFormat(UnsupportedAttachmentFormatException e) {
         return new ApiResponse<>(ErrorMessage.UNSUPPORTED_ATTACHMENT_FORMAT, null);
+    }
+
+    private void logFailure(
+            LoggingEventBuilder logEvent,
+            ErrorMessage errorCode,
+            String message,
+            Exception exception
+    ) {
+        logEvent.addKeyValue("event", "api_exception")
+                .addKeyValue("result", "failure")
+                .addKeyValue("error_code", errorCode.name())
+                .setCause(exception)
+                .log(message);
     }
 }

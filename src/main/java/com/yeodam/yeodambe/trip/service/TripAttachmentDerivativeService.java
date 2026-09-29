@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import jakarta.annotation.PreDestroy;
@@ -42,7 +44,7 @@ public class TripAttachmentDerivativeService {
             String executionId, List<String> originalKeys, List<String> mimeTypes
     ) {
         if (originalKeys.size() != mimeTypes.size()) {
-            throw new IllegalArgumentException("원본 키와 MIME 타입 수가 다릅니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.SOURCE_KEY_MIME_TYPE_COUNT_MISMATCH.message());
         }
         Map<String, String> callerMdc = MDC.getCopyOfContextMap();
 
@@ -95,7 +97,7 @@ public class TripAttachmentDerivativeService {
         try {
             dir = Files.createTempDirectory("사진 작업 디렉터리를 만들 수 없습니다.");
         } catch (IOException e) {
-            throw new IllegalStateException("사진 작업 디렉터리를 만들 수 없습니다.", e);
+            throw new IllegalStateException(TripInternalErrorMessage.PHOTO_WORK_DIRECTORY_CREATE_FAILED.message(), e);
         }
 
         Path original = dir.resolve("original");
@@ -162,7 +164,7 @@ public class TripAttachmentDerivativeService {
                     takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
                     coordinate(metadata, "GPSLongitude", 180), deviceModel(metadata));
         } catch (Exception e) {
-            throw new IllegalStateException("파생 사진 생성에 실패했습니다.", e);
+            throw new IllegalStateException(TripInternalErrorMessage.DERIVED_ATTACHMENT_CREATE_FAILED.message(), e);
         } finally {
             for (Path path : List.of(display, preview, analyze, original, dir)) {
                 try {
@@ -183,16 +185,16 @@ public class TripAttachmentDerivativeService {
             byte[] output = process.getInputStream().readAllBytes();
             if (!process.waitFor(120, TimeUnit.SECONDS) || process.exitValue() != 0) {
                 process.destroyForcibly();
-                throw new IllegalStateException("EXIF 추출에 실패했습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_FAILED.message());
             }
             JsonNode values = json.readTree(output);
-            if (!values.isArray() || values.isEmpty()) throw new IllegalStateException("EXIF 결과가 없습니다.");
+            if (!values.isArray() || values.isEmpty()) throw new IllegalStateException(TripInternalErrorMessage.EXIF_RESULT_MISSING.message());
             return values.get(0);
         } catch (IOException e) {
-            throw new IllegalStateException("EXIF 추출 도구를 실행할 수 없습니다.", e);
+            throw new IllegalStateException(TripInternalErrorMessage.EXIF_TOOL_EXECUTION_FAILED.message(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("EXIF 추출이 중단됐습니다.", e);
+            throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_INTERRUPTED.message(), e);
         }
     }
 
@@ -248,16 +250,16 @@ public class TripAttachmentDerivativeService {
 
             if (!process.waitFor(120, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
-                throw new IllegalStateException(command[0] + " 실행 시간 초과");
+                throw new IllegalStateException(TripInternalErrorMessage.COMMAND_TIMEOUT.message().formatted(command[0]));
             }
             if (process.exitValue() != 0) {
-                throw new IllegalStateException(command[0] + " 실행 실패");
+                throw new IllegalStateException(TripInternalErrorMessage.COMMAND_FAILED.message().formatted(command[0]));
             }
         } catch (IOException e) {
-            throw new IllegalStateException(command[0] + " 실행 불가", e);
+            throw new IllegalStateException(TripInternalErrorMessage.COMMAND_UNAVAILABLE.message().formatted(command[0]), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException(command[0] + " 실행 중단", e);
+            throw new IllegalStateException(TripInternalErrorMessage.COMMAND_INTERRUPTED.message().formatted(command[0]), e);
         }
     }
 

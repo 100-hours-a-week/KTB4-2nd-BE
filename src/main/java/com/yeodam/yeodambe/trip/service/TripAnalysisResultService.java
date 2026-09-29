@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
@@ -40,10 +42,10 @@ public class TripAnalysisResultService {
             Map<String, String> placeNames
     ) {
         if (!executions.isCurrent(tripId, executionId)) {
-            throw new IllegalStateException("현재 실행과 AI 결과가 일치하지 않습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.CURRENT_EXECUTION_AI_RESULT_MISMATCH.message());
         }
         if (result == null || !result.path("places").isArray() || !result.path("unclassified").isArray()) {
-            throw new IllegalStateException("AI 결과 형식이 올바르지 않습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.AI_RESULT_FORMAT_INVALID.message());
         }
 
         Set<Long> expected = new HashSet<>(attachments.stream()
@@ -56,23 +58,23 @@ public class TripAnalysisResultService {
             String placeId = place.path("place_id").asString();
 
             if (placeId.isBlank() || !placeIds.add(placeId) || !place.path("attachments").isArray()) {
-                throw new IllegalStateException("AI 장소 결과가 올바르지 않습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_RESULT_INVALID.message());
             }
 
             for (JsonNode photo : place.path("attachments")) {
                 if (!actual.add(photo.path("trip_attachment_id").asLong(-1))) {
-                    throw new IllegalStateException("AI 결과에 중복된 사진이 있습니다.");
+                    throw new IllegalStateException(TripInternalErrorMessage.AI_RESULT_DUPLICATE_ATTACHMENT.message());
                 }
             }
         }
 
         for (JsonNode photo : result.path("unclassified")) {
             if (!actual.add(photo.path("trip_attachment_id").asLong(-1))) {
-                throw new IllegalStateException("AI 결과에 중복된 사진이 있습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.AI_RESULT_DUPLICATE_ATTACHMENT.message());
             }
         }
 
-        if (!expected.equals(actual)) throw new IllegalStateException("AI 결과의 사진 목록이 다릅니다.");
+        if (!expected.equals(actual)) throw new IllegalStateException(TripInternalErrorMessage.AI_RESULT_ATTACHMENT_LIST_MISMATCH.message());
 
         validatePlaceNames(placeIds, placeNames);
 
@@ -82,7 +84,7 @@ public class TripAnalysisResultService {
                 ProcessingStatus.PROCESSING,
                 ProcessingStatus.COMPLETED
         ) != 1) {
-            throw new IllegalStateException("현재 실행과 AI 결과가 일치하지 않습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.CURRENT_EXECUTION_AI_RESULT_MISMATCH.message());
         }
 
         Map<Long, TripAttachment> byId = new HashMap<>();
@@ -96,14 +98,14 @@ public class TripAnalysisResultService {
             long representativeId = place.path("representative_attachment_id").asLong(-1);
             TripAttachment representative = byId.get(representativeId);
 
-            if (representative == null) throw new IllegalStateException("대표 사진이 없습니다.");
+            if (representative == null) throw new IllegalStateException(TripInternalErrorMessage.REPRESENTATIVE_ATTACHMENT_MISSING.message());
 
             boolean representativeInPlace = false;
             for (JsonNode photo : place.path("attachments")) {
                 if (photo.path("trip_attachment_id").asLong(-1) == representativeId) representativeInPlace = true;
             }
 
-            if (!representativeInPlace) throw new IllegalStateException("대표 사진이 장소에 없습니다.");
+            if (!representativeInPlace) throw new IllegalStateException(TripInternalErrorMessage.REPRESENTATIVE_ATTACHMENT_NOT_IN_PLACE.message());
 
             TripDetailPlace savedPlace = placeRepository.save(TripDetailPlace.fromAnalysis(
                     tripId, ++order, placeNames.get(placeId),
@@ -124,7 +126,7 @@ public class TripAnalysisResultService {
 
             TripAttachment thumbnail = placeAttachments.stream()
                     .min(THUMBNAIL_ORDER)
-                    .orElseThrow(() -> new IllegalStateException("대표 사진이 없습니다."));
+                    .orElseThrow(() -> new IllegalStateException(TripInternalErrorMessage.REPRESENTATIVE_ATTACHMENT_MISSING.message()));
             savedPlace.changeThumbnailKey(thumbnail.getPreviewStorageKey());
         }
 
@@ -134,10 +136,10 @@ public class TripAnalysisResultService {
             try {
                 issue = AttachmentIssue.valueOf(photo.path("issue").asString());
             } catch (IllegalArgumentException e) {
-                throw new IllegalStateException("AI 사진 이슈가 올바르지 않습니다.", e);
+                throw new IllegalStateException(TripInternalErrorMessage.AI_ATTACHMENT_ISSUE_INVALID.message(), e);
             }
 
-            if (issue == AttachmentIssue.NONE) throw new IllegalStateException("미분류 사진의 이슈가 없습니다.");
+            if (issue == AttachmentIssue.NONE) throw new IllegalStateException(TripInternalErrorMessage.UNCLASSIFIED_ATTACHMENT_ISSUE_MISSING.message());
 
             byId.get(
                     photo.path("trip_attachment_id").asLong(-1)).unclassify(issue,
@@ -158,7 +160,7 @@ public class TripAnalysisResultService {
                 ProcessingStatus.COMPLETED,
                 thumbnailKey
         ) != 1) {
-            throw new IllegalStateException("현재 실행과 AI 결과가 일치하지 않습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.CURRENT_EXECUTION_AI_RESULT_MISMATCH.message());
         }
 
         attachmentRepository.saveAll(attachments);
@@ -167,11 +169,11 @@ public class TripAnalysisResultService {
 
     private void validatePlaceNames(Set<String> placeIds, Map<String, String> placeNames) {
         if (placeNames == null || !placeIds.equals(placeNames.keySet())) {
-            throw new IllegalStateException("AI 장소명 결과가 올바르지 않습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_NAME_RESULT_INVALID.message());
         }
         for (String name : placeNames.values()) {
             if (name == null || name.isBlank() || name.codePointCount(0, name.length()) > 50) {
-                throw new IllegalStateException("AI 장소명 결과가 올바르지 않습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_NAME_RESULT_INVALID.message());
             }
         }
     }
@@ -180,7 +182,7 @@ public class TripAnalysisResultService {
         try {
             return RegionOrigin.valueOf(photo.path("region_origin").asString());
         } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("AI 지역 출처가 올바르지 않습니다.", e);
+            throw new IllegalStateException(TripInternalErrorMessage.AI_REGION_SOURCE_INVALID.message(), e);
         }
     }
 
@@ -189,13 +191,13 @@ public class TripAnalysisResultService {
         try {
             return OffsetDateTime.parse(value.asString()).toLocalDateTime();
         } catch (RuntimeException e) {
-            throw new IllegalStateException("AI 촬영 시각이 올바르지 않습니다.", e);
+            throw new IllegalStateException(TripInternalErrorMessage.AI_CAPTURED_AT_INVALID.message(), e);
         }
     }
 
     private BigDecimal coordinate(JsonNode value, String field) {
         BigDecimal coordinate = optionalCoordinate(value, field);
-        if (coordinate == null) throw new IllegalStateException("AI 장소 좌표가 없습니다.");
+        if (coordinate == null) throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_COORDINATE_MISSING.message());
         return coordinate;
     }
 
@@ -205,7 +207,7 @@ public class TripAnalysisResultService {
         try {
             return new BigDecimal(number.asString());
         } catch (NumberFormatException e) {
-            throw new IllegalStateException("AI 좌표가 올바르지 않습니다.", e);
+            throw new IllegalStateException(TripInternalErrorMessage.AI_COORDINATE_INVALID.message(), e);
         }
     }
 
@@ -214,7 +216,7 @@ public class TripAnalysisResultService {
         if (value.isNull() || value.isMissingNode()) return null;
 
         int score = value.asInt(-1);
-        if (score < 0 || score > 100) throw new IllegalStateException("AI 평가값이 올바르지 않습니다.");
+        if (score < 0 || score > 100) throw new IllegalStateException(TripInternalErrorMessage.AI_SCORE_INVALID.message());
 
         return score;
     }

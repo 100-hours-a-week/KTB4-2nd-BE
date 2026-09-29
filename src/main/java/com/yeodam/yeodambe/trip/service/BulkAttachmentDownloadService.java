@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
@@ -89,7 +91,7 @@ public class BulkAttachmentDownloadService {
             );
         } catch (IOException failure) {
             logBulkDownloadFailure(expectedCount, failureStage, failure);
-            throw new IllegalStateException("첨부 ZIP 생성에 실패했습니다.", failure);
+            throw new IllegalStateException(TripInternalErrorMessage.ATTACHMENT_ZIP_CREATE_FAILED.message(), failure);
         } catch (RuntimeException failure) {
             logBulkDownloadFailure(expectedCount, failureStage, failure);
             throw failure;

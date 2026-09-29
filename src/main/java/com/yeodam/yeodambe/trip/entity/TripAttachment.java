@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -159,7 +161,7 @@ public class TripAttachment {
 
     public void markObjectCleanupCompleted() {
         if (deletedAt == null) {
-            throw new IllegalStateException("삭제되지 않은 첨부는 객체 정리를 완료할 수 없습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.ATTACHMENT_OBJECT_CLEANUP_REQUIRES_DELETION.message());
         }
         this.classificationStatus = ClassificationStatus.DELETED;
     }

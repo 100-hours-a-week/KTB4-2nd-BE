@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
@@ -499,7 +501,7 @@ public class TripAttachmentService {
                 originalsKeys.add(failure.getObjectKey());
                 throw failure;
             }
-            if (key == null || key.isBlank()) throw new IllegalStateException("S3 객체 키가 없습니다.");
+            if (key == null || key.isBlank()) throw new IllegalStateException(TripInternalErrorMessage.S3_OBJECT_KEY_MISSING.message());
             originalsKeys.add(key);
         }
     }
@@ -510,7 +512,7 @@ public class TripAttachmentService {
         List<DerivedPhotoKeys> derived = derivatives.createAll(
                 executionId, List.copyOf(originalsKeys), mimeTypes).join();
         if (derived == null || derived.size() != mimeTypes.size()) {
-            throw new IllegalStateException("파생 사진 수가 다릅니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.DERIVED_ATTACHMENT_COUNT_MISMATCH.message());
         }
 
         for (int i = 0; i < derived.size(); i++) {
@@ -520,7 +522,7 @@ public class TripAttachmentService {
                     || keys.previewKey() == null || keys.previewKey().isBlank()
                     || ("image/heic".equals(mimeTypes.get(i))
                     && (keys.displayKey() == null || keys.displayKey().isBlank()))) {
-                throw new IllegalStateException("파생 사진 결과가 올바르지 않습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.DERIVED_ATTACHMENT_RESULT_INVALID.message());
             }
         }
         return derived;
@@ -611,7 +613,7 @@ public class TripAttachmentService {
                 .map(r -> new TripPhotoAnalysisRequest.Region(r.getLatitude(), r.getLongitude()))
                 .toList();
 
-        if (coordinates.isEmpty()) throw new IllegalStateException("여행 지역이 없습니다.");
+        if (coordinates.isEmpty()) throw new IllegalStateException(TripInternalErrorMessage.TRIP_REGION_MISSING.message());
 
         List<TripPhotoAnalysisRequest.Photo> photos = new ArrayList<>(saved.size());
         for (int i = 0; i < saved.size(); i++) {

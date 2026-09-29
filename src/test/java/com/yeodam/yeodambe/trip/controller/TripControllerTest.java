@@ -3,13 +3,11 @@ package com.yeodam.yeodambe.trip.controller;
 import com.yeodam.yeodambe.trip.controller.TripController;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripService;
-import com.yeodam.yeodambe.trip.service.TripDraftService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
-import com.yeodam.yeodambe.trip.service.request.TripCreateCommandRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
@@ -18,8 +16,6 @@ import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
-import jakarta.validation.Validator;
-import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -36,22 +32,18 @@ class TripControllerTest {
     private final TripPlaceFolderListService placeFolderListService =
             mock(TripPlaceFolderListService.class);
     private final TripDeletionService deletionService = mock(TripDeletionService.class);
-    private final TripDraftService draftService = mock(TripDraftService.class);
-    private final Validator validator = mock(Validator.class);
     private final TripController controller = new TripController(
             tripService, processingStatusService, cancellationService, placeFolderListService,
-            deletionService, draftService, validator);
+            deletionService);
     private final TripCreateRequest request = new TripCreateRequest(
             "여행", LocalDate.now(), LocalDate.now(), List.of("50110"));
 
     @Test
-    void 인증된_사용자의_여행을_생성하면_처리중으로_응답한다() throws Exception {
+    void 인증된_사용자의_여행을_생성하면_처리중으로_응답한다() {
         when(tripService.createTrip(1L, request))
                 .thenReturn(new TripCreateResponse(7L, ProcessingStatus.PROCESSING));
-        var body = new ObjectMapper().readValue("""
-                {"tripName":"여행","startDate":"%s","endDate":"%s","regionCodes":["50110"]}
-                """.formatted(LocalDate.now(), LocalDate.now()), TripCreateCommandRequest.class);
-        var response = controller.createTrip(body, Jwt.withTokenValue("token")
+
+        var response = controller.createTrip(request, Jwt.withTokenValue("token")
                 .header("alg", "HS256").subject("1").build());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);

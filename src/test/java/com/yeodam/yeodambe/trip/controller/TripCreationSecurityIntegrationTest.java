@@ -11,8 +11,6 @@ import com.yeodam.yeodambe.trip.service.TripAccessService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripService;
-import com.yeodam.yeodambe.trip.service.TripDraftService;
-import com.yeodam.yeodambe.trip.service.response.TripDraftSubmission;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.request.PlaceFolderCursor;
@@ -95,9 +93,6 @@ class TripCreationSecurityIntegrationTest {
     private TripService tripService;
 
     @MockitoBean
-    private TripDraftService tripDraftService;
-
-    @MockitoBean
     private TripProcessingStatusService processingStatusService;
 
     @MockitoBean
@@ -163,81 +158,6 @@ class TripCreationSecurityIntegrationTest {
         then(tripService).should().createTrip(eq(42L), argThat(request ->
                 request.tripName().equals("제주 여행")
                         && request.regionCodes().equals(java.util.List.of("50110"))));
-    }
-
-    @Test
-    void 초안_제출은_신규_201_반복_200으로_응답한다() throws Exception {
-        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
-        given(csrfTokenStore.find("draft-browser")).willReturn("csrf-token");
-        given(tripDraftService.submit(42L, 12L))
-                .willReturn(new TripDraftSubmission(new TripCreateResponse(7L, ProcessingStatus.PROCESSING), true),
-                        new TripDraftSubmission(new TripCreateResponse(7L, ProcessingStatus.FAILED), false));
-
-        for (int attempt = 0; attempt < 2; attempt++) {
-            mockMvc.perform(post("/trips")
-                            .cookie(new Cookie("accessToken", accessToken), new Cookie("CSRF_CONTEXT", "draft-browser"))
-                            .header("X-CSRF-TOKEN", "csrf-token").contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"draftId\":12}"))
-                    .andExpect(attempt == 0 ? status().isCreated() : status().isOk())
-                    .andExpect(jsonPath("$.message").value("TRIP_CREATED"))
-                    .andExpect(jsonPath("$.data.tripId").value(7))
-                    .andExpect(jsonPath("$.data.status").value(attempt == 0 ? "PROCESSING" : "FAILED"));
-        }
-    }
-
-    @Test
-    void 초안_ID와_직접_입력을_섞으면_400이다() throws Exception {
-        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
-        given(csrfTokenStore.find("draft-browser")).willReturn("csrf-token");
-        mockMvc.perform(post("/trips")
-                        .cookie(new Cookie("accessToken", accessToken), new Cookie("CSRF_CONTEXT", "draft-browser"))
-                        .header("X-CSRF-TOKEN", "csrf-token").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"draftId\":12,\"tripName\":\"제주\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("INVALID_TRIP_REQUEST"));
-        verifyNoInteractions(tripDraftService);
-    }
-
-    @Test
-    void 초안_요청에_null_또는_알_수_없는_필드를_섞어도_400이다() throws Exception {
-        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
-        given(csrfTokenStore.find("draft-browser")).willReturn("csrf-token");
-        for (String payload : List.of(
-                "{\"draftId\":12,\"tripName\":null}",
-                "{\"draftId\":12,\"unexpected\":true}",
-                "{\"draftId\":null}")) {
-            mockMvc.perform(post("/trips")
-                            .cookie(new Cookie("accessToken", accessToken), new Cookie("CSRF_CONTEXT", "draft-browser"))
-                            .header("X-CSRF-TOKEN", "csrf-token").contentType(MediaType.APPLICATION_JSON)
-                            .content(payload))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.message").value("INVALID_TRIP_REQUEST"));
-        }
-        verifyNoInteractions(tripDraftService);
-    }
-
-    @Test
-    void Long_범위를_넘는_초안_ID는_400이다() throws Exception {
-        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
-        given(csrfTokenStore.find("draft-browser")).willReturn("csrf-token");
-        mockMvc.perform(post("/trips")
-                        .cookie(new Cookie("accessToken", accessToken), new Cookie("CSRF_CONTEXT", "draft-browser"))
-                        .header("X-CSRF-TOKEN", "csrf-token").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"draftId\":9223372036854775808}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("INVALID_TRIP_REQUEST"));
-    }
-
-    @Test
-    void 기존_직접_생성_요청의_필드_오류는_INVALID_REQUEST를_유지한다() throws Exception {
-        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
-        given(csrfTokenStore.find("draft-browser")).willReturn("csrf-token");
-        mockMvc.perform(post("/trips")
-                        .cookie(new Cookie("accessToken", accessToken), new Cookie("CSRF_CONTEXT", "draft-browser"))
-                        .header("X-CSRF-TOKEN", "csrf-token").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"tripName\":\"제주\",\"regionCodes\":[\"50110\"]}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
     }
 
     @Test

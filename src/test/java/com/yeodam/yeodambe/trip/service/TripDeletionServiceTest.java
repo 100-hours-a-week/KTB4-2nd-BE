@@ -10,7 +10,6 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.repository.TripDraftRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,7 +34,6 @@ class TripDeletionServiceTest {
     private final StoredFileRepository files = mock(StoredFileRepository.class);
     private final UserStatsService userStats = mock(UserStatsService.class);
     private final TransactionOperations transactions = mock(TransactionOperations.class);
-    private final TripDraftRepository drafts = mock(TripDraftRepository.class);
     private TripDeletionService service;
 
     @BeforeEach
@@ -46,7 +44,7 @@ class TripDeletionServiceTest {
             return null;
         }).when(transactions).executeWithoutResult(any());
         service = new TripDeletionService(
-                trips, regions, places, attachments, files, userStats, transactions, drafts);
+                trips, regions, places, attachments, files, userStats, transactions);
     }
 
     @Test
@@ -78,7 +76,6 @@ class TripDeletionServiceTest {
 
         verify(userStats).refreshFromActiveTrips(1L);
         verify(files).softDeleteByIds(eq(List.of(20L)), any());
-        verify(drafts).clearSubmittedTripId(7L, 1L);
     }
 
     @Test

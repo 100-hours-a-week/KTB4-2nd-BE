@@ -5,7 +5,6 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.repository.TripDraftRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,11 +20,9 @@ public class TripWithdrawalService {
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final StoredFileRepository storedFileRepository;
-    private final TripDraftRepository tripDraftRepository;
 
     @Transactional
     public void withdrawAll(Long userId, LocalDateTime withdrawnAt) {
-        tripDraftRepository.deleteByUserId(userId);
         tripRegionRepository.softDeleteByUserId(userId, withdrawnAt);
         tripDetailPlaceRepository.softDeleteByUserId(userId, withdrawnAt);
         tripAttachmentRepository.softDeleteByUserId(userId, withdrawnAt);

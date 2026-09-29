@@ -199,6 +199,24 @@ class TripCreationSecurityIntegrationTest {
     }
 
     @Test
+    void 초안_요청에_null_또는_알_수_없는_필드를_섞어도_400이다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("draft-browser")).willReturn("csrf-token");
+        for (String payload : List.of(
+                "{\"draftId\":12,\"tripName\":null}",
+                "{\"draftId\":12,\"unexpected\":true}",
+                "{\"draftId\":null}")) {
+            mockMvc.perform(post("/trips")
+                            .cookie(new Cookie("accessToken", accessToken), new Cookie("CSRF_CONTEXT", "draft-browser"))
+                            .header("X-CSRF-TOKEN", "csrf-token").contentType(MediaType.APPLICATION_JSON)
+                            .content(payload))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("INVALID_TRIP_REQUEST"));
+        }
+        verifyNoInteractions(tripDraftService);
+    }
+
+    @Test
     void Long_범위를_넘는_초안_ID는_400이다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("draft-browser")).willReturn("csrf-token");

@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import com.yeodam.yeodambe.trip.service.request.TripCreateCommandRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
@@ -36,11 +37,10 @@ class TripControllerTest {
             mock(TripPlaceFolderListService.class);
     private final TripDeletionService deletionService = mock(TripDeletionService.class);
     private final TripDraftService draftService = mock(TripDraftService.class);
-    private final ObjectMapper mapper = mock(ObjectMapper.class);
     private final Validator validator = mock(Validator.class);
     private final TripController controller = new TripController(
             tripService, processingStatusService, cancellationService, placeFolderListService,
-            deletionService, draftService, mapper, validator);
+            deletionService, draftService, validator);
     private final TripCreateRequest request = new TripCreateRequest(
             "여행", LocalDate.now(), LocalDate.now(), List.of("50110"));
 
@@ -48,9 +48,10 @@ class TripControllerTest {
     void 인증된_사용자의_여행을_생성하면_처리중으로_응답한다() throws Exception {
         when(tripService.createTrip(1L, request))
                 .thenReturn(new TripCreateResponse(7L, ProcessingStatus.PROCESSING));
-        when(mapper.treeToValue(any(), eq(TripCreateRequest.class))).thenReturn(request);
-
-        var response = controller.createTrip(new ObjectMapper().readTree("{}"), Jwt.withTokenValue("token")
+        var body = new ObjectMapper().readValue("""
+                {"tripName":"여행","startDate":"%s","endDate":"%s","regionCodes":["50110"]}
+                """.formatted(LocalDate.now(), LocalDate.now()), TripCreateCommandRequest.class);
+        var response = controller.createTrip(body, Jwt.withTokenValue("token")
                 .header("alg", "HS256").subject("1").build());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);

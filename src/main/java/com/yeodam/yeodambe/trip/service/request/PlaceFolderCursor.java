@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service.request;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.InvalidPlaceFolderCursorException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -20,7 +21,10 @@ public record PlaceFolderCursor(Long tripId, String placeName, Long tripPlaceId)
             return Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(objectMapper.writeValueAsBytes(this));
         } catch (JacksonException exception) {
-            throw new IllegalStateException("장소 폴더 목록 커서를 생성할 수 없습니다.", exception);
+            throw new IllegalStateException(
+                    TripInternalErrorMessage.PLACE_FOLDER_CURSOR_ENCODE_FAILED.message(),
+                    exception
+            );
         }
     }
 

@@ -132,7 +132,8 @@ class TripAttachmentDeletionPersistenceTest {
         StoredFile file = files.saveAndFlush(StoredFile.uploaded(
                 userId, key + ".jpg", "original/" + key, "image/jpeg"));
         TripAttachment attachment = TripAttachment.initial(
-                tripId, file.getId(), "analyze/" + key, "preview-" + key);
+                tripId, file.getId(), "analyze/" + key, "preview-" + key,
+                "display/" + key);
         attachment.classify(
                 placeId,
                 RegionOrigin.EXIF,

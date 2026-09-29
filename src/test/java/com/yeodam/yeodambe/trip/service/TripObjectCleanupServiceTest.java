@@ -33,7 +33,7 @@ class TripObjectCleanupServiceTest {
     @BeforeEach
     void setUp() {
         StoredFile file = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
-        attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
+        attachment = TripAttachment.initial(7L, 20L, "analyze", "preview", "display");
         attachment.softDelete(LocalDateTime.now().minusDays(31));
         ReflectionTestUtils.setField(attachment, "id", 30L);
         ReflectionTestUtils.setField(attachment, "file", file);
@@ -42,12 +42,13 @@ class TripObjectCleanupServiceTest {
     }
 
     @Test
-    void 삼십일이_지난_참조되지_않은_세_객체를_삭제하고_첨부를_DELETED로_표시한다() {
+    void 삼십일이_지난_참조되지_않은_네_객체를_삭제하고_첨부를_DELETED로_표시한다() {
         service.retryPending();
 
         verify(storage).delete("original");
         verify(storage).delete("analyze");
         verify(storage).delete("preview");
+        verify(storage).delete("display");
         assertThat(attachment.getClassificationStatus()).isEqualTo(ClassificationStatus.DELETED);
     }
 
@@ -60,6 +61,8 @@ class TripObjectCleanupServiceTest {
                     .thenReturn(true);
             case PREVIEW -> when(attachments.existsByPreviewStorageKeyAndDeletedAtIsNull("original"))
                     .thenReturn(true);
+            case DISPLAY -> when(attachments.existsByDisplayStorageKeyAndDeletedAtIsNull("original"))
+                    .thenReturn(true);
             case TRIP_THUMBNAIL -> when(trips.existsByThumbnailKeyAndDeletedAtIsNull("original"))
                     .thenReturn(true);
             case PLACE_THUMBNAIL -> when(places.existsByThumbnailKeyAndDeletedAtIsNull("original"))
@@ -71,23 +74,44 @@ class TripObjectCleanupServiceTest {
         verify(storage, never()).delete("original");
         verify(storage).delete("analyze");
         verify(storage).delete("preview");
+        verify(storage).delete("display");
         assertThat(attachment.getClassificationStatus()).isEqualTo(ClassificationStatus.DELETED);
     }
 
     @Test
     void 하나라도_삭제에_실패하면_DELETED로_표시하지_않아_재시도한다() {
         doThrow(new IllegalStateException("S3"))
-                .when(storage).delete("preview");
+                .when(storage).delete("display");
 
         service.retryPending();
 
         assertThat(attachment.getClassificationStatus()).isNotEqualTo(ClassificationStatus.DELETED);
     }
 
+    @Test
+    void 표시본이_NULL이면_기존_세_객체만_정리한다() {
+        StoredFile file = StoredFile.uploaded(1L, "legacy.jpg", "legacy-original", "image/jpeg");
+        TripAttachment legacy = TripAttachment.initial(
+                7L, 21L, "legacy-analyze", "legacy-preview");
+        legacy.softDelete(LocalDateTime.now().minusDays(31));
+        ReflectionTestUtils.setField(legacy, "file", file);
+        when(attachments.findExpiredPendingCleanup(any(LocalDateTime.class), any()))
+                .thenReturn(List.of(legacy));
+
+        service.retryPending();
+
+        verify(storage).delete("legacy-original");
+        verify(storage).delete("legacy-analyze");
+        verify(storage).delete("legacy-preview");
+        verify(storage, never()).delete(null);
+        verify(attachments, never()).existsByDisplayStorageKeyAndDeletedAtIsNull(null);
+    }
+
     private enum ActiveReference {
         FILE,
         ANALYZE,
         PREVIEW,
+        DISPLAY,
         TRIP_THUMBNAIL,
         PLACE_THUMBNAIL
     }

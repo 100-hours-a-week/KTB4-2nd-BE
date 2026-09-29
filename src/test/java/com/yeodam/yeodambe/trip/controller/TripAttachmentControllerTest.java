@@ -61,18 +61,7 @@ class TripAttachmentControllerTest {
                 ));
 
         MockMvcBuilders.standaloneSetup(controller)
-                .setCustomArgumentResolvers(new HandlerMethodArgumentResolver() {
-                    @Override
-                    public boolean supportsParameter(MethodParameter parameter) {
-                        return parameter.hasParameterAnnotation(AuthenticationPrincipal.class);
-                    }
-
-                    @Override
-                    public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer container,
-                                                  NativeWebRequest request, org.springframework.web.bind.support.WebDataBinderFactory binderFactory) {
-                        return jwt();
-                    }
-                })
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
                 .build()
                 .perform(get("/api/trips/7/place-folders/3/attachments")
                         .contextPath("/api")
@@ -97,18 +86,7 @@ class TripAttachmentControllerTest {
                 ));
 
         MockMvcBuilders.standaloneSetup(controller)
-                .setCustomArgumentResolvers(new HandlerMethodArgumentResolver() {
-                    @Override
-                    public boolean supportsParameter(MethodParameter parameter) {
-                        return parameter.hasParameterAnnotation(AuthenticationPrincipal.class);
-                    }
-
-                    @Override
-                    public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer container,
-                                                  NativeWebRequest request, org.springframework.web.bind.support.WebDataBinderFactory binderFactory) {
-                        return jwt();
-                    }
-                })
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
                 .build()
                 .perform(get("/api/attachments/11")
                         .contextPath("/api")
@@ -151,18 +129,7 @@ class TripAttachmentControllerTest {
                 .thenReturn(Optional.of(completed(11)));
 
         MockMvcBuilders.standaloneSetup(controller)
-                .setCustomArgumentResolvers(new HandlerMethodArgumentResolver() {
-                    @Override
-                    public boolean supportsParameter(MethodParameter parameter) {
-                        return parameter.hasParameterAnnotation(AuthenticationPrincipal.class);
-                    }
-
-                    @Override
-                    public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer container,
-                                                  NativeWebRequest request, org.springframework.web.bind.support.WebDataBinderFactory binderFactory) {
-                        return jwt();
-                    }
-                })
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
                 .build()
                 .perform(multipart("/trips/7/initial-attachments")
                         .file(photo())

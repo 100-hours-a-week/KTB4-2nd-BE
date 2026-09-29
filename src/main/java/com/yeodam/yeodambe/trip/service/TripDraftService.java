@@ -2,15 +2,21 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripDraftRequestException;
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripDraftAlreadySubmittedException;
 import com.yeodam.yeodambe.common.exception.TripDraftNotFoundException;
 import com.yeodam.yeodambe.trip.entity.TripDraft;
 import com.yeodam.yeodambe.trip.repository.TripDraftRepository;
+import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripDraftSaveRequest;
+import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDraftResponse;
+import com.yeodam.yeodambe.trip.service.response.TripDraftSubmission;
 import com.yeodam.yeodambe.user.exception.UserNotFoundException;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import jakarta.validation.Validator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -29,6 +35,9 @@ public class TripDraftService {
     private final UserRepository users;
     private final RegionCatalog regions;
     private final ObjectMapper mapper;
+    private final TripRepository trips;
+    private final TripService tripService;
+    private final Validator validator;
 
     @Transactional(readOnly = true)
     public TripDraftResponse find(Long userId) {
@@ -58,6 +67,24 @@ public class TripDraftService {
             if (draft.getSubmittedTripId() != null) throw new TripDraftAlreadySubmittedException();
             drafts.delete(draft);
         });
+    }
+
+    @Transactional
+    public TripDraftSubmission submit(Long userId, Long draftId) {
+        users.findActiveByIdForUpdate(userId).orElseThrow(UserNotFoundException::new);
+        TripDraft draft = drafts.findByIdAndUserIdForUpdate(draftId, userId)
+                .orElseThrow(TripDraftNotFoundException::new);
+        if (draft.getSubmittedTripId() != null) {
+            var trip = trips.findByIdAndUserIdAndDeletedAtIsNull(draft.getSubmittedTripId(), userId)
+                    .orElseThrow(TripNotFoundException::new);
+            return new TripDraftSubmission(new TripCreateResponse(trip.getId(), trip.getProcessingStatus()), false);
+        }
+        TripCreateRequest request = new TripCreateRequest(draft.getTripName(), draft.getStartDate(),
+                draft.getEndDate(), response(draft).regionCodes());
+        if (!validator.validate(request).isEmpty()) throw new InvalidTripRequestException();
+        TripCreateResponse created = tripService.createTrip(userId, request);
+        draft.attach(created.tripId());
+        return new TripDraftSubmission(created, true);
     }
 
     private void validate(TripDraftSaveRequest request) {

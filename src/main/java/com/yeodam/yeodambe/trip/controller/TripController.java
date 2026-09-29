@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.trip.service.TripDraftService;
 import com.yeodam.yeodambe.trip.service.TripService;
@@ -52,11 +53,11 @@ public class TripController {
             @RequestBody JsonNode body,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        if (body == null || !body.isObject()) throw new InvalidTripRequestException();
+        if (body == null || !body.isObject()) return invalidCreateRequest();
         Long userId = Long.valueOf(jwt.getSubject());
         if (body.has("draftId")) {
             JsonNode id = body.get("draftId");
-            if (body.size() != 1 || !id.isIntegralNumber() || id.asLong() <= 0) {
+            if (body.size() != 1 || !id.isIntegralNumber() || !id.canConvertToLong() || id.asLong() <= 0) {
                 throw new InvalidTripRequestException();
             }
             var result = tripDraftService.submit(userId, id.asLong());
@@ -67,11 +68,15 @@ public class TripController {
         try {
             request = objectMapper.treeToValue(body, TripCreateRequest.class);
         } catch (RuntimeException e) {
-            throw new InvalidTripRequestException();
+            return invalidCreateRequest();
         }
-        if (!validator.validate(request).isEmpty()) throw new InvalidTripRequestException();
+        if (!validator.validate(request).isEmpty()) return invalidCreateRequest();
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(userId, request)));
+    }
+
+    private ResponseEntity<ApiResponse<TripCreateResponse>> invalidCreateRequest() {
+        return ResponseEntity.badRequest().body(new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null));
     }
 
     @PostMapping("/trips/{tripId}/favorite")

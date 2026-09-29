@@ -59,13 +59,26 @@ public class TripAttachmentDerivativeService {
         }, worker);
     }
 
-    private List<DerivedPhotoKeys> generateAll(String executionId, List<String> originalKeys) {
+    public CompletableFuture<List<DerivedPhotoKeys>> createAll(
+            String executionId, List<String> originalKeys, List<String> mimeTypes
+    ) {
+        if (originalKeys.size() != mimeTypes.size()) {
+            throw new IllegalArgumentException("원본 키와 MIME 타입 수가 다릅니다.");
+        }
+        return CompletableFuture.supplyAsync(
+                () -> generateAll(executionId, originalKeys, mimeTypes), worker);
+    }
+
+    private List<DerivedPhotoKeys> generateAll(
+            String executionId, List<String> originalKeys, List<String> mimeTypes
+    ) {
         List<DerivedPhotoKeys> results = new ArrayList<>();
         ArrayList<String> uploadedKeys = new ArrayList<>();
 
         try {
-            for (String originalKey : originalKeys) {
-                results.add(generateOne(executionId, originalKey, uploadedKeys));
+            for (int i = 0; i < originalKeys.size(); i++) {
+                results.add(generateOne(
+                        executionId, originalKeys.get(i), mimeTypes.get(i), uploadedKeys));
             }
             return List.copyOf(results);
         } catch (RuntimeException failure) {
@@ -80,7 +93,12 @@ public class TripAttachmentDerivativeService {
         }
     }
 
-    private DerivedPhotoKeys generateOne(String executionId, String originalKey, ArrayList<String> uploadedKeys) {
+    private DerivedPhotoKeys generateOne(
+            String executionId,
+            String originalKey,
+            String mimeType,
+            ArrayList<String> uploadedKeys
+    ) {
         Path dir;
         try {
             dir = Files.createTempDirectory("사진 작업 디렉터리를 만들 수 없습니다.");
@@ -91,15 +109,17 @@ public class TripAttachmentDerivativeService {
         Path original = dir.resolve("original");
         Path analyze = dir.resolve("analyze.jpg");
         Path preview = dir.resolve("preview.webp");
+        Path display = dir.resolve("display.jpg");
 
         try {
             try (InputStream input = storage.open(originalKey)) {
                 Files.copy(input, original);
             }
             JsonNode metadata = metadata(original);
+            String orientation = orientation(metadata);
 
             // 방향 보정 → 비율 유지·긴 변 최대 1024px → 메타데이터 제거
-            run("convert", original + "[0]", "-auto-orient",
+            run("convert", original + "[0]", "-orient", orientation, "-auto-orient",
                     "-resize", "1024x1024>", "-strip",
                     "-background", "white", "-alpha", "remove", "-alpha", "off",
                     analyze.toString());
@@ -112,7 +132,7 @@ public class TripAttachmentDerivativeService {
                     "-Orientation=1", analyze.toString());
 
             // 미리보기에는 EXIF를 복사하지 않는다.
-            run("convert", original + "[0]", "-auto-orient",
+            run("convert", original + "[0]", "-orient", orientation, "-auto-orient",
                     "-resize", "1024x1024>", "-strip",
                     "-quality", "75", preview.toString());
 
@@ -133,13 +153,26 @@ public class TripAttachmentDerivativeService {
             }
             uploadedKeys.add(previewKey);
 
-            return new DerivedPhotoKeys(originalKey, analyzeKey, previewKey,
+            String displayKey = null;
+            if ("image/heic".equals(mimeType)) {
+                run("convert", original + "[0]", "-orient", orientation, "-auto-orient",
+                        "+profile", "exif", "-quality", "95", display.toString());
+                try {
+                    displayKey = storage.storeDerived(executionId, display, "image/jpeg");
+                } catch (AttachmentStorageException failure) {
+                    uploadedKeys.add(failure.getObjectKey());
+                    throw failure;
+                }
+                uploadedKeys.add(displayKey);
+            }
+
+            return new DerivedPhotoKeys(originalKey, analyzeKey, previewKey, displayKey,
                     takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
                     coordinate(metadata, "GPSLongitude", 180), deviceModel(metadata));
         } catch (Exception e) {
             throw new IllegalStateException("파생 사진 생성에 실패했습니다.", e);
         } finally {
-            for (Path path : List.of(preview, analyze, original, dir)) {
+            for (Path path : List.of(display, preview, analyze, original, dir)) {
                 try {
                     Files.deleteIfExists(path);
                 } catch (IOException cleanupFailure) {
@@ -152,7 +185,8 @@ public class TripAttachmentDerivativeService {
     private JsonNode metadata(Path original) {
         try {
             Process process = new ProcessBuilder("exiftool", "-j", "-n",
-                    "-DateTimeOriginal", "-OffsetTimeOriginal", "-GPSLatitude", "-GPSLongitude",
+                    "-Orientation", "-DateTimeOriginal", "-OffsetTimeOriginal",
+                    "-GPSLatitude", "-GPSLongitude",
                     "-Make", "-Model", original.toString()).start();
             byte[] output = process.getInputStream().readAllBytes();
             if (!process.waitFor(120, TimeUnit.SECONDS) || process.exitValue() != 0) {
@@ -180,6 +214,19 @@ public class TripAttachmentDerivativeService {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private String orientation(JsonNode metadata) {
+        return switch (metadata.path("Orientation").asInt(1)) {
+            case 2 -> "TopRight";
+            case 3 -> "BottomRight";
+            case 4 -> "BottomLeft";
+            case 5 -> "LeftTop";
+            case 6 -> "RightTop";
+            case 7 -> "RightBottom";
+            case 8 -> "LeftBottom";
+            default -> "TopLeft";
+        };
     }
 
     private BigDecimal coordinate(JsonNode metadata, String field, int maximum) {

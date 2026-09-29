@@ -72,7 +72,8 @@ class TripAttachmentDerivativeServiceTest {
                     return "derived/preview.webp";
                 });
 
-        List<DerivedPhotoKeys> result = service.createAll("run-1", List.of("original/key")).join();
+        List<DerivedPhotoKeys> result = service.createAll(
+                "run-1", List.of("original/key"), List.of("image/jpeg")).join();
 
         assertEquals("original/key", result.getFirst().originalKey());
         assertEquals("derived/analyze.jpg", result.getFirst().analyzeKey());

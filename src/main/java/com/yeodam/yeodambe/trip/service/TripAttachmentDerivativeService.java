@@ -39,14 +39,6 @@ public class TripAttachmentDerivativeService {
     );
 
     public CompletableFuture<List<DerivedPhotoKeys>> createAll(
-            String executionId,
-            List<String> originalKeys
-    ) {
-        return createAll(executionId, originalKeys,
-                java.util.Collections.nCopies(originalKeys.size(), null));
-    }
-
-    public CompletableFuture<List<DerivedPhotoKeys>> createAll(
             String executionId, List<String> originalKeys, List<String> mimeTypes
     ) {
         if (originalKeys.size() != mimeTypes.size()) {

@@ -19,6 +19,7 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
             SELECT trip FROM Trip trip
             WHERE trip.userId = :userId
               AND trip.deletedAt IS NULL
+              AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
               AND (:createdAt IS NULL
                    OR trip.createdAt < :createdAt
                    OR (trip.createdAt = :createdAt AND trip.id < :tripId))
@@ -35,6 +36,7 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
             SELECT trip FROM Trip trip
             WHERE trip.userId = :userId
               AND trip.deletedAt IS NULL
+              AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
               AND (:createdAt IS NULL
                    OR trip.createdAt > :createdAt
                    OR (trip.createdAt = :createdAt AND trip.id > :tripId))
@@ -51,6 +53,7 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
             SELECT trip FROM Trip trip
             WHERE trip.userId = :userId
               AND trip.deletedAt IS NULL
+              AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
               AND trip.favorite = :favoriteGroup
               AND (:createdAt IS NULL
                    OR trip.createdAt < :createdAt
@@ -69,6 +72,7 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
             SELECT trip FROM Trip trip
             WHERE trip.userId = :userId
               AND trip.deletedAt IS NULL
+              AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
               AND trip.favorite = :favoriteGroup
               AND (:createdAt IS NULL
                    OR trip.createdAt > :createdAt

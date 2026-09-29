@@ -286,6 +286,7 @@ public class TripService {
         List<TripListItemResponse> items = page.stream()
                 .map(trip -> new TripListItemResponse(
                         trip.getId(),
+                        trip.getProcessingStatus(),
                         trip.getTripName(),
                         trip.getStartDate(),
                         trip.getEndDate(),

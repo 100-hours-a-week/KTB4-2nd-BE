@@ -310,6 +310,7 @@ class TripCreationSecurityIntegrationTest {
         given(tripService.findTrips(eq(42L), any(TripListRequest.class)))
                 .willReturn(new TripListResponse(List.of(new TripListItemResponse(
                         7L,
+                        ProcessingStatus.COMPLETED,
                         "제주 여행",
                         LocalDate.of(2026, 9, 1),
                         LocalDate.of(2026, 9, 2),
@@ -317,6 +318,16 @@ class TripCreationSecurityIntegrationTest {
                         3L,
                         true,
                         "https://cdn.test/7"
+                ), new TripListItemResponse(
+                        8L,
+                        ProcessingStatus.PROCESSING,
+                        "부산 여행",
+                        LocalDate.of(2026, 9, 3),
+                        LocalDate.of(2026, 9, 4),
+                        "부산",
+                        0L,
+                        false,
+                        null
                 )), false, null));
 
         mockMvc.perform(get("/trips")
@@ -326,6 +337,8 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("TRIP_LIST_FOUND"))
                 .andExpect(jsonPath("$.data.items[0].tripId").value(7))
+                .andExpect(jsonPath("$.data.items[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.items[1].status").value("PROCESSING"))
                 .andExpect(jsonPath("$.data.items[0].isFavorite").value(true))
                 .andExpect(jsonPath("$.data.hasNext").value(false))
                 .andExpect(jsonPath("$.data.nextCursor").doesNotExist());

@@ -42,6 +42,16 @@ public class TripAttachmentDerivativeService {
             String executionId,
             List<String> originalKeys
     ) {
+        return createAll(executionId, originalKeys,
+                java.util.Collections.nCopies(originalKeys.size(), null));
+    }
+
+    public CompletableFuture<List<DerivedPhotoKeys>> createAll(
+            String executionId, List<String> originalKeys, List<String> mimeTypes
+    ) {
+        if (originalKeys.size() != mimeTypes.size()) {
+            throw new IllegalArgumentException("원본 키와 MIME 타입 수가 다릅니다.");
+        }
         Map<String, String> callerMdc = MDC.getCopyOfContextMap();
 
         return CompletableFuture.supplyAsync(() -> {
@@ -52,21 +62,11 @@ public class TripAttachmentDerivativeService {
             }
 
             try {
-                return generateAll(executionId, originalKeys);
+                return generateAll(executionId, originalKeys, mimeTypes);
             } finally {
                 MDC.clear();
             }
         }, worker);
-    }
-
-    public CompletableFuture<List<DerivedPhotoKeys>> createAll(
-            String executionId, List<String> originalKeys, List<String> mimeTypes
-    ) {
-        if (originalKeys.size() != mimeTypes.size()) {
-            throw new IllegalArgumentException("원본 키와 MIME 타입 수가 다릅니다.");
-        }
-        return CompletableFuture.supplyAsync(
-                () -> generateAll(executionId, originalKeys, mimeTypes), worker);
     }
 
     private List<DerivedPhotoKeys> generateAll(

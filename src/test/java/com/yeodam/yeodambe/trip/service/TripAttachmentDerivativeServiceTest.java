@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -101,11 +102,13 @@ class TripAttachmentDerivativeServiceTest {
 
         org.slf4j.MDC.put("request_id", "request-789");
         assertThrows(CompletionException.class,
-                () -> service.createAll("run-1", List.of("original/key")).join());
+                () -> service.createAll(
+                        "run-1", List.of("original/key"), List.of("image/jpeg")).join());
 
         org.slf4j.MDC.clear();
         assertThrows(CompletionException.class,
-                () -> service.createAll("run-2", List.of("original/key")).join());
+                () -> service.createAll(
+                        "run-2", List.of("original/key"), List.of("image/jpeg")).join());
 
         assertEquals("request-789", firstRequestId.get());
         assertEquals(null, secondRequestId.get());

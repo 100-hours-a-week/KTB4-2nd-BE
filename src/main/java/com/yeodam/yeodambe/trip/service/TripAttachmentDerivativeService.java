@@ -4,6 +4,8 @@ import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 public class TripAttachmentDerivativeService {
     private final TripAttachmentStorageClient storage;
     private final ObjectMapper json;
+    private final MeterRegistry meterRegistry;
     private final ThreadPoolExecutor worker = new ThreadPoolExecutor(
             1,
             1,
@@ -106,61 +109,86 @@ public class TripAttachmentDerivativeService {
         Path display = dir.resolve("display.jpg");
 
         try {
-            try (InputStream input = storage.open(originalKey)) {
-                Files.copy(input, original);
-            }
-            JsonNode metadata = metadata(original);
-            // 방향 보정 → 비율 유지·긴 변 최대 1024px → 메타데이터 제거
-            convert(original, mimeType, metadata,
-                    "-resize", "1024x1024>", "-strip",
-                    "-background", "white", "-alpha", "remove", "-alpha", "off",
-                    analyze.toString());
+            Timer.Sample readSample = Timer.start(meterRegistry);
+            String readOutcome = "success";
 
-            // 필요한 촬영 정보만 AI용 JPEG에 복사한다. 회전은 이미 픽셀에 반영됐다.
-            run("exiftool", "-overwrite_original",
-                    "-TagsFromFile", original.toString(),
-                    "-DateTimeOriginal", "-SubSecTimeOriginal",
-                    "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
-                    "-Orientation=1", analyze.toString());
-
-            // 미리보기에는 EXIF를 복사하지 않는다.
-            convert(original, mimeType, metadata,
-                    "-resize", "1024x1024>", "-strip",
-                    "-quality", "75", preview.toString());
-
-            String analyzeKey;
             try {
-                analyzeKey = storage.storeDerived(executionId, analyze, "image/jpeg");
-            } catch (AttachmentStorageException failure) {
-                uploadedKeys.add(failure.getObjectKey());
+                try (InputStream input = storage.open(originalKey)) {
+                    Files.copy(input, original);
+                }
+            } catch (IOException | RuntimeException failure) {
+                readOutcome = "failure";
                 throw failure;
+            } finally {
+                readSample.stop(Timer.builder("yeodam.trip.stage")
+                        .tags("stage", "original_s3_read", "outcome", readOutcome)
+                        .register(meterRegistry));
             }
-            uploadedKeys.add(analyzeKey);
-            String previewKey;
-            try {
-                previewKey = storage.storeDerived(executionId, preview, "image/webp");
-            } catch (AttachmentStorageException failure) {
-                uploadedKeys.add(failure.getObjectKey());
-                throw failure;
-            }
-            uploadedKeys.add(previewKey);
 
-            String displayKey = null;
-            if ("image/heic".equals(mimeType)) {
+            Timer.Sample derivativeSample = Timer.start(meterRegistry);
+            String derivativeOutcome = "success";
+
+            try {
+                JsonNode metadata = metadata(original);
+                // 방향 보정 → 비율 유지·긴 변 최대 1024px → 메타데이터 제거
                 convert(original, mimeType, metadata,
-                        "+profile", "exif", "-quality", "95", display.toString());
+                        "-resize", "1024x1024>", "-strip",
+                        "-background", "white", "-alpha", "remove", "-alpha", "off",
+                        analyze.toString());
+
+                // 필요한 촬영 정보만 AI용 JPEG에 복사한다. 회전은 이미 픽셀에 반영됐다.
+                run("exiftool", "-overwrite_original",
+                        "-TagsFromFile", original.toString(),
+                        "-DateTimeOriginal", "-SubSecTimeOriginal",
+                        "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
+                        "-Orientation=1", analyze.toString());
+
+                // 미리보기에는 EXIF를 복사하지 않는다.
+                convert(original, mimeType, metadata,
+                        "-resize", "1024x1024>", "-strip",
+                        "-quality", "75", preview.toString());
+
+                String analyzeKey;
                 try {
-                    displayKey = storage.storeDerived(executionId, display, "image/jpeg");
+                    analyzeKey = storage.storeDerived(executionId, analyze, "image/jpeg");
                 } catch (AttachmentStorageException failure) {
                     uploadedKeys.add(failure.getObjectKey());
                     throw failure;
                 }
-                uploadedKeys.add(displayKey);
-            }
+                uploadedKeys.add(analyzeKey);
+                String previewKey;
+                try {
+                    previewKey = storage.storeDerived(executionId, preview, "image/webp");
+                } catch (AttachmentStorageException failure) {
+                    uploadedKeys.add(failure.getObjectKey());
+                    throw failure;
+                }
+                uploadedKeys.add(previewKey);
 
-            return new DerivedPhotoKeys(originalKey, analyzeKey, previewKey, displayKey,
-                    takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
-                    coordinate(metadata, "GPSLongitude", 180), deviceModel(metadata));
+                String displayKey = null;
+                if ("image/heic".equals(mimeType)) {
+                    convert(original, mimeType, metadata,
+                            "+profile", "exif", "-quality", "95", display.toString());
+                    try {
+                        displayKey = storage.storeDerived(executionId, display, "image/jpeg");
+                    } catch (AttachmentStorageException failure) {
+                        uploadedKeys.add(failure.getObjectKey());
+                        throw failure;
+                    }
+                    uploadedKeys.add(displayKey);
+                }
+
+                return new DerivedPhotoKeys(originalKey, analyzeKey, previewKey, displayKey,
+                        takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
+                        coordinate(metadata, "GPSLongitude", 180), deviceModel(metadata));
+            } catch (RuntimeException failure) {
+                derivativeOutcome = "failure";
+                throw failure;
+            } finally {
+                derivativeSample.stop(Timer.builder("yeodam.trip.stage")
+                        .tags("stage", "image_derivative", "outcome", derivativeOutcome)
+                        .register(meterRegistry));
+            }
         } catch (Exception e) {
             throw new IllegalStateException(TripInternalErrorMessage.DERIVED_ATTACHMENT_CREATE_FAILED.message(), e);
         } finally {

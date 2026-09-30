@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
@@ -25,6 +27,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Bean;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -45,9 +49,18 @@ import static org.mockito.Mockito.*;
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop"
 })
-@Import({TripDeletionService.class, TripObjectCleanupService.class, UserStatsService.class})
+@Import({TripDeletionService.class, TripObjectCleanupService.class, UserStatsService.class,
+        TripDeletionPersistenceTest.MeterRegistryTestConfiguration.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripDeletionPersistenceTest {
+    @TestConfiguration
+    static class MeterRegistryTestConfiguration {
+        @Bean
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+    }
+
     @Autowired private TripDeletionService service;
     @Autowired private UserRepository users;
     @Autowired private UserStatsRepository stats;

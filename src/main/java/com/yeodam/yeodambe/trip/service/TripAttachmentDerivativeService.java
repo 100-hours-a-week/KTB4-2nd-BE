@@ -110,10 +110,8 @@ public class TripAttachmentDerivativeService {
                 Files.copy(input, original);
             }
             JsonNode metadata = metadata(original);
-            String orientation = orientation(metadata);
-
             // 방향 보정 → 비율 유지·긴 변 최대 1024px → 메타데이터 제거
-            run("convert", original + "[0]", "-orient", orientation, "-auto-orient",
+            convert(original, mimeType, metadata,
                     "-resize", "1024x1024>", "-strip",
                     "-background", "white", "-alpha", "remove", "-alpha", "off",
                     analyze.toString());
@@ -126,7 +124,7 @@ public class TripAttachmentDerivativeService {
                     "-Orientation=1", analyze.toString());
 
             // 미리보기에는 EXIF를 복사하지 않는다.
-            run("convert", original + "[0]", "-orient", orientation, "-auto-orient",
+            convert(original, mimeType, metadata,
                     "-resize", "1024x1024>", "-strip",
                     "-quality", "75", preview.toString());
 
@@ -149,7 +147,7 @@ public class TripAttachmentDerivativeService {
 
             String displayKey = null;
             if ("image/heic".equals(mimeType)) {
-                run("convert", original + "[0]", "-orient", orientation, "-auto-orient",
+                convert(original, mimeType, metadata,
                         "+profile", "exif", "-quality", "95", display.toString());
                 try {
                     displayKey = storage.storeDerived(executionId, display, "image/jpeg");
@@ -181,7 +179,7 @@ public class TripAttachmentDerivativeService {
             Process process = new ProcessBuilder("exiftool", "-j", "-n",
                     "-Orientation", "-DateTimeOriginal", "-OffsetTimeOriginal",
                     "-GPSLatitude", "-GPSLongitude",
-                    "-Make", "-Model", original.toString()).start();
+                    "-Make", "-Model", "-QuickTime:Rotation", original.toString()).start();
             byte[] output = process.getInputStream().readAllBytes();
             if (!process.waitFor(120, TimeUnit.SECONDS) || process.exitValue() != 0) {
                 process.destroyForcibly();
@@ -208,6 +206,21 @@ public class TripAttachmentDerivativeService {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private void convert(Path original, String mimeType, JsonNode metadata, String... options) {
+        List<String> command = new ArrayList<>();
+        command.add("convert");
+        command.add(original + "[0]");
+
+        if (!("image/heic".equals(mimeType) && metadata.has("Rotation"))) {
+            command.add("-orient");
+            command.add(orientation(metadata));
+        }
+
+        command.add("-auto-orient");
+        command.addAll(List.of(options));
+        run(command.toArray(String[]::new));
     }
 
     private String orientation(JsonNode metadata) {

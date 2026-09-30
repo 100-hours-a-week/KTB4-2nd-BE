@@ -71,6 +71,22 @@ class TripListRepositoryTest {
     }
 
     @Test
+    void 오래된순은_여행_시작일이_이른_여행부터_조회한다() {
+        User owner = users.save(new User("trip-date-oldest-order@test.com", "여행날짜오래된순회원"));
+        Trip laterTrip = trips.save(new Trip(
+                owner.getUserId(), "나중 여행", LocalDate.of(2026, 9, 20), LocalDate.of(2026, 9, 21)));
+        Trip earlierTrip = trips.save(new Trip(
+                owner.getUserId(), "이전 여행", LocalDate.of(2026, 9, 10), LocalDate.of(2026, 9, 11)));
+        flushAndClear();
+
+        List<Trip> result = trips.findListOldest(
+                owner.getUserId(), null, null, PageRequest.of(0, 8));
+
+        assertThat(result).extracting(Trip::getId)
+                .containsExactly(earlierTrip.getId(), laterTrip.getId());
+    }
+
+    @Test
     void 실패한_여행이_최신이어도_첫_페이지를_정상_여행으로_채운다() {
         User owner = users.save(new User("failed-page@test.com", "페이지회원"));
         Trip completed = save(owner.getUserId(), "완료", false, ProcessingStatus.COMPLETED, null);

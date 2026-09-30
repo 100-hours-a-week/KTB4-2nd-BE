@@ -10,13 +10,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import java.net.URLEncoder;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 
 import java.time.Duration;
 import java.io.IOException;
@@ -36,38 +40,61 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     private final String bucket;
     private final S3Presigner presigner;
     private final Duration readUrlTtl;
+    private final MeterRegistry meterRegistry;
 
     @Autowired
     public S3TripAttachmentStorageClient(
             @Value("${attachment.s3.bucket}") String bucket,
             @Value("${aws.region}") String region,
-            @Value("${attachment.s3.read-url-ttl}") Duration readUrlTtl
+            @Value("${attachment.s3.read-url-ttl}") Duration readUrlTtl,
+            @Value("${attachment.s3.endpoint}") String endpoint,
+            @Value("${attachment.s3.path-style}") boolean pathStyle,
+            MeterRegistry meterRegistry
     ) {
         this.bucket = bucket;
         this.readUrlTtl = readUrlTtl;
-        this.s3 = S3Client.builder()
-                .region(Region.of(region))
+        this.meterRegistry = meterRegistry;
+        var s3Configuration = S3Configuration.builder()
+                .pathStyleAccessEnabled(pathStyle)
                 .build();
-        this.presigner = S3Presigner.builder()
+
+        var s3Builder = S3Client.builder()
                 .region(Region.of(region))
-                .build();
+                .serviceConfiguration(s3Configuration);
+
+        var presignerBuilder = S3Presigner.builder()
+                .region(Region.of(region))
+                .serviceConfiguration(s3Configuration);
+
+        if (!endpoint.isBlank()) {
+            URI endpointUri = URI.create(endpoint);
+            s3Builder.endpointOverride(endpointUri);
+            presignerBuilder.endpointOverride(endpointUri);
+        }
+
+        this.s3 = s3Builder.build();
+        this.presigner = presignerBuilder.build();
     }
 
     S3TripAttachmentStorageClient(
             S3Client s3,
             String bucket,
             S3Presigner presigner,
-            Duration readUrlTtl
+            Duration readUrlTtl,
+            MeterRegistry meterRegistry
     ) {
         this.s3 = s3;
         this.bucket = bucket;
         this.presigner = presigner;
         this.readUrlTtl = readUrlTtl;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
     public String store(String executionId, MultipartFile file) {
         String key = "trip-uploads/" + executionId + "/original/" + UUID.randomUUID();
+        Timer.Sample sample = Timer.start(meterRegistry);
+        String outcome = "success";
 
         try (InputStream input = file.getInputStream()) {
             s3.putObject(
@@ -76,7 +103,12 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
             );
             return key;
         } catch (IOException | RuntimeException failure) {
+            outcome = "failure";
             throw new AttachmentStorageException(key, failure);
+        } finally {
+            sample.stop(Timer.builder("yeodam.trip.stage")
+                    .tags("stage", "original_s3_upload", "outcome", outcome)
+                    .register(meterRegistry));
         }
     }
 

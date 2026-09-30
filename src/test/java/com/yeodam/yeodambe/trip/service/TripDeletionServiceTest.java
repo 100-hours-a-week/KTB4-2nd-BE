@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -23,6 +24,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -34,6 +36,7 @@ class TripDeletionServiceTest {
     private final StoredFileRepository files = mock(StoredFileRepository.class);
     private final UserStatsService userStats = mock(UserStatsService.class);
     private final TransactionOperations transactions = mock(TransactionOperations.class);
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     private TripDeletionService service;
 
     @BeforeEach
@@ -44,7 +47,7 @@ class TripDeletionServiceTest {
             return null;
         }).when(transactions).executeWithoutResult(any());
         service = new TripDeletionService(
-                trips, regions, places, attachments, files, userStats, transactions);
+                trips, regions, places, attachments, files, userStats, transactions, meterRegistry);
     }
 
     @Test
@@ -52,6 +55,10 @@ class TripDeletionServiceTest {
         assertThrows(TripNotFoundException.class, () -> service.delete(7L, 1L));
         verify(trips).findOwnedActiveForUpdate(7L, 1L);
         verifyNoInteractions(userStats);
+        assertEquals(1, meterRegistry.find("yeodam.trip.stage")
+                .tags("stage", "trip_delete", "outcome", "failure")
+                .timer()
+                .count());
     }
 
     @Test
@@ -76,6 +83,10 @@ class TripDeletionServiceTest {
 
         verify(userStats).refreshFromActiveTrips(1L);
         verify(files).softDeleteByIds(eq(List.of(20L)), any());
+        assertEquals(1, meterRegistry.find("yeodam.trip.stage")
+                .tags("stage", "trip_delete", "outcome", "success")
+                .timer()
+                .count());
     }
 
     @Test

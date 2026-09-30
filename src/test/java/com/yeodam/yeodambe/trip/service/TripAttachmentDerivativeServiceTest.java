@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,11 +38,13 @@ import static org.mockito.Mockito.when;
 class TripAttachmentDerivativeServiceTest {
     private TripAttachmentStorageClient storage;
     private TripAttachmentDerivativeService service;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
         storage = mock(TripAttachmentStorageClient.class);
-        service = new TripAttachmentDerivativeService(storage, new ObjectMapper());
+        meterRegistry = new SimpleMeterRegistry();
+        service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry);
     }
 
     @AfterEach
@@ -84,6 +87,14 @@ class TripAttachmentDerivativeServiceTest {
         assertEquals("WEBP", new String(previewBytes.get(), 8, 4, StandardCharsets.US_ASCII));
         assertFalse(Files.exists(analyzePath.get()));
         assertFalse(Files.exists(previewPath.get()));
+        assertEquals(1, meterRegistry.find("yeodam.trip.stage")
+                .tags("stage", "original_s3_read", "outcome", "success")
+                .timer()
+                .count());
+        assertEquals(1, meterRegistry.find("yeodam.trip.stage")
+                .tags("stage", "image_derivative", "outcome", "success")
+                .timer()
+                .count());
     }
 
     @Test
@@ -218,6 +229,10 @@ class TripAttachmentDerivativeServiceTest {
         verify(storage).delete("derived/analyze.jpg");
         verify(storage).delete("derived/preview.webp");
         verify(storage).delete("derived/display-failed.jpg");
+        assertEquals(1, meterRegistry.find("yeodam.trip.stage")
+                .tags("stage", "image_derivative", "outcome", "failure")
+                .timer()
+                .count());
     }
 
     private static String command(String... command) throws Exception {

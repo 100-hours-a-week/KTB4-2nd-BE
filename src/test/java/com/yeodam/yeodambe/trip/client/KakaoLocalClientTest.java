@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.client;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -20,11 +21,13 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class KakaoLocalClientTest {
     private KakaoLocalClient client;
     private MockRestServiceServer server;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         client = new KakaoLocalClient(
-                "https://dapi.kakao.test", "test-key", Duration.ofSeconds(1));
+                "https://dapi.kakao.test", "test-key", Duration.ofSeconds(1), meterRegistry);
         RestClient.Builder builder = RestClient.builder().baseUrl("https://dapi.kakao.test");
         server = MockRestServiceServer.bindTo(builder).build();
         ReflectionTestUtils.setField(client, "restClient", builder.build());
@@ -58,6 +61,10 @@ class KakaoLocalClientTest {
 
         assertThat(result).isEqualTo(new KakaoLocalClient.LookupResult(
                 "성산일출봉", "서귀포시", KakaoLocalClient.Failure.NONE));
+        assertThat(meterRegistry.find("yeodam.trip.stage")
+                .tags("stage", "reverse_geocoding", "outcome", "success")
+                .timer()
+                .count()).isEqualTo(1);
         server.verify();
     }
 
@@ -105,6 +112,10 @@ class KakaoLocalClientTest {
     void 재시도할_HTTP_오류를_RETRYABLE로_분류한다() {
         assertFailure(HttpStatus.TOO_MANY_REQUESTS, KakaoLocalClient.Failure.RETRYABLE);
         assertFailure(HttpStatus.INTERNAL_SERVER_ERROR, KakaoLocalClient.Failure.RETRYABLE);
+        assertThat(meterRegistry.find("yeodam.trip.stage")
+                .tags("stage", "reverse_geocoding", "outcome", "failure")
+                .timer()
+                .count()).isEqualTo(2);
     }
 
     @Test

@@ -15,6 +15,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -28,9 +31,22 @@ public class TripDeletionService {
     private final StoredFileRepository files;
     private final UserStatsService userStats;
     private final TransactionOperations transactions;
+    private final MeterRegistry meterRegistry;
 
     public void delete(Long tripId, Long userId) {
-        transactions.executeWithoutResult(status -> deleteInTransaction(tripId, userId));
+        Timer.Sample sample = Timer.start(meterRegistry);
+        String outcome = "success";
+
+        try {
+            transactions.executeWithoutResult(status -> deleteInTransaction(tripId, userId));
+        } catch (RuntimeException failure) {
+            outcome = "failure";
+            throw failure;
+        } finally {
+            sample.stop(Timer.builder("yeodam.trip.stage")
+                    .tags("stage", "trip_delete", "outcome", outcome)
+                    .register(meterRegistry));
+        }
     }
 
     private void deleteInTransaction(Long tripId, Long userId) {

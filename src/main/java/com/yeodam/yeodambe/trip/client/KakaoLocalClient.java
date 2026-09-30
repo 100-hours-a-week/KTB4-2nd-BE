@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.client;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -18,11 +20,13 @@ import java.time.Duration;
 public class KakaoLocalClient {
     private final RestClient restClient;
     private final String apiKey;
+    private final MeterRegistry meterRegistry;
 
     public KakaoLocalClient(
             @Value("${kakao.local.base-url}") String baseUrl,
             @Value("${oauth.kakao.client-id}") String apiKey,
-            @Value("${kakao.local.timeout}") Duration timeout
+            @Value("${kakao.local.timeout}") Duration timeout,
+            MeterRegistry meterRegistry
     ) {
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder().connectTimeout(timeout).build());
@@ -32,9 +36,13 @@ public class KakaoLocalClient {
                 .requestFactory(requestFactory)
                 .build();
         this.apiKey = apiKey;
+        this.meterRegistry = meterRegistry;
     }
 
     public LookupResult lookup(BigDecimal latitude, BigDecimal longitude) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+        LookupResult result = LookupResult.failed(Failure.OTHER);
+
         try {
             JsonNode body = restClient.get()
                     .uri(builder -> builder
@@ -46,17 +54,27 @@ public class KakaoLocalClient {
                     .header(HttpHeaders.AUTHORIZATION, "KakaoAK " + apiKey)
                     .retrieve()
                     .body(JsonNode.class);
-            return parse(body);
+            result = parse(body);
         } catch (RestClientResponseException e) {
             int status = e.getStatusCode().value();
-            if (status == 429 || status >= 500) return LookupResult.failed(Failure.RETRYABLE);
-            if (status == 401 || status == 403) return LookupResult.failed(Failure.AUTH);
-            return LookupResult.failed(Failure.OTHER);
+            if (status == 429 || status >= 500) {
+                result = LookupResult.failed(Failure.RETRYABLE);
+            } else if (status == 401 || status == 403) {
+                result = LookupResult.failed(Failure.AUTH);
+            }
         } catch (ResourceAccessException e) {
-            return LookupResult.failed(Failure.RETRYABLE);
+            result = LookupResult.failed(Failure.RETRYABLE);
         } catch (RestClientException e) {
-            return LookupResult.failed(Failure.OTHER);
+            result = LookupResult.failed(Failure.OTHER);
+        } finally {
+            String outcome = result.failure() == Failure.NONE ? "success" : "failure";
+
+            sample.stop(Timer.builder("yeodam.trip.stage")
+                    .tags("stage", "reverse_geocoding", "outcome", outcome)
+                    .register(meterRegistry));
         }
+
+        return result;
     }
 
     private LookupResult parse(JsonNode body) {

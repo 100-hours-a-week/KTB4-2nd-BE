@@ -52,6 +52,8 @@ attachment:
   s3:
     bucket: ${ATTACHMENT_S3_BUCKET}
     read-url-ttl: ${ATTACHMENT_S3_READ_URL_TTL:10m}
+    endpoint: ${ATTACHMENT_S3_ENDPOINT:}
+    path-style: ${ATTACHMENT_S3_PATH_STYLE:false}
 
 ai:
   server:
@@ -87,6 +89,7 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        yeodam.trip.stage: true
 
 oauth:
   frontend-callback-uri: ${FRONTEND_OAUTH_CALLBACK_URI:http://localhost:5173/auth/callback}
@@ -100,6 +103,61 @@ auth:
   jwt:
     secret: ${JWT_SECRET:local-development-jwt-secret-key-32-bytes}
     issuer: ${JWT_ISSUER:http://localhost:8080}
+app:
+  cors:
+    allowed-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
+---
+spring:
+  config:
+    activate:
+      on-profile: performance
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3307/yeodam?serverTimezone=Asia/Seoul&characterEncoding=utf8}
+    username: ${MYSQL_USERNAME:yeodam}
+    password: ${MYSQL_PASSWORD:yeodam}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        yeodam.trip.stage: true
+
+attachment:
+  s3:
+    bucket: ${ATTACHMENT_S3_BUCKET:yeodam-performance}
+    endpoint: ${ATTACHMENT_S3_ENDPOINT:http://localhost:4566}
+    path-style: ${ATTACHMENT_S3_PATH_STYLE:true}
+
+ai:
+  server:
+    base-url: ${AI_SERVER_BASE_URL:http://localhost:9999}
+    api-key: ${AI_SERVER_API_KEY:test}
+    instance-id: ${AI_EC2_INSTANCE_ID:i-performance}
+
+oauth:
+  frontend-callback-uri: ${FRONTEND_OAUTH_CALLBACK_URI:http://localhost:5173/auth/callback}
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID:local-client-id}
+    redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/auth/kakao/callback}
+    client-secret: ${KAKAO_CLIENT_SECRET:local-client-secret}
+  browser-context-cookie:
+    secure: false
+
+auth:
+  jwt:
+    secret: ${JWT_SECRET:local-development-jwt-secret-key-32-bytes}
+    issuer: ${JWT_ISSUER:http://localhost:8080}
+
 app:
   cors:
     allowed-origin: ${FRONTEND_ORIGIN:http://localhost:5173}

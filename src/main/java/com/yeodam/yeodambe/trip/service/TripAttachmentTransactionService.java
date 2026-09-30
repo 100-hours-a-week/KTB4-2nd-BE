@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
@@ -117,7 +119,7 @@ public class TripAttachmentTransactionService {
     ) {
         if (files.size() != objectKeys.size() || files.size() != mimeTypes.size()
                 || files.size() != derived.size()) {
-            throw new IllegalArgumentException("원본과 파생 사진 수가 다릅니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.SOURCE_AND_DERIVED_ATTACHMENT_COUNT_MISMATCH.message());
         }
         requireCurrentExecution(tripId, executionId);
         if (tripRepository.findProcessableForUpdate(
@@ -143,7 +145,7 @@ public class TripAttachmentTransactionService {
             DerivedPhotoKeys photo = derived.get(i);
 
             if (!original.getObjectKey().equals(photo.originalKey())) {
-                throw new IllegalArgumentException("원본과 파생 사진의 순서가 다릅니다.");
+                throw new IllegalArgumentException(TripInternalErrorMessage.SOURCE_AND_DERIVED_ATTACHMENT_ORDER_MISMATCH.message());
             }
 
             TripAttachment attachment = TripAttachment.initial(
@@ -173,7 +175,7 @@ public class TripAttachmentTransactionService {
 
         if (tripRepository.finishInitialUpload(
                 tripId, userId, ProcessingStatus.PROCESSING, ProcessingStatus.FAILED) != 1) {
-            throw new IllegalStateException("실패 처리할 여행 상태가 아닙니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.TRIP_NOT_ELIGIBLE_FOR_FAILURE.message());
         }
 
         attachmentRepository.deleteAllByIdInBatch(attachmentIds);

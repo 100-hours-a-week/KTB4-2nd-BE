@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.security;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -22,7 +23,7 @@ public class TokenHasher {
             return HexFormat.of().formatHex(hashBytes);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(
-                    "SHA-256을 사용할 수 없습니다.",
+                    UserInternalErrorMessage.SHA_256_UNAVAILABLE.message(),
                     e
             );
         }

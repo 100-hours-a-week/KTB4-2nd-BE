@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+
 import com.yeodam.yeodambe.trip.client.KakaoLocalClient;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -34,7 +36,7 @@ public class TripPlaceNameService {
             @Value("${kakao.local.max-concurrency}") int maxConcurrency
     ) {
         if (maxConcurrency < 1 || maxConcurrency > 5) {
-            throw new IllegalArgumentException("Kakao 동시 호출 수가 올바르지 않습니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.KAKAO_PLACE_CONCURRENCY_INVALID.message());
         }
         this.client = client;
         this.executions = executions;
@@ -85,7 +87,7 @@ public class TripPlaceNameService {
         try {
             for (int from = 0; from < coordinates.size(); from += maxConcurrency) {
                 if (!executions.isCurrent(tripId, executionId)) {
-                    throw new IllegalStateException("현재 실행과 AI 결과가 일치하지 않습니다.");
+                    throw new IllegalStateException(TripInternalErrorMessage.CURRENT_EXECUTION_AI_RESULT_MISMATCH.message());
                 }
 
                 List<Map.Entry<Coordinate, Place>> chunk = coordinates.subList(
@@ -122,7 +124,7 @@ public class TripPlaceNameService {
                 Thread.sleep(300);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new IllegalStateException("Kakao 장소명 조회가 중단되었습니다.", e);
+                throw new IllegalStateException(TripInternalErrorMessage.KAKAO_PLACE_LOOKUP_INTERRUPTED.message(), e);
             }
             attempts++;
             result = client.lookup(place.latitude(), place.longitude());
@@ -147,18 +149,18 @@ public class TripPlaceNameService {
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Kakao 장소명 조회가 중단되었습니다.", e);
+            throw new IllegalStateException(TripInternalErrorMessage.KAKAO_PLACE_LOOKUP_INTERRUPTED.message(), e);
 
         } catch (ExecutionException e) {
             if (e.getCause() instanceof RuntimeException failure) throw failure;
 
-            throw new IllegalStateException("Kakao 장소명 조회에 실패했습니다.", e.getCause());
+            throw new IllegalStateException(TripInternalErrorMessage.KAKAO_PLACE_LOOKUP_FAILED.message(), e.getCause());
         }
     }
 
     private List<Place> validate(JsonNode result) {
         JsonNode nodes = result == null ? null : result.path("places");
-        if (nodes == null || !nodes.isArray()) throw new IllegalStateException("AI 장소 결과가 올바르지 않습니다.");
+        if (nodes == null || !nodes.isArray()) throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_RESULT_INVALID.message());
 
         List<Place> places = new ArrayList<>();
         Map<String, Boolean> ids = new HashMap<>();
@@ -169,7 +171,7 @@ public class TripPlaceNameService {
             String id = node.path("place_id").asString().trim();
 
             if (id.isEmpty() || ids.put(id, true) != null) {
-                throw new IllegalStateException("AI 장소 결과가 올바르지 않습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_RESULT_INVALID.message());
             }
 
             BigDecimal latitude = coordinate(node, "latitude", -90, 90);
@@ -184,13 +186,13 @@ public class TripPlaceNameService {
     private BigDecimal coordinate(JsonNode node, String field, int minimum, int maximum) {
         JsonNode value = node.path(field);
 
-        if (!value.isNumber()) throw new IllegalStateException("AI 장소 좌표가 올바르지 않습니다.");
+        if (!value.isNumber()) throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_COORDINATE_INVALID.message());
 
         BigDecimal coordinate = value.decimalValue();
 
         if (coordinate.compareTo(BigDecimal.valueOf(minimum)) < 0
                 || coordinate.compareTo(BigDecimal.valueOf(maximum)) > 0) {
-            throw new IllegalStateException("AI 장소 좌표가 올바르지 않습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_COORDINATE_INVALID.message());
         }
         return coordinate;
     }

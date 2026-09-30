@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
@@ -24,7 +26,7 @@ public class RegionCatalog {
 
         JsonNode entries = root.path("regions");
         if (!entries.isArray() || entries.isEmpty()) {
-            throw new IllegalStateException("regions.json의 regions가 비어 있습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.REGION_CATALOG_EMPTY.message());
         }
 
         HashMap<String, Region> loaded = new HashMap<>();
@@ -35,11 +37,11 @@ public class RegionCatalog {
             JsonNode longitude = entry.path("longitude");
 
             if (!code.matches("\\d{5}") || name.isBlank() || !latitude.isNumber() || !longitude.isNumber()) {
-                throw new IllegalStateException("regions.json의 지역 정보가 잘못되었습니다: " + code);
+                throw new IllegalStateException(TripInternalErrorMessage.REGION_CATALOG_ENTRY_INVALID.message().formatted(code));
             }
             Region region = new Region(code, name, latitude.decimalValue(), longitude.decimalValue());
             if (loaded.putIfAbsent(code, region) != null) {
-                throw new IllegalStateException("regions.json의 지역 코드가 중복됩니다: " + code);
+                throw new IllegalStateException(TripInternalErrorMessage.REGION_CATALOG_DUPLICATE_CODE.message().formatted(code));
             }
         }
         this.regions = Collections.unmodifiableMap(loaded);

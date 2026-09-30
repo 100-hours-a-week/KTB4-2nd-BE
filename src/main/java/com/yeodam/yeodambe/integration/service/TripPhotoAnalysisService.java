@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.integration.service;
 
+import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.AiStatusUnavailableException;
 import com.yeodam.yeodambe.common.exception.AiProcessingFailedException;
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
@@ -145,7 +146,7 @@ public class TripPhotoAnalysisService {
                     .addKeyValue("failure_stage", "ai_request")
                     .addKeyValue("error_code", "INTERNAL_SERVER_ERROR")
                     .log("AI 사진 분석 요청에 실패했습니다.", failure);
-            throw new IllegalStateException("AI 사진 분석 호출에 실패했습니다.", failure);
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_REQUEST_FAILED.message(), failure);
         }
 
         try {
@@ -202,7 +203,7 @@ public class TripPhotoAnalysisService {
         } catch (ResourceAccessException e) {
             throw new AiStatusUnavailableException(e);
         } catch (RestClientException e) {
-            throw new IllegalStateException("AI 사진 분석 상태 조회에 실패했습니다.", e);
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_STATUS_LOOKUP_FAILED.message(), e);
         }
     }
 
@@ -215,7 +216,7 @@ public class TripPhotoAnalysisService {
                     .retrieve()
                     .body(JsonNode.class);
         } catch (RestClientException e) {
-            throw new IllegalStateException("AI 사진 분석 취소 호출에 실패했습니다.", e);
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_CANCEL_FAILED.message(), e);
         }
         validateCancelResponse(tripId, response);
     }
@@ -226,7 +227,7 @@ public class TripPhotoAnalysisService {
                 || !response.path("trip_id").isIntegralNumber()
                 || response.path("trip_id").asLong(-1) != tripId
                 || !("CANCELED".equals(status) || "COMPLETED".equals(status) || "FAILED".equals(status))) {
-            throw new IllegalStateException("AI 사진 분석 취소 응답이 올바르지 않습니다.");
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_CANCEL_RESPONSE_INVALID.message());
         }
     }
 
@@ -234,7 +235,7 @@ public class TripPhotoAnalysisService {
         if (response == null
                 || response.path("trip_id").asLong(-1) != tripId
                 || !executionId.equals(response.path("execution_id").asString())) {
-            throw new IllegalStateException("AI 사진 분석 결과가 올바르지 않습니다.");
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_RESULT_INVALID.message());
         }
 
         if ("FAILED".equals(response.path("status").asString())) {
@@ -250,7 +251,7 @@ public class TripPhotoAnalysisService {
                 || !response.path("result").path("unclassified").isArray()
                 || !response.path("result").path("failed").isArray()
                 || !response.path("result").path("failed").isEmpty()) {
-            throw new IllegalStateException("AI 사진 분석 결과가 올바르지 않습니다.");
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_RESULT_INVALID.message());
         }
         return response.path("result");
     }
@@ -275,7 +276,7 @@ public class TripPhotoAnalysisService {
                 || !error.isObject()
                 || code.isBlank()
                 || message.isBlank()) {
-            throw new IllegalStateException("AI 사진 분석 결과가 올바르지 않습니다.");
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_RESULT_INVALID.message());
         }
 
         return new AiProcessingFailedException(
@@ -293,14 +294,14 @@ public class TripPhotoAnalysisService {
         if (responseTripId == null
                 || !responseTripId.isIntegralNumber()
                 || responseTripId.asLong(-1) != tripId) {
-            throw new IllegalStateException("AI 사진 분석 상태가 올바르지 않습니다.");
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_STATUS_INVALID.message());
         }
 
         TripPhotoAnalysisStatusResponse.Status status;
         try {
             status = TripPhotoAnalysisStatusResponse.Status.valueOf(response.path("status").asString());
         } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("AI 사진 분석 상태가 올바르지 않습니다.", e);
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_STATUS_INVALID.message(), e);
         }
 
         JsonNode progress = response.path("progress");
@@ -328,7 +329,7 @@ public class TripPhotoAnalysisService {
         if (!progressValid
                 || (!currentStep.isString() && !currentStep.isNull())
                 || !fieldsValid) {
-            throw new IllegalStateException("AI 사진 분석 상태가 올바르지 않습니다.");
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_STATUS_INVALID.message());
         }
 
         return new TripPhotoAnalysisStatusResponse(
@@ -376,7 +377,7 @@ public class TripPhotoAnalysisService {
                 }
             } catch (RestClientResponseException e) {
                 if (e.getStatusCode().value() != HttpStatus.SERVICE_UNAVAILABLE.value()) {
-                    throw new IllegalStateException("AI 서버 상태 확인에 실패했습니다.");
+                    throw new IllegalStateException(IntegrationInternalErrorMessage.AI_SERVER_HEALTH_CHECK_FAILED.message());
                 }
             } catch (ResourceAccessException ignored) {
                 // 기동 중 연결실패: 5초 뒤 다시 확인
@@ -386,10 +387,10 @@ public class TripPhotoAnalysisService {
                 Thread.sleep(5_000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new IllegalStateException("AI 서버 준비 대기가 중단됐습니다", e);
+                throw new IllegalStateException(IntegrationInternalErrorMessage.AI_SERVER_READY_WAIT_INTERRUPTED.message(), e);
             }
         }
-        throw new IllegalStateException("AI 서버 준비 시간이 초과됐습니다.");
+        throw new IllegalStateException(IntegrationInternalErrorMessage.AI_SERVER_READY_WAIT_TIMEOUT.message());
     }
 
 }

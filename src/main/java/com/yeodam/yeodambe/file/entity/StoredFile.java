@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.file.entity;
 
+import com.yeodam.yeodambe.file.exception.FileInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.user.entity.User;
@@ -72,7 +73,7 @@ public class StoredFile {
                 || objectKey.length() > 500
                 || detectedMimeType == null || detectedMimeType.isBlank()
                 || detectedMimeType.length() > 100) {
-            throw new IllegalArgumentException("저장할 파일 정보가 올바르지 않습니다.");
+            throw new IllegalArgumentException(FileInternalErrorMessage.INVALID_STORED_FILE_INFORMATION.message());
         }
 
         StoredFile file = new StoredFile();

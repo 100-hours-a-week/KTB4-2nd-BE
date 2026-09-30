@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.client;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -170,7 +172,7 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     @Override
     public String storeDerived(String executionId, Path file, String mimeType) {
         if (!mimeType.equals("image/jpeg") && !mimeType.equals("image/webp")) {
-            throw new IllegalArgumentException("지원하지 않는 파생 파일 형식입니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.UNSUPPORTED_DERIVATIVE_FILE_FORMAT.message());
         }
 
         String key = "trip-uploads/" + executionId + "/derived/" + UUID.randomUUID();

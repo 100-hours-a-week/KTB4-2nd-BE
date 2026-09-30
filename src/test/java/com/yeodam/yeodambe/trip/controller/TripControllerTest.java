@@ -56,7 +56,7 @@ class TripControllerTest {
     @Test
     void 소유한_여행의_처리_상태를_조회한다() {
         var status = new TripProcessingStatusResponse(
-                7L, ProcessingStatus.PROCESSING, null, null, null, null);
+                7L, TripProcessingStatusResponse.Status.FINALIZING, null, null, null, null);
         when(processingStatusService.findStatus(7L, 1L)).thenReturn(status);
 
         var response = controller.getProcessingStatus(7L, jwt());
@@ -64,6 +64,7 @@ class TripControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");
         assertThat(response.getBody().data()).isSameAs(status);
+        assertThat(response.getBody().data().status()).isEqualTo(TripProcessingStatusResponse.Status.FINALIZING);
     }
 
     @Test

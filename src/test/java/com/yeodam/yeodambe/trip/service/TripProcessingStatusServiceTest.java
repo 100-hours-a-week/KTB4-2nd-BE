@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -59,7 +60,7 @@ class TripProcessingStatusServiceTest {
 
         var response = service.findStatus(7L, 1L);
 
-        assertThat(response.status()).isEqualTo(ProcessingStatus.COMPLETED);
+        assertThat(response.status()).isEqualTo(Status.COMPLETED);
         assertThat(response.progress().done()).isEqualTo(13);
         assertThat(response.result().placeFolderCount()).isEqualTo(4);
         assertThat(response.result().classifiedAttachmentCount()).isEqualTo(11);
@@ -74,7 +75,7 @@ class TripProcessingStatusServiceTest {
 
         var response = service.findStatus(7L, 1L);
 
-        assertThat(response.status()).isEqualTo(ProcessingStatus.PROCESSING);
+        assertThat(response.status()).isEqualTo(Status.PROCESSING);
         assertThat(response.progress()).isNull();
         assertThat(response.currentStep()).isNull();
         verifyNoInteractions(analysis);
@@ -117,7 +118,7 @@ class TripProcessingStatusServiceTest {
 
         var response = service.findStatus(7L, 1L);
 
-        assertThat(response.status()).isEqualTo(ProcessingStatus.PROCESSING);
+        assertThat(response.status()).isEqualTo(Status.PROCESSING);
         assertThat(response.progress()).isNull();
         assertThat(response.currentStep()).isNull();
         assertThat(response.result()).isNull();
@@ -125,7 +126,7 @@ class TripProcessingStatusServiceTest {
     }
 
     @Test
-    void AI가_끝나도_DB가_처리중이면_완료를_노출하지_않는다() {
+    void AI가_끝나고_DB가_처리중이면_후처리_상태를_반환한다() {
         Trip processing = trip(ProcessingStatus.PROCESSING);
         when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
                 .thenReturn(Optional.of(processing));
@@ -141,9 +142,37 @@ class TripProcessingStatusServiceTest {
 
         var response = service.findStatus(7L, 1L);
 
-        assertThat(response.status()).isEqualTo(ProcessingStatus.PROCESSING);
+        assertThat(response.status()).isEqualTo(Status.FINALIZING);
         assertThat(response.progress()).isNull();
+        assertThat(response.currentStep()).isNull();
         assertThat(response.result()).isNull();
+        assertThat(response.error()).isNull();
+        verify(trips, times(2)).findByIdAndUserIdAndDeletedAtIsNull(7L, 1L);
+    }
+
+    @Test
+    void AI_종료와_상태_조회_사이에_DB가_완료되면_DB_결과를_반환한다() {
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)))
+                .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
+        when(executions.isAnalysisStarted(7L)).thenReturn(true);
+        when(analysis.findStatus(7L)).thenReturn(new TripPhotoAnalysisStatusResponse(
+                7L,
+                TripPhotoAnalysisStatusResponse.Status.COMPLETED,
+                new TripPhotoAnalysisStatusResponse.Progress(5, 5),
+                null,
+                new ObjectMapper().createObjectNode(),
+                null
+        ));
+        when(places.countByTripIdAndDeletedAtIsNull(7L)).thenReturn(1L);
+        when(attachments.countByTripIdAndDeletedAtIsNullAndClassificationStatus(
+                7L, ClassificationStatus.ACTIVE)).thenReturn(5L);
+
+        var response = service.findStatus(7L, 1L);
+
+        assertThat(response.status()).isEqualTo(Status.COMPLETED);
+        assertThat(response.progress().done()).isEqualTo(5);
+        assertThat(response.result().placeFolderCount()).isEqualTo(1);
         verify(trips, times(2)).findByIdAndUserIdAndDeletedAtIsNull(7L, 1L);
     }
 

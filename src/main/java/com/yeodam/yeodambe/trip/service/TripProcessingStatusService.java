@@ -10,6 +10,7 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -39,7 +40,7 @@ public class TripProcessingStatusService {
         if (aiStatus.status() == TripPhotoAnalysisStatusResponse.Status.PROCESSING) {
             return new TripProcessingStatusResponse(
                     tripId,
-                    ProcessingStatus.PROCESSING,
+                    Status.PROCESSING,
                     new TripProcessingStatusResponse.Progress(
                             aiStatus.progress().done(), aiStatus.progress().total()),
                     aiStatus.currentStep(),
@@ -48,7 +49,12 @@ public class TripProcessingStatusService {
             );
         }
 
-        return fromDatabase(findTrip(tripId, userId));
+        Trip updated = findTrip(tripId, userId);
+        if (aiStatus.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED
+                && updated.getProcessingStatus() == ProcessingStatus.PROCESSING) {
+            return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null, null);
+        }
+        return fromDatabase(updated);
     }
 
     private Trip findTrip(Long tripId, Long userId) {
@@ -62,7 +68,7 @@ public class TripProcessingStatusService {
             case COMPLETED -> completed(trip.getId());
             case FAILED -> new TripProcessingStatusResponse(
                     trip.getId(),
-                    ProcessingStatus.FAILED,
+                    Status.FAILED,
                     null,
                     null,
                     null,
@@ -70,7 +76,7 @@ public class TripProcessingStatusService {
             );
             case CANCELED -> new TripProcessingStatusResponse(
                     trip.getId(),
-                    ProcessingStatus.CANCELED,
+                    Status.CANCELED,
                     null,
                     null,
                     null,
@@ -82,7 +88,7 @@ public class TripProcessingStatusService {
     private TripProcessingStatusResponse processing(Long tripId) {
         return new TripProcessingStatusResponse(
                 tripId,
-                ProcessingStatus.PROCESSING,
+                Status.PROCESSING,
                 null,
                 null,
                 null,
@@ -104,7 +110,7 @@ public class TripProcessingStatusService {
 
         return new TripProcessingStatusResponse(
                 tripId,
-                ProcessingStatus.COMPLETED,
+                Status.COMPLETED,
                 new TripProcessingStatusResponse.Progress(total, total),
                 null,
                 new TripProcessingStatusResponse.Result(tripId, placeCount, classifiedCount, unclassifiedCount),

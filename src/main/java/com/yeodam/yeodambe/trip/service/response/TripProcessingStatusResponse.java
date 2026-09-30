@@ -1,15 +1,17 @@
 package com.yeodam.yeodambe.trip.service.response;
 
-import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
-
 public record TripProcessingStatusResponse(
         Long tripId,
-        ProcessingStatus status,
+        Status status,
         Progress progress,
         String currentStep,
         Result result,
         Error error
 ) {
+    public enum Status {
+        PROCESSING, FINALIZING, COMPLETED, FAILED, CANCELED
+    }
+
     public record Progress(int done, int total) {
     }
 

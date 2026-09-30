@@ -118,6 +118,8 @@ class TripAttachmentDerivativeServiceTest {
     @Test
     void HEIC는_원본_해상도_JPEG_표시본을_생성하고_EXIF를_제거한다() throws Exception {
         AtomicReference<byte[]> displayBytes = new AtomicReference<>();
+        AtomicReference<byte[]> analyzeBytes = new AtomicReference<>();
+        AtomicReference<byte[]> previewBytes = new AtomicReference<>();
         byte[] heic = Files.readAllBytes(Path.of(
                 "src/test/resources/images/heic/oriented-with-exif.heic"));
         when(storage.open("original/heic")).thenReturn(new ByteArrayInputStream(heic));
@@ -128,8 +130,12 @@ class TripAttachmentDerivativeServiceTest {
                         displayBytes.set(Files.readAllBytes(path));
                         return "derived/display.jpg";
                     }
-                    return path.getFileName().toString().equals("analyze.jpg")
-                            ? "derived/analyze.jpg" : "derived/preview.webp";
+                    if (path.getFileName().toString().equals("analyze.jpg")) {
+                        analyzeBytes.set(Files.readAllBytes(path));
+                        return "derived/analyze.jpg";
+                    }
+                    previewBytes.set(Files.readAllBytes(path));
+                    return "derived/preview.webp";
                 });
 
         DerivedPhotoKeys result = service.createAll(
@@ -139,12 +145,18 @@ class TripAttachmentDerivativeServiceTest {
         assertArrayEquals(new byte[]{(byte) 0xff, (byte) 0xd8},
                 Arrays.copyOf(displayBytes.get(), 2));
         BufferedImage display = ImageIO.read(new ByteArrayInputStream(displayBytes.get()));
-        assertEquals(2, display.getWidth());
-        assertEquals(3, display.getHeight());
+        assertEquals(3, display.getWidth());
+        assertEquals(2, display.getHeight());
+        BufferedImage analyze = ImageIO.read(new ByteArrayInputStream(analyzeBytes.get()));
+        assertEquals(3, analyze.getWidth());
+        assertEquals(2, analyze.getHeight());
 
         Path output = Files.createTempFile("heic-display", ".jpg");
+        Path previewOutput = Files.createTempFile("heic-preview", ".webp");
         try {
             Files.write(output, displayBytes.get());
+            Files.write(previewOutput, previewBytes.get());
+            assertEquals("3x2", command("identify", "-format", "%wx%h", previewOutput.toString()));
             assertEquals("95", command("identify", "-format", "%Q", output.toString()));
             assertEquals("icc", command("identify", "-format", "%[profiles]", output.toString()));
             var metadata = new ObjectMapper().readTree(command(
@@ -158,6 +170,7 @@ class TripAttachmentDerivativeServiceTest {
             assertFalse(metadata.has("Model"));
         } finally {
             Files.deleteIfExists(output);
+            Files.deleteIfExists(previewOutput);
         }
     }
 

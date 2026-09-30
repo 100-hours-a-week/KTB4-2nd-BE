@@ -179,7 +179,7 @@ public class TripAttachmentDerivativeService {
             Process process = new ProcessBuilder("exiftool", "-j", "-n",
                     "-Orientation", "-DateTimeOriginal", "-OffsetTimeOriginal",
                     "-GPSLatitude", "-GPSLongitude",
-                    "-Make", "-Model", "-QuickTime:Rotation", original.toString()).start();
+                    "-Make", "-Model", original.toString()).start();
             byte[] output = process.getInputStream().readAllBytes();
             if (!process.waitFor(120, TimeUnit.SECONDS) || process.exitValue() != 0) {
                 process.destroyForcibly();
@@ -213,12 +213,11 @@ public class TripAttachmentDerivativeService {
         command.add("convert");
         command.add(original + "[0]");
 
-        if (!("image/heic".equals(mimeType) && metadata.has("Rotation"))) {
+        if (!"image/heic".equals(mimeType)) {
             command.add("-orient");
             command.add(orientation(metadata));
+            command.add("-auto-orient");
         }
-
-        command.add("-auto-orient");
         command.addAll(List.of(options));
         run(command.toArray(String[]::new));
     }

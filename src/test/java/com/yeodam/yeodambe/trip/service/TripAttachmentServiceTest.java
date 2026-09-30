@@ -209,7 +209,7 @@ class TripAttachmentServiceTest {
         });
         when(statuses.findStatus(7L, 1L)).thenReturn(new TripProcessingStatusResponse(
                 7L,
-                ProcessingStatus.COMPLETED,
+                TripProcessingStatusResponse.Status.COMPLETED,
                 new TripProcessingStatusResponse.Progress(1, 1),
                 null,
                 new TripProcessingStatusResponse.Result(7L, 1, 1, 0),
@@ -218,7 +218,7 @@ class TripAttachmentServiceTest {
 
         var response = service.uploadInitialAttachments(7L, 1L, List.of(file));
 
-        assertEquals(ProcessingStatus.COMPLETED, response.status());
+        assertEquals(TripProcessingStatusResponse.Status.COMPLETED, response.status());
         assertEquals(1, response.result().placeFolderCount());
         verify(storage).retain(List.of("original", "analyze", "preview", "display"));
         verify(placeNames).resolve(7L, "run", aiResult);
@@ -356,7 +356,7 @@ class TripAttachmentServiceTest {
         TripProcessingStatusResponse response =
                 service.uploadInitialAttachments(7L, 1L, List.of(file));
 
-        assertEquals(ProcessingStatus.FAILED, response.status());
+        assertEquals(TripProcessingStatusResponse.Status.FAILED, response.status());
         assertEquals(12, response.progress().done());
         assertEquals(128, response.progress().total());
         assertEquals("AI_PROCESSING_FAILED", response.error().code());
@@ -440,7 +440,7 @@ class TripAttachmentServiceTest {
         when(regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L)).thenReturn(List.of(region));
         when(analysis.analyze(eq(7L), anyString(), any(), any())).thenReturn(aiResult);
         when(statuses.findStatus(7L, 1L)).thenReturn(new TripProcessingStatusResponse(
-                7L, ProcessingStatus.COMPLETED,
+                7L, TripProcessingStatusResponse.Status.COMPLETED,
                 new TripProcessingStatusResponse.Progress(2, 2), null,
                 new TripProcessingStatusResponse.Result(7L, 1, 2, 0), null));
 
@@ -455,7 +455,7 @@ class TripAttachmentServiceTest {
             var response = batchService.uploadInitialAttachments(
                     7L, 1L, List.of(secondFile), 2, 2, true);
 
-            assertEquals(ProcessingStatus.COMPLETED, response.orElseThrow().status());
+            assertEquals(TripProcessingStatusResponse.Status.COMPLETED, response.orElseThrow().status());
             var request = org.mockito.ArgumentCaptor.forClass(TripPhotoAnalysisRequest.class);
             verify(analysis, times(1)).analyze(eq(7L), anyString(), request.capture(), any());
             assertEquals(List.of(30L, 31L), request.getValue().attachments().stream()

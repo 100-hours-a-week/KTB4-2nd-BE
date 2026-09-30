@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import org.slf4j.spi.LoggingEventBuilder;
 import lombok.RequiredArgsConstructor;
@@ -148,7 +149,7 @@ public class TripAttachmentService {
             if (failure.getSuppressed().length > 0) throw failure;
             return new TripProcessingStatusResponse(
                     failure.getTripId(),
-                    ProcessingStatus.FAILED,
+                    Status.FAILED,
                     new TripProcessingStatusResponse.Progress(failure.getDone(), failure.getTotal()),
                     failure.getCurrentStep(),
                     null,
@@ -328,7 +329,7 @@ public class TripAttachmentService {
             if (failure.getSuppressed().length > 0) throw failure;
             return Optional.of(new TripProcessingStatusResponse(
                     failure.getTripId(),
-                    ProcessingStatus.FAILED,
+                    Status.FAILED,
                     new TripProcessingStatusResponse.Progress(failure.getDone(), failure.getTotal()),
                     failure.getCurrentStep(),
                     null,

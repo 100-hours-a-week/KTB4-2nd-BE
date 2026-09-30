@@ -2,7 +2,6 @@ package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
 import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
-import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
@@ -218,7 +217,7 @@ class TripAttachmentControllerTest {
         when(service.uploadInitialAttachments(7L, 1L, files, 1, 1, true))
                 .thenReturn(Optional.of(new TripProcessingStatusResponse(
                         7L,
-                        ProcessingStatus.FAILED,
+                        TripProcessingStatusResponse.Status.FAILED,
                         new TripProcessingStatusResponse.Progress(12, 128),
                         null,
                         null,
@@ -230,7 +229,7 @@ class TripAttachmentControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");
-        assertThat(response.getBody().data().status()).isEqualTo(ProcessingStatus.FAILED);
+        assertThat(response.getBody().data().status()).isEqualTo(TripProcessingStatusResponse.Status.FAILED);
         assertThat(response.getBody().data().result()).isNull();
         assertThat(response.getBody().data().error().code()).isEqualTo("AI_PROCESSING_FAILED");
         assertThat(response.getBody().data().error().message()).isEqualTo("첨부 처리에 실패했습니다.");
@@ -333,7 +332,7 @@ class TripAttachmentControllerTest {
     private TripProcessingStatusResponse completed(int total) {
         return new TripProcessingStatusResponse(
                 7L,
-                ProcessingStatus.COMPLETED,
+                TripProcessingStatusResponse.Status.COMPLETED,
                 new TripProcessingStatusResponse.Progress(total, total),
                 null,
                 new TripProcessingStatusResponse.Result(7L, 1, total, 0),

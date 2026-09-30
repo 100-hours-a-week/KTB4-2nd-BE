@@ -1,6 +1,5 @@
 package com.yeodam.yeodambe.trip.controller;
 
-import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
@@ -219,7 +218,7 @@ class TripAttachmentSecurityIntegrationTest {
     private TripProcessingStatusResponse completed() {
         return new TripProcessingStatusResponse(
                 7L,
-                ProcessingStatus.COMPLETED,
+                TripProcessingStatusResponse.Status.COMPLETED,
                 new TripProcessingStatusResponse.Progress(1, 1),
                 null,
                 new TripProcessingStatusResponse.Result(7L, 1, 1, 0),

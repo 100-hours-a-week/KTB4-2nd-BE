@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -64,6 +63,7 @@ class TripListServiceTest {
         assertThat(response.hasNext()).isTrue();
         TripListCursor cursor = TripListCursor.decode(response.nextCursor());
         assertThat(cursor.tripId()).isEqualTo(2L);
+        assertThat(cursor.startDate()).isEqualTo(LocalDate.of(2026, 9, 1));
         assertThat(cursor.favoriteGroup()).isFalse();
     }
 
@@ -98,12 +98,12 @@ class TripListServiceTest {
 
     @Test
     void 일반_그룹_커서부터는_즐겨찾기_그룹을_다시_조회하지_않는다() {
-        LocalDateTime createdAt = LocalDateTime.of(2026, 9, 22, 0, 0, 7);
+        LocalDate startDate = LocalDate.of(2026, 9, 22);
         String cursor = new TripListCursor(
-                TripSort.LATEST, true, false, createdAt, 7L).encode();
+                TripSort.LATEST, true, false, startDate, 7L).encode();
         Trip nextNormal = trip(6L, false, ProcessingStatus.COMPLETED, null);
         when(tripRepository.findFavoriteGroupLatest(
-                eq(1L), eq(false), eq(createdAt), eq(7L), any(Pageable.class)))
+                eq(1L), eq(false), eq(startDate), eq(7L), any(Pageable.class)))
                 .thenReturn(List.of(nextNormal));
 
         var response = tripService.findTrips(
@@ -166,7 +166,6 @@ class TripListServiceTest {
         when(trip.getFavorite()).thenReturn(favorite);
         when(trip.getProcessingStatus()).thenReturn(status);
         when(trip.getThumbnailKey()).thenReturn(thumbnailKey);
-        when(trip.getCreatedAt()).thenReturn(LocalDateTime.of(2026, 9, 22, 0, 0).plusSeconds(id));
         return trip;
     }
 }

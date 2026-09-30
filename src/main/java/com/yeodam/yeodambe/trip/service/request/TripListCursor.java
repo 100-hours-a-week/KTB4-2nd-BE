@@ -3,18 +3,18 @@ package com.yeodam.yeodambe.trip.service.request;
 import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
 
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.Base64;
 
 public record TripListCursor(
         TripSort sort,
         boolean favorite,
         boolean favoriteGroup,
-        LocalDateTime createdAt,
+        LocalDate startDate,
         long tripId
 ) {
     public TripListCursor {
-        if (sort == null || createdAt == null || tripId <= 0) {
+        if (sort == null || startDate == null || tripId <= 0) {
             throw new InvalidTripListFilterException();
         }
     }
@@ -25,7 +25,7 @@ public record TripListCursor(
                 sort.name(),
                 Boolean.toString(favorite),
                 Boolean.toString(favoriteGroup),
-                createdAt.toString(),
+                startDate.toString(),
                 Long.toString(tripId)
         );
         return Base64.getUrlEncoder().withoutPadding()
@@ -49,7 +49,7 @@ public record TripListCursor(
                     TripSort.valueOf(fields[0]),
                     parseBoolean(fields[1]),
                     parseBoolean(fields[2]),
-                    LocalDateTime.parse(fields[3]),
+                    LocalDate.parse(fields[3]),
                     Long.parseLong(fields[4])
             );
         } catch (InvalidTripListFilterException e) {

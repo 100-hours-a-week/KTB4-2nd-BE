@@ -18,11 +18,11 @@ class TripListIndexMigrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void 여행_목록_인덱스의_컬럼_순서를_생성한다() {
-        assertThat(indexColumns("IDX_TRIPS_LIST"))
-                .isEqualTo("user_id,deleted_at,created_at,trip_id");
-        assertThat(indexColumns("IDX_TRIPS_FAVORITE_LIST"))
-                .isEqualTo("user_id,deleted_at,is_favorite,created_at,trip_id");
+    void 여행_목록_인덱스의_컬럼_순서를_여행_시작일_기준으로_생성한다() {
+        assertThat(indexColumns("IDX_TRIPS_LIST_START_DATE"))
+                .isEqualTo("user_id,deleted_at,start_date,trip_id");
+        assertThat(indexColumns("IDX_TRIPS_FAVORITE_LIST_START_DATE"))
+                .isEqualTo("user_id,deleted_at,is_favorite,start_date,trip_id");
     }
 
     private String indexColumns(String indexName) {

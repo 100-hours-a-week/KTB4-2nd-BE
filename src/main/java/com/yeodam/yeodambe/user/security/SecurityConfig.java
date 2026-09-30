@@ -34,7 +34,7 @@ public class SecurityConfig {
     ) throws Exception {
         http.cors(Customizer.withDefaults());
         http.authorizeHttpRequests(authorize -> authorize
-                .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
                 .requestMatchers(HttpMethod.GET, "/auth/csrf").permitAll()
                 .requestMatchers(HttpMethod.POST, "/auth/token/exchange").permitAll()
                 .requestMatchers(HttpMethod.POST, "/users/me/profile").permitAll()

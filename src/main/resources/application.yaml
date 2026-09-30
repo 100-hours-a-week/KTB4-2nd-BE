@@ -78,6 +78,16 @@ spring:
   flyway:
     enabled: false
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
 oauth:
   frontend-callback-uri: ${FRONTEND_OAUTH_CALLBACK_URI:http://localhost:5173/auth/callback}
   kakao:

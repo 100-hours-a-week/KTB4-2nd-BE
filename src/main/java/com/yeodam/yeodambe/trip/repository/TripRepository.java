@@ -10,79 +10,78 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.time.LocalDateTime;
 
 public interface TripRepository extends JpaRepository<Trip, Long> {
     @Query("""
-            SELECT trip FROM Trip trip
-            WHERE trip.userId = :userId
-              AND trip.deletedAt IS NULL
-              AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
-              AND (:createdAt IS NULL
-                   OR trip.createdAt < :createdAt
-                   OR (trip.createdAt = :createdAt AND trip.id < :tripId))
-            ORDER BY trip.createdAt DESC, trip.id DESC
-            """)
+        SELECT trip FROM Trip trip
+        WHERE trip.userId = :userId
+          AND trip.deletedAt IS NULL
+          AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
+          AND (:startDate IS NULL
+               OR trip.startDate < :startDate
+               OR (trip.startDate = :startDate AND trip.id < :tripId))
+        ORDER BY trip.startDate DESC, trip.id DESC
+        """)
     List<Trip> findListLatest(
             @Param("userId") Long userId,
-            @Param("createdAt") LocalDateTime createdAt,
+            @Param("startDate") LocalDate startDate,
             @Param("tripId") Long tripId,
             Pageable pageable
     );
-
     @Query("""
-            SELECT trip FROM Trip trip
-            WHERE trip.userId = :userId
-              AND trip.deletedAt IS NULL
-              AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
-              AND (:createdAt IS NULL
-                   OR trip.createdAt > :createdAt
-                   OR (trip.createdAt = :createdAt AND trip.id > :tripId))
-            ORDER BY trip.createdAt ASC, trip.id ASC
-            """)
+        SELECT trip FROM Trip trip
+        WHERE trip.userId = :userId
+          AND trip.deletedAt IS NULL
+          AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
+          AND (:startDate IS NULL
+               OR trip.startDate > :startDate
+               OR (trip.startDate = :startDate AND trip.id > :tripId))
+        ORDER BY trip.startDate ASC, trip.id ASC
+        """)
     List<Trip> findListOldest(
             @Param("userId") Long userId,
-            @Param("createdAt") LocalDateTime createdAt,
+            @Param("startDate") LocalDate startDate,
             @Param("tripId") Long tripId,
             Pageable pageable
     );
-
     @Query("""
-            SELECT trip FROM Trip trip
-            WHERE trip.userId = :userId
-              AND trip.deletedAt IS NULL
-              AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
-              AND trip.favorite = :favoriteGroup
-              AND (:createdAt IS NULL
-                   OR trip.createdAt < :createdAt
-                   OR (trip.createdAt = :createdAt AND trip.id < :tripId))
-            ORDER BY trip.createdAt DESC, trip.id DESC
-            """)
+        SELECT trip FROM Trip trip
+        WHERE trip.userId = :userId
+          AND trip.deletedAt IS NULL
+          AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
+          AND trip.favorite = :favoriteGroup
+          AND (:startDate IS NULL
+               OR trip.startDate < :startDate
+               OR (trip.startDate = :startDate AND trip.id < :tripId))
+        ORDER BY trip.startDate DESC, trip.id DESC
+        """)
     List<Trip> findFavoriteGroupLatest(
             @Param("userId") Long userId,
             @Param("favoriteGroup") boolean favoriteGroup,
-            @Param("createdAt") LocalDateTime createdAt,
+            @Param("startDate") LocalDate startDate,
             @Param("tripId") Long tripId,
             Pageable pageable
     );
 
     @Query("""
-            SELECT trip FROM Trip trip
-            WHERE trip.userId = :userId
-              AND trip.deletedAt IS NULL
-              AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
-              AND trip.favorite = :favoriteGroup
-              AND (:createdAt IS NULL
-                   OR trip.createdAt > :createdAt
-                   OR (trip.createdAt = :createdAt AND trip.id > :tripId))
-            ORDER BY trip.createdAt ASC, trip.id ASC
-            """)
+        SELECT trip FROM Trip trip
+        WHERE trip.userId = :userId
+          AND trip.deletedAt IS NULL
+          AND trip.processingStatus IN ('PROCESSING', 'COMPLETED')
+          AND trip.favorite = :favoriteGroup
+          AND (:startDate IS NULL
+               OR trip.startDate > :startDate
+               OR (trip.startDate = :startDate AND trip.id > :tripId))
+        ORDER BY trip.startDate ASC, trip.id ASC
+        """)
     List<Trip> findFavoriteGroupOldest(
             @Param("userId") Long userId,
             @Param("favoriteGroup") boolean favoriteGroup,
-            @Param("createdAt") LocalDateTime createdAt,
+            @Param("startDate") LocalDate startDate,
             @Param("tripId") Long tripId,
             Pageable pageable
     );

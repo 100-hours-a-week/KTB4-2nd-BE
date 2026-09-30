@@ -308,7 +308,7 @@ public class TripService {
                     request.sort(),
                     request.favorite(),
                     last.getFavorite(),
-                    last.getCreatedAt(),
+                    last.getStartDate(),
                     last.getId()
             ).encode();
         }
@@ -349,19 +349,19 @@ public class TripService {
             int size
     ) {
         var page = PageRequest.of(0, size);
-        var createdAt = cursor == null ? null : cursor.createdAt();
+        var startDate = cursor == null ? null : cursor.startDate();
         var tripId = cursor == null ? null : cursor.tripId();
 
         if (favoriteGroup == null) {
             return sort == TripSort.LATEST
-                    ? tripRepository.findListLatest(userId, createdAt, tripId, page)
-                    : tripRepository.findListOldest(userId, createdAt, tripId, page);
+                    ? tripRepository.findListLatest(userId, startDate, tripId, page)
+                    : tripRepository.findListOldest(userId, startDate, tripId, page);
         }
         return sort == TripSort.LATEST
                 ? tripRepository.findFavoriteGroupLatest(
-                        userId, favoriteGroup, createdAt, tripId, page)
+                        userId, favoriteGroup, startDate, tripId, page)
                 : tripRepository.findFavoriteGroupOldest(
-                        userId, favoriteGroup, createdAt, tripId, page);
+                        userId, favoriteGroup, startDate, tripId, page);
     }
 
     private String createThumbnailUrl(Trip trip) {

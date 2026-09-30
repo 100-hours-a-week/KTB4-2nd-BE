@@ -3,7 +3,7 @@ package com.yeodam.yeodambe.trip.service.request;
 import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
 import org.junit.jupiter.api.Test;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -35,7 +35,7 @@ class TripListRequestTest {
                 TripSort.OLDEST,
                 true,
                 false,
-                LocalDateTime.of(2026, 9, 22, 12, 30, 45, 123_000_000),
+                LocalDate.of(2026, 9, 22),
                 17L
         );
 
@@ -50,7 +50,7 @@ class TripListRequestTest {
                 TripSort.LATEST,
                 false,
                 true,
-                LocalDateTime.of(2026, 9, 22, 12, 30),
+                LocalDate.of(2026, 9, 22),
                 17L
         ).encode();
 

@@ -55,12 +55,44 @@ class TripListRepositoryTest {
     }
 
     @Test
+    void 최신순은_여행_시작일이_늦은_여행부터_조회한다() {
+        User owner = users.save(new User("trip-date-order@test.com", "여행날짜회원"));
+        Trip laterTrip = trips.save(new Trip(
+                owner.getUserId(), "나중 여행", LocalDate.of(2026, 9, 20), LocalDate.of(2026, 9, 21)));
+        Trip earlierTrip = trips.save(new Trip(
+                owner.getUserId(), "이전 여행", LocalDate.of(2026, 9, 10), LocalDate.of(2026, 9, 11)));
+        flushAndClear();
+
+        List<Trip> result = trips.findListLatest(
+                owner.getUserId(), null, null, PageRequest.of(0, 8));
+
+        assertThat(result).extracting(Trip::getId)
+                .containsExactly(laterTrip.getId(), earlierTrip.getId());
+    }
+
+    @Test
+    void 오래된순은_여행_시작일이_이른_여행부터_조회한다() {
+        User owner = users.save(new User("trip-date-oldest-order@test.com", "여행날짜오래된순회원"));
+        Trip laterTrip = trips.save(new Trip(
+                owner.getUserId(), "나중 여행", LocalDate.of(2026, 9, 20), LocalDate.of(2026, 9, 21)));
+        Trip earlierTrip = trips.save(new Trip(
+                owner.getUserId(), "이전 여행", LocalDate.of(2026, 9, 10), LocalDate.of(2026, 9, 11)));
+        flushAndClear();
+
+        List<Trip> result = trips.findListOldest(
+                owner.getUserId(), null, null, PageRequest.of(0, 8));
+
+        assertThat(result).extracting(Trip::getId)
+                .containsExactly(earlierTrip.getId(), laterTrip.getId());
+    }
+
+    @Test
     void 실패한_여행이_최신이어도_첫_페이지를_정상_여행으로_채운다() {
         User owner = users.save(new User("failed-page@test.com", "페이지회원"));
         Trip completed = save(owner.getUserId(), "완료", false, ProcessingStatus.COMPLETED, null);
         Trip processing = save(owner.getUserId(), "처리중", false, ProcessingStatus.PROCESSING, null);
         save(owner.getUserId(), "실패", false, ProcessingStatus.FAILED, null);
-        setSameCreatedAt();
+        setSameStartDate();
 
         assertThat(trips.findListLatest(owner.getUserId(), null, null, PageRequest.of(0, 2)))
                 .extracting(Trip::getId)
@@ -68,20 +100,20 @@ class TripListRepositoryTest {
     }
 
     @Test
-    void 최신순_커서는_동일한_생성시각에서_tripId로_다음_항목을_찾는다() {
+    void 최신순_커서는_동일한_여행_시작일에서_tripId로_다음_항목을_찾는다() {
         User owner = users.save(new User("same-time@test.com", "동시회원"));
         Trip first = save(owner.getUserId(), "첫째", false, ProcessingStatus.COMPLETED, null);
         Trip second = save(owner.getUserId(), "둘째", false, ProcessingStatus.COMPLETED, null);
         Trip third = save(owner.getUserId(), "셋째", false, ProcessingStatus.COMPLETED, null);
         entityManager.flush();
-        LocalDateTime sameTime = LocalDateTime.of(2026, 9, 22, 10, 0);
-        entityManager.createNativeQuery("UPDATE trips SET created_at = :createdAt")
-                .setParameter("createdAt", sameTime)
+        LocalDate sameStartDate = LocalDate.of(2026, 9, 22);
+        entityManager.createNativeQuery("UPDATE trips SET start_date = :startDate")
+                .setParameter("startDate", sameStartDate)
                 .executeUpdate();
         entityManager.clear();
 
         List<Trip> result = trips.findListLatest(
-                owner.getUserId(), sameTime, second.getId(), PageRequest.of(0, 8));
+                owner.getUserId(), sameStartDate, second.getId(), PageRequest.of(0, 8));
 
         assertThat(result).extracting(Trip::getId).containsExactly(first.getId());
         assertThat(result).extracting(Trip::getId).doesNotContain(third.getId());
@@ -110,15 +142,15 @@ class TripListRepositoryTest {
     }
 
     @Test
-    void 오래된순_커서는_동일한_생성시각에서_큰_tripId부터_이어진다() {
+    void 오래된순_커서는_동일한_여행_시작일에서_큰_tripId부터_이어진다() {
         User owner = users.save(new User("oldest-time@test.com", "오래된순회원"));
         Trip first = save(owner.getUserId(), "첫째", false, ProcessingStatus.COMPLETED, null);
         Trip second = save(owner.getUserId(), "둘째", false, ProcessingStatus.COMPLETED, null);
         Trip third = save(owner.getUserId(), "셋째", false, ProcessingStatus.COMPLETED, null);
-        LocalDateTime sameTime = setSameCreatedAt();
+        LocalDate sameStartDate = setSameStartDate();
 
         List<Trip> result = trips.findListOldest(
-                owner.getUserId(), sameTime, second.getId(), PageRequest.of(0, 8));
+                owner.getUserId(), sameStartDate, second.getId(), PageRequest.of(0, 8));
 
         assertThat(result).extracting(Trip::getId).containsExactly(third.getId());
         assertThat(result).extracting(Trip::getId).doesNotContain(first.getId());
@@ -130,10 +162,10 @@ class TripListRepositoryTest {
         Trip olderFavorite = save(owner.getUserId(), "이전즐찾", true, ProcessingStatus.COMPLETED, null);
         Trip cursorFavorite = save(owner.getUserId(), "기준즐찾", true, ProcessingStatus.COMPLETED, null);
         save(owner.getUserId(), "일반", false, ProcessingStatus.COMPLETED, null);
-        LocalDateTime sameTime = setSameCreatedAt();
+        LocalDate sameStartDate = setSameStartDate();
 
         List<Trip> result = trips.findFavoriteGroupLatest(
-                owner.getUserId(), true, sameTime, cursorFavorite.getId(), PageRequest.of(0, 8));
+                owner.getUserId(), true, sameStartDate, cursorFavorite.getId(), PageRequest.of(0, 8));
 
         assertThat(result).extracting(Trip::getId).containsExactly(olderFavorite.getId());
         assertThat(result).allMatch(Trip::getFavorite);
@@ -172,14 +204,14 @@ class TripListRepositoryTest {
         entityManager.clear();
     }
 
-    private LocalDateTime setSameCreatedAt() {
+    private LocalDate setSameStartDate() {
         entityManager.flush();
-        LocalDateTime sameTime = LocalDateTime.of(2026, 9, 22, 10, 0);
-        entityManager.createNativeQuery("UPDATE trips SET created_at = :createdAt")
-                .setParameter("createdAt", sameTime)
+        LocalDate sameStartDate = LocalDate.of(2026, 9, 22);
+        entityManager.createNativeQuery("UPDATE trips SET start_date = :startDate")
+                .setParameter("startDate", sameStartDate)
                 .executeUpdate();
         entityManager.clear();
-        return sameTime;
+        return sameStartDate;
     }
 
     private TripRegion region(

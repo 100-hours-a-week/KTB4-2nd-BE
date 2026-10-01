@@ -3,8 +3,10 @@ package com.yeodam.yeodambe.common.exception;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.user.exception.*;
+import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.slf4j.MDC;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -381,6 +383,15 @@ public class GlobalExceptionHandler {
             String message,
             Exception exception
     ) {
+        Sentry.captureException(exception, scope -> {
+            scope.setTag("error_code", errorCode.name());
+
+            String requestId = MDC.get("request_id");
+            if (requestId != null) {
+                scope.setTag("request_id", requestId);
+            }
+        });
+
         logEvent.addKeyValue("event", "api_exception")
                 .addKeyValue("result", "failure")
                 .addKeyValue("error_code", errorCode.name())

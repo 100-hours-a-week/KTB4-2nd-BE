@@ -6,6 +6,8 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import tools.jackson.databind.ObjectMapper;
 
 import javax.imageio.ImageIO;
@@ -16,6 +18,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletionException;
@@ -95,6 +98,61 @@ class TripAttachmentDerivativeServiceTest {
                 .tags("stage", "image_derivative", "outcome", "success")
                 .timer()
                 .count());
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {
+            "2010:01:01 12:44:33||2010-01-01T12:44:33+09:00",
+            "2010:01:01 12:44:33|+05:30|2010-01-01T12:44:33+05:30",
+            "|+09:00|",
+            "2010:13:01 12:44:33||",
+            "2010:01:01 12:44:33|invalid|"
+    }, delimiter = '|', nullValues = "")
+    void 촬영시각의_누락된_시간대만_한국_시간으로_해석한다(
+            String date, String offset, String expected
+    ) throws Exception {
+        Path original = Files.createTempFile("camera-metadata", ".jpg");
+        try {
+            Files.write(original, jpeg());
+            command("exiftool", "-n", "-m", "-overwrite_original",
+                    "-DateTimeOriginal=" + (date == null ? "" : date),
+                    "-OffsetTimeOriginal=" + (offset == null ? "" : offset),
+                    "-Make=SAMSUNG", "-Model=NX100", original.toString());
+            ObjectMapper json = new ObjectMapper();
+            var sourceMetadata = json.readTree(command("exiftool", "-j", "-n",
+                    "-DateTimeOriginal", "-OffsetTimeOriginal", original.toString())).get(0);
+            if (date != null) assertEquals(date, sourceMetadata.path("DateTimeOriginal").asString());
+            if (offset != null) assertEquals(offset, sourceMetadata.path("OffsetTimeOriginal").asString());
+            byte[] source = Files.readAllBytes(original);
+            when(storage.open("original/camera")).thenReturn(new ByteArrayInputStream(source));
+            when(storage.storeDerived(eq("run-camera"), any(Path.class), any(String.class)))
+                    .thenAnswer(invocation -> {
+                        Path output = invocation.getArgument(1);
+                        if (output.getFileName().toString().equals("analyze.jpg")) {
+                            var metadata = json.readTree(command("exiftool", "-j", "-n",
+                                    "-DateTimeOriginal", "-OffsetTimeOriginal", "-GPSLatitude",
+                                    "-GPSLongitude", output.toString())).get(0);
+                            if (expected != null || date == null) {
+                                assertEquals(sourceMetadata.get("DateTimeOriginal"), metadata.get("DateTimeOriginal"));
+                                assertEquals(sourceMetadata.get("OffsetTimeOriginal"), metadata.get("OffsetTimeOriginal"));
+                            }
+                            assertFalse(metadata.has("GPSLatitude"));
+                            assertFalse(metadata.has("GPSLongitude"));
+                        }
+                        return "derived/" + output.getFileName();
+                    });
+
+            DerivedPhotoKeys result = service.createAll("run-camera",
+                    List.of("original/camera"), List.of("image/jpeg")).join().getFirst();
+
+            assertEquals(expected == null ? null : OffsetDateTime.parse(expected), result.takenAt());
+            assertNull(result.latitude());
+            assertNull(result.longitude());
+            assertEquals("SAMSUNG NX100", result.deviceModel());
+            assertArrayEquals(source, Files.readAllBytes(original));
+        } finally {
+            Files.deleteIfExists(original);
+        }
     }
 
     @Test

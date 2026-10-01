@@ -17,6 +17,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -106,6 +107,11 @@ class TripPhotoAnalysisHttpContractTest {
         assertNull(analysisHttp2Settings.get());
         assertEquals("request-123", analysisRequestId.get());
         assertEquals(json.readTree(json.writeValueAsString(request)), analysisBody.get());
+        JsonNode camera = analysisBody.get().path("attachments").get(1);
+        assertEquals("2010-01-01T12:44:33+09:00", camera.path("taken_at").asString());
+        assertEquals("SAMSUNG NX100", camera.path("device_model").asString());
+        assertTrue(camera.path("latitude").isNull());
+        assertTrue(camera.path("longitude").isNull());
         assertTrue(result.path("places").isArray());
     }
 
@@ -150,7 +156,10 @@ class TripPhotoAnalysisHttpContractTest {
                         LocalDate.of(2026, 9, 21)),
                 List.of(),
                 List.of(new TripPhotoAnalysisRequest.Photo(
-                        1L, "analyze", null, null, null, null)));
+                        1L, "analyze", null, null, null, null),
+                        new TripPhotoAnalysisRequest.Photo(2L, "camera-analyze",
+                                OffsetDateTime.parse("2010-01-01T12:44:33+09:00"),
+                                null, null, "SAMSUNG NX100")));
     }
 
     private String baseUrl() {

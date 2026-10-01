@@ -176,6 +176,12 @@ logging:
     format:
       console: com.yeodam.yeodambe.common.logging.BackendJsonLogFormatter
 
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:production}
+  release: ${RELEASE:unknown}
+  send-default-pii: false
+
 oauth:
   frontend-callback-uri: ${FRONTEND_OAUTH_CALLBACK_URI}
   kakao:

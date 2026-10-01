@@ -100,3 +100,6 @@ $RECYCLE.BIN/
 # 로컬 작업 인수인계 문서
 /PROJECT-START-CONTEXT.md
 /PROJECT-LEARNING-ROADMAP.md
+
+# 로컬 k6 성능 테스트 스크립트, 입력 사진과 실행 결과
+/performance/k6/

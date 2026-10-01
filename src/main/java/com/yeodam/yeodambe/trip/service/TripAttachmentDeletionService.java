@@ -21,6 +21,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class TripAttachmentDeletionService {
+    private static final int MAX_DELETE_COUNT = 200;
+
     private static final Comparator<TripAttachment> THUMBNAIL_ORDER = Comparator.comparing(
                     TripAttachment::getEvaluation,
                     Comparator.nullsLast(Comparator.reverseOrder())
@@ -63,6 +65,7 @@ public class TripAttachmentDeletionService {
     private void validateIds(List<Long> tripAttachmentIds) {
         if (tripAttachmentIds == null
                 || tripAttachmentIds.isEmpty()
+                || tripAttachmentIds.size() > MAX_DELETE_COUNT
                 || tripAttachmentIds.stream().anyMatch(id -> id == null || id <= 0)
                 || new HashSet<>(tripAttachmentIds).size() != tripAttachmentIds.size()) {
             throw new InvalidAttachmentIdsException();

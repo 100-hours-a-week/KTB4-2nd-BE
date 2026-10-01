@@ -8,6 +8,8 @@ import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.user.service.UserStatsService;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
@@ -29,6 +31,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -300,6 +304,33 @@ class TripAttachmentControllerTest {
                         .value("https://example.com/archive"));
 
         verify(bulkDownloadService).issueDownloadUrl(1L, List.of(11L, 12L));
+    }
+
+    @Test
+    void 일괄_삭제_201개_요청은_조회_없이_기존_400_응답을_반환한다() throws Exception {
+        TripAttachmentRepository repository = mock(TripAttachmentRepository.class);
+        UserStatsService stats = mock(UserStatsService.class);
+        TripAttachmentDeletionService realDeletionService =
+                new TripAttachmentDeletionService(repository, stats);
+        TripAttachmentController realController = new TripAttachmentController(
+                service, listService, detailService, realDeletionService, downloadService, bulkDownloadService);
+        String ids = LongStream.rangeClosed(1, 201)
+                .mapToObj(Long::toString).collect(Collectors.joining(","));
+
+        MockMvcBuilders.standaloneSetup(realController)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build()
+                .perform(post("/api/attachments/bulk-delete")
+                        .contextPath("/api")
+                        .servletPath("/attachments/bulk-delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tripAttachmentIds\":[" + ids + "]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_ATTACHMENT_IDS"))
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        verifyNoInteractions(repository, stats);
     }
 
     private HandlerMethodArgumentResolver authenticationPrincipalResolver() {

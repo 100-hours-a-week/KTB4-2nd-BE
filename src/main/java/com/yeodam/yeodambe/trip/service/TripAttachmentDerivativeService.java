@@ -227,7 +227,8 @@ public class TripAttachmentDerivativeService {
     private OffsetDateTime takenAt(JsonNode metadata) {
         String date = metadata.path("DateTimeOriginal").asString();
         String offset = metadata.path("OffsetTimeOriginal").asString();
-        if (date.isBlank() || offset.isBlank()) return null;
+        if (date.isBlank()) return null;
+        if (offset.isBlank()) offset = "+09:00"; // 시간대가 없는 카메라 시각은 한국 현지 시계로 해석
         try {
             return OffsetDateTime.parse(date.substring(0, 4) + "-" + date.substring(5, 7)
                     + "-" + date.substring(8, 10) + "T" + date.substring(11) + offset);

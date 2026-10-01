@@ -2,10 +2,12 @@ package com.yeodam.yeodambe.common.exception;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
+
 import com.yeodam.yeodambe.user.exception.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.BindException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -262,6 +264,12 @@ public class GlobalExceptionHandler {
         logFailure(log.atError(), ErrorMessage.INTERNAL_SERVER_ERROR,
                 "잘못된 내부 상태가 발생했습니다.", e);
         return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleResourceNotFound(NoResourceFoundException e) {
+        return new ApiResponse<>(ErrorMessage.RESOURCE_NOT_FOUND, null);
     }
 
     @ExceptionHandler(Exception.class)

@@ -3,7 +3,7 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
-import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -20,7 +20,7 @@ public class RegionCatalog {
 
     public RegionCatalog(ObjectMapper objectMapper) throws IOException {
         JsonNode root;
-        try (var input = new ClassPathResource("regions.json").getInputStream()) {
+        try (var input = new FileSystemResource("data/regions.json").getInputStream()) {
             root = objectMapper.readTree(input);
         }
 

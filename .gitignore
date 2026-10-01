@@ -6,6 +6,9 @@ build/
 !**/src/test/**/build/
 
 .env
+/data/*
+!/data/place-search-catalog.json
+!/data/regions.json
 
 ### STS ###
 .apt_generated

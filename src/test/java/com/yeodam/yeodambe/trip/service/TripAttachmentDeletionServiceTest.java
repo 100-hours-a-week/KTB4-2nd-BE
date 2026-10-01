@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -26,6 +27,42 @@ class TripAttachmentDeletionServiceTest {
     private final UserStatsService userStats = mock(UserStatsService.class);
     private final TripAttachmentDeletionService service =
             new TripAttachmentDeletionService(tripAttachmentRepository, userStats);
+
+    @Test
+    void 첨부_200개는_일괄_삭제할_수_있다() {
+        List<Long> ids = LongStream.rangeClosed(1, 200).boxed().toList();
+        Trip trip = mock(Trip.class);
+        when(trip.getUserId()).thenReturn(1L);
+        List<TripAttachment> attachments = ids.stream().map(id -> {
+            TripAttachment attachment = mock(TripAttachment.class);
+            StoredFile file = mock(StoredFile.class);
+            when(attachment.getTrip()).thenReturn(trip);
+            when(attachment.getFile()).thenReturn(file);
+            return attachment;
+        }).toList();
+        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(ids))
+                .thenReturn(attachments);
+
+        assertDoesNotThrow(() -> service.deleteBulk(1L, ids));
+
+        verify(tripAttachmentRepository).findAllActiveWithTripAndFileByIds(ids);
+        for (TripAttachment attachment : attachments) {
+            verify(attachment).softDelete(any());
+            verify(attachment.getFile()).softDelete(any());
+        }
+        verify(tripAttachmentRepository).flush();
+        verify(userStats).refreshFromActiveTrips(1L);
+    }
+
+    @Test
+    void 첨부_201개는_DB_조회와_통계_갱신_전에_거부한다() {
+        List<Long> ids = LongStream.rangeClosed(1, 201).boxed().toList();
+
+        assertThatThrownBy(() -> service.deleteBulk(1L, ids))
+                .isInstanceOf(InvalidAttachmentIdsException.class);
+
+        verifyNoInteractions(tripAttachmentRepository, userStats);
+    }
 
     @Test
     void 중복된_첨부_ID는_조회_전에_거부한다() {

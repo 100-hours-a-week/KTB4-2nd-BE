@@ -112,6 +112,39 @@ public class InitialAttachmentUploadCompletionService {
         storage.retain(List.copyOf(objectKeys));
     }
 
+    boolean cleanupDerived(
+            List<DerivedPhotoKeys> derived,
+            RuntimeException failure
+    ) {
+        Set<String> originalKeys = new LinkedHashSet<>();
+        Set<String> derivedKeys = new LinkedHashSet<>();
+
+        for (DerivedPhotoKeys photo : derived) {
+            originalKeys.add(photo.originalKey());
+            derivedKeys.add(photo.analyzeKey());
+            derivedKeys.add(photo.previewKey());
+
+            if (photo.displayKey() != null && !photo.displayKey().isBlank()) {
+                derivedKeys.add(photo.displayKey());
+            }
+        }
+
+        derivedKeys.removeAll(originalKeys);
+
+        boolean cleaned = true;
+
+        for (String key : derivedKeys) {
+            try {
+                storage.delete(key);
+            } catch (RuntimeException cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+                cleaned = false;
+            }
+        }
+
+        return cleaned;
+    }
+
     private void verifyFileType(InitialAttachmentUploadItem item) {
         byte[] header;
 

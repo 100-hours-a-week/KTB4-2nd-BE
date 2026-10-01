@@ -295,6 +295,58 @@ class InitialAttachmentUploadCompletionServiceTest {
         verifyNoMoreInteractions(storage, derivatives);
     }
 
+    @Test
+    void deletesEachDerivedKeyOnceAndExcludesEveryOriginalKey() {
+        RuntimeException failure = new IllegalStateException("save failed");
+
+        boolean cleaned = service.cleanupDerived(List.of(
+                new DerivedPhotoKeys("original-one", "analyze-one", "preview-one"),
+                new DerivedPhotoKeys("original-two", "analyze-one", "original-one", "display-two",
+                        null, null, null, null),
+                new DerivedPhotoKeys("original-three", "original-two", "preview-three", " ",
+                        null, null, null, null)), failure);
+
+        assertThat(cleaned).isTrue();
+        assertThat(failure.getSuppressed()).isEmpty();
+        var order = inOrder(storage);
+        order.verify(storage).delete("analyze-one");
+        order.verify(storage).delete("preview-one");
+        order.verify(storage).delete("display-two");
+        order.verify(storage).delete("preview-three");
+        verifyNoMoreInteractions(storage, derivatives);
+    }
+
+    @Test
+    void continuesCleanupAfterFailuresAndKeepsAllCleanupErrorsOnOriginalFailure() {
+        RuntimeException failure = new IllegalStateException("save failed");
+        S3Exception firstFailure = s3Failure(403, null);
+        S3Exception secondFailure = s3Failure(500, null);
+        org.mockito.Mockito.doThrow(firstFailure).when(storage).delete("analyze");
+        org.mockito.Mockito.doThrow(secondFailure).when(storage).delete("display");
+
+        boolean cleaned = service.cleanupDerived(List.of(new DerivedPhotoKeys(
+                "original", "analyze", "preview", "display", null, null, null, null)), failure);
+
+        assertThat(cleaned).isFalse();
+        assertThat(failure).hasMessage("save failed");
+        assertThat(failure.getSuppressed()).containsExactly(firstFailure, secondFailure);
+        var order = inOrder(storage);
+        order.verify(storage).delete("analyze");
+        order.verify(storage).delete("preview");
+        order.verify(storage).delete("display");
+        verifyNoMoreInteractions(storage, derivatives);
+    }
+
+    @Test
+    void emptyConversionResultsRequireNoStorageCleanup() {
+        RuntimeException failure = new IllegalStateException("validation failed");
+
+        assertThat(service.cleanupDerived(List.of(), failure)).isTrue();
+
+        assertThat(failure.getSuppressed()).isEmpty();
+        verifyNoMoreInteractions(storage, derivatives);
+    }
+
     private byte[] jpeg(int size) {
         byte[] bytes = new byte[size];
         bytes[0] = (byte) 0xff;

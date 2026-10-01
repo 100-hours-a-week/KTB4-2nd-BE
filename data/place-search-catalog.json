@@ -79,8 +79,36 @@
       "regionCode": "41130"
     },
     {
+      "searchName": "경기도 수원시 영통구",
+      "regionCode": "41110"
+    },
+    {
       "searchName": "경기도 수원시",
       "regionCode": "41110"
+    },
+    {
+      "searchName": "경기도 수원시 장안구",
+      "regionCode": "41110"
+    },
+    {
+      "searchName": "경기도 수원시 권선구",
+      "regionCode": "41110"
+    },
+    {
+      "searchName": "경기도 수원시 팔달구",
+      "regionCode": "41110"
+    },
+    {
+      "searchName": "경기도 성남시 수정구",
+      "regionCode": "41130"
+    },
+    {
+      "searchName": "경기도 성남시 중원구",
+      "regionCode": "41130"
+    },
+    {
+      "searchName": "경기도 성남시 분당구",
+      "regionCode": "41130"
     },
     {
       "searchName": "경기도 의정부시",
@@ -88,6 +116,14 @@
     },
     {
       "searchName": "경기도 안양시",
+      "regionCode": "41170"
+    },
+    {
+      "searchName": "경기도 안양시 만안구",
+      "regionCode": "41170"
+    },
+    {
+      "searchName": "경기도 안양시 동안구",
       "regionCode": "41170"
     },
     {
@@ -115,7 +151,27 @@
       "regionCode": "41270"
     },
     {
+      "searchName": "경기도 안산시 상록구",
+      "regionCode": "41270"
+    },
+    {
+      "searchName": "경기도 안산시 단원구",
+      "regionCode": "41270"
+    },
+    {
       "searchName": "경기도 고양시",
+      "regionCode": "41280"
+    },
+    {
+      "searchName": "경기도 고양시 덕양구",
+      "regionCode": "41280"
+    },
+    {
+      "searchName": "경기도 고양시 일산동구",
+      "regionCode": "41280"
+    },
+    {
+      "searchName": "경기도 고양시 일산서구",
       "regionCode": "41280"
     },
     {
@@ -148,6 +204,18 @@
     },
     {
       "searchName": "경기도 용인시",
+      "regionCode": "41460"
+    },
+    {
+      "searchName": "경기도 용인시 처인구",
+      "regionCode": "41460"
+    },
+    {
+      "searchName": "경기도 용인시 기흥구",
+      "regionCode": "41460"
+    },
+    {
+      "searchName": "경기도 용인시 수지구",
       "regionCode": "41460"
     },
     {
@@ -199,7 +267,55 @@
       "regionCode": "41830"
     },
     {
+      "searchName": "경기도 화성시 병점구",
+      "regionCode": "41590"
+    },
+    {
+      "searchName": "경기도 화성시 동탄구",
+      "regionCode": "41590"
+    },
+    {
+      "searchName": "경기도 화성시 효행구",
+      "regionCode": "41590"
+    },
+    {
+      "searchName": "경기도 화성시 만세구",
+      "regionCode": "41590"
+    },
+    {
+      "searchName": "경기도 부천시 오정구",
+      "regionCode": "41190"
+    },
+    {
+      "searchName": "경기도 부천시 소사구",
+      "regionCode": "41190"
+    },
+    {
+      "searchName": "경기도 부천시 원미구",
+      "regionCode": "41190"
+    },
+    {
       "searchName": "경상남도 창원시",
+      "regionCode": "48120"
+    },
+    {
+      "searchName": "경상남도 창원시 의창구",
+      "regionCode": "48120"
+    },
+    {
+      "searchName": "경상남도 창원시 성산구",
+      "regionCode": "48120"
+    },
+    {
+      "searchName": "경상남도 창원시 마산합포구",
+      "regionCode": "48120"
+    },
+    {
+      "searchName": "경상남도 창원시 마산회원구",
+      "regionCode": "48120"
+    },
+    {
+      "searchName": "경상남도 창원시 진해구",
       "regionCode": "48120"
     },
     {
@@ -272,6 +388,14 @@
     },
     {
       "searchName": "경상북도 포항시",
+      "regionCode": "47110"
+    },
+    {
+      "searchName": "경상북도 포항시 남구",
+      "regionCode": "47110"
+    },
+    {
+      "searchName": "경상북도 포항시 북구",
       "regionCode": "47110"
     },
     {
@@ -359,7 +483,35 @@
       "regionCode": "47940"
     },
     {
+      "searchName": "대구광역시 남구",
+      "regionCode": "27000"
+    },
+    {
+      "searchName": "대구광역시 서구",
+      "regionCode": "27000"
+    },
+    {
       "searchName": "대구광역시",
+      "regionCode": "27000"
+    },
+    {
+      "searchName": "대구광역시 중구",
+      "regionCode": "27000"
+    },
+    {
+      "searchName": "대구광역시 동구",
+      "regionCode": "27000"
+    },
+    {
+      "searchName": "대구광역시 북구",
+      "regionCode": "27000"
+    },
+    {
+      "searchName": "대구광역시 수성구",
+      "regionCode": "27000"
+    },
+    {
+      "searchName": "대구광역시 달서구",
       "regionCode": "27000"
     },
     {
@@ -375,7 +527,87 @@
       "regionCode": "30000"
     },
     {
+      "searchName": "대전광역시 동구",
+      "regionCode": "30000"
+    },
+    {
+      "searchName": "대전광역시 중구",
+      "regionCode": "30000"
+    },
+    {
+      "searchName": "대전광역시 서구",
+      "regionCode": "30000"
+    },
+    {
+      "searchName": "대전광역시 유성구",
+      "regionCode": "30000"
+    },
+    {
+      "searchName": "대전광역시 대덕구",
+      "regionCode": "30000"
+    },
+    {
       "searchName": "부산광역시",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 중구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 서구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 동구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 영도구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 부산진구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 동래구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 남구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 북구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 해운대구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 사하구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 금정구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 강서구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 연제구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 수영구",
+      "regionCode": "26000"
+    },
+    {
+      "searchName": "부산광역시 사상구",
       "regionCode": "26000"
     },
     {
@@ -383,7 +615,107 @@
       "regionCode": "26710"
     },
     {
+      "searchName": "서울특별시 송파구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 강동구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 관악구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 서초구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 동작구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 금천구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 영등포구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 강서구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 구로구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 마포구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 양천구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 서대문구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 노원구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 은평구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 강북구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 도봉구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 중랑구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 성북구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 동대문구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 광진구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 성동구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 용산구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 중구",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 강남구",
+      "regionCode": "11000"
+    },
+    {
       "searchName": "서울특별시",
+      "regionCode": "11000"
+    },
+    {
+      "searchName": "서울특별시 종로구",
       "regionCode": "11000"
     },
     {
@@ -395,11 +727,47 @@
       "regionCode": "31000"
     },
     {
+      "searchName": "울산광역시 중구",
+      "regionCode": "31000"
+    },
+    {
+      "searchName": "울산광역시 남구",
+      "regionCode": "31000"
+    },
+    {
+      "searchName": "울산광역시 동구",
+      "regionCode": "31000"
+    },
+    {
+      "searchName": "울산광역시 북구",
+      "regionCode": "31000"
+    },
+    {
       "searchName": "울산광역시 울주군",
       "regionCode": "31710"
     },
     {
       "searchName": "인천광역시",
+      "regionCode": "28000"
+    },
+    {
+      "searchName": "인천광역시 미추홀구",
+      "regionCode": "28000"
+    },
+    {
+      "searchName": "인천광역시 연수구",
+      "regionCode": "28000"
+    },
+    {
+      "searchName": "인천광역시 남동구",
+      "regionCode": "28000"
+    },
+    {
+      "searchName": "인천광역시 부평구",
+      "regionCode": "28000"
+    },
+    {
+      "searchName": "인천광역시 계양구",
       "regionCode": "28000"
     },
     {
@@ -409,6 +777,22 @@
     {
       "searchName": "인천광역시 옹진군",
       "regionCode": "28720"
+    },
+    {
+      "searchName": "인천광역시 제물포구",
+      "regionCode": "28000"
+    },
+    {
+      "searchName": "인천광역시 영종구",
+      "regionCode": "28000"
+    },
+    {
+      "searchName": "인천광역시 서해구",
+      "regionCode": "28000"
+    },
+    {
+      "searchName": "인천광역시 검단구",
+      "regionCode": "28000"
     },
     {
       "searchName": "전남광주통합특별시",
@@ -431,8 +815,28 @@
       "regionCode": "12170"
     },
     {
+      "searchName": "전남광주통합특별시 서구",
+      "regionCode": "12000"
+    },
+    {
+      "searchName": "전남광주통합특별시 동구",
+      "regionCode": "12000"
+    },
+    {
       "searchName": "전남광주통합특별시 광양시",
       "regionCode": "12190"
+    },
+    {
+      "searchName": "전남광주통합특별시 남구",
+      "regionCode": "12000"
+    },
+    {
+      "searchName": "전남광주통합특별시 북구",
+      "regionCode": "12000"
+    },
+    {
+      "searchName": "전남광주통합특별시 광산구",
+      "regionCode": "12000"
     },
     {
       "searchName": "전남광주통합특별시 담양군",
@@ -555,7 +959,15 @@
       "regionCode": "52130"
     },
     {
+      "searchName": "전북특별자치도 전주시 덕진구",
+      "regionCode": "52110"
+    },
+    {
       "searchName": "전북특별자치도 전주시",
+      "regionCode": "52110"
+    },
+    {
+      "searchName": "전북특별자치도 전주시 완산구",
       "regionCode": "52110"
     },
     {
@@ -568,6 +980,14 @@
     },
     {
       "searchName": "충청남도 천안시",
+      "regionCode": "44130"
+    },
+    {
+      "searchName": "충청남도 천안시 동남구",
+      "regionCode": "44130"
+    },
+    {
+      "searchName": "충청남도 천안시 서북구",
       "regionCode": "44130"
     },
     {
@@ -627,7 +1047,23 @@
       "regionCode": "44825"
     },
     {
+      "searchName": "충청북도 청주시 상당구",
+      "regionCode": "43110"
+    },
+    {
       "searchName": "충청북도 청주시",
+      "regionCode": "43110"
+    },
+    {
+      "searchName": "충청북도 청주시 서원구",
+      "regionCode": "43110"
+    },
+    {
+      "searchName": "충청북도 청주시 흥덕구",
+      "regionCode": "43110"
+    },
+    {
+      "searchName": "충청북도 청주시 청원구",
       "regionCode": "43110"
     },
     {

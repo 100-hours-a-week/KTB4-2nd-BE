@@ -18,6 +18,8 @@ import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.session.IssuedLoginSession;
 import com.yeodam.yeodambe.user.security.session.LoginSessionIssuer;
 import com.yeodam.yeodambe.user.service.UserRegistrationService;
+import com.yeodam.yeodambe.user.service.WithdrawalService;
+import com.yeodam.yeodambe.user.exception.WithdrawalFailedException;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +29,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.http.HttpHeaders;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -34,6 +38,8 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -53,8 +59,10 @@ class WithdrawalIntegrationTest {
     private LoginSessionIssuer loginSessionIssuer;
     @Autowired
     private AccessTokenIssuer accessTokenIssuer;
-    @Autowired
+    @MockitoSpyBean
     private CsrfTokenStore csrfTokenStore;
+    @Autowired
+    private WithdrawalService withdrawalService;
     @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
@@ -118,13 +126,22 @@ class WithdrawalIntegrationTest {
                 )
         );
 
-        mockMvc.perform(delete("/users/me")
+        var response = mockMvc.perform(delete("/users/me")
                         .cookie(
                                 new Cookie("accessToken", accessToken),
                                 new Cookie("CSRF_CONTEXT", browserContext)
                         )
                         .header("X-CSRF-TOKEN", "withdrawal-csrf-token"))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isNoContent())
+                .andReturn().getResponse();
+
+        assertThat(response.getHeaders(HttpHeaders.SET_COOKIE))
+                .hasSize(2)
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains("accessToken=;", "Path=/;", "Max-Age=0", "HttpOnly", "SameSite=Lax"))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains("refreshToken=;", "Path=/api/auth;", "Max-Age=0", "HttpOnly", "SameSite=Lax"));
+        assertThat(csrfTokenStore.find(browserContext)).isNull();
 
         assertSoftDeleted("users", "user_id", user.getUserId());
         assertSoftDeleted("oauth_accounts", "user_id", user.getUserId());
@@ -179,6 +196,40 @@ class WithdrawalIntegrationTest {
                 Object.class,
                 user.getUserId()
         )).isNull();
+    }
+
+    @Test
+    void csrfDeletionFailureRollsBackWithdrawalAndSessionDeletion() {
+        String unique = UUID.randomUUID().toString();
+        User user = userRegistrationService.register(
+                "rollback-" + unique + "@yeodam.test", "롤백회원",
+                OAuthProvider.KAKAO, "kakao-rollback-" + unique);
+        IssuedLoginSession session = loginSessionIssuer.issue(user.getUserId());
+        String browserContext = "rollback-browser-" + unique;
+        csrfTokenStore.save(browserContext, "rollback-csrf-token");
+        Trip trip = tripRepository.saveAndFlush(new Trip(
+                user.getUserId(), "롤백 여행", LocalDate.now(), LocalDate.now()));
+
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new IllegalStateException("Simulated failure after CSRF deletion");
+        }).when(csrfTokenStore).delete(browserContext);
+
+        assertThatThrownBy(() -> withdrawalService.withdraw(user.getUserId(), browserContext))
+                .isInstanceOf(WithdrawalFailedException.class);
+
+        for (String table : new String[]{"users", "oauth_accounts", "consents", "user_stats"}) {
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT deleted_at FROM " + table + " WHERE user_id = ?",
+                    Object.class, user.getUserId())).isNull();
+        }
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT deleted_at FROM trips WHERE trip_id = ?",
+                Object.class, trip.getId())).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM login_sessions WHERE sid = ?",
+                Long.class, session.sid())).isEqualTo(1L);
+        assertThat(csrfTokenStore.find(browserContext)).isEqualTo("rollback-csrf-token");
     }
 
     private void assertSoftDeleted(String tableName, String idColumn, Long id) {

@@ -51,3 +51,45 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+// Performance code is compiled and executed only by explicit tasks.
+sourceSets {
+    performanceTest {
+        java.srcDir 'src/performanceTest/java'
+        resources.srcDir 'src/performanceTest/resources'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+configurations {
+    performanceTestImplementation.extendsFrom testImplementation
+    performanceTestRuntimeOnly.extendsFrom testRuntimeOnly
+    performanceTestCompileOnly.extendsFrom testCompileOnly
+    performanceTestAnnotationProcessor.extendsFrom testAnnotationProcessor
+}
+tasks.named('test') {
+    useJUnitPlatform { excludeTags 'performance' }
+}
+[
+    performanceSupportTest: ['LocalAnalysisStubTest', 'StageMeasurementsTest', 'LoadReportTest', 'PostprocessLoadRunnerTest'],
+    postprocessSmokeTest: ['PostprocessUploadSmokeTest'],
+    postprocessLoadTest: ['PostprocessUploadLoadTest'],
+    derivativeLoadTest: ['TripAttachmentDerivativeLoadTest'],
+    placeProviderProbeTest: ['PlaceProviderFailureProbeTest']
+].each { taskName, testClasses ->
+    tasks.register(taskName, Test) {
+        group = 'verification'
+        description = 'Explicit performance verification; see performance/postprocess/README.md'
+        testClassesDirs = sourceSets.performanceTest.output.classesDirs
+        classpath = sourceSets.performanceTest.runtimeClasspath
+        useJUnitPlatform {
+            if (taskName in ['postprocessSmokeTest', 'postprocessLoadTest']) includeTags 'performance'
+        }
+        testClasses.each { include "**/${it}.class" }
+        maxParallelForks = 1
+        outputs.upToDateWhen { false }
+        project.properties.findAll { key, value -> key.startsWith('load.') }.each { key, value ->
+            systemProperty key, value
+        }
+    }
+}

@@ -1,22 +1,21 @@
 services:
   prometheus:
     image: prom/prometheus:v3.15.0
-    container_name: yeodam-prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --web.enable-remote-write-receiver
     ports:
-      - "9090:9090"
+      - "127.0.0.1:19090:9090"
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./performance/targets:/etc/prometheus/targets:ro
       - prometheus-data:/prometheus
 
   grafana:
     image: grafana/grafana:13.2.3
-    container_name: yeodam-grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:13000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin

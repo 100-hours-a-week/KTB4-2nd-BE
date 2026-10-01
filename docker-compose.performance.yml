@@ -1,9 +1,8 @@
 services:
   mysql:
     image: mysql:9.7
-    container_name: yeodam-performance-mysql
     ports:
-      - "3307:3306"
+      - "127.0.0.1:13307:3306"
     environment:
       MYSQL_DATABASE: yeodam
       MYSQL_USER: yeodam
@@ -22,9 +21,8 @@ services:
 
   localstack:
     image: localstack/localstack:4.12
-    container_name: yeodam-performance-localstack
     ports:
-      - "4566:4566"
+      - "127.0.0.1:14566:4566"
     environment:
       SERVICES: s3
       AWS_DEFAULT_REGION: ap-northeast-2

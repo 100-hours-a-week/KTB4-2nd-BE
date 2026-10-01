@@ -106,3 +106,11 @@ $RECYCLE.BIN/
 
 # 로컬 k6 성능 테스트 스크립트, 입력 사진과 실행 결과
 /performance/k6/
+
+# Local performance outputs, datasets and generated scrape target
+/performance/**/results/
+/performance/datasets/
+/performance/targets/*.json
+/performance/*.md
+/performance/postprocess/*.md
+/src/performanceTest/resources/*.local.*

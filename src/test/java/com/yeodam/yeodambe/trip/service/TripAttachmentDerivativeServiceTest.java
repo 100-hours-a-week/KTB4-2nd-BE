@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,6 +35,15 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.Locale;
 
 class TripAttachmentDerivativeServiceTest {
     private TripAttachmentStorageClient storage;
@@ -258,4 +268,61 @@ class TripAttachmentDerivativeServiceTest {
         ImageIO.write(image, "jpg", output);
         return output.toByteArray();
     }
+    @Test
+    void 작업_하나와_대기_둘이_차면_네번째_제출을_거부한다() throws Exception {
+        TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
+        byte[] jpeg = jpeg();
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        Map<String, Long> firstReadAt = new ConcurrentHashMap<>();
+        Map<String, Long> submittedAt = new ConcurrentHashMap<>();
+
+        when(storage.open(any(String.class))).thenAnswer(call -> {
+            String job = call.getArgument(0);
+            firstReadAt.put(job, System.nanoTime());
+            if (job.equals("job-1")) {
+                firstStarted.countDown();
+                if (!releaseFirst.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("첫 작업 대기 제한시간 초과");
+                }
+            }
+            return new ByteArrayInputStream(jpeg);
+        });
+        when(storage.storeDerived(any(String.class), any(Path.class), any(String.class)))
+                .thenAnswer(call -> call.getArgument(0) + "/" + ((Path) call.getArgument(1)).getFileName());
+
+        TripAttachmentDerivativeService service = new TripAttachmentDerivativeService(
+                storage, new ObjectMapper(), new SimpleMeterRegistry());
+        try {
+            submittedAt.put("job-1", System.nanoTime());
+            CompletableFuture<List<DerivedPhotoKeys>> first = service.createAll(
+                    "job-1", List.of("job-1"), List.of("image/jpeg"));
+            assertTrue(firstStarted.await(10, TimeUnit.SECONDS));
+
+            List<CompletableFuture<List<DerivedPhotoKeys>>> accepted = new ArrayList<>();
+            accepted.add(first);
+            for (int n = 2; n <= 3; n++) {
+                String job = "job-" + n;
+                submittedAt.put(job, System.nanoTime());
+                accepted.add(service.createAll(job, List.of(job), List.of("image/jpeg")));
+            }
+            assertThrows(RejectedExecutionException.class, () -> service.createAll(
+                    "job-4", List.of("job-4"), List.of("image/jpeg")));
+
+            releaseFirst.countDown();
+            for (CompletableFuture<List<DerivedPhotoKeys>> future : accepted) future.join();
+            assertEquals(3, firstReadAt.size());
+            System.out.println("job,submit_to_first_read_ms");
+            for (int n = 1; n <= 3; n++) {
+                String job = "job-" + n;
+                System.out.printf(Locale.ROOT, "%s,%.3f%n", job,
+                        (firstReadAt.get(job) - submittedAt.get(job)) / 1_000_000.0);
+            }
+            System.out.println("job-4,rejected");
+        } finally {
+            releaseFirst.countDown();
+            service.stop();
+        }
+    }
+
 }

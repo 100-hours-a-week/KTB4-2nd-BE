@@ -1,0 +1,109 @@
+{
+  "uid": "yeodam-local",
+  "title": "Yeodam Backend (Local)",
+  "tags": ["yeodam", "local"],
+  "timezone": "browser",
+  "schemaVersion": 42,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Backend scrape",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "up{job=\"yeodam-performance\"}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } }] }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "title": "HTTP requests / second",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 0, "w": 9, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "sum(rate(http_server_requests_seconds_count{job=\"yeodam-performance\",uri!~\"/actuator/.*\"}[5m])) or vector(0)", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "title": "HTTP p95 latency",
+      "type": "timeseries",
+      "gridPos": { "x": 15, "y": 0, "w": 9, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"yeodam-performance\",uri!~\"/actuator/.*\"}[5m])))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "title": "JVM heap used",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "sum(jvm_memory_used_bytes{job=\"yeodam-performance\",area=\"heap\"})", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "title": "HTTP 5xx / second",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "sum(rate(http_server_requests_seconds_count{job=\"yeodam-performance\",status=~\"5..\",uri!~\"/actuator/.*\"}[5m])) or vector(0)", "refId": "A" }]
+    },
+    {
+      "id": 6,
+      "title": "GC pause / second",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "sum(rate(jvm_gc_pause_seconds_sum{job=\"yeodam-performance\"}[5m])) or vector(0)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "title": "JVM live threads",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "jvm_threads_live_threads{job=\"yeodam-performance\"}", "refId": "A" }]
+    },
+    {
+      "id": 8,
+      "title": "Hikari connections",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "hikaricp_connections_active{job=\"yeodam-performance\"}", "legendFormat": "active", "refId": "A" },
+        { "expr": "hikaricp_connections_pending{job=\"yeodam-performance\"}", "legendFormat": "pending", "refId": "B" },
+        { "expr": "hikaricp_connections_max{job=\"yeodam-performance\"}", "legendFormat": "max", "refId": "C" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Trip stage p95 (successful operations)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 32, "w": 8, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(yeodam_trip_stage_seconds_bucket{job=\"yeodam-performance\",outcome=\"success\"}[5m])))", "legendFormat": "{{stage}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 10,
+      "title": "Trip stage failures (5m)",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 32, "w": 8, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "sum by (stage) (increase(yeodam_trip_stage_seconds_count{job=\"yeodam-performance\",outcome=\"failure\"}[5m]))", "legendFormat": "{{stage}}", "refId": "A" }]
+    },
+    {
+      "id": 11,
+      "title": "Trip stage successes (5m)",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 32, "w": 8, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "sum by (stage) (increase(yeodam_trip_stage_seconds_count{job=\"yeodam-performance\",outcome=\"success\"}[5m]))", "legendFormat": "{{stage}}", "refId": "A" }]
+    }
+  ]
+}

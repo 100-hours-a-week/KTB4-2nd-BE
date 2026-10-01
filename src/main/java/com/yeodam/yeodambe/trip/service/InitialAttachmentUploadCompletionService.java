@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadItem;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -22,6 +23,7 @@ import java.util.Set;
 public class InitialAttachmentUploadCompletionService {
 
     private final TripAttachmentStorageClient storage;
+    private final TripAttachmentDerivativeService derivatives;
 
     void verifyUploadedFiles(
             List<InitialAttachmentUploadItem> uploadItems
@@ -51,6 +53,46 @@ public class InitialAttachmentUploadCompletionService {
 
             verifyFileType(item);
         }
+    }
+
+    List<DerivedPhotoKeys> createDerived(
+            String executionId,
+            List<InitialAttachmentUploadItem> uploadItems
+    ) {
+        List<String> originalKeys = uploadItems.stream()
+                .map(InitialAttachmentUploadItem::getObjectKey)
+                .toList();
+
+        List<String> mimeTypes = uploadItems.stream()
+                .map(InitialAttachmentUploadItem::getContentType)
+                .toList();
+
+        List<DerivedPhotoKeys> derived =
+                derivatives.createAll(executionId, originalKeys, mimeTypes)
+                        .join();
+
+        if (derived == null || derived.size() != uploadItems.size()) {
+            throw new IllegalStateException(
+                    TripInternalErrorMessage.DERIVED_ATTACHMENT_COUNT_MISMATCH.message()
+            );
+        }
+
+        for (int i = 0; i < derived.size(); i++) {
+            DerivedPhotoKeys photo = derived.get(i);
+
+            if (photo == null
+                    || !originalKeys.get(i).equals(photo.originalKey())
+                    || photo.analyzeKey() == null || photo.analyzeKey().isBlank()
+                    || photo.previewKey() == null || photo.previewKey().isBlank()
+                    || ("image/heic".equals(mimeTypes.get(i))
+                    && (photo.displayKey() == null || photo.displayKey().isBlank()))) {
+                throw new IllegalStateException(
+                        TripInternalErrorMessage.DERIVED_ATTACHMENT_RESULT_INVALID.message()
+                );
+            }
+        }
+
+        return derived;
     }
 
     private void verifyFileType(InitialAttachmentUploadItem item) {

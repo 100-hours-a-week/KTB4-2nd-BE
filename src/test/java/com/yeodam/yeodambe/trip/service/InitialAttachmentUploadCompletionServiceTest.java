@@ -16,6 +16,8 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -28,8 +30,9 @@ import static org.mockito.Mockito.when;
 
 class InitialAttachmentUploadCompletionServiceTest {
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
+    private final TripAttachmentDerivativeService derivatives = mock(TripAttachmentDerivativeService.class);
     private final InitialAttachmentUploadCompletionService service =
-            new InitialAttachmentUploadCompletionService(storage);
+            new InitialAttachmentUploadCompletionService(storage, derivatives);
     private final InitialAttachmentUploadBatch batch = new InitialAttachmentUploadBatch(
             "upload-id", "execution-id", 7L, 42L, 1, 2, true);
 
@@ -181,6 +184,88 @@ class InitialAttachmentUploadCompletionServiceTest {
         when(storage.open("key-one")).thenThrow(failure);
 
         assertStorageFailure(failure);
+    }
+
+    @Test
+    void passesOrderedKeysAndTypesAndReturnsConversionResultsWithMetadata() {
+        var takenAt = java.time.OffsetDateTime.parse("2026-10-01T10:00:00+09:00");
+        List<DerivedPhotoKeys> results = List.of(
+                new DerivedPhotoKeys("key-one", "analyze-one", "preview-one", takenAt,
+                        java.math.BigDecimal.ONE, java.math.BigDecimal.TEN, "camera"),
+                new DerivedPhotoKeys("key-two", "analyze-two", "preview-two"));
+        when(derivatives.createAll("execution-id", List.of("key-one", "key-two"),
+                List.of("image/jpeg", "image/jpeg")))
+                .thenReturn(CompletableFuture.completedFuture(results));
+
+        assertThat(service.createDerived("execution-id", List.of(
+                item(1, "key-one", 1024), item(2, "key-two", 2048))))
+                .isSameAs(results);
+        assertThat(results.getFirst().takenAt()).isEqualTo(takenAt);
+        verify(derivatives).createAll("execution-id", List.of("key-one", "key-two"),
+                List.of("image/jpeg", "image/jpeg"));
+        verifyNoMoreInteractions(storage, derivatives);
+        assertThat(batch.getStatus()).isEqualTo(InitialAttachmentUploadStatus.PENDING);
+    }
+
+    @Test
+    void rejectsMissingResultsOrIncorrectResultCount() {
+        for (List<DerivedPhotoKeys> results : java.util.Arrays.<List<DerivedPhotoKeys>>asList(null, List.of())) {
+            when(derivatives.createAll("execution-id", List.of("key-one"), List.of("image/jpeg")))
+                    .thenReturn(CompletableFuture.completedFuture(results));
+
+            assertThatThrownBy(() -> service.createDerived("execution-id", List.of(item(1, "key-one", 1024))))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("파생 사진 수가 다릅니다.");
+        }
+    }
+
+    @Test
+    void rejectsNullResultWrongOriginalOrMissingRequiredDerivedKeys() {
+        List<DerivedPhotoKeys> invalid = java.util.Arrays.asList(
+                null,
+                new DerivedPhotoKeys("other-key", "analyze", "preview"),
+                new DerivedPhotoKeys("key-one", null, "preview"),
+                new DerivedPhotoKeys("key-one", " ", "preview"),
+                new DerivedPhotoKeys("key-one", "analyze", null),
+                new DerivedPhotoKeys("key-one", "analyze", " "));
+        for (DerivedPhotoKeys result : invalid) {
+            when(derivatives.createAll("execution-id", List.of("key-one"), List.of("image/jpeg")))
+                    .thenReturn(CompletableFuture.completedFuture(java.util.Collections.singletonList(result)));
+
+            assertThatThrownBy(() -> service.createDerived("execution-id", List.of(item(1, "key-one", 1024))))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("파생 사진 결과가 올바르지 않습니다.");
+        }
+    }
+
+    @Test
+    void requiresDisplayKeyForHeicAndAcceptsCompleteHeicResult() {
+        var heic = new InitialAttachmentUploadItem(batch, 1, "photo.heic", "image/heic", 1024L, "key-one");
+        for (String displayKey : java.util.Arrays.asList(null, " ", "display")) {
+            List<DerivedPhotoKeys> results = List.of(new DerivedPhotoKeys(
+                    "key-one", "analyze", "preview", displayKey, null, null, null, null));
+            when(derivatives.createAll("execution-id", List.of("key-one"), List.of("image/heic")))
+                    .thenReturn(CompletableFuture.completedFuture(results));
+
+            if ("display".equals(displayKey)) {
+                assertThat(service.createDerived("execution-id", List.of(heic))).isSameAs(results);
+            } else {
+                assertThatThrownBy(() -> service.createDerived("execution-id", List.of(heic)))
+                        .isInstanceOf(IllegalStateException.class);
+            }
+        }
+    }
+
+    @Test
+    void propagatesAsynchronousConversionFailure() {
+        IllegalStateException failure = new IllegalStateException("conversion failed");
+        when(derivatives.createAll("execution-id", List.of("key-one"), List.of("image/jpeg")))
+                .thenReturn(CompletableFuture.failedFuture(failure));
+
+        assertThatThrownBy(() -> service.createDerived("execution-id", List.of(item(1, "key-one", 1024))))
+                .isInstanceOf(CompletionException.class)
+                .hasCause(failure);
+        verifyNoMoreInteractions(storage);
     }
 
     private byte[] jpeg(int size) {

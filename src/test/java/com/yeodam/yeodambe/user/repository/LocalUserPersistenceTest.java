@@ -17,7 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
         "attachment.s3.bucket=test-bucket",
         "ai.server.base-url=http://localhost:9999",
         "ai.server.api-key=test",
-        "ai.server.instance-id=i-test"
+        "ai.server.instance-id=i-test",
+        "place.provider.base-url=http://localhost:9999/regions",
+        "place.provider.service-key=test",
+        "place.provider.timeout=1s"
 })
 @ActiveProfiles("local")
 class LocalUserPersistenceTest {

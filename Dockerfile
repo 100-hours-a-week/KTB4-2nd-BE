@@ -32,6 +32,7 @@ RUN apt-get update \
     && useradd --system --uid 1001 --gid spring spring
 
 COPY --from=build --chown=spring:spring /workspace/app.jar /app/app.jar
+COPY --chown=spring:spring data/ /app/data/
 
 USER spring
 

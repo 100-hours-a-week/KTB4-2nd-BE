@@ -36,7 +36,7 @@ class PlaceClientTest {
             assertThat(request.getURI().getPath()).isEqualTo("/regions");
             assertThat(request.getURI().getQuery()).contains(
                     "ServiceKey=test-key", "pageNo=2", "numOfRows=10",
-                    "type=json", "locatadd_nm=제주");
+                    "type=json", "locatadd_nm=제주", "umd_cd=000", "ri_cd=00");
             assertThat(request.getHeaders().getAccept()).contains(MediaType.APPLICATION_JSON);
         }).andRespond(withSuccess(response("INFO-0", 11,
                 """

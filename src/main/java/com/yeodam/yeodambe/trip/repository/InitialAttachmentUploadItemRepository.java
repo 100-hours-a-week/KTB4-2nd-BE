@@ -10,4 +10,8 @@ public interface InitialAttachmentUploadItemRepository
 
     List<InitialAttachmentUploadItem>
     findAllByBatch_IdOrderByFileOrderAsc(Long batchId);
+
+    List<InitialAttachmentUploadItem> findAllByBatch_ExecutionId(
+            String executionId
+    );
 }

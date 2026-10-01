@@ -18,6 +18,12 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import org.springframework.transaction.annotation.Transactional;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
+import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -31,13 +37,60 @@ public class InitialAttachmentUploadUrlService {
     private final InitialAttachmentUploadItemRepository items;
     private final TripRepository trips;
     private final TripAttachmentRepository attachments;
+    private final TripAttachmentStorageClient storage;
 
     private static final long MAX_FILE_BYTES = 15L * 1024 * 1024;
     private static final long MAX_BATCH_BYTES = 145L * 1024 * 1024;
     private static final long MAX_TOTAL_BYTES = 3L * 1024 * 1024 * 1024;
+    private static final Duration UPLOAD_URL_TTL = Duration.ofMinutes(10);
 
     private static final Set<String> ALLOWED_CONTENT_TYPES =
             Set.of("image/jpeg", "image/png", "image/heic");
+
+    @Transactional
+    public InitialAttachmentUploadUrlResponse issueUploadUrls(
+            Long tripId,
+            Long userId,
+            InitialAttachmentUploadUrlRequest request
+    ) {
+        InitialAttachmentUploadBatch batch =
+                prepareBatch(tripId, userId, request);
+
+        List<InitialAttachmentUploadItem> uploadItems =
+                items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId());
+
+        OffsetDateTime expiresAt =
+                OffsetDateTime.now(ZoneOffset.UTC).plus(UPLOAD_URL_TTL);
+
+        List<InitialAttachmentUploadUrlResponse.Attachment> responseItems =
+                new ArrayList<>();
+
+        for (InitialAttachmentUploadItem item : uploadItems) {
+            String uploadUrl = storage.createUploadUrl(
+                    item.getObjectKey(),
+                    item.getContentType(),
+                    UPLOAD_URL_TTL
+            );
+
+            responseItems.add(
+                    new InitialAttachmentUploadUrlResponse.Attachment(
+                            item.getOriginalFileName(),
+                            uploadUrl,
+                            "PUT",
+                            Map.of(
+                                    "Content-Type", item.getContentType(),
+                                    "If-None-Match", "*"
+                            ),
+                            expiresAt
+                    )
+            );
+        }
+
+        return new InitialAttachmentUploadUrlResponse(
+                batch.getUploadId(),
+                responseItems
+        );
+    }
 
     @Transactional
     public InitialAttachmentUploadBatch prepareBatch(

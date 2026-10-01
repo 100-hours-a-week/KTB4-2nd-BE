@@ -6,6 +6,13 @@ import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
+import org.springframework.http.MediaType;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
@@ -40,6 +47,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -83,6 +91,9 @@ class TripAttachmentSecurityIntegrationTest {
     private BulkAttachmentDownloadService bulkAttachmentDownloadService;
 
     @MockitoBean
+    private InitialAttachmentUploadUrlService uploadUrlService;
+
+    @MockitoBean
     private ActiveLoginSessionValidator activeLoginSessionValidator;
 
     @MockitoBean
@@ -95,6 +106,73 @@ class TripAttachmentSecurityIntegrationTest {
     void allowSessionValidation() {
         given(activeLoginSessionValidator.validate(any(Jwt.class)))
                 .willReturn(OAuth2TokenValidatorResult.success());
+    }
+
+    @Test
+    void 인증된_회원의_파일_정보로_업로드_URL_응답을_반환한다() throws Exception {
+        String token = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        var request = new InitialAttachmentUploadUrlRequest(1, 1, true,
+                List.of(new InitialAttachmentUploadUrlRequest.Attachment("photo.jpg", "image/jpeg", 1024L)));
+        given(uploadUrlService.issueUploadUrls(7L, 42L, request)).willReturn(
+                new InitialAttachmentUploadUrlResponse("upload-id", List.of(
+                        new InitialAttachmentUploadUrlResponse.Attachment(
+                                "photo.jpg", "https://example.test/upload", "PUT",
+                                Map.of("Content-Type", "image/jpeg", "If-None-Match", "*"),
+                                OffsetDateTime.parse("2026-10-01T09:10:00Z")))));
+
+        mockMvc.perform(post("/api/trips/7/initial-attachments/upload-urls")
+                        .contextPath("/api").servletPath("/trips/7/initial-attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(uploadUrlBody())
+                        .cookie(new Cookie("accessToken", token), new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_INITIAL_ATTACHMENT_UPLOAD_URLS_ISSUED"))
+                .andExpect(jsonPath("$.data.uploadId").value("upload-id"))
+                .andExpect(jsonPath("$.data.attachments[0].fileName").value("photo.jpg"))
+                .andExpect(jsonPath("$.data.attachments[0].uploadUrl").value("https://example.test/upload"))
+                .andExpect(jsonPath("$.data.attachments[0].method").value("PUT"))
+                .andExpect(jsonPath("$.data.attachments[0].headers['Content-Type']").value("image/jpeg"))
+                .andExpect(jsonPath("$.data.attachments[0].headers['If-None-Match']").value("*"))
+                .andExpect(jsonPath("$.data.attachments[0].expiresAt").isNotEmpty());
+
+        then(uploadUrlService).should().issueUploadUrls(7L, 42L, request);
+    }
+
+    @Test
+    void 업로드_URL_요청의_CSRF가_틀리면_서비스_호출_전에_403을_반환한다() throws Exception {
+        String token = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(post("/trips/7/initial-attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(uploadUrlBody())
+                        .cookie(new Cookie("accessToken", token), new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "wrong-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+
+        then(uploadUrlService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void 업로드_URL_요청에_인증_쿠키가_없으면_401을_반환한다() throws Exception {
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(post("/trips/7/initial-attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(uploadUrlBody())
+                        .cookie(new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+
+        then(uploadUrlService).shouldHaveNoInteractions();
+    }
+
+    private String uploadUrlBody() {
+        return """
+                {"batchNo":1,"totalAttachmentCount":1,"complete":true,
+                 "attachments":[{"fileName":"photo.jpg","contentType":"image/jpeg","sizeBytes":1024}]}
+                """;
     }
 
     @Test

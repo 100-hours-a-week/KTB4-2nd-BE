@@ -30,6 +30,9 @@ import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.request.BulkAttachmentDownloadRequest;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
 
 import java.util.List;
 import java.util.Optional;
@@ -43,6 +46,30 @@ public class TripAttachmentController {
     private final TripAttachmentDeletionService tripAttachmentDeletionService;
     private final TripAttachmentDownloadService tripAttachmentDownloadService;
     private final BulkAttachmentDownloadService bulkAttachmentDownloadService;
+    private final InitialAttachmentUploadUrlService uploadUrlService;
+
+    @PostMapping(
+            value = "/trips/{tripId}/initial-attachments/upload-urls",
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<ApiResponse<InitialAttachmentUploadUrlResponse>>
+    issueInitialAttachmentUploadUrls(
+            @PathVariable Long tripId,
+            @RequestBody InitialAttachmentUploadUrlRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        InitialAttachmentUploadUrlResponse data =
+                uploadUrlService.issueUploadUrls(tripId, userId, request);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        SuccessMessage.TRIP_INITIAL_ATTACHMENT_UPLOAD_URLS_ISSUED,
+                        data
+                )
+        );
+    }
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> uploadInitialAttachments(

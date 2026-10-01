@@ -16,6 +16,8 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 import java.net.URLEncoder;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -133,6 +135,30 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         return s3.getObject(request -> request
                 .bucket(bucket)
                 .key(objectKey));
+    }
+
+    @Override
+    public String createUploadUrl(
+            String objectKey,
+            String contentType,
+            Duration ttl
+    ) {
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(objectKey)
+                .contentType(contentType)
+                .ifNoneMatch("*")
+                .build();
+
+        PutObjectPresignRequest presignRequest =
+                PutObjectPresignRequest.builder()
+                        .signatureDuration(ttl)
+                        .putObjectRequest(putObjectRequest)
+                        .build();
+
+        return presigner.presignPutObject(presignRequest)
+                .url()
+                .toString();
     }
 
     @Override

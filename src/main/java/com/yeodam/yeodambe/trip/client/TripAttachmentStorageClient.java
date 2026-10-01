@@ -5,6 +5,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.List;
+import java.time.Duration;
 
 public interface TripAttachmentStorageClient {
     String store(String executionId, MultipartFile file);
@@ -24,4 +25,10 @@ public interface TripAttachmentStorageClient {
     String createDownloadUrl(String objectKey, String originalFileName);
 
     String storeDownloadArchive(Path archive);
+
+    String createUploadUrl(
+            String objectKey,
+            String contentType,
+            Duration ttl
+    );
 }

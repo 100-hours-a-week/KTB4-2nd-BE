@@ -63,4 +63,8 @@ public class InitialAttachmentUploadItem {
         this.sizeBytes = sizeBytes;
         this.objectKey = objectKey;
     }
+
+    public void linkAttachment(Long tripAttachmentId) {
+        this.tripAttachmentId = tripAttachmentId;
+    }
 }

@@ -167,4 +167,51 @@ public class InitialAttachmentUploadTransactionService {
 
         batch.completeProcessing();
     }
+
+    @Transactional
+    public void failBatch(
+            Long tripId,
+            Long userId,
+            String uploadId
+    ) {
+        Trip trip = trips.findOwnedActiveForUpdate(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
+
+        InitialAttachmentUploadBatch batch =
+                batches.findForUpdate(uploadId, tripId, userId)
+                        .orElseThrow(InvalidAttachmentUploadException::new);
+
+        if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING
+                || batch.getStatus() != InitialAttachmentUploadStatus.PROCESSING) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+
+        List<InitialAttachmentUploadItem> uploadItems =
+                items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId());
+
+        List<Long> attachmentIds = uploadItems.stream()
+                .map(InitialAttachmentUploadItem::getTripAttachmentId)
+                .filter(id -> id != null)
+                .toList();
+
+        List<Long> fileIds = attachments.findAllById(attachmentIds).stream()
+                .map(TripAttachment::getFileId)
+                .toList();
+
+        for (InitialAttachmentUploadItem item : uploadItems) {
+            item.linkAttachment(null);
+        }
+
+        items.flush();
+
+        if (!attachmentIds.isEmpty()) {
+            attachments.deleteAllByIdInBatch(attachmentIds);
+        }
+
+        if (!fileIds.isEmpty()) {
+            files.deleteAllByIdInBatch(fileIds);
+        }
+
+        batch.failProcessing();
+    }
 }

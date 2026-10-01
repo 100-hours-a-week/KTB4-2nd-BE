@@ -20,6 +20,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -44,6 +46,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     @Autowired private TripRepository trips;
     @Autowired private UserRepository users;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private PlatformTransactionManager transactionManager;
 
     private User owner;
     private Trip trip;
@@ -302,6 +305,96 @@ class InitialAttachmentUploadTransactionServiceTest {
         assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
         assertThat(storedStatus()).isEqualTo("PROCESSING");
+    }
+
+    @Test
+    void removesOnlyFailedBatchReferencesAndKeepsUploadMetadataAndCompletedBatch() {
+        addItems();
+        start();
+        var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
+        service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId());
+        var next = batches.save(new InitialAttachmentUploadBatch(UUID.randomUUID().toString(),
+                batch.getExecutionId(), trip.getId(), owner.getUserId(), 2, 12, false));
+        items.save(new InitialAttachmentUploadItem(next, 1, "next.jpg", "image/jpeg", 1024L, "next-key"));
+        service.startProcessing(trip.getId(), owner.getUserId(), next.getUploadId());
+        service.saveAttachments(trip.getId(), owner.getUserId(), next.getUploadId(),
+                List.of(new DerivedPhotoKeys("next-key", "next-analyze", "next-preview")));
+
+        service.failBatch(trip.getId(), owner.getUserId(), next.getUploadId());
+
+        assertRowCounts(2);
+        assertThat(storedStatus()).isEqualTo("COMPLETED");
+        assertThat(batches.findById(next.getId()).orElseThrow().getStatus())
+                .isEqualTo(InitialAttachmentUploadStatus.FAILED);
+        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
+                .extracting(InitialAttachmentUploadItem::getTripAttachmentId)
+                .containsExactly(saved.get(0).getId(), saved.get(1).getId());
+        var remaining = items.findAllByBatch_IdOrderByFileOrderAsc(next.getId());
+        assertThat(remaining).hasSize(1);
+        assertThat(remaining.getFirst().getTripAttachmentId()).isNull();
+        assertThat(remaining.getFirst().getObjectKey()).isEqualTo("next-key");
+        assertThat(remaining.getFirst().getSizeBytes()).isEqualTo(1024L);
+        assertThat(jdbcTemplate.queryForObject("SELECT processing_status FROM trips WHERE trip_id = ?",
+                String.class, trip.getId())).isEqualTo("PROCESSING");
+    }
+
+    @Test
+    void marksFailureBeforeAnyAttachmentHasBeenStored() {
+        addItems();
+        start();
+
+        service.failBatch(trip.getId(), owner.getUserId(), batch.getUploadId());
+
+        assertThat(storedStatus()).isEqualTo("FAILED");
+        assertRowCounts(0);
+        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId())).hasSize(2)
+                .allSatisfy(item -> assertThat(item.getTripAttachmentId()).isNull());
+    }
+
+    @Test
+    void rejectsFailureCleanupForWrongOwnerStateAndDeletedTripWithoutRemovingRows() {
+        addItems();
+        start();
+        var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
+        var other = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원"));
+        assertThatThrownBy(() -> service.failBatch(trip.getId(), other.getUserId(), batch.getUploadId()))
+                .isInstanceOf(TripNotFoundException.class);
+        for (String status : List.of("PENDING", "COMPLETED", "FAILED")) {
+            setStatus(status);
+            assertThatThrownBy(() -> service.failBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
+                    .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
+            assertThat(storedStatus()).isEqualTo(status);
+        }
+        setStatus("PROCESSING");
+        jdbcTemplate.update("UPDATE trips SET processing_status = 'CANCELED' WHERE trip_id = ?", trip.getId());
+        assertThatThrownBy(() -> service.failBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
+                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
+        jdbcTemplate.update("UPDATE trips SET deleted_at = CURRENT_TIMESTAMP(6) WHERE trip_id = ?", trip.getId());
+        assertThatThrownBy(() -> service.failBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
+                .isInstanceOf(TripNotFoundException.class);
+        assertRowCounts(2);
+        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
+                .extracting(InitialAttachmentUploadItem::getTripAttachmentId)
+                .containsExactly(saved.get(0).getId(), saved.get(1).getId());
+    }
+
+    @Test
+    void rollsBackDeletionLinksAndFailureStateWhenEnclosingTransactionFails() {
+        addItems();
+        start();
+        var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
+        var transaction = new TransactionTemplate(transactionManager);
+
+        assertThatThrownBy(() -> transaction.executeWithoutResult(status -> {
+            service.failBatch(trip.getId(), owner.getUserId(), batch.getUploadId());
+            throw new IllegalStateException("force rollback");
+        })).isInstanceOf(IllegalStateException.class).hasMessage("force rollback");
+
+        assertRowCounts(2);
+        assertThat(storedStatus()).isEqualTo("PROCESSING");
+        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
+                .extracting(InitialAttachmentUploadItem::getTripAttachmentId)
+                .containsExactly(saved.get(0).getId(), saved.get(1).getId());
     }
 
     private void addItems() {

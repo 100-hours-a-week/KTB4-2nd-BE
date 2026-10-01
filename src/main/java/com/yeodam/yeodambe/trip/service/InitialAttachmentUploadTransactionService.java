@@ -138,4 +138,33 @@ public class InitialAttachmentUploadTransactionService {
 
         return savedAttachments;
     }
+
+    @Transactional
+    public void completeBatch(
+            Long tripId,
+            Long userId,
+            String uploadId
+    ) {
+        Trip trip = trips.findOwnedActiveForUpdate(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
+
+        InitialAttachmentUploadBatch batch =
+                batches.findForUpdate(uploadId, tripId, userId)
+                        .orElseThrow(InvalidAttachmentUploadException::new);
+
+        if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+
+        List<InitialAttachmentUploadItem> uploadItems =
+                items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId());
+
+        if (uploadItems.isEmpty()
+                || uploadItems.stream()
+                        .anyMatch(item -> item.getTripAttachmentId() == null)) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+
+        batch.completeProcessing();
+    }
 }

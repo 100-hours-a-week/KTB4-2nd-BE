@@ -246,6 +246,64 @@ class InitialAttachmentUploadTransactionServiceTest {
         assertRowCounts(0);
     }
 
+    @Test
+    void commitsBatchCompletionAfterEveryItemIsLinkedAndLeavesTripProcessing() {
+        addItems();
+        start();
+        service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
+
+        service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId());
+
+        assertThat(storedStatus()).isEqualTo("COMPLETED");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT processing_status FROM trips WHERE trip_id = ?", String.class, trip.getId()))
+                .isEqualTo("PROCESSING");
+        assertRowCounts(2);
+    }
+
+    @Test
+    void rejectsEmptyUnlinkedAndPartiallyLinkedBatches() {
+        start();
+        assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
+                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
+        addItems();
+        assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
+                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
+        var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
+        jdbcTemplate.update("UPDATE initial_attachment_upload_items SET trip_attachment_id = NULL WHERE upload_batch_id = ? AND file_order = 2",
+                batch.getId());
+
+        assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
+                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
+        assertThat(storedStatus()).isEqualTo("PROCESSING");
+        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
+                .extracting(InitialAttachmentUploadItem::getTripAttachmentId)
+                .containsExactly(saved.getFirst().getId(), null);
+    }
+
+    @Test
+    void rejectsCompletionForWrongOwnerTripOrBatchState() {
+        addItems();
+        start();
+        service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
+        var other = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원"));
+        assertThatThrownBy(() -> service.completeBatch(trip.getId(), other.getUserId(), batch.getUploadId()))
+                .isInstanceOf(TripNotFoundException.class);
+        assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), "unknown"))
+                .isInstanceOf(InvalidAttachmentUploadException.class);
+        for (String status : List.of("PENDING", "FAILED", "COMPLETED")) {
+            setStatus(status);
+            assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
+                    .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
+            assertThat(storedStatus()).isEqualTo(status);
+        }
+        setStatus("PROCESSING");
+        jdbcTemplate.update("UPDATE trips SET processing_status = 'FAILED' WHERE trip_id = ?", trip.getId());
+        assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
+                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
+        assertThat(storedStatus()).isEqualTo("PROCESSING");
+    }
+
     private void addItems() {
         items.saveAll(List.of(
                 new InitialAttachmentUploadItem(batch, 2, "same.jpg", "image/jpeg", 2048L, "key-two"),

@@ -16,6 +16,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 @Service
@@ -93,6 +94,22 @@ public class InitialAttachmentUploadCompletionService {
         }
 
         return derived;
+    }
+
+    void retainFiles(List<DerivedPhotoKeys> derived) {
+        Set<String> objectKeys = new LinkedHashSet<>();
+
+        for (DerivedPhotoKeys photo : derived) {
+            objectKeys.add(photo.originalKey());
+            objectKeys.add(photo.analyzeKey());
+            objectKeys.add(photo.previewKey());
+
+            if (photo.displayKey() != null && !photo.displayKey().isBlank()) {
+                objectKeys.add(photo.displayKey());
+            }
+        }
+
+        storage.retain(List.copyOf(objectKeys));
     }
 
     private void verifyFileType(InitialAttachmentUploadItem item) {

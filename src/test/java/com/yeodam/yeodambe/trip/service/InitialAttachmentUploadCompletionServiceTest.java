@@ -268,6 +268,33 @@ class InitialAttachmentUploadCompletionServiceTest {
         verifyNoMoreInteractions(storage);
     }
 
+    @Test
+    void retainsOriginalAndDerivedKeysOnceInOrderAndIncludesOnlyPresentDisplayKeys() {
+        service.retainFiles(List.of(
+                new DerivedPhotoKeys("original-one", "analyze-one", "preview-one"),
+                new DerivedPhotoKeys("original-two", "analyze-two", "preview-two", "display-two",
+                        null, null, null, null),
+                new DerivedPhotoKeys("original-one", "analyze-one", "preview-one", " ",
+                        null, null, null, null)));
+
+        verify(storage).retain(List.of("original-one", "analyze-one", "preview-one",
+                "original-two", "analyze-two", "preview-two", "display-two"));
+        verifyNoMoreInteractions(storage, derivatives);
+    }
+
+    @Test
+    void propagatesRetentionFailureWithoutCallingOtherStorageOperations() {
+        S3Exception failure = s3Failure(403, null);
+        org.mockito.Mockito.doThrow(failure).when(storage)
+                .retain(List.of("original", "analyze", "preview"));
+
+        assertThatThrownBy(() -> service.retainFiles(List.of(
+                new DerivedPhotoKeys("original", "analyze", "preview"))))
+                .isSameAs(failure);
+        verify(storage).retain(List.of("original", "analyze", "preview"));
+        verifyNoMoreInteractions(storage, derivatives);
+    }
+
     private byte[] jpeg(int size) {
         byte[] bytes = new byte[size];
         bytes[0] = (byte) 0xff;

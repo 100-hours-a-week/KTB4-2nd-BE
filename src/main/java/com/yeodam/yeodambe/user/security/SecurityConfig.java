@@ -18,6 +18,7 @@ import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.core.env.Environment;
 
 import java.util.List;
 
@@ -30,22 +31,36 @@ public class SecurityConfig {
             CsrfAccessDeniedHandler csrfAccessDeniedHandler,
             RdbCsrfTokenRepository rdbCsrfTokenRepository,
             CookieAccessTokenResolver cookieAccessTokenResolver,
-            ApiAuthenticationEntryPoint apiAuthenticationEntryPoint
+            ApiAuthenticationEntryPoint apiAuthenticationEntryPoint,
+            Environment environment
+
     ) throws Exception {
         http.cors(Customizer.withDefaults());
-        http.authorizeHttpRequests(authorize -> authorize
-                .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
-                .requestMatchers(HttpMethod.GET, "/auth/csrf").permitAll()
-                .requestMatchers(HttpMethod.POST, "/auth/token/exchange").permitAll()
-                .requestMatchers(HttpMethod.POST, "/users/me/profile").permitAll()
-                .requestMatchers(HttpMethod.POST, "/auth/token/refresh").permitAll()
-                .requestMatchers(
-                        HttpMethod.GET,
-                        "/auth/kakao/authorize",
-                        "/auth/kakao/callback"
-                ).permitAll()
-                .anyRequest().authenticated()
-        );
+        http.authorizeHttpRequests(authorize -> {
+            authorize.requestMatchers("/actuator/health").permitAll();
+
+            boolean allowMetrics =
+                    environment.matchesProfiles("local", "performance")
+                            && !environment.matchesProfiles("prod");
+
+            if (allowMetrics) {
+                authorize.requestMatchers("/actuator/prometheus").permitAll();
+            } else {
+                authorize.requestMatchers("/actuator/prometheus").denyAll();
+            }
+
+            authorize
+                    .requestMatchers(HttpMethod.GET, "/auth/csrf").permitAll()
+                    .requestMatchers(HttpMethod.POST, "/auth/token/exchange").permitAll()
+                    .requestMatchers(HttpMethod.POST, "/users/me/profile").permitAll()
+                    .requestMatchers(HttpMethod.POST, "/auth/token/refresh").permitAll()
+                    .requestMatchers(
+                            HttpMethod.GET,
+                            "/auth/kakao/authorize",
+                            "/auth/kakao/callback"
+                    ).permitAll()
+                    .anyRequest().authenticated();
+        });
 
         http.exceptionHandling(exceptions -> exceptions
                 .authenticationEntryPoint(apiAuthenticationEntryPoint)

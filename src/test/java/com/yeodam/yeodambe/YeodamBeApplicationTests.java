@@ -24,12 +24,10 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import java.util.UUID;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 
 @SpringBootTest(properties = "management.endpoints.web.exposure.include=health,prometheus")
 @AutoConfigureMockMvc
@@ -70,10 +68,9 @@ class YeodamBeApplicationTests {
     }
 
     @Test
-    void prometheusEndpointIsPublic() throws Exception {
+    void prometheusEndpointIsDeniedOutsideMonitoringProfiles() throws Exception {
         mockMvc.perform(get("/actuator/prometheus"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("jvm_memory_used_bytes")));
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

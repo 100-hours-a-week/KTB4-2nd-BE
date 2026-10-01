@@ -18,6 +18,10 @@ server:
     max-part-count: 13
 
 place:
+  catalog:
+    path: ${PLACE_CATALOG_PATH:./data/place-search-catalog.json}
+    refresh-cron: ${PLACE_CATALOG_REFRESH_CRON:0 0 3 1 1,7 *}
+    refresh-zone: ${PLACE_CATALOG_REFRESH_ZONE:Asia/Seoul}
   provider:
     base-url: ${DATA_GO_KR_LEGAL_DISTRICT_API_URL:}
     service-key: ${DATA_GO_KR_SERVICE_KEY:}
@@ -203,6 +207,12 @@ spring:
   config:
     activate:
       on-profile: test
+
+place:
+  provider:
+    base-url: http://localhost:9999/regions
+    service-key: test
+    timeout: 1s
 
 ai:
   server:

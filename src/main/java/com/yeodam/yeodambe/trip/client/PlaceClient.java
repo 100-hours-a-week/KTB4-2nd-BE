@@ -18,6 +18,7 @@ import java.util.List;
 
 @Component
 public class PlaceClient {
+    public static final int PAGE_SIZE = 10;
     private final RestClient restClient;
     private final String serviceKey;
     private final ObjectMapper objectMapper;
@@ -52,8 +53,10 @@ public class PlaceClient {
                     .uri(builder -> builder
                             .queryParam("ServiceKey", "{serviceKey}")
                             .queryParam("pageNo", pageNo)
-                            .queryParam("numOfRows", 10)
+                            .queryParam("numOfRows", PAGE_SIZE)
                             .queryParam("type", "json")
+                            .queryParam("umd_cd", "000")
+                            .queryParam("ri_cd", "00")
                             .queryParam("locatadd_nm", query)
                             .build(serviceKey)
                     )

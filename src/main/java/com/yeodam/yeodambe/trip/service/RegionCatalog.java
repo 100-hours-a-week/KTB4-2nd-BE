@@ -11,6 +11,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.Collections;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -53,6 +54,10 @@ public class RegionCatalog {
             throw new InvalidTripRequestException();
         }
         return region;
+    }
+
+    public Collection<Region> all() {
+        return regions.values();
     }
 
     public Region findByName(String name) {

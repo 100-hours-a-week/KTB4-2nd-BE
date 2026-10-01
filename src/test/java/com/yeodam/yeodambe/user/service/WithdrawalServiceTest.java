@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.user.repository.LoginSessionRepository;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
+import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -32,6 +33,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class WithdrawalServiceTest {
 
     private static final Long USER_ID = 42L;
+    private static final String CSRF_CONTEXT = "withdrawal-browser";
 
     @Mock
     private UserRepository userRepository;
@@ -45,6 +47,8 @@ class WithdrawalServiceTest {
     private LoginSessionRepository loginSessionRepository;
     @Mock
     private TripWithdrawalService tripWithdrawalService;
+    @Mock
+    private CsrfTokenStore csrfTokenStore;
 
     @InjectMocks
     private WithdrawalService service;
@@ -64,7 +68,7 @@ class WithdrawalServiceTest {
         given(userStatsRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .willReturn(Optional.of(userStats));
 
-        service.withdraw(USER_ID);
+        service.withdraw(USER_ID, CSRF_CONTEXT);
 
         ArgumentCaptor<LocalDateTime> withdrawnAt =
                 ArgumentCaptor.forClass(LocalDateTime.class);
@@ -74,6 +78,7 @@ class WithdrawalServiceTest {
         then(userStats).should().withdraw(withdrawnAt.getValue());
         then(user).should().withdraw(withdrawnAt.getValue());
         then(loginSessionRepository).should().deleteByUser_UserId(USER_ID);
+        then(csrfTokenStore).should().delete(CSRF_CONTEXT);
     }
 
     @Test
@@ -87,10 +92,10 @@ class WithdrawalServiceTest {
         given(consentRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.withdraw(USER_ID))
+        assertThatThrownBy(() -> service.withdraw(USER_ID, CSRF_CONTEXT))
                 .isInstanceOf(WithdrawalFailedException.class);
 
         then(oauthAccount).should(never()).withdraw(org.mockito.ArgumentMatchers.any());
-        verifyNoInteractions(tripWithdrawalService, loginSessionRepository);
+        verifyNoInteractions(tripWithdrawalService, loginSessionRepository, csrfTokenStore);
     }
 }

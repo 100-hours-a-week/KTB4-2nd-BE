@@ -12,6 +12,7 @@ import com.yeodam.yeodambe.user.repository.LoginSessionRepository;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
+import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.stereotype.Service;
@@ -29,9 +30,10 @@ public class WithdrawalService {
     private final UserStatsRepository userStatsRepository;
     private final LoginSessionRepository loginSessionRepository;
     private final TripWithdrawalService tripWithdrawalService;
+    private final CsrfTokenStore csrfTokenStore;
 
     @Transactional
-    public void withdraw(Long userId) {
+    public void withdraw(Long userId, String csrfContext) {
         try {
             LocalDateTime withdrawnAt = LocalDateTime.now();
 
@@ -59,6 +61,7 @@ public class WithdrawalService {
             user.withdraw(withdrawnAt);
 
             loginSessionRepository.deleteByUser_UserId(userId);
+            csrfTokenStore.delete(csrfContext);
         } catch (
                 UserNotFoundException
                 | WithdrawalFailedException

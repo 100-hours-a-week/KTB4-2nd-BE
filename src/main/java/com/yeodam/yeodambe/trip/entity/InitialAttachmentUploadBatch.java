@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -76,5 +77,28 @@ public class InitialAttachmentUploadBatch {
         this.totalAttachmentCount = totalAttachmentCount;
         this.lastBatch = lastBatch;
         this.status = InitialAttachmentUploadStatus.PENDING;
+    }
+    public void startProcessing() {
+        if (status != InitialAttachmentUploadStatus.PENDING) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+
+        status = InitialAttachmentUploadStatus.PROCESSING;
+    }
+
+    public void completeProcessing() {
+        if (status != InitialAttachmentUploadStatus.PROCESSING) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+
+        status = InitialAttachmentUploadStatus.COMPLETED;
+    }
+
+    public void failProcessing() {
+        if (status != InitialAttachmentUploadStatus.PROCESSING) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+
+        status = InitialAttachmentUploadStatus.FAILED;
     }
 }

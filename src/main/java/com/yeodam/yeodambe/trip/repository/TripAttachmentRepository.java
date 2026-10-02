@@ -73,7 +73,11 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
                     file.objectKey,
                     attachment.analyzeStorageKey,
                     attachment.previewStorageKey,
-                    attachment.displayStorageKey
+                    attachment.displayStorageKey,
+                    file.originalSizeBytes,
+                    attachment.analyzeSizeBytes,
+                    attachment.previewSizeBytes,
+                    attachment.displaySizeBytes
             )
             from TripAttachment attachment
             join attachment.file file
@@ -87,6 +91,32 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     List<TripStorageObjectKeys> findAllForStats(
             @Param("userId") Long userId,
             @Param("status") com.yeodam.yeodambe.trip.entity.ProcessingStatus status
+    );
+
+    @Query("""
+        select attachment
+        from TripAttachment attachment
+        join fetch attachment.file file
+        join attachment.trip trip
+        where attachment.id > :afterId
+          and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
+          and trip.deletedAt is null
+          and attachment.deletedAt is null
+          and file.deletedAt is null
+          and (
+              file.originalSizeBytes is null
+              or attachment.analyzeSizeBytes is null
+              or attachment.previewSizeBytes is null
+              or (
+                  attachment.displayStorageKey is not null
+                  and attachment.displaySizeBytes is null
+              )
+          )
+        order by attachment.id asc
+        """)
+    List<TripAttachment> findMissingStorageSizes(
+            @Param("afterId") Long afterId,
+            Pageable pageable
     );
 
     @Modifying

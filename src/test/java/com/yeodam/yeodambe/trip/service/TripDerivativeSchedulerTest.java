@@ -97,6 +97,40 @@ class TripDerivativeSchedulerTest {
         assertThrows(NullPointerException.class, () -> scheduler.submit("bad", null, () -> true));
     }
 
+    @Test
+    void 취소는_대기와_미제출을_건너뛰고_실행중_작업_정착까지_기다린다() throws Exception {
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        try {
+            var batch = scheduler.submit("cancel", List.of(
+                    task(0, "image/heic", () -> { started.countDown(); await(release); return keys("active"); }),
+                    task(1, "image/heic", () -> { calls.incrementAndGet(); return keys("pending"); })), () -> true);
+            await(started);
+            var queued = scheduler.submit("cancel", List.of(task(0, "image/heic", () -> { calls.incrementAndGet(); return keys("queued"); })), () -> true);
+            scheduler.cancelExecution("cancel");
+            assertThrows(java.util.concurrent.CancellationException.class, () -> queued.get(5, TimeUnit.SECONDS));
+            assertFalse(batch.isDone());
+            release.countDown();
+            assertThrows(java.util.concurrent.CancellationException.class, () -> batch.get(5, TimeUnit.SECONDS));
+            assertEquals(0, calls.get());
+        } finally { release.countDown(); }
+    }
+
+    @Test
+    void stop은_미실행을_취소하고_active를_interrupt한_뒤_신규_접수를_거부한다() throws Exception {
+        var started = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        var batch = scheduler.submit("stop", List.of(
+                task(0, "image/heic", () -> { started.countDown(); new CountDownLatch(1).await(); return keys("active"); }),
+                task(1, "image/heic", () -> { calls.incrementAndGet(); return keys("pending"); })), () -> true);
+        await(started);
+        scheduler.stop(10, TimeUnit.MILLISECONDS);
+        assertThrows(java.util.concurrent.CancellationException.class, () -> batch.get(5, TimeUnit.SECONDS));
+        assertThrows(RejectedExecutionException.class, () -> scheduler.submit("after-stop", List.of(task(0, "image/jpeg", () -> keys("late"))), () -> true));
+        assertEquals(0, calls.get());
+    }
+
     private static TripDerivativeScheduler.PhotoTask task(int index, String mime, java.util.concurrent.Callable<DerivedPhotoKeys> action) {
         return new TripDerivativeScheduler.PhotoTask(index, mime, action);
     }

@@ -493,6 +493,78 @@ class TripAttachmentDerivativeServiceTest {
         verify(storage, never()).delete(any());
     }
 
+    @Test
+    void interrupt된_변환_프로세스가_종료된_후에만_호출이_끝난다() throws Exception {
+        Path pidFile = Files.createTempFile("derivative-process", ".pid");
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        java.util.concurrent.atomic.AtomicBoolean interrupted = new java.util.concurrent.atomic.AtomicBoolean();
+        Thread worker = new Thread(() -> {
+            try {
+                org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "run", (Object) new String[]{
+                        "/bin/sh", "-c", "echo $$ > '" + pidFile + "'; exec sleep 30"});
+            } catch (Throwable cause) { failure.set(cause); }
+            finally { interrupted.set(Thread.currentThread().isInterrupted()); }
+        });
+        worker.setDaemon(true);
+        ProcessHandle process = null;
+        try {
+            worker.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (Files.size(pidFile) == 0 && System.nanoTime() < deadline) Thread.onSpinWait();
+            assertTrue(Files.size(pidFile) > 0);
+            process = ProcessHandle.of(Long.parseLong(Files.readString(pidFile).trim())).orElseThrow();
+            worker.interrupt();
+            worker.join(5000);
+            assertFalse(worker.isAlive());
+            assertTrue(failure.get() instanceof IllegalStateException);
+            assertTrue(interrupted.get());
+            assertFalse(process.isAlive(), "Future 정착 이후 자식 프로세스가 남으면 안 됩니다.");
+        } finally {
+            if (process != null && process.isAlive()) process.destroyForcibly();
+            worker.interrupt();
+            worker.join(5000);
+            Files.deleteIfExists(pidFile);
+        }
+    }
+
+    @Test
+    void EXIF_출력_EOF_대기중에도_interrupt로_프로세스를_종료한다() throws Exception {
+        Path directory = Files.createTempDirectory("blocked-exif");
+        Path source = directory.resolve("input.jpg");
+        assertEquals(0, new ProcessBuilder("mkfifo", source.toString()).start().waitFor());
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread worker = new Thread(() -> {
+            try { org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "metadata", source); }
+            catch (Throwable cause) { failure.set(cause); }
+        });
+        worker.setDaemon(true);
+        ProcessHandle process = null;
+        try {
+            worker.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (process == null && System.nanoTime() < deadline) {
+                process = ProcessHandle.current().descendants()
+                        .filter(child -> child.info().commandLine().orElse("").contains(source.toString()))
+                        .findFirst().orElse(null);
+                Thread.onSpinWait();
+            }
+            assertTrue(process != null, "exiftool 프로세스가 시작되어야 합니다.");
+            worker.interrupt();
+            worker.join(2000);
+            assertFalse(worker.isAlive(), "출력 readAllBytes는 interrupt를 막으면 안 됩니다.");
+            assertTrue(failure.get() instanceof IllegalStateException);
+            assertFalse(process.isAlive());
+            assertFalse(Files.exists(directory.resolve("metadata.json")));
+        } finally {
+            if (process != null && process.isAlive()) process.destroyForcibly();
+            worker.interrupt();
+            worker.join(5000);
+            Files.deleteIfExists(directory.resolve("metadata.json"));
+            Files.deleteIfExists(source);
+            Files.deleteIfExists(directory);
+        }
+    }
+
     private Map<String, byte[]> deriveOutputs(byte[] original, String mimeType) {
         Map<String, byte[]> outputs = new HashMap<>();
         AtomicReference<Path> directory = new AtomicReference<>();

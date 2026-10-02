@@ -15,7 +15,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TripDerivativeSchedulerTest {
-    private final TripDerivativeScheduler scheduler = new TripDerivativeScheduler(1, 1, 10, 20, new SimpleMeterRegistry());
+    private final io.micrometer.core.instrument.MockClock clock = new io.micrometer.core.instrument.MockClock();
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry(io.micrometer.core.instrument.simple.SimpleConfig.DEFAULT, clock);
+    private final TripDerivativeScheduler scheduler = new TripDerivativeScheduler(1, 1, 10, 20, meters);
 
     @AfterEach
     void stop() { scheduler.stop(); }
@@ -95,6 +97,144 @@ class TripDerivativeSchedulerTest {
         assertThrows(IllegalArgumentException.class, () -> scheduler.submit("bad", List.of(task(1, "image/jpeg", () -> keys("bad"))), () -> true));
         assertThrows(IllegalArgumentException.class, () -> scheduler.submit("bad", List.of(task(0, "image/jpeg", () -> keys("bad")), task(0, "image/png", () -> keys("bad"))), () -> true));
         assertThrows(NullPointerException.class, () -> scheduler.submit("bad", null, () -> true));
+    }
+
+    @Test
+    void 취소는_대기와_미제출을_건너뛰고_실행중_작업_정착까지_기다린다() throws Exception {
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        try {
+            var batch = scheduler.submit("cancel", List.of(
+                    task(0, "image/heic", () -> { started.countDown(); await(release); return keys("active"); }),
+                    task(1, "image/heic", () -> { calls.incrementAndGet(); return keys("pending"); })), () -> true);
+            await(started);
+            var queued = scheduler.submit("cancel", List.of(task(0, "image/heic", () -> { calls.incrementAndGet(); return keys("queued"); })), () -> true);
+            scheduler.cancelExecution("cancel");
+            assertThrows(java.util.concurrent.CancellationException.class, () -> queued.get(5, TimeUnit.SECONDS));
+            assertFalse(batch.isDone());
+            release.countDown();
+            assertThrows(java.util.concurrent.CancellationException.class, () -> batch.get(5, TimeUnit.SECONDS));
+            assertEquals(0, calls.get());
+        } finally { release.countDown(); }
+    }
+
+    @Test
+    void stop은_미실행을_취소하고_active를_interrupt한_뒤_신규_접수를_거부한다() throws Exception {
+        var started = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        var batch = scheduler.submit("stop", List.of(
+                task(0, "image/heic", () -> { started.countDown(); new CountDownLatch(1).await(); return keys("active"); }),
+                task(1, "image/heic", () -> { calls.incrementAndGet(); return keys("pending"); })), () -> true);
+        await(started);
+        scheduler.stop(10, TimeUnit.MILLISECONDS);
+        assertThrows(java.util.concurrent.CancellationException.class, () -> batch.get(5, TimeUnit.SECONDS));
+        assertThrows(RejectedExecutionException.class, () -> scheduler.submit("after-stop", List.of(task(0, "image/jpeg", () -> keys("late"))), () -> true));
+        assertEquals(0, calls.get());
+    }
+
+    @Test
+    void 미제출을_포함한_대기량과_실행량을_측정하고_한쪽_포화시_혼합예약을_전부_거부한다() throws Exception {
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        try {
+            var full = scheduler.submit("light-full", java.util.stream.IntStream.range(0, 20).mapToObj(i ->
+                    task(i, "image/jpeg", () -> { started.countDown(); await(release); return keys("light"); })).toList(), () -> true);
+            await(started);
+            assertEquals(20, gauge("inflight", "light"));
+            assertEquals(1, gauge("active", "light"));
+            assertEquals(19, gauge("pending", "light"));
+            var calls = new AtomicInteger();
+            assertThrows(RejectedExecutionException.class, () -> scheduler.submit("mixed-rejected", List.of(
+                    task(0, "image/heic", () -> { calls.incrementAndGet(); return keys("heavy"); }),
+                    task(1, "image/png", () -> { calls.incrementAndGet(); return keys("light"); })), () -> true));
+            assertEquals(0, gauge("inflight", "heic"));
+            assertEquals(20, gauge("inflight", "light"));
+            assertEquals(0, calls.get());
+            assertEquals(1, meters.get("yeodam.trip.derivative.rejected.batches").tag("lane", "light").counter().count());
+            clock.add(java.time.Duration.ofSeconds(3));
+            release.countDown();
+            full.get(5, TimeUnit.SECONDS);
+            assertEquals(0, gauge("inflight", "light"));
+            assertEquals(0, gauge("pending", "light"));
+            assertEquals(0, gauge("active", "light"));
+            var timer = meters.get("yeodam.trip.derivative.queue.wait").tags("lane", "light", "outcome", "success").timer();
+            assertEquals(20, timer.count());
+            assertEquals(57, timer.totalTime(TimeUnit.SECONDS));
+            int count = meters.getMeters().size();
+            scheduler.submit("repeat", List.of(task(0, "image/jpeg", () -> keys("repeat"))), () -> true).get(5, TimeUnit.SECONDS);
+            assertEquals(count, meters.getMeters().size());
+        } finally { release.countDown(); }
+    }
+
+    @Test
+    void 취소와_실패_후_모든_예약이_반환되고_대기시간을_결과별로_기록한다() throws Exception {
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        try {
+            var running = scheduler.submit("running", List.of(task(0, "image/heic", () -> { started.countDown(); await(release); return keys("running"); })), () -> true);
+            await(started);
+            var queued = scheduler.submit("cancel", List.of(task(0, "image/heic", () -> keys("never"))), () -> true);
+            clock.add(java.time.Duration.ofSeconds(2));
+            scheduler.cancelExecution("cancel");
+            assertThrows(java.util.concurrent.CancellationException.class, () -> queued.get(5, TimeUnit.SECONDS));
+            assertEquals(1, gauge("inflight", "heic"));
+            assertEquals(2, meters.get("yeodam.trip.derivative.queue.wait").tags("lane", "heic", "outcome", "canceled").timer().totalTime(TimeUnit.SECONDS));
+            release.countDown();
+            running.get(5, TimeUnit.SECONDS);
+            var failed = scheduler.submit("fail", List.of(task(0, "image/heic", () -> { throw new IllegalStateException("conversion"); })), () -> true);
+            assertThrows(java.util.concurrent.ExecutionException.class, () -> failed.get(5, TimeUnit.SECONDS));
+            assertEquals(1, meters.get("yeodam.trip.derivative.queue.wait").tags("lane", "heic", "outcome", "failure").timer().count());
+            assertEquals(0, gauge("inflight", "heic"));
+            assertEquals(0, gauge("pending", "heic"));
+            assertEquals(0, gauge("active", "heic"));
+        } finally { release.countDown(); }
+    }
+
+    @Test
+    void 취소가_접수_유효성_확인과_예약_사이에_완료돼도_사진을_실행하지_않는다() throws Exception {
+        var registry = new InitialUploadExecutionRegistry();
+        String executionId = registry.reserve(7L);
+        var checked = new CountDownLatch(1);
+        var resume = new CountDownLatch(1);
+        var checks = new AtomicInteger();
+        var calls = new AtomicInteger();
+        var submitted = new java.util.concurrent.CompletableFuture<java.util.concurrent.CompletableFuture<List<DerivedPhotoKeys>>>();
+        Thread submitter = new Thread(() -> {
+            try {
+                submitted.complete(scheduler.submit(executionId, List.of(
+                        task(0, "image/heic", () -> { calls.incrementAndGet(); return keys("heavy"); }),
+                        task(1, "image/jpeg", () -> { calls.incrementAndGet(); return keys("light"); })), () -> {
+                    boolean current = registry.isCurrent(7L, executionId);
+                    if (checks.incrementAndGet() == 1) {
+                        checked.countDown();
+                        try { await(resume); }
+                        catch (InterruptedException failure) { Thread.currentThread().interrupt(); throw new IllegalStateException(failure); }
+                    }
+                    return current;
+                }));
+            } catch (Throwable failure) { submitted.completeExceptionally(failure); }
+        });
+        try {
+            submitter.start();
+            await(checked);
+            registry.cancel(7L);
+            scheduler.cancelExecution(executionId); // 아직 scheduler에 배치가 없으므로 이 취소만으로는 막을 수 없다.
+            resume.countDown();
+            var batch = submitted.get(5, TimeUnit.SECONDS);
+            assertThrows(java.util.concurrent.CancellationException.class, () -> batch.get(5, TimeUnit.SECONDS));
+            assertEquals(0, calls.get());
+            assertEquals(0, gauge("inflight", "heic"));
+            assertEquals(0, gauge("inflight", "light"));
+        } finally {
+            resume.countDown();
+            submitter.join(5000);
+            assertFalse(submitter.isAlive());
+        }
+    }
+
+    private double gauge(String kind, String lane) {
+        return meters.get("yeodam.trip.derivative." + kind + ".photos").tag("lane", lane).gauge().value();
     }
 
     private static TripDerivativeScheduler.PhotoTask task(int index, String mime, java.util.concurrent.Callable<DerivedPhotoKeys> action) {

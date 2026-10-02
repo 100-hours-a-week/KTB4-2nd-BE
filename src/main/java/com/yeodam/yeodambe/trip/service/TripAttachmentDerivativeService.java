@@ -185,17 +185,20 @@ public class TripAttachmentDerivativeService {
     }
 
     private JsonNode metadata(Path original) {
+        Path output = original.resolveSibling("metadata.json");
+        Process process = null;
         try {
-            Process process = new ProcessBuilder("exiftool", "-j", "-n",
+            process = new ProcessBuilder("exiftool", "-j", "-n",
                     "-Orientation", "-DateTimeOriginal", "-OffsetTimeOriginal",
                     "-GPSLatitude", "-GPSLongitude",
-                    "-Make", "-Model", original.toString()).start();
-            byte[] output = process.getInputStream().readAllBytes();
+                    "-Make", "-Model", original.toString())
+                    .redirectOutput(output.toFile())
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
             if (!process.waitFor(120, TimeUnit.SECONDS) || process.exitValue() != 0) {
-                process.destroyForcibly();
                 throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_FAILED.message());
             }
-            JsonNode values = json.readTree(output);
+            JsonNode values = json.readTree(Files.readAllBytes(output));
             if (!values.isArray() || values.isEmpty()) throw new IllegalStateException(TripInternalErrorMessage.EXIF_RESULT_MISSING.message());
             return values.get(0);
         } catch (IOException e) {
@@ -203,6 +206,10 @@ public class TripAttachmentDerivativeService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_INTERRUPTED.message(), e);
+        } finally {
+            stopProcess(process);
+            try { Files.deleteIfExists(output); }
+            catch (IOException failure) { log.warn("임시 EXIF 파일 삭제 실패: {}", output, failure); }
         }
     }
 
@@ -277,14 +284,14 @@ public class TripAttachmentDerivativeService {
     }
 
     private void run(String... command) {
+        Process process = null;
         try {
-            Process process = new ProcessBuilder(command)
+            process = new ProcessBuilder(command)
                     .redirectErrorStream(true)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .start();
 
             if (!process.waitFor(120, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
                 throw new IllegalStateException(TripInternalErrorMessage.COMMAND_TIMEOUT.message().formatted(command[0]));
             }
             if (process.exitValue() != 0) {
@@ -295,7 +302,22 @@ public class TripAttachmentDerivativeService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(TripInternalErrorMessage.COMMAND_INTERRUPTED.message().formatted(command[0]), e);
+        } finally { stopProcess(process); }
+    }
+
+    private void stopProcess(Process process) {
+        if (process == null || !process.isAlive()) return;
+        process.destroyForcibly();
+        boolean interrupted = Thread.interrupted();
+        // 프로세스가 살아 있으면 원본/임시 파일 보상을 시작할 수 없다.
+        while (process.isAlive()) {
+            try {
+                if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                    log.error("사진 변환 프로세스 종료 지연: pid={}", process.pid());
+                }
+            } catch (InterruptedException failure) { interrupted = true; }
         }
+        if (interrupted) Thread.currentThread().interrupt();
     }
 
 }

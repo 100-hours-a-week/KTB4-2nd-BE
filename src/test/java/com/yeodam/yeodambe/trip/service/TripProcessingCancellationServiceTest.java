@@ -39,6 +39,7 @@ class TripProcessingCancellationServiceTest {
     private final TripPhotoAnalysisService analysis = mock(TripPhotoAnalysisService.class);
     private final InitialUploadExecutionRegistry executions = mock(InitialUploadExecutionRegistry.class);
     private final TransactionOperations transactions = mock(TransactionOperations.class);
+    private final TripAttachmentDerivativeService derivatives = mock(TripAttachmentDerivativeService.class);
     private TripProcessingCancellationService service;
 
     @BeforeEach
@@ -48,8 +49,9 @@ class TripProcessingCancellationServiceTest {
             callback.accept(mock(TransactionStatus.class));
             return null;
         }).when(transactions).executeWithoutResult(any());
+        when(executions.snapshot(any())).thenThrow(new com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException());
         service = new TripProcessingCancellationService(
-                trips, regions, places, attachments, files, analysis, executions, transactions);
+                trips, regions, places, attachments, files, analysis, executions, transactions, derivatives);
     }
 
     @Test
@@ -80,7 +82,7 @@ class TripProcessingCancellationServiceTest {
 
         assertThrows(TripNotFoundException.class, () -> service.cancel(7L, 1L));
 
-        verifyNoInteractions(analysis);
+        verifyNoInteractions(analysis, derivatives);
     }
 
     @Test
@@ -124,7 +126,28 @@ class TripProcessingCancellationServiceTest {
         service.cancel(7L, 1L);
 
         verify(executions).cancel(7L);
+        verifyNoInteractions(analysis, derivatives);
+    }
+
+    @Test
+    void AI_시작_전에도_DB_취소_성공_후_이미지_실행을_취소한다() {
+        var registry = new InitialUploadExecutionRegistry();
+        String executionId = registry.reserve(7L);
+        var cancellation = new TripProcessingCancellationService(
+                trips, regions, places, attachments, files, analysis, registry, transactions, derivatives);
+        when(trips.cancelProcessing(eq(7L), eq(1L), eq(ProcessingStatus.PROCESSING),
+                eq(ProcessingStatus.CANCELED), any(LocalDateTime.class))).thenReturn(1);
+        cancellation.cancel(7L, 1L);
+        org.junit.jupiter.api.Assertions.assertFalse(registry.isCurrent(7L, executionId));
+        verify(derivatives).cancelExecution(executionId);
         verifyNoInteractions(analysis);
+    }
+
+    @Test
+    void DB_취소_트랜잭션이_실패하면_이미지와_레지스트리를_취소하지_않는다() {
+        doThrow(new IllegalStateException("DB commit")) .when(transactions).executeWithoutResult(any());
+        assertThrows(IllegalStateException.class, () -> service.cancel(7L, 1L));
+        verifyNoInteractions(derivatives, executions, analysis);
     }
 
     private Trip trip(ProcessingStatus status, LocalDateTime deletedAt) {

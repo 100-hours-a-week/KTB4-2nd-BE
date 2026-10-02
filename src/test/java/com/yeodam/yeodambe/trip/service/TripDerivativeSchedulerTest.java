@@ -191,6 +191,48 @@ class TripDerivativeSchedulerTest {
         } finally { release.countDown(); }
     }
 
+    @Test
+    void 취소가_접수_유효성_확인과_예약_사이에_완료돼도_사진을_실행하지_않는다() throws Exception {
+        var registry = new InitialUploadExecutionRegistry();
+        String executionId = registry.reserve(7L);
+        var checked = new CountDownLatch(1);
+        var resume = new CountDownLatch(1);
+        var checks = new AtomicInteger();
+        var calls = new AtomicInteger();
+        var submitted = new java.util.concurrent.CompletableFuture<java.util.concurrent.CompletableFuture<List<DerivedPhotoKeys>>>();
+        Thread submitter = new Thread(() -> {
+            try {
+                submitted.complete(scheduler.submit(executionId, List.of(
+                        task(0, "image/heic", () -> { calls.incrementAndGet(); return keys("heavy"); }),
+                        task(1, "image/jpeg", () -> { calls.incrementAndGet(); return keys("light"); })), () -> {
+                    boolean current = registry.isCurrent(7L, executionId);
+                    if (checks.incrementAndGet() == 1) {
+                        checked.countDown();
+                        try { await(resume); }
+                        catch (InterruptedException failure) { Thread.currentThread().interrupt(); throw new IllegalStateException(failure); }
+                    }
+                    return current;
+                }));
+            } catch (Throwable failure) { submitted.completeExceptionally(failure); }
+        });
+        try {
+            submitter.start();
+            await(checked);
+            registry.cancel(7L);
+            scheduler.cancelExecution(executionId); // 아직 scheduler에 배치가 없으므로 이 취소만으로는 막을 수 없다.
+            resume.countDown();
+            var batch = submitted.get(5, TimeUnit.SECONDS);
+            assertThrows(java.util.concurrent.CancellationException.class, () -> batch.get(5, TimeUnit.SECONDS));
+            assertEquals(0, calls.get());
+            assertEquals(0, gauge("inflight", "heic"));
+            assertEquals(0, gauge("inflight", "light"));
+        } finally {
+            resume.countDown();
+            submitter.join(5000);
+            assertFalse(submitter.isAlive());
+        }
+    }
+
     private double gauge(String kind, String lane) {
         return meters.get("yeodam.trip.derivative." + kind + ".photos").tag("lane", lane).gauge().value();
     }

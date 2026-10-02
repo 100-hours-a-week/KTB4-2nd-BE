@@ -178,9 +178,20 @@ public class TripAttachmentDerivativeService {
                     uploadedKeys.add(displayKey);
                 }
 
-                return new DerivedPhotoKeys(originalKey, analyzeKey, previewKey, displayKey,
-                        takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
-                        coordinate(metadata, "GPSLongitude", 180), deviceModel(metadata));
+                return new DerivedPhotoKeys(
+                        originalKey,
+                        analyzeKey,
+                        previewKey,
+                        displayKey,
+                        takenAt(metadata),
+                        coordinate(metadata, "GPSLatitude", 90),
+                        coordinate(metadata, "GPSLongitude", 180),
+                        deviceModel(metadata),
+                        fileSize(original),
+                        fileSize(analyze),
+                        fileSize(preview),
+                        displayKey == null ? null : fileSize(display)
+                );
             } catch (RuntimeException failure) {
                 derivativeOutcome = "failure";
                 throw failure;
@@ -199,6 +210,14 @@ public class TripAttachmentDerivativeService {
                     log.warn("임시 사진 파일 삭제 실패: {}", path, cleanupFailure);
                 }
             }
+        }
+    }
+
+    private long fileSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
         }
     }
 

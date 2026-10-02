@@ -62,7 +62,8 @@ class TripAttachmentDerivativeServiceTest {
         AtomicReference<Path> analyzePath = new AtomicReference<>();
         AtomicReference<Path> previewPath = new AtomicReference<>();
 
-        when(storage.open("original/key")).thenReturn(new ByteArrayInputStream(jpeg()));
+        byte[] originalBytes = jpeg();
+        when(storage.open("original/key")).thenReturn(new ByteArrayInputStream(originalBytes));
         when(storage.storeDerived(eq("run-1"), any(Path.class), eq("image/jpeg")))
                 .thenAnswer(invocation -> {
                     Path path = invocation.getArgument(1);
@@ -84,6 +85,11 @@ class TripAttachmentDerivativeServiceTest {
         assertEquals("original/key", result.getFirst().originalKey());
         assertEquals("derived/analyze.jpg", result.getFirst().analyzeKey());
         assertEquals("derived/preview.webp", result.getFirst().previewKey());
+        assertEquals(Long.valueOf(originalBytes.length), result.getFirst().originalSizeBytes());
+        assertEquals(Long.valueOf(analyzeBytes.get().length), result.getFirst().analyzeSizeBytes());
+        assertEquals(Long.valueOf(previewBytes.get().length), result.getFirst().previewSizeBytes());
+        assertNull(result.getFirst().displaySizeBytes());
+        verify(storage, never()).size(any(String.class));
         assertArrayEquals(new byte[]{(byte) 0xff, (byte) 0xd8},
                 Arrays.copyOf(analyzeBytes.get(), 2));
         assertEquals("RIFF", new String(previewBytes.get(), 0, 4, StandardCharsets.US_ASCII));

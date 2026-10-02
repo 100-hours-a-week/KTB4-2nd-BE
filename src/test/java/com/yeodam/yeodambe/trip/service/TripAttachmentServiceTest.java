@@ -143,7 +143,7 @@ class TripAttachmentServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(trip(1L)));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store(eq("run"), any())).thenReturn("first");
-        when(derivatives.createAll("run", List.of("first"), List.of("image/jpeg")))
+        when(derivatives.createAll(eq("run"), eq(List.of("first")), eq(List.of("image/jpeg")), any()))
                 .thenReturn(CompletableFuture.completedFuture(List.of()));
         assertThrows(IllegalStateException.class,
                 () -> service.uploadInitialAttachments(7L, 1L, List.of(jpeg())));
@@ -195,7 +195,7 @@ class TripAttachmentServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(trip));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store("run", file)).thenReturn("original");
-        when(derivatives.createAll("run", List.of("original"), List.of("image/heic")))
+        when(derivatives.createAll(eq("run"), eq(List.of("original")), eq(List.of("image/heic")), any()))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
         when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
                 List.of("original"), List.of("image/heic"), List.of(keys)))
@@ -235,7 +235,7 @@ class TripAttachmentServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(trip(1L)));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store("run", file)).thenReturn("original");
-        when(derivatives.createAll("run", List.of("original"), List.of("image/heic")))
+        when(derivatives.createAll(eq("run"), eq(List.of("original")), eq(List.of("image/heic")), any()))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
 
         assertThrows(IllegalStateException.class,
@@ -262,7 +262,7 @@ class TripAttachmentServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(trip));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store("run", file)).thenReturn("original");
-        when(derivatives.createAll("run", List.of("original"), List.of("image/jpeg")))
+        when(derivatives.createAll(eq("run"), eq(List.of("original")), eq(List.of("image/jpeg")), any()))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
         when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
                 List.of("original"), List.of("image/jpeg"), List.of(keys)))
@@ -298,7 +298,7 @@ class TripAttachmentServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(trip));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store("run", file)).thenReturn("original");
-        when(derivatives.createAll("run", List.of("original"), List.of("image/jpeg")))
+        when(derivatives.createAll(eq("run"), eq(List.of("original")), eq(List.of("image/jpeg")), any()))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
         when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
                 List.of("original"), List.of("image/jpeg"), List.of(keys)))
@@ -341,7 +341,7 @@ class TripAttachmentServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(trip));
         when(transactions.reserve(7L, 1L)).thenReturn(reservation());
         when(storage.store("run", file)).thenReturn("original");
-        when(derivatives.createAll("run", List.of("original"), List.of("image/jpeg")))
+        when(derivatives.createAll(eq("run"), eq(List.of("original")), eq(List.of("image/jpeg")), any()))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
         when(transactions.saveFilesAndAttachments(7L, 1L, "run", List.of(file),
                 List.of("original"), List.of("image/jpeg"), List.of(keys)))
@@ -384,7 +384,7 @@ class TripAttachmentServiceTest {
             return new TripAttachmentTransactionService.Reservation(reserved.executionId(), List.of());
         });
         when(storage.store(anyString(), eq(file))).thenReturn("original-1");
-        when(derivatives.createAll(anyString(), eq(List.of("original-1")), eq(List.of("image/jpeg"))))
+        when(derivatives.createAll(anyString(), eq(List.of("original-1")), eq(List.of("image/jpeg")), any()))
                 .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
         when(transactions.saveFilesAndAttachments(eq(7L), eq(1L), anyString(), eq(List.of(file)),
                 eq(List.of("original-1")), eq(List.of("image/jpeg")), eq(List.of(keys))))
@@ -397,6 +397,53 @@ class TripAttachmentServiceTest {
         verifyNoInteractions(analysis, results);
         verify(storage).retain(List.of("original-1", "analyze-1", "preview-1"));
         assertEquals(InitialUploadExecutionRegistry.State.UPLOADING, registry.snapshot(7L).state());
+    }
+
+    @Test
+    void 후속_배치_접수_거부는_이전_성공_배치를_보존한다() {
+        InitialUploadExecutionRegistry registry = new InitialUploadExecutionRegistry();
+        TripAttachmentService batchService = new TripAttachmentService(
+                trips, regions, storage, transactions, derivatives, analysis, placeNames, results, registry, statuses);
+        MockMultipartFile file = jpeg();
+        StoredFile original = original(20L, "original-1");
+        TripAttachment attachment = attachment(30L, 20L, "analyze-1", "preview-1");
+        DerivedPhotoKeys keys = new DerivedPhotoKeys("original-1", "analyze-1", "preview-1");
+        when(trips.findById(7L)).thenReturn(Optional.of(trip(1L)));
+        when(transactions.reserveBatch(7L, 1L, 1, 2)).thenAnswer(invocation -> {
+            var reserved = registry.reserveBatch(7L, 1, 2);
+            return new TripAttachmentTransactionService.Reservation(reserved.executionId(), List.of());
+        });
+        when(storage.store(anyString(), eq(file))).thenReturn("original-1");
+        when(derivatives.createAll(anyString(), eq(List.of("original-1")), eq(List.of("image/jpeg")), any()))
+                .thenReturn(CompletableFuture.completedFuture(List.of(keys)));
+        when(transactions.saveFilesAndAttachments(eq(7L), eq(1L), anyString(), eq(List.of(file)),
+                eq(List.of("original-1")), eq(List.of("image/jpeg")), eq(List.of(keys))))
+                .thenReturn(new TripAttachmentTransactionService.SavedAttachments(
+                        List.of(original), List.of(attachment)));
+
+        var response = batchService.uploadInitialAttachments(7L, 1L, List.of(file), 1, 2, false);
+
+        assertTrue(response.isEmpty());
+        verifyNoInteractions(analysis, results);
+        verify(storage).retain(List.of("original-1", "analyze-1", "preview-1"));
+        assertEquals(InitialUploadExecutionRegistry.State.UPLOADING, registry.snapshot(7L).state());
+        when(transactions.reserveBatch(7L, 1L, 2, 2)).thenAnswer(invocation -> {
+            var reserved = registry.reserveBatch(7L, 2, 2);
+            return new TripAttachmentTransactionService.Reservation(reserved.executionId(), List.of());
+        });
+        MockMultipartFile next = jpeg("next.jpg");
+        when(storage.store(anyString(), eq(next))).thenReturn("original-2");
+        when(derivatives.createAll(anyString(), eq(List.of("original-2")), eq(List.of("image/jpeg")), any()))
+                .thenThrow(new java.util.concurrent.RejectedExecutionException("full"));
+        assertThrows(java.util.concurrent.RejectedExecutionException.class,
+                () -> batchService.uploadInitialAttachments(7L, 1L, List.of(next), 2, 2, true));
+        verify(storage).delete("original-2");
+        verify(storage, never()).delete("original-1");
+        verify(storage, never()).delete("analyze-1");
+        verify(storage, never()).delete("preview-1");
+        verifyNoInteractions(analysis, results);
+        assertEquals(1, registry.snapshot(7L).attachmentCount());
+        assertEquals(2, registry.snapshot(7L).nextBatchNo());
     }
 
     @Test
@@ -425,9 +472,9 @@ class TripAttachmentServiceTest {
         });
         when(storage.store(anyString(), eq(firstFile))).thenReturn("original-1");
         when(storage.store(anyString(), eq(secondFile))).thenReturn("original-2");
-        when(derivatives.createAll(anyString(), eq(List.of("original-1")), eq(List.of("image/jpeg"))))
+        when(derivatives.createAll(anyString(), eq(List.of("original-1")), eq(List.of("image/jpeg")), any()))
                 .thenReturn(CompletableFuture.completedFuture(List.of(firstKeys)));
-        when(derivatives.createAll(anyString(), eq(List.of("original-2")), eq(List.of("image/jpeg"))))
+        when(derivatives.createAll(anyString(), eq(List.of("original-2")), eq(List.of("image/jpeg")), any()))
                 .thenReturn(CompletableFuture.completedFuture(List.of(secondKeys)));
         when(transactions.saveFilesAndAttachments(eq(7L), eq(1L), anyString(), eq(List.of(firstFile)),
                 eq(List.of("original-1")), eq(List.of("image/jpeg")), eq(List.of(firstKeys))))
@@ -495,6 +542,38 @@ class TripAttachmentServiceTest {
                 () -> service.uploadInitialAttachments(
                         7L, 1L, List.of(first, second), 1, 2, true));
         verifyNoInteractions(storage, transactions);
+    }
+
+    @Test
+    void 접수_거부는_원본과_예약을_정리하고_AI를_호출하지_않는다() {
+        when(trips.findById(7L)).thenReturn(Optional.of(trip(1L)));
+        when(transactions.reserve(7L, 1L)).thenReturn(reservation());
+        when(storage.store(eq("run"), any())).thenReturn("rejected-original");
+        when(derivatives.createAll(eq("run"), eq(List.of("rejected-original")), eq(List.of("image/jpeg")), any()))
+                .thenThrow(new java.util.concurrent.RejectedExecutionException("full"));
+        assertThrows(java.util.concurrent.RejectedExecutionException.class,
+                () -> service.uploadInitialAttachments(7L, 1L, List.of(jpeg())));
+        verify(storage).delete("rejected-original");
+        verify(executions).release(7L, "run");
+        verifyNoInteractions(analysis, results);
+    }
+
+    @Test
+    void 변환에_현재_실행_검사를_전달하고_취소_실패는_후속_AI로_전달하지_않는다() {
+        when(trips.findById(7L)).thenReturn(Optional.of(trip(1L)));
+        when(transactions.reserve(7L, 1L)).thenReturn(reservation());
+        when(storage.store(eq("run"), any())).thenReturn("original");
+        when(executions.isCurrent(7L, "run")).thenReturn(true, false);
+        when(derivatives.createAll(eq("run"), eq(List.of("original")), eq(List.of("image/jpeg")), any()))
+                .thenAnswer(invocation -> {
+                    java.util.function.BooleanSupplier active = invocation.getArgument(3);
+                    assertTrue(active.getAsBoolean());
+                    org.junit.jupiter.api.Assertions.assertFalse(active.getAsBoolean());
+                    return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("canceled"));
+                });
+        assertThrows(RuntimeException.class, () -> service.uploadInitialAttachments(7L, 1L, List.of(jpeg())));
+        verify(storage).delete("original");
+        verifyNoInteractions(analysis, results);
     }
 
     private Trip trip(Long owner) {

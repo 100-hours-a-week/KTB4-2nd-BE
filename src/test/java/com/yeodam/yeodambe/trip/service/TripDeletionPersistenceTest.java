@@ -84,7 +84,6 @@ class TripDeletionPersistenceTest {
                 LocalDateTime.now(), LocalDateTime.now(), "target-preview"));
         TripAttachment deletedAttachment = attachment(owner, target, place.getId(), "target");
         TripAttachment remainingAttachment = attachment(owner, remaining, null, "remaining");
-        when(storage.size(anyString())).thenReturn(10L);
 
         service.delete(target.getId(), owner.getUserId());
 
@@ -103,6 +102,7 @@ class TripDeletionPersistenceTest {
         assertThat(refreshed.getStorageUsedBytes()).isEqualTo(40L);
         assertThat(files.findById(remainingAttachment.getFileId()).orElseThrow().getDeletedAt())
                 .isNull();
+        verify(storage, never()).size(anyString());
     }
 
     @Test
@@ -111,8 +111,10 @@ class TripDeletionPersistenceTest {
         Trip target = completedTrip(owner, "롤백여행");
         Trip remaining = completedTrip(owner, "남은여행");
         TripAttachment targetAttachment = attachment(owner, target, null, "target");
-        attachment(owner, remaining, null, "remaining");
-        when(storage.size(anyString())).thenThrow(new IllegalStateException("S3"));
+        TripAttachment missingSize = attachment(owner, remaining, null, "remaining");
+        StoredFile missingFile = files.findById(missingSize.getFileId()).orElseThrow();
+        org.springframework.test.util.ReflectionTestUtils.setField(missingFile, "originalSizeBytes", null);
+        files.saveAndFlush(missingFile);
 
         assertThrows(IllegalStateException.class,
                 () -> service.delete(target.getId(), owner.getUserId()));
@@ -178,7 +180,8 @@ class TripDeletionPersistenceTest {
                 owner.getUserId(), ProcessingStatus.COMPLETED);
 
         assertThat(result).containsExactly(new TripStorageObjectKeys(
-                "original/included", "analyze/included", "preview/included", "display/included"));
+                "original/included", "analyze/included", "preview/included", "display/included",
+                10L, 10L, 10L, 10L));
     }
 
     @Test
@@ -223,11 +226,14 @@ class TripDeletionPersistenceTest {
     }
 
     private TripAttachment attachment(User owner, Trip trip, Long placeId, String key) {
-        StoredFile file = files.saveAndFlush(StoredFile.uploaded(
-                owner.getUserId(), key + ".jpg", "original/" + key, "image/jpeg"));
+        StoredFile file = StoredFile.uploaded(
+                owner.getUserId(), key + ".jpg", "original/" + key, "image/jpeg");
+        file.storageSize(10L);
+        files.saveAndFlush(file);
         TripAttachment attachment = TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze/" + key, "preview/" + key,
                 "display/" + key);
+        attachment.storageSizes(10L, 10L, 10L);
         if (placeId != null) {
             attachment.classify(placeId, RegionOrigin.EXIF, LocalDateTime.now(), null, null, 100);
         }

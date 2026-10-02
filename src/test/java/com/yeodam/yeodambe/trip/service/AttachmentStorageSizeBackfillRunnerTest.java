@@ -23,21 +23,21 @@ class AttachmentStorageSizeBackfillRunnerTest {
     private final AttachmentStorageSizeBackfillService backfill = mock(AttachmentStorageSizeBackfillService.class);
 
     @Test
-    void disabledUnlessExplicitlyEnabled() {
-        var context = context();
-        context.run(application -> assertThat(application)
-                .doesNotHaveBean(AttachmentStorageSizeBackfillRunner.class));
-        context.withPropertyValues("app.storage-size-backfill.enabled=false")
-                .run(application -> assertThat(application)
-                        .doesNotHaveBean(AttachmentStorageSizeBackfillRunner.class));
-        verifyNoInteractions(attachments, backfill);
+    void registersRunnerWithoutActivationProperty() {
+        context().run(application -> assertThat(application)
+                .hasSingleBean(AttachmentStorageSizeBackfillRunner.class));
     }
 
     @Test
-    void registersRunnerOnlyWhenEnabled() {
-        context().withPropertyValues("app.storage-size-backfill.enabled=true")
-                .run(application -> assertThat(application)
-                        .hasSingleBean(AttachmentStorageSizeBackfillRunner.class));
+    void exitsWithoutBackfillWhenNoSizesAreMissing() {
+        var page = PageRequest.of(0, 100);
+        when(attachments.findMissingStorageSizes(0L, page)).thenReturn(List.of());
+
+        new AttachmentStorageSizeBackfillRunner(attachments, backfill)
+                .run(new DefaultApplicationArguments());
+
+        verify(attachments).findMissingStorageSizes(0L, page);
+        verifyNoInteractions(backfill);
     }
 
     @Test

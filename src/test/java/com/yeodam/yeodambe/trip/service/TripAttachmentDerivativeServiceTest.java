@@ -11,6 +11,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import tools.jackson.databind.ObjectMapper;
 
 import javax.imageio.ImageIO;
+import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -21,6 +22,8 @@ import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -30,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -290,6 +294,154 @@ class TripAttachmentDerivativeServiceTest {
                 .tags("stage", "image_derivative", "outcome", "failure")
                 .timer()
                 .count());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1, RGBY", "2, GRYB", "3, YBGR", "4, BYRG",
+            "5, RBGY", "6, BRYG", "7, YGBR", "8, GYRB"})
+    void JPEG와_PNG의_회전과_반전을_두_출력에_적용한다(int orientation, String corners) throws Exception {
+        for (String format : List.of("jpeg", "png")) {
+            Path source = Files.createTempFile("oriented-source", "." + format);
+            try {
+                BufferedImage image = new BufferedImage(80, 40, BufferedImage.TYPE_INT_RGB);
+                Color[] colors = {Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW};
+                for (int y = 0; y < 40; y++) {
+                    for (int x = 0; x < 80; x++) {
+                        image.setRGB(x, y, colors[(y / 20) * 2 + x / 40].getRGB());
+                    }
+                }
+                ImageIO.write(image, format, source.toFile());
+                command("exiftool", "-overwrite_original", "-Orientation#=" + orientation, source.toString());
+                Map<String, byte[]> outputs = deriveOutputs(Files.readAllBytes(source), "image/" + format);
+                assertEquals(2, outputs.size());
+                for (String name : List.of("analyze.jpg", "preview.webp")) {
+                    BufferedImage output = decodeOutput(outputs.get(name), name);
+                    assertEquals(orientation <= 4 ? 80 : 40, output.getWidth());
+                    assertEquals(orientation <= 4 ? 40 : 80, output.getHeight());
+                    for (int i = 0; i < 4; i++) {
+                        int x = output.getWidth() * (i % 2 == 0 ? 1 : 3) / 4;
+                        int y = output.getHeight() * (i < 2 ? 1 : 3) / 4;
+                        Color expected = switch (corners.charAt(i)) {
+                            case 'R' -> Color.RED;
+                            case 'G' -> Color.GREEN;
+                            case 'B' -> Color.BLUE;
+                            default -> Color.YELLOW;
+                        };
+                        Color actual = new Color(output.getRGB(x, y));
+                        assertTrue(Math.abs(expected.getRed() - actual.getRed()) < 50);
+                        assertTrue(Math.abs(expected.getGreen() - actual.getGreen()) < 50);
+                        assertTrue(Math.abs(expected.getBlue() - actual.getBlue()) < 50);
+                    }
+                }
+            } finally {
+                Files.deleteIfExists(source);
+            }
+        }
+    }
+
+    @Test
+    void 공통_축소_후_분석본의_흰_배경이_WebP_투명도에_영향을_주지_않는다() throws Exception {
+        BufferedImage input = new BufferedImage(1600, 800, BufferedImage.TYPE_INT_ARGB);
+        input.setRGB(100, 100, Color.RED.getRGB());
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ImageIO.write(input, "png", bytes);
+        Map<String, byte[]> outputs = deriveOutputs(bytes.toByteArray(), "image/png");
+        BufferedImage analyze = decodeOutput(outputs.get("analyze.jpg"), "analyze.jpg");
+        BufferedImage preview = decodeOutput(outputs.get("preview.webp"), "preview.webp");
+        assertEquals(1024, analyze.getWidth());
+        assertEquals(512, analyze.getHeight());
+        assertEquals(1024, preview.getWidth());
+        assertEquals(512, preview.getHeight());
+        assertEquals(Color.WHITE.getRGB(), analyze.getRGB(500, 300));
+        assertEquals(0, preview.getRGB(500, 300) >>> 24);
+    }
+
+    @Test
+    void 분석본에_선택한_EXIF와_정상_방향을_기록하고_미리보기에서는_제거한다() throws Exception {
+        Path source = Files.createTempFile("selected-exif", ".jpg");
+        Path output = Files.createTempFile("selected-exif-output", ".jpg");
+        try {
+            Files.write(source, jpeg());
+            command("exiftool", "-overwrite_original", "-Orientation#=6",
+                    "-DateTimeOriginal=2026:10:02 10:00:00", "-OffsetTimeOriginal=+09:00",
+                    "-GPSLatitude=37.5", "-GPSLatitudeRef=N", "-GPSLongitude=127", "-GPSLongitudeRef=E",
+                    "-Make=SAMSUNG", "-Model=NX100", source.toString());
+            byte[] original = Files.readAllBytes(source);
+            Map<String, byte[]> outputs = deriveOutputs(original, "image/jpeg");
+            for (String name : List.of("analyze.jpg", "preview.webp")) {
+                Files.write(output, outputs.get(name));
+                var metadata = new ObjectMapper().readTree(command("exiftool", "-j", "-n",
+                        "-Orientation", "-DateTimeOriginal", "-GPSLatitude", "-GPSLongitude",
+                        "-Make", "-Model", output.toString())).get(0);
+                if (name.equals("analyze.jpg")) {
+                    assertEquals(1, metadata.path("Orientation").asInt());
+                    assertEquals("2026:10:02 10:00:00", metadata.path("DateTimeOriginal").asString());
+                    assertEquals(37.5, metadata.path("GPSLatitude").asDouble());
+                    assertEquals(127, metadata.path("GPSLongitude").asDouble());
+                    assertEquals("SAMSUNG", metadata.path("Make").asString());
+                    assertEquals("NX100", metadata.path("Model").asString());
+                } else {
+                    for (String field : List.of("Orientation", "DateTimeOriginal", "GPSLatitude",
+                            "GPSLongitude", "Make", "Model")) assertFalse(metadata.has(field));
+                }
+            }
+            assertArrayEquals(original, Files.readAllBytes(source));
+        } finally {
+            Files.deleteIfExists(source);
+            Files.deleteIfExists(output);
+        }
+    }
+
+    @Test
+    void 배치_뒤_사진이_손상되면_앞_사진의_파생객체를_정리한다() throws Exception {
+        when(storage.open("original/good")).thenReturn(new ByteArrayInputStream(jpeg()));
+        when(storage.open("original/bad")).thenReturn(new ByteArrayInputStream(new byte[]{1, 2, 3}));
+        AtomicReference<Path> directory = new AtomicReference<>();
+        when(storage.storeDerived(eq("run-batch-fail"), any(Path.class), any(String.class)))
+                .thenAnswer(invocation -> {
+                    Path path = invocation.getArgument(1);
+                    directory.set(path.getParent());
+                    return "derived/" + path.getFileName();
+                });
+        assertThrows(CompletionException.class, () -> service.createAll("run-batch-fail",
+                List.of("original/good", "original/bad"), List.of("image/jpeg", "image/jpeg")).join());
+        verify(storage).delete("derived/analyze.jpg");
+        verify(storage).delete("derived/preview.webp");
+        assertFalse(Files.exists(directory.get()));
+        verify(storage, org.mockito.Mockito.times(2)).storeDerived(eq("run-batch-fail"), any(Path.class), any(String.class));
+    }
+
+    private Map<String, byte[]> deriveOutputs(byte[] original, String mimeType) {
+        Map<String, byte[]> outputs = new HashMap<>();
+        AtomicReference<Path> directory = new AtomicReference<>();
+        // 이 입력은 한 번만 열 수 있다. 같은 테스트에서 여러 입력을 처리할 때도 각각 새 stream을 제공한다.
+        when(storage.open("original/test")).thenReturn(new ByteArrayInputStream(original));
+        when(storage.storeDerived(eq("run-output"), any(Path.class), any(String.class)))
+                .thenAnswer(invocation -> {
+                    Path path = invocation.getArgument(1);
+                    outputs.put(path.getFileName().toString(), Files.readAllBytes(path));
+                    directory.set(path.getParent());
+                    return "derived/" + path.getFileName();
+                });
+        DerivedPhotoKeys result = service.createAll("run-output",
+                List.of("original/test"), List.of(mimeType)).join().getFirst();
+        if (!mimeType.equals("image/heic")) assertNull(result.displayKey());
+        assertFalse(Files.exists(directory.get()));
+        return outputs;
+    }
+
+    private static BufferedImage decodeOutput(byte[] bytes, String name) throws Exception {
+        if (!name.endsWith(".webp")) return ImageIO.read(new ByteArrayInputStream(bytes));
+        Path source = Files.createTempFile("preview-decode", ".webp");
+        Path decoded = Files.createTempFile("preview-decode", ".png");
+        try {
+            Files.write(source, bytes);
+            command("convert", source.toString(), decoded.toString());
+            return ImageIO.read(decoded.toFile());
+        } finally {
+            Files.deleteIfExists(source);
+            Files.deleteIfExists(decoded);
+        }
     }
 
     private static String command(String... command) throws Exception {

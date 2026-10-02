@@ -130,23 +130,14 @@ public class TripAttachmentDerivativeService {
 
             try {
                 JsonNode metadata = metadata(original);
-                // 방향 보정 → 비율 유지·긴 변 최대 1024px → 메타데이터 제거
-                convert(original, mimeType, metadata,
-                        "-resize", "1024x1024>", "-strip",
-                        "-background", "white", "-alpha", "remove", "-alpha", "off",
-                        analyze.toString());
+                convertDerivatives(original, mimeType, metadata, analyze, preview, display);
 
                 // 필요한 촬영 정보만 AI용 JPEG에 복사한다. 회전은 이미 픽셀에 반영됐다.
                 run("exiftool", "-overwrite_original",
                         "-TagsFromFile", original.toString(),
                         "-DateTimeOriginal", "-SubSecTimeOriginal",
                         "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
-                        "-Orientation=1", analyze.toString());
-
-                // 미리보기에는 EXIF를 복사하지 않는다.
-                convert(original, mimeType, metadata,
-                        "-resize", "1024x1024>", "-strip",
-                        "-quality", "75", preview.toString());
+                        "-Orientation#=1", analyze.toString());
 
                 String analyzeKey;
                 try {
@@ -167,8 +158,6 @@ public class TripAttachmentDerivativeService {
 
                 String displayKey = null;
                 if ("image/heic".equals(mimeType)) {
-                    convert(original, mimeType, metadata,
-                            "+profile", "exif", "-quality", "95", display.toString());
                     try {
                         displayKey = storage.storeDerived(executionId, display, "image/jpeg");
                     } catch (AttachmentStorageException failure) {
@@ -237,9 +226,12 @@ public class TripAttachmentDerivativeService {
         }
     }
 
-    private void convert(Path original, String mimeType, JsonNode metadata, String... options) {
+    private void convertDerivatives(
+            Path original, String mimeType, JsonNode metadata, Path analyze, Path preview, Path display
+    ) {
         List<String> command = new ArrayList<>();
         command.add("convert");
+        command.add("-respect-parentheses");
         command.add(original + "[0]");
 
         if (!"image/heic".equals(mimeType)) {
@@ -247,7 +239,16 @@ public class TripAttachmentDerivativeService {
             command.add(orientation(metadata));
             command.add("-auto-orient");
         }
-        command.addAll(List.of(options));
+        // 표시본은 축소 전에 분기하고 ICC를 보존한다. clone의 품질 설정은 다른 출력에 전파하지 않는다.
+        if ("image/heic".equals(mimeType)) {
+            command.addAll(List.of("(", "+clone", "+profile", "exif", "-quality", "95",
+                    "-write", display.toString(), "+delete", ")"));
+        }
+        // 축소 픽셀은 공유하되 분석본의 흰 배경 처리는 WebP 투명도에 영향을 주지 않는다.
+        command.addAll(List.of("-resize", "1024x1024>", "-strip",
+                "(", "+clone", "-background", "white", "-alpha", "remove", "-alpha", "off",
+                "-write", analyze.toString(), "+delete", ")",
+                "-quality", "75", preview.toString()));
         run(command.toArray(String[]::new));
     }
 

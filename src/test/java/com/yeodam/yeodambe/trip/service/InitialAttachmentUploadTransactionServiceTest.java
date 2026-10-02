@@ -71,16 +71,15 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void refusesProcessingAndFailedBatchesWithoutChangingState() {
+    void refusesProcessingButAllowsCleanedFailedBatchToRestart() {
         start();
         assertThatThrownBy(this::start)
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
         assertThat(storedStatus()).isEqualTo("PROCESSING");
 
         setStatus("FAILED");
-        assertThatThrownBy(this::start)
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        assertThat(storedStatus()).isEqualTo("FAILED");
+        start();
+        assertThat(storedStatus()).isEqualTo("PROCESSING");
     }
 
     @Test

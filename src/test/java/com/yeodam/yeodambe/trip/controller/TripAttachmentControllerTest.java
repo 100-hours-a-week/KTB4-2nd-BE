@@ -53,7 +53,7 @@ class TripAttachmentControllerTest {
     private final BulkAttachmentDownloadService bulkDownloadService = mock(BulkAttachmentDownloadService.class);
     private final InitialAttachmentUploadUrlService uploadUrlService = mock(InitialAttachmentUploadUrlService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
-            service, listService, detailService, deletionService, downloadService, bulkDownloadService, uploadUrlService
+            service, listService, detailService, deletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class)
     );
 
     @Test
@@ -242,8 +242,9 @@ class TripAttachmentControllerTest {
     }
 
     @Test
-    void API_접두사가_있어도_multipart가_아닌_요청은_400으로_거부한다() throws Exception {
+    void API_접두사가_있는_JSON_완료_요청에_uploadId가_없으면_400을_반환한다() throws Exception {
         MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build()
                 .perform(post("/api/trips/7/initial-attachments")
@@ -315,7 +316,7 @@ class TripAttachmentControllerTest {
         TripAttachmentDeletionService realDeletionService =
                 new TripAttachmentDeletionService(repository, stats);
         TripAttachmentController realController = new TripAttachmentController(
-                service, listService, detailService, realDeletionService, downloadService, bulkDownloadService, uploadUrlService);
+                service, listService, detailService, realDeletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class));
         String ids = LongStream.rangeClosed(1, 201)
                 .mapToObj(Long::toString).collect(Collectors.joining(","));
 

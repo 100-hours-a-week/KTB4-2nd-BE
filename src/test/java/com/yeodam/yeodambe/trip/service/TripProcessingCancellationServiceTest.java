@@ -49,7 +49,7 @@ class TripProcessingCancellationServiceTest {
             return null;
         }).when(transactions).executeWithoutResult(any());
         service = new TripProcessingCancellationService(
-                trips, regions, places, attachments, files, analysis, executions, transactions);
+                trips, regions, places, attachments, files, analysis, executions, transactions, mock(com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository.class));
     }
 
     @Test

@@ -130,7 +130,8 @@ public class InitialAttachmentUploadUrlService {
             if (existing != null) {
                 requireSameRequest(existing, request);
 
-                if (existing.getStatus() != InitialAttachmentUploadStatus.PENDING) {
+                if (existing.getStatus() != InitialAttachmentUploadStatus.PENDING
+                        && existing.getStatus() != InitialAttachmentUploadStatus.FAILED) {
                     throw new TripInitialAttachmentUploadNotAllowedException();
                 }
 

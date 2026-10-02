@@ -11,6 +11,8 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,11 +33,14 @@ public class TripProcessingCancellationService {
     private final TripPhotoAnalysisService analysis;
     private final InitialUploadExecutionRegistry executions;
     private final TransactionOperations transactions;
+    private final InitialAttachmentUploadBatchRepository uploadBatches;
 
     public void cancel(Long tripId, Long userId) {
         transactions.executeWithoutResult(status -> cancelInTransaction(tripId, userId));
 
-        if (executions.cancel(tripId)) cancelAnalysis(tripId);
+        boolean legacyAnalysisStarted = executions.cancel(tripId);
+        if (legacyAnalysisStarted || uploadBatches.existsByTripIdAndStatus(
+                tripId, InitialAttachmentUploadStatus.ANALYZING)) cancelAnalysis(tripId);
     }
 
     private void cancelInTransaction(Long tripId, Long userId) {

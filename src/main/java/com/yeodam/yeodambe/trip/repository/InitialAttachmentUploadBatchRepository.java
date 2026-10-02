@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.repository;
 
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadBatch;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -12,6 +13,10 @@ import java.util.Optional;
 
 public interface InitialAttachmentUploadBatchRepository
         extends JpaRepository<InitialAttachmentUploadBatch, Long> {
+
+    boolean existsByTripId(Long tripId);
+
+    boolean existsByTripIdAndStatus(Long tripId, InitialAttachmentUploadStatus status);
 
     Optional<InitialAttachmentUploadBatch>
     findFirstByTripIdAndUserIdOrderByIdDesc(Long tripId, Long userId);

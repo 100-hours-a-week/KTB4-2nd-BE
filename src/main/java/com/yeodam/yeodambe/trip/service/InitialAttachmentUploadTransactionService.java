@@ -22,6 +22,10 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.BooleanSupplier;
+import java.util.stream.Collectors;
+import java.time.OffsetDateTime;
 @Service
 @RequiredArgsConstructor
 public class InitialAttachmentUploadTransactionService {
@@ -133,6 +137,7 @@ public class InitialAttachmentUploadTransactionService {
 
             TripAttachment saved = attachments.save(attachment);
             item.linkAttachment(saved.getId());
+            item.recordTakenAt(photo.takenAt());
             savedAttachments.add(saved);
         }
 
@@ -186,6 +191,120 @@ public class InitialAttachmentUploadTransactionService {
             throw new TripInitialAttachmentUploadNotAllowedException();
         }
 
+        clearBatchReferences(batch);
+        batch.failProcessing();
+    }
+
+    @Transactional
+    public boolean failBatchAfterCleanup(
+            Long tripId, Long userId, String uploadId, BooleanSupplier cleanup
+    ) {
+        Trip trip = trips.findOwnedActiveForUpdate(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
+        InitialAttachmentUploadBatch batch = batches.findForUpdate(uploadId, tripId, userId)
+                .orElseThrow(InvalidAttachmentUploadException::new);
+        if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING
+                || batch.getStatus() != InitialAttachmentUploadStatus.PROCESSING) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+        if (!cleanup.getAsBoolean()) return false;
+        clearBatchReferences(batch);
+        batch.failProcessing();
+        return true;
+    }
+
+    @Transactional
+    public boolean startAnalysis(Long tripId, Long userId, String uploadId) {
+        Trip trip = trips.findOwnedActiveForUpdate(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
+        InitialAttachmentUploadBatch batch = batches.findForUpdate(uploadId, tripId, userId)
+                .orElseThrow(InvalidAttachmentUploadException::new);
+        if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING) return false;
+        batch.startAnalysis();
+        return true;
+    }
+
+    @Transactional
+    public void failAnalysis(Long tripId, Long userId, String uploadId) {
+        Trip trip = trips.findOwnedActiveForUpdate(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
+        InitialAttachmentUploadBatch batch = batches.findForUpdate(uploadId, tripId, userId)
+                .orElseThrow(InvalidAttachmentUploadException::new);
+        if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+        batch.failAnalysis();
+    }
+
+    @Transactional(readOnly = true)
+    public Photos loadBatchPhotos(Long batchId) {
+        return photos(items.findAllByBatch_IdOrderByFileOrderAsc(batchId));
+    }
+
+    @Transactional(readOnly = true)
+    public ExecutionPhotos loadExecution(Long tripId, Long userId, String uploadId) {
+        Trip trip = trips.findByIdAndUserIdAndDeletedAtIsNull(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
+        InitialAttachmentUploadBatch last = batches.findFirstByTripIdAndUserIdOrderByIdDesc(tripId, userId)
+                .orElseThrow(InvalidAttachmentUploadException::new);
+        if (!last.getUploadId().equals(uploadId) || !last.getLastBatch()
+                || trip.getProcessingStatus() != ProcessingStatus.PROCESSING
+                || last.getStatus() != InitialAttachmentUploadStatus.PROCESSING) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+        List<InitialAttachmentUploadBatch> all = batches.findAllByExecutionIdOrderByBatchNoAsc(last.getExecutionId());
+        if (all.size() != last.getBatchNo()) throw new InvalidAttachmentUploadException();
+        for (int i = 0; i < all.size(); i++) {
+            InitialAttachmentUploadBatch batch = all.get(i);
+            if (batch.getBatchNo() != i + 1 || (i < all.size() - 1
+                    && batch.getStatus() != InitialAttachmentUploadStatus.COMPLETED)) {
+                throw new TripInitialAttachmentUploadNotAllowedException();
+            }
+        }
+        List<InitialAttachmentUploadItem> allItems = items.findExecutionItems(last.getExecutionId());
+        if (allItems.size() != last.getTotalAttachmentCount()) throw new InvalidAttachmentUploadException();
+        return new ExecutionPhotos(trip, photos(allItems));
+    }
+
+    private Photos photos(List<InitialAttachmentUploadItem> uploadItems) {
+        if (uploadItems.isEmpty() || uploadItems.stream().anyMatch(item -> item.getTripAttachmentId() == null)) {
+            throw new InvalidAttachmentUploadException();
+        }
+        Map<Long, TripAttachment> byId = attachments.findAllById(uploadItems.stream()
+                        .map(InitialAttachmentUploadItem::getTripAttachmentId).toList()).stream()
+                .collect(Collectors.toMap(TripAttachment::getId, photo -> photo));
+        List<TripAttachment> ordered = new ArrayList<>();
+        List<DerivedPhotoKeys> metadata = new ArrayList<>();
+        for (InitialAttachmentUploadItem item : uploadItems) {
+            TripAttachment photo = byId.get(item.getTripAttachmentId());
+            if (photo == null || photo.getDeletedAt() != null
+                    || !photo.getTripId().equals(item.getBatch().getTripId())) {
+                throw new TripInitialAttachmentUploadNotAllowedException();
+            }
+            ordered.add(photo);
+            metadata.add(new DerivedPhotoKeys(item.getObjectKey(), photo.getAnalyzeStorageKey(),
+                    photo.getPreviewStorageKey(), photo.getDisplayStorageKey(),
+                    item.getTakenAtWithOffset() == null ? null : OffsetDateTime.parse(item.getTakenAtWithOffset()),
+                    photo.getLatitude(), photo.getLongitude(), photo.getDeviceModel()));
+        }
+        return new Photos(List.copyOf(ordered), List.copyOf(metadata));
+    }
+
+    public record Photos(List<TripAttachment> attachments, List<DerivedPhotoKeys> metadata) {}
+
+    public record ExecutionPhotos(Trip trip, Photos photos) {}
+
+    @Transactional(readOnly = true)
+    public boolean isAnalyzing(Long tripId, Long userId, String uploadId) {
+        return trips.existsByIdAndUserIdAndDeletedAtIsNullAndProcessingStatus(
+                tripId, userId, ProcessingStatus.PROCESSING)
+                && batches.findFirstByTripIdAndUserIdOrderByIdDesc(tripId, userId)
+                .filter(batch -> batch.getUploadId().equals(uploadId)
+                        && batch.getStatus() == InitialAttachmentUploadStatus.ANALYZING).isPresent();
+    }
+
+    private void clearBatchReferences(InitialAttachmentUploadBatch batch) {
+
         List<InitialAttachmentUploadItem> uploadItems =
                 items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId());
 
@@ -200,6 +319,7 @@ public class InitialAttachmentUploadTransactionService {
 
         for (InitialAttachmentUploadItem item : uploadItems) {
             item.linkAttachment(null);
+            item.recordTakenAt(null);
         }
 
         items.flush();
@@ -212,6 +332,5 @@ public class InitialAttachmentUploadTransactionService {
             files.deleteAllByIdInBatch(fileIds);
         }
 
-        batch.failProcessing();
     }
 }

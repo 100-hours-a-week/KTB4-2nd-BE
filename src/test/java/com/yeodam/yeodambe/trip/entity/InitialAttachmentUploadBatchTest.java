@@ -42,15 +42,12 @@ class InitialAttachmentUploadBatchTest {
     }
 
     @Test
-    void completedAndFailedBatchesRejectFurtherTransitions() {
+    void completedBatchRejectsFurtherTransitions() {
         var completed = newBatch();
         completed.startProcessing();
         completed.completeProcessing();
-        var failed = newBatch();
-        failed.startProcessing();
-        failed.failProcessing();
 
-        for (var batch : new InitialAttachmentUploadBatch[]{completed, failed}) {
+        for (var batch : new InitialAttachmentUploadBatch[]{completed}) {
             var previousStatus = batch.getStatus();
             assertThatThrownBy(batch::startProcessing)
                     .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
@@ -60,6 +57,21 @@ class InitialAttachmentUploadBatchTest {
                     .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
             assertThat(batch.getStatus()).isEqualTo(previousStatus);
         }
+    }
+
+    @Test
+    void failedBatchCanRetryButAnalyzingBatchCannotStartAgain() {
+        var batch = new InitialAttachmentUploadBatch("upload", "execution", 7L, 42L, 1, 1, true);
+        batch.startProcessing();
+        batch.failProcessing();
+        batch.startProcessing();
+        batch.startAnalysis();
+        assertThatThrownBy(batch::startProcessing).isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
+        batch.failAnalysis();
+        batch.startProcessing();
+        batch.startAnalysis();
+        batch.completeAnalysis();
+        assertThat(batch.getStatus()).isEqualTo(InitialAttachmentUploadStatus.COMPLETED);
     }
 
     private InitialAttachmentUploadBatch newBatch() {

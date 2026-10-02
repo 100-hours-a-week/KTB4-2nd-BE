@@ -25,7 +25,7 @@ class TripAttachmentTransactionServiceTest {
     private final StoredFileRepository files = mock(StoredFileRepository.class);
     private final InitialUploadExecutionRegistry executions = new InitialUploadExecutionRegistry();
     private final TripAttachmentTransactionService service = new TripAttachmentTransactionService(
-            trips, files, attachments, executions);
+            trips, files, attachments, executions, mock(com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository.class));
 
     @Test
     void 메모리에_예약된_요청만_실행_ID를_받는다() {

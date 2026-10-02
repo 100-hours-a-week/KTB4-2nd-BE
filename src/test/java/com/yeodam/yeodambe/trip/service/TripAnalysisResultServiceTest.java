@@ -23,7 +23,7 @@ class TripAnalysisResultServiceTest {
     private final InitialUploadExecutionRegistry executions = new InitialUploadExecutionRegistry();
     private final UserStatsService userStats = mock(UserStatsService.class);
     private final TripAnalysisResultService service = new TripAnalysisResultService(
-            trips, attachments, places, executions, userStats);
+            trips, attachments, places, executions, userStats, mock(com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository.class));
     private final ObjectMapper json = new ObjectMapper();
 
     @Test

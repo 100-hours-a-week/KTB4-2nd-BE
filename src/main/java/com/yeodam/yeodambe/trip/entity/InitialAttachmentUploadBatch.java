@@ -79,7 +79,8 @@ public class InitialAttachmentUploadBatch {
         this.status = InitialAttachmentUploadStatus.PENDING;
     }
     public void startProcessing() {
-        if (status != InitialAttachmentUploadStatus.PENDING) {
+        if (status != InitialAttachmentUploadStatus.PENDING
+                && status != InitialAttachmentUploadStatus.FAILED) {
             throw new TripInitialAttachmentUploadNotAllowedException();
         }
 
@@ -99,6 +100,28 @@ public class InitialAttachmentUploadBatch {
             throw new TripInitialAttachmentUploadNotAllowedException();
         }
 
+        status = InitialAttachmentUploadStatus.FAILED;
+    }
+
+    public void startAnalysis() {
+        if (!lastBatch || status != InitialAttachmentUploadStatus.PROCESSING) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+        status = InitialAttachmentUploadStatus.ANALYZING;
+    }
+
+    public void completeAnalysis() {
+        if (!lastBatch || status != InitialAttachmentUploadStatus.ANALYZING) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+        status = InitialAttachmentUploadStatus.COMPLETED;
+    }
+
+    public void failAnalysis() {
+        if (!lastBatch || (status != InitialAttachmentUploadStatus.PROCESSING
+                && status != InitialAttachmentUploadStatus.ANALYZING)) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
         status = InitialAttachmentUploadStatus.FAILED;
     }
 }

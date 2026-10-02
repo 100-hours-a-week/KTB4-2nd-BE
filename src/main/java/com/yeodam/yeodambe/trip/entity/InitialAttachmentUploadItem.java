@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Entity
 @Table(name = "initial_attachment_upload_items")
@@ -40,6 +41,9 @@ public class InitialAttachmentUploadItem {
     @Column(name = "trip_attachment_id")
     private Long tripAttachmentId;
 
+    @Column(name = "taken_at_with_offset", length = 40)
+    private String takenAtWithOffset;
+
     @Column(
             name = "created_at",
             nullable = false,
@@ -66,5 +70,9 @@ public class InitialAttachmentUploadItem {
 
     public void linkAttachment(Long tripAttachmentId) {
         this.tripAttachmentId = tripAttachmentId;
+    }
+
+    public void recordTakenAt(OffsetDateTime takenAt) {
+        takenAtWithOffset = takenAt == null ? null : takenAt.toString();
     }
 }

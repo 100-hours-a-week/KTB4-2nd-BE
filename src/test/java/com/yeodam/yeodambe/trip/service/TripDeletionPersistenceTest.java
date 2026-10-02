@@ -38,6 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -139,7 +140,7 @@ class TripDeletionPersistenceTest {
     void 이미_삭제된_여행은_다시_삭제할_수_없다() {
         User owner = owner("deleted-trip-owner@test.com");
         Trip target = completedTrip(owner, "삭제된여행");
-        LocalDateTime deletedAt = LocalDateTime.now();
+        LocalDateTime deletedAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         target.softDelete(deletedAt);
         trips.saveAndFlush(target);
 

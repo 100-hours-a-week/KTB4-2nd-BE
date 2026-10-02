@@ -6,7 +6,6 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,10 +22,10 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
 @Slf4j
 @Service
@@ -35,60 +34,54 @@ public class TripAttachmentDerivativeService {
     private final TripAttachmentStorageClient storage;
     private final ObjectMapper json;
     private final MeterRegistry meterRegistry;
-    private final ThreadPoolExecutor worker = new ThreadPoolExecutor(
-            1,
-            1,
-            0,
-            TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(2)
-    );
+    private final TripDerivativeScheduler scheduler;
 
     public CompletableFuture<List<DerivedPhotoKeys>> createAll(
             String executionId, List<String> originalKeys, List<String> mimeTypes
+    ) {
+        return createAll(executionId, originalKeys, mimeTypes, () -> true);
+    }
+
+    public CompletableFuture<List<DerivedPhotoKeys>> createAll(
+            String executionId, List<String> originalKeys, List<String> mimeTypes, BooleanSupplier active
     ) {
         if (originalKeys.size() != mimeTypes.size()) {
             throw new IllegalArgumentException(TripInternalErrorMessage.SOURCE_KEY_MIME_TYPE_COUNT_MISMATCH.message());
         }
         Map<String, String> callerMdc = MDC.getCopyOfContextMap();
-
-        return CompletableFuture.supplyAsync(() -> {
-            if (callerMdc == null) {
-                MDC.clear();
-            } else {
-                MDC.setContextMap(callerMdc);
-            }
-
-            try {
-                return generateAll(executionId, originalKeys, mimeTypes);
-            } finally {
-                MDC.clear();
-            }
-        }, worker);
-    }
-
-    private List<DerivedPhotoKeys> generateAll(
-            String executionId, List<String> originalKeys, List<String> mimeTypes
-    ) {
-        List<DerivedPhotoKeys> results = new ArrayList<>();
-        ArrayList<String> uploadedKeys = new ArrayList<>();
-
-        try {
-            for (int i = 0; i < originalKeys.size(); i++) {
-                results.add(generateOne(
-                        executionId, originalKeys.get(i), mimeTypes.get(i), uploadedKeys));
-            }
-            return List.copyOf(results);
-        } catch (RuntimeException failure) {
-            for (String key : uploadedKeys) {
+        CompletableFuture<List<DerivedPhotoKeys>> result = new CompletableFuture<>();
+        List<ArrayList<String>> uploadedByPhoto = new ArrayList<>();
+        List<TripDerivativeScheduler.PhotoTask> tasks = new ArrayList<>();
+        for (int index = 0; index < originalKeys.size(); index++) {
+            String original = originalKeys.get(index);
+            String mime = mimeTypes.get(index);
+            ArrayList<String> uploaded = new ArrayList<>();
+            uploadedByPhoto.add(uploaded);
+            tasks.add(new TripDerivativeScheduler.PhotoTask(index, mime, () -> {
+                if (callerMdc == null) MDC.clear();
+                else MDC.setContextMap(callerMdc);
                 try {
-                    storage.delete(key);
-                } catch (RuntimeException cleanupFailure) {
-                    failure.addSuppressed(cleanupFailure);
-                }
-            }
-            throw failure;
+                    return generateOne(executionId, original, mime, uploaded);
+                } finally { MDC.clear(); }
+            }));
         }
+        // 내부 완료는 모든 사진의 저장/임시 파일 정리가 끝난 신호다. 외부 Future 취소와 분리한다.
+        scheduler.submit(executionId, tasks, () -> !result.isCancelled() && active.getAsBoolean())
+                .whenComplete((photos, failure) -> {
+                    if (failure == null && result.complete(photos)) return;
+                    Throwable cause = failure == null ? new CancellationException("사진 변환이 취소됐습니다.") : failure;
+                    for (List<String> uploaded : uploadedByPhoto) {
+                        for (String key : uploaded) {
+                            try { storage.delete(key); }
+                            catch (RuntimeException cleanupFailure) { cause.addSuppressed(cleanupFailure); }
+                        }
+                    }
+                    result.completeExceptionally(cause);
+                });
+        return result;
     }
+
+    public void cancelExecution(String executionId) { scheduler.cancelExecution(executionId); }
 
     private DerivedPhotoKeys generateOne(
             String executionId,
@@ -130,23 +123,14 @@ public class TripAttachmentDerivativeService {
 
             try {
                 JsonNode metadata = metadata(original);
-                // 방향 보정 → 비율 유지·긴 변 최대 1024px → 메타데이터 제거
-                convert(original, mimeType, metadata,
-                        "-resize", "1024x1024>", "-strip",
-                        "-background", "white", "-alpha", "remove", "-alpha", "off",
-                        analyze.toString());
+                convertDerivatives(original, mimeType, metadata, analyze, preview, display);
 
                 // 필요한 촬영 정보만 AI용 JPEG에 복사한다. 회전은 이미 픽셀에 반영됐다.
                 run("exiftool", "-overwrite_original",
                         "-TagsFromFile", original.toString(),
                         "-DateTimeOriginal", "-SubSecTimeOriginal",
                         "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
-                        "-Orientation=1", analyze.toString());
-
-                // 미리보기에는 EXIF를 복사하지 않는다.
-                convert(original, mimeType, metadata,
-                        "-resize", "1024x1024>", "-strip",
-                        "-quality", "75", preview.toString());
+                        "-Orientation#=1", analyze.toString());
 
                 String analyzeKey;
                 try {
@@ -167,8 +151,6 @@ public class TripAttachmentDerivativeService {
 
                 String displayKey = null;
                 if ("image/heic".equals(mimeType)) {
-                    convert(original, mimeType, metadata,
-                            "+profile", "exif", "-quality", "95", display.toString());
                     try {
                         displayKey = storage.storeDerived(executionId, display, "image/jpeg");
                     } catch (AttachmentStorageException failure) {
@@ -203,17 +185,20 @@ public class TripAttachmentDerivativeService {
     }
 
     private JsonNode metadata(Path original) {
+        Path output = original.resolveSibling("metadata.json");
+        Process process = null;
         try {
-            Process process = new ProcessBuilder("exiftool", "-j", "-n",
+            process = new ProcessBuilder("exiftool", "-j", "-n",
                     "-Orientation", "-DateTimeOriginal", "-OffsetTimeOriginal",
                     "-GPSLatitude", "-GPSLongitude",
-                    "-Make", "-Model", original.toString()).start();
-            byte[] output = process.getInputStream().readAllBytes();
+                    "-Make", "-Model", original.toString())
+                    .redirectOutput(output.toFile())
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
             if (!process.waitFor(120, TimeUnit.SECONDS) || process.exitValue() != 0) {
-                process.destroyForcibly();
                 throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_FAILED.message());
             }
-            JsonNode values = json.readTree(output);
+            JsonNode values = json.readTree(Files.readAllBytes(output));
             if (!values.isArray() || values.isEmpty()) throw new IllegalStateException(TripInternalErrorMessage.EXIF_RESULT_MISSING.message());
             return values.get(0);
         } catch (IOException e) {
@@ -221,13 +206,18 @@ public class TripAttachmentDerivativeService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_INTERRUPTED.message(), e);
+        } finally {
+            stopProcess(process);
+            try { Files.deleteIfExists(output); }
+            catch (IOException failure) { log.warn("임시 EXIF 파일 삭제 실패: {}", output, failure); }
         }
     }
 
     private OffsetDateTime takenAt(JsonNode metadata) {
         String date = metadata.path("DateTimeOriginal").asString();
         String offset = metadata.path("OffsetTimeOriginal").asString();
-        if (date.isBlank() || offset.isBlank()) return null;
+        if (date.isBlank()) return null;
+        if (offset.isBlank()) offset = "+09:00"; // 시간대가 없는 카메라 시각은 한국 현지 시계로 해석
         try {
             return OffsetDateTime.parse(date.substring(0, 4) + "-" + date.substring(5, 7)
                     + "-" + date.substring(8, 10) + "T" + date.substring(11) + offset);
@@ -236,9 +226,12 @@ public class TripAttachmentDerivativeService {
         }
     }
 
-    private void convert(Path original, String mimeType, JsonNode metadata, String... options) {
+    private void convertDerivatives(
+            Path original, String mimeType, JsonNode metadata, Path analyze, Path preview, Path display
+    ) {
         List<String> command = new ArrayList<>();
         command.add("convert");
+        command.add("-respect-parentheses");
         command.add(original + "[0]");
 
         if (!"image/heic".equals(mimeType)) {
@@ -246,7 +239,16 @@ public class TripAttachmentDerivativeService {
             command.add(orientation(metadata));
             command.add("-auto-orient");
         }
-        command.addAll(List.of(options));
+        // 표시본은 축소 전에 분기하고 ICC를 보존한다. clone의 품질 설정은 다른 출력에 전파하지 않는다.
+        if ("image/heic".equals(mimeType)) {
+            command.addAll(List.of("(", "+clone", "+profile", "exif", "-quality", "95",
+                    "-write", display.toString(), "+delete", ")"));
+        }
+        // 축소 픽셀은 공유하되 분석본의 흰 배경 처리는 WebP 투명도에 영향을 주지 않는다.
+        command.addAll(List.of("-resize", "1024x1024>", "-strip",
+                "(", "+clone", "-background", "white", "-alpha", "remove", "-alpha", "off",
+                "-write", analyze.toString(), "+delete", ")",
+                "-quality", "75", preview.toString()));
         run(command.toArray(String[]::new));
     }
 
@@ -282,14 +284,14 @@ public class TripAttachmentDerivativeService {
     }
 
     private void run(String... command) {
+        Process process = null;
         try {
-            Process process = new ProcessBuilder(command)
+            process = new ProcessBuilder(command)
                     .redirectErrorStream(true)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .start();
 
             if (!process.waitFor(120, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
                 throw new IllegalStateException(TripInternalErrorMessage.COMMAND_TIMEOUT.message().formatted(command[0]));
             }
             if (process.exitValue() != 0) {
@@ -300,11 +302,22 @@ public class TripAttachmentDerivativeService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(TripInternalErrorMessage.COMMAND_INTERRUPTED.message().formatted(command[0]), e);
-        }
+        } finally { stopProcess(process); }
     }
 
-    @PreDestroy
-    void stop() {
-        worker.shutdownNow();
+    private void stopProcess(Process process) {
+        if (process == null || !process.isAlive()) return;
+        process.destroyForcibly();
+        boolean interrupted = Thread.interrupted();
+        // 프로세스가 살아 있으면 원본/임시 파일 보상을 시작할 수 없다.
+        while (process.isAlive()) {
+            try {
+                if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                    log.error("사진 변환 프로세스 종료 지연: pid={}", process.pid());
+                }
+            } catch (InterruptedException failure) { interrupted = true; }
+        }
+        if (interrupted) Thread.currentThread().interrupt();
     }
+
 }

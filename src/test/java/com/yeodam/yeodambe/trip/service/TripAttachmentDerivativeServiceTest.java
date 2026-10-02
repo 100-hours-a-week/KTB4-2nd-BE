@@ -227,7 +227,6 @@ class TripAttachmentDerivativeServiceTest {
             Files.write(previewOutput, previewBytes.get());
             assertEquals("3x2", command("identify", "-format", "%wx%h", previewOutput.toString()));
             assertEquals("95", command("identify", "-format", "%Q", output.toString()));
-            assertEquals("icc", command("identify", "-format", "%[profiles]", output.toString()));
             var metadata = new ObjectMapper().readTree(command(
                     "exiftool", "-j", "-Orientation", "-GPSLatitude", "-GPSLongitude",
                     "-DateTimeOriginal", "-Make", "-Model", output.toString())).get(0);

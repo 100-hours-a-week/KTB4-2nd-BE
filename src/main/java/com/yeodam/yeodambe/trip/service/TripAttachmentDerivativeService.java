@@ -6,7 +6,6 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,10 +22,10 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
 @Slf4j
 @Service
@@ -35,60 +34,54 @@ public class TripAttachmentDerivativeService {
     private final TripAttachmentStorageClient storage;
     private final ObjectMapper json;
     private final MeterRegistry meterRegistry;
-    private final ThreadPoolExecutor worker = new ThreadPoolExecutor(
-            1,
-            1,
-            0,
-            TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(2)
-    );
+    private final TripDerivativeScheduler scheduler;
 
     public CompletableFuture<List<DerivedPhotoKeys>> createAll(
             String executionId, List<String> originalKeys, List<String> mimeTypes
+    ) {
+        return createAll(executionId, originalKeys, mimeTypes, () -> true);
+    }
+
+    public CompletableFuture<List<DerivedPhotoKeys>> createAll(
+            String executionId, List<String> originalKeys, List<String> mimeTypes, BooleanSupplier active
     ) {
         if (originalKeys.size() != mimeTypes.size()) {
             throw new IllegalArgumentException(TripInternalErrorMessage.SOURCE_KEY_MIME_TYPE_COUNT_MISMATCH.message());
         }
         Map<String, String> callerMdc = MDC.getCopyOfContextMap();
-
-        return CompletableFuture.supplyAsync(() -> {
-            if (callerMdc == null) {
-                MDC.clear();
-            } else {
-                MDC.setContextMap(callerMdc);
-            }
-
-            try {
-                return generateAll(executionId, originalKeys, mimeTypes);
-            } finally {
-                MDC.clear();
-            }
-        }, worker);
-    }
-
-    private List<DerivedPhotoKeys> generateAll(
-            String executionId, List<String> originalKeys, List<String> mimeTypes
-    ) {
-        List<DerivedPhotoKeys> results = new ArrayList<>();
-        ArrayList<String> uploadedKeys = new ArrayList<>();
-
-        try {
-            for (int i = 0; i < originalKeys.size(); i++) {
-                results.add(generateOne(
-                        executionId, originalKeys.get(i), mimeTypes.get(i), uploadedKeys));
-            }
-            return List.copyOf(results);
-        } catch (RuntimeException failure) {
-            for (String key : uploadedKeys) {
+        CompletableFuture<List<DerivedPhotoKeys>> result = new CompletableFuture<>();
+        List<ArrayList<String>> uploadedByPhoto = new ArrayList<>();
+        List<TripDerivativeScheduler.PhotoTask> tasks = new ArrayList<>();
+        for (int index = 0; index < originalKeys.size(); index++) {
+            String original = originalKeys.get(index);
+            String mime = mimeTypes.get(index);
+            ArrayList<String> uploaded = new ArrayList<>();
+            uploadedByPhoto.add(uploaded);
+            tasks.add(new TripDerivativeScheduler.PhotoTask(index, mime, () -> {
+                if (callerMdc == null) MDC.clear();
+                else MDC.setContextMap(callerMdc);
                 try {
-                    storage.delete(key);
-                } catch (RuntimeException cleanupFailure) {
-                    failure.addSuppressed(cleanupFailure);
-                }
-            }
-            throw failure;
+                    return generateOne(executionId, original, mime, uploaded);
+                } finally { MDC.clear(); }
+            }));
         }
+        // 내부 완료는 모든 사진의 저장/임시 파일 정리가 끝난 신호다. 외부 Future 취소와 분리한다.
+        scheduler.submit(executionId, tasks, () -> !result.isCancelled() && active.getAsBoolean())
+                .whenComplete((photos, failure) -> {
+                    if (failure == null && result.complete(photos)) return;
+                    Throwable cause = failure == null ? new CancellationException("사진 변환이 취소됐습니다.") : failure;
+                    for (List<String> uploaded : uploadedByPhoto) {
+                        for (String key : uploaded) {
+                            try { storage.delete(key); }
+                            catch (RuntimeException cleanupFailure) { cause.addSuppressed(cleanupFailure); }
+                        }
+                    }
+                    result.completeExceptionally(cause);
+                });
+        return result;
     }
+
+    public void cancelExecution(String executionId) { scheduler.cancelExecution(executionId); }
 
     private DerivedPhotoKeys generateOne(
             String executionId,
@@ -305,8 +298,4 @@ public class TripAttachmentDerivativeService {
         }
     }
 
-    @PreDestroy
-    void stop() {
-        worker.shutdownNow();
-    }
 }

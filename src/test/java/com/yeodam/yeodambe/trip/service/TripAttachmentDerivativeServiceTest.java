@@ -46,17 +46,19 @@ class TripAttachmentDerivativeServiceTest {
     private TripAttachmentStorageClient storage;
     private TripAttachmentDerivativeService service;
     private SimpleMeterRegistry meterRegistry;
+    private TripDerivativeScheduler scheduler;
 
     @BeforeEach
     void setUp() {
         storage = mock(TripAttachmentStorageClient.class);
         meterRegistry = new SimpleMeterRegistry();
-        service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry);
+        scheduler = new TripDerivativeScheduler(1, 1, 10, 20, meterRegistry);
+        service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler);
     }
 
     @AfterEach
     void tearDown() {
-        service.stop();
+        scheduler.stop();
     }
 
     @Test
@@ -159,8 +161,9 @@ class TripAttachmentDerivativeServiceTest {
         }
     }
 
-    @Test
-    void Worker에_요청_ID를_전달하고_작업_종료_후_비운다() {
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"image/jpeg", "image/heic"})
+    void Worker에_요청_ID를_전달하고_작업_종료_후_비운다(String mime) {
         AtomicReference<String> firstRequestId = new AtomicReference<>();
         AtomicReference<String> secondRequestId = new AtomicReference<>();
 
@@ -177,12 +180,12 @@ class TripAttachmentDerivativeServiceTest {
         org.slf4j.MDC.put("request_id", "request-789");
         assertThrows(CompletionException.class,
                 () -> service.createAll(
-                        "run-1", List.of("original/key"), List.of("image/jpeg")).join());
+                        "run-1", List.of("original/key"), List.of(mime)).join());
 
         org.slf4j.MDC.clear();
         assertThrows(CompletionException.class,
                 () -> service.createAll(
-                        "run-2", List.of("original/key"), List.of("image/jpeg")).join());
+                        "run-2", List.of("original/key"), List.of(mime)).join());
 
         assertEquals("request-789", firstRequestId.get());
         assertEquals(null, secondRequestId.get());
@@ -409,6 +412,85 @@ class TripAttachmentDerivativeServiceTest {
         verify(storage).delete("derived/preview.webp");
         assertFalse(Files.exists(directory.get()));
         verify(storage, org.mockito.Mockito.times(2)).storeDerived(eq("run-batch-fail"), any(Path.class), any(String.class));
+    }
+
+    @Test
+    void 다른_워커_실패_뒤_늦은_PUT과_실패키까지_정리한_후_실패한다() throws Exception {
+        var putStarted = new java.util.concurrent.CountDownLatch(1);
+        var heavyFailed = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(storage.open("light")).thenReturn(new ByteArrayInputStream(jpeg()));
+        when(storage.open("heavy")).thenAnswer(invocation -> {
+            assertTrue(putStarted.await(5, TimeUnit.SECONDS));
+            heavyFailed.countDown();
+            throw new IllegalStateException("HEIC GET 실패");
+        });
+        when(storage.storeDerived(eq("mixed-failure"), any(Path.class), eq("image/jpeg"))).thenAnswer(invocation -> {
+            putStarted.countDown();
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            return "late/analyze";
+        });
+        when(storage.storeDerived(eq("mixed-failure"), any(Path.class), eq("image/webp")))
+                .thenThrow(new AttachmentStorageException("late/failed-preview", new IllegalStateException("PUT")));
+        try {
+            var future = service.createAll("mixed-failure", List.of("light", "heavy"), List.of("image/jpeg", "image/heic"));
+            assertTrue(heavyFailed.await(5, TimeUnit.SECONDS));
+            assertFalse(future.isDone());
+            verify(storage, never()).delete(any());
+            release.countDown();
+            assertThrows(java.util.concurrent.ExecutionException.class, () -> future.get(5, TimeUnit.SECONDS));
+            verify(storage).delete("late/analyze");
+            verify(storage).delete("late/failed-preview");
+            verify(storage, never()).delete("other-batch/key");
+        } finally { release.countDown(); }
+    }
+
+    @Test
+    void 외부_Future가_취소돼도_실행중_PUT_정착_후_파일을_보상한다() throws Exception {
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var cleaned = new java.util.concurrent.CountDownLatch(2);
+        when(storage.open("cancel-original")).thenReturn(new ByteArrayInputStream(jpeg()));
+        when(storage.storeDerived(eq("cancel-run"), any(Path.class), any(String.class))).thenAnswer(invocation -> {
+            entered.countDown();
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            return "cancel/" + ((Path) invocation.getArgument(1)).getFileName();
+        });
+        org.mockito.Mockito.doAnswer(invocation -> { cleaned.countDown(); return null; }).when(storage).delete(any());
+        try {
+            var future = service.createAll("cancel-run", List.of("cancel-original"), List.of("image/jpeg"));
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            assertTrue(future.cancel(false));
+            verify(storage, never()).delete(any());
+            release.countDown();
+            assertTrue(cleaned.await(5, TimeUnit.SECONDS));
+            verify(storage).delete("cancel/analyze.jpg");
+            verify(storage).delete("cancel/preview.webp");
+        } finally { release.countDown(); }
+    }
+
+    @Test
+    void 혼합_성공은_원본_순서와_필수키를_유지하고_같은_execution의_다른_배치를_삭제하지_않는다() throws Exception {
+        byte[] heic = Files.readAllBytes(Path.of("src/test/resources/images/heic/oriented-with-exif.heic"));
+        when(storage.open("mix-heavy")).thenReturn(new ByteArrayInputStream(heic));
+        when(storage.open("mix-light")).thenReturn(new ByteArrayInputStream(jpeg()));
+        when(storage.open("other-bad")).thenThrow(new IllegalStateException("GET"));
+        when(storage.storeDerived(eq("same-run"), any(Path.class), any(String.class))).thenAnswer(invocation -> {
+            Path path = invocation.getArgument(1);
+            return path.getParent().getFileName() + "/" + path.getFileName();
+        });
+        var success = service.createAll("same-run", List.of("mix-heavy", "mix-light"), List.of("image/heic", "image/jpeg"));
+        var failed = service.createAll("same-run", List.of("other-bad"), List.of("image/png"));
+        assertThrows(java.util.concurrent.ExecutionException.class, () -> failed.get(5, TimeUnit.SECONDS));
+        var photos = success.get(5, TimeUnit.SECONDS);
+        assertEquals(List.of("mix-heavy", "mix-light"), photos.stream().map(DerivedPhotoKeys::originalKey).toList());
+        assertTrue(photos.getFirst().displayKey().endsWith("display.jpg"));
+        assertNull(photos.getLast().displayKey());
+        for (var photo : photos) {
+            assertTrue(photo.analyzeKey().endsWith("analyze.jpg"));
+            assertTrue(photo.previewKey().endsWith("preview.webp"));
+        }
+        verify(storage, never()).delete(any());
     }
 
     private Map<String, byte[]> deriveOutputs(byte[] original, String mimeType) {

@@ -1,6 +1,9 @@
 package com.yeodam.yeodambe.trip.service;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,6 +32,7 @@ public class TripDerivativeScheduler {
     // ponytail: 한 잠금과 한도 내 사진 순회; 접수 경합이 측정되면 포맷별 상태 분리 검토.
     private final Object lock = new Object();
     private final Set<Batch> batches = new LinkedHashSet<>();
+    private final MeterRegistry meters;
     private final Lane heic;
     private final Lane light;
     private boolean stopping;
@@ -43,8 +47,11 @@ public class TripDerivativeScheduler {
         if (heicWorkers < 1 || lightWorkers < 1 || heicLimit < heicWorkers || lightLimit < lightWorkers) {
             throw new IllegalArgumentException("사진 접수 한도는 양수 워커 수 이상이어야 합니다.");
         }
+        this.meters = meters;
         heic = new Lane("heic", heicWorkers, heicLimit);
         light = new Lane("light", lightWorkers, lightLimit);
+        registerMetrics(heic);
+        registerMetrics(light);
     }
 
     public CompletableFuture<List<DerivedPhotoKeys>> submit(
@@ -68,6 +75,9 @@ public class TripDerivativeScheduler {
         Batch batch;
         synchronized (lock) {
             if (stopping || heavyCount > heic.limit - heic.inflight || tasks.size() - heavyCount > light.limit - light.inflight) {
+                Lane rejected = heavyCount > heic.limit - heic.inflight ? heic : light;
+                rejected.rejected.increment();
+                log.debug("사진 변환 접수 거부: executionId={}, lane={}", executionId, rejected.name);
                 throw new RejectedExecutionException("사진 변환 접수 한도를 초과했습니다.");
             }
             batch = new Batch(executionId, tasks, active);
@@ -124,12 +134,28 @@ public class TripDerivativeScheduler {
         if (batch.failure == null) batch.failure = failure;
         for (Job job : batch.jobs) {
             if (job.state == State.NEW || (job.state == State.QUEUED && job.lane.executor.remove(job))) {
-                finish(job);
+                finish(job, "canceled");
             }
         }
     }
 
-    private void finish(Job job) {
+    private void registerMetrics(Lane lane) {
+        Gauge.builder("yeodam.trip.derivative.inflight.photos", lane, value -> {
+            synchronized (lock) { return value.inflight; }
+        }).tag("lane", lane.name).register(meters);
+        Gauge.builder("yeodam.trip.derivative.active.photos", lane, value -> {
+            synchronized (lock) { return value.active; }
+        }).tag("lane", lane.name).register(meters);
+        Gauge.builder("yeodam.trip.derivative.pending.photos", lane, value -> {
+            synchronized (lock) { return value.inflight - value.active; }
+        }).tag("lane", lane.name).register(meters);
+        lane.rejected = Counter.builder("yeodam.trip.derivative.rejected.batches").tag("lane", lane.name).register(meters);
+    }
+
+    private void finish(Job job, String outcome) {
+        long wait = job.state == State.ACTIVE ? job.waitNanos : meters.config().clock().monotonicTime() - job.batch.admittedAt;
+        Timer.builder("yeodam.trip.derivative.queue.wait").tags("lane", job.lane.name, "outcome", outcome)
+                .register(meters).record(wait, TimeUnit.NANOSECONDS);
         if (job.state == State.ACTIVE) job.lane.active--;
         job.state = State.DONE;
         job.lane.inflight--;
@@ -176,7 +202,7 @@ public class TripDerivativeScheduler {
                 synchronized (lock) {
                     for (Runnable runnable : removed) {
                         Job job = (Job) runnable;
-                        if (job.state == State.QUEUED) finish(job);
+                        if (job.state == State.QUEUED) finish(job, "canceled");
                         collectReady(job.batch, ready);
                     }
                 }
@@ -200,6 +226,7 @@ public class TripDerivativeScheduler {
         final String name;
         final int limit;
         final ThreadPoolExecutor executor;
+        Counter rejected;
         int inflight;
         int active;
         Lane(String name, int workers, int limit) {
@@ -217,6 +244,7 @@ public class TripDerivativeScheduler {
         final List<Job> jobs;
         final DerivedPhotoKeys[] results;
         final CompletableFuture<List<DerivedPhotoKeys>> future = new CompletableFuture<>();
+        final long admittedAt = meters.config().clock().monotonicTime();
         int remaining;
         Throwable failure;
         Batch(String executionId, List<PhotoTask> tasks, BooleanSupplier active) {
@@ -234,6 +262,7 @@ public class TripDerivativeScheduler {
         final PhotoTask task;
         final Lane lane;
         State state = State.NEW;
+        long waitNanos;
         Job(Batch batch, PhotoTask task, Lane lane) { this.batch = batch; this.task = task; this.lane = lane; }
 
         @Override
@@ -242,8 +271,12 @@ public class TripDerivativeScheduler {
             boolean execute;
             synchronized (lock) {
                 execute = batch.failure == null;
-                if (execute) { state = State.ACTIVE; lane.active++; }
-                else { finish(this); collectReady(batch, ready); }
+                if (execute) {
+                    waitNanos = meters.config().clock().monotonicTime() - batch.admittedAt;
+                    state = State.ACTIVE;
+                    lane.active++;
+                }
+                else { finish(this, "canceled"); collectReady(batch, ready); }
             }
             if (!execute) { publish(ready); return; }
             DerivedPhotoKeys result = null;
@@ -255,7 +288,7 @@ public class TripDerivativeScheduler {
             } catch (Throwable cause) { failure = cause; }
             synchronized (lock) {
                 batch.results[task.index()] = result;
-                finish(this);
+                finish(this, failure == null ? "success" : failure instanceof CancellationException ? "canceled" : "failure");
                 if (failure != null) fail(batch, failure);
                 scheduleNext(batch, lane);
                 collectReady(batch, ready);

@@ -10,11 +10,11 @@ Mac의 BE 저장소에서 실행한다. 결과 디렉터리와 파일 권한은 
 cd /Users/lee-y.ch/Desktop/yeodam/KTB4-2nd-BE
 python3 tools/generate_limit_test_accounts.py
 AUTH_DIR='/출력된/절대/경로'
-jq -r '.accounts[] | [.slot,.role,.userId] | @tsv' "$AUTH_DIR/accounts.json"
+jq -r '.accounts[] | [.slot,.role,.email] | @tsv' "$AUTH_DIR/accounts.json"
 pbcopy < "$AUTH_DIR/seed.sql"
 ```
 
-`accounts.json`은 1~8번 생성 계정과 9번 조회 계정, 별도 `viewerFixtureSession`을 담는다. 토큰 값을 화면·채팅·Shell History에 출력하거나 S3에 올리지 않는다. `seed.sql`에는 Token 원문이 아닌 SHA-256 Hash만 있다.
+`accounts.json`은 1~8번 생성 계정과 9번 조회 계정, 별도 `viewerFixtureSession`을 담는다. 사용자 ID는 운영 DB가 자동 발급하며 등록 후 SQL의 `user_id, email` 조회 결과로 확인한다. 토큰 값을 화면·채팅·Shell History에 출력하거나 S3에 올리지 않는다. `seed.sql`에는 Token 원문이 아닌 SHA-256 Hash만 있다.
 
 ```bash
 aws sts get-caller-identity --profile yeodam-admin
@@ -22,7 +22,7 @@ aws ssm start-session --profile yeodam-admin --region ap-northeast-2 \
   --target i-051aaa0e3462d2da7
 ```
 
-SSM 안에서 `sudo mysql --protocol=socket --user=root yeodam`으로 접속한다. `SET time_zone = '+00:00';`을 입력하고 클립보드의 `seed.sql` 전체를 붙여 넣는다. `conflicting_users=0`, 등록된 사용자·통계·동의가 각각 9, 세션이 10이며 SQL 오류가 없는지 확인한 뒤 **같은 MySQL 접속에서만** `COMMIT;`을 입력한다. 값이 다르거나 오류가 있으면 `ROLLBACK;`한다. 사용자 ID와 이메일은 해당 실행에서만 쓰는 값으로 생성된다.
+SSM 안에서 `sudo mysql --protocol=socket --user=root yeodam`으로 접속한다. `SET time_zone = '+00:00';`을 입력하고 클립보드의 `seed.sql` 전체를 붙여 넣는다. `conflicting_users=0`, 등록된 사용자·통계·동의가 각각 9, 세션이 10이며 SQL 오류가 없는지 확인한 뒤 **같은 MySQL 접속에서만** `COMMIT;`을 입력한다. 값이 다르거나 오류가 있으면 `ROLLBACK;`한다. 출력된 사용자 ID와 이메일의 대응을 기록한다.
 
 ## 조회 여행 준비와 4배수 실행
 

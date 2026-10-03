@@ -16,8 +16,6 @@ from pathlib import Path
 
 ACCOUNT_COUNT = 9
 CREATOR_COUNT = 8
-ID_MIN = 1_000_000_000_000
-ID_SPAN = 8_000_000_000_000
 
 
 def write_private(path, content):
@@ -29,17 +27,12 @@ def write_private(path, content):
 def generate(output_dir):
     output_dir = Path(output_dir)
     run_id = str(uuid.uuid4())
-    user_ids = set()
-    while len(user_ids) < ACCOUNT_COUNT:
-        user_ids.add(ID_MIN + secrets.randbelow(ID_SPAN))
-
     accounts = []
-    for index, user_id in enumerate(sorted(user_ids), start=1):
+    for index in range(1, ACCOUNT_COUNT + 1):
         token = secrets.token_urlsafe(32)
         accounts.append({
             "slot": index,
             "role": "creator" if index <= CREATOR_COUNT else "viewer",
-            "userId": user_id,
             "email": f"loadtest-{run_id}-{index:02d}@yeodam.invalid",
             "sid": str(uuid.uuid4()),
             "refreshToken": token,
@@ -47,31 +40,23 @@ def generate(output_dir):
 
     fixture_session = {
         "role": "viewer_fixture",
-        "userId": accounts[-1]["userId"],
+        "email": accounts[-1]["email"],
         "sid": str(uuid.uuid4()),
         "refreshToken": secrets.token_urlsafe(32),
     }
     sessions_to_seed = [*accounts, fixture_session]
 
-    ids = ", ".join(str(account["userId"]) for account in accounts)
+    emails = ", ".join("'" + account["email"] + "'" for account in accounts)
+    test_ids = f"(SELECT user_id FROM users WHERE email IN ({emails}))"
     sids = ", ".join("'" + item["sid"] + "'" for item in sessions_to_seed)
     users = ",\n".join(
-        f"({item['userId']}, '{item['email']}', '부하계정{item['slot']}')"
+        f"('{item['email']}', '부하계정{item['slot']}')"
         for item in accounts
     )
-    stats = ", ".join(f"({item['userId']})" for item in accounts)
-    consents = ", ".join(
-        f"({item['userId']}, TRUE, CURRENT_TIMESTAMP(6))" for item in accounts
-    )
-    sessions = ",\n".join(
-        f"('{item['sid']}', {item['userId']}, "
-        f"'{hashlib.sha256(item['refreshToken'].encode()).hexdigest()}', "
-        "CURRENT_TIMESTAMP(6) + INTERVAL 7 DAY)"
+    sessions = "\nUNION ALL\n".join(
+        f"SELECT '{item['sid']}' AS sid, '{item['email']}' AS email, "
+        f"'{hashlib.sha256(item['refreshToken'].encode()).hexdigest()}' AS token_hash"
         for item in sessions_to_seed
-    )
-    identities = " OR ".join(
-        f"(user_id = {item['userId']} AND email = '{item['email']}')"
-        for item in accounts
     )
 
     seed = f"""-- Run in the production yeodam DB with SET time_zone = '+00:00'.
@@ -82,16 +67,23 @@ def generate(output_dir):
 -- On any error or mismatched count, ROLLBACK instead. Do not paste accounts.json into MySQL.
 START TRANSACTION;
 SELECT COUNT(*) AS conflicting_users FROM users
-WHERE user_id IN ({ids}) OR email LIKE 'loadtest-{run_id}-%@yeodam.invalid';
-INSERT INTO users (user_id, email, nickname) VALUES
+WHERE email IN ({emails});
+INSERT INTO users (email, nickname) VALUES
 {users};
-INSERT INTO user_stats (user_id) VALUES {stats};
-INSERT INTO consents (user_id, is_agreed, agreed_at) VALUES {consents};
-INSERT INTO login_sessions (sid, user_id, refresh_token_hash, expires_at) VALUES
-{sessions};
-SELECT COUNT(*) AS registered_users FROM users WHERE {identities};
-SELECT COUNT(*) AS registered_stats FROM user_stats WHERE user_id IN ({ids}) AND deleted_at IS NULL;
-SELECT COUNT(*) AS registered_consents FROM consents WHERE user_id IN ({ids}) AND deleted_at IS NULL;
+INSERT INTO user_stats (user_id)
+SELECT user_id FROM users WHERE email IN ({emails}) AND deleted_at IS NULL;
+INSERT INTO consents (user_id, is_agreed, agreed_at)
+SELECT user_id, TRUE, CURRENT_TIMESTAMP(6) FROM users
+WHERE email IN ({emails}) AND deleted_at IS NULL;
+INSERT INTO login_sessions (sid, user_id, refresh_token_hash, expires_at)
+SELECT seed.sid, owner.user_id, seed.token_hash, CURRENT_TIMESTAMP(6) + INTERVAL 7 DAY
+FROM (
+{sessions}
+) AS seed JOIN users AS owner ON owner.email = seed.email AND owner.deleted_at IS NULL;
+SELECT user_id, email FROM users WHERE email IN ({emails}) ORDER BY email;
+SELECT COUNT(*) AS registered_users FROM users WHERE email IN ({emails}) AND deleted_at IS NULL;
+SELECT COUNT(*) AS registered_stats FROM user_stats WHERE user_id IN {test_ids} AND deleted_at IS NULL;
+SELECT COUNT(*) AS registered_consents FROM consents WHERE user_id IN {test_ids} AND deleted_at IS NULL;
 SELECT COUNT(*) AS registered_sessions FROM login_sessions WHERE sid IN ({sids});
 -- COMMIT or ROLLBACK must be entered manually in this same MySQL connection.
 """
@@ -102,29 +94,29 @@ SELECT COUNT(*) AS registered_sessions FROM login_sessions WHERE sid IN ({sids})
 -- Trip/file tombstones remain because production foreign keys prevent hard deletion.
 START TRANSACTION;
 SET @safe_to_cleanup = (
-  (SELECT COUNT(*) FROM users WHERE {identities}) = 9
-  AND NOT EXISTS (SELECT 1 FROM trips WHERE user_id IN ({ids}) AND deleted_at IS NULL)
-  AND NOT EXISTS (SELECT 1 FROM files WHERE user_id IN ({ids}) AND deleted_at IS NULL)
+  (SELECT COUNT(*) FROM users WHERE email IN ({emails}) AND deleted_at IS NULL) = 9
+  AND NOT EXISTS (SELECT 1 FROM trips WHERE user_id IN {test_ids} AND deleted_at IS NULL)
+  AND NOT EXISTS (SELECT 1 FROM files WHERE user_id IN {test_ids} AND deleted_at IS NULL)
   AND NOT EXISTS (
     SELECT 1 FROM trip_attachments AS attachment
     JOIN trips AS trip ON trip.trip_id = attachment.trip_id
-    WHERE trip.user_id IN ({ids}) AND attachment.deleted_at IS NULL
+    WHERE trip.user_id IN {test_ids} AND attachment.deleted_at IS NULL
   )
   AND NOT EXISTS (
-    SELECT 1 FROM login_sessions WHERE user_id IN ({ids}) AND sid NOT IN ({sids})
+    SELECT 1 FROM login_sessions WHERE user_id IN {test_ids} AND sid NOT IN ({sids})
   )
 );
 SELECT @safe_to_cleanup AS safe_to_cleanup;
 DELETE FROM login_sessions WHERE sid IN ({sids}) AND @safe_to_cleanup = 1;
 SELECT ROW_COUNT() AS removed_sessions;
 UPDATE consents SET deleted_at = CURRENT_TIMESTAMP(6)
-WHERE user_id IN ({ids}) AND deleted_at IS NULL AND @safe_to_cleanup = 1;
+WHERE user_id IN {test_ids} AND deleted_at IS NULL AND @safe_to_cleanup = 1;
 SELECT ROW_COUNT() AS soft_deleted_consents;
 UPDATE user_stats SET deleted_at = CURRENT_TIMESTAMP(6)
-WHERE user_id IN ({ids}) AND deleted_at IS NULL AND @safe_to_cleanup = 1;
+WHERE user_id IN {test_ids} AND deleted_at IS NULL AND @safe_to_cleanup = 1;
 SELECT ROW_COUNT() AS soft_deleted_stats;
 UPDATE users SET deleted_at = CURRENT_TIMESTAMP(6)
-WHERE ({identities}) AND deleted_at IS NULL AND @safe_to_cleanup = 1;
+WHERE email IN ({emails}) AND deleted_at IS NULL AND @safe_to_cleanup = 1;
 SELECT ROW_COUNT() AS soft_deleted_users;
 -- COMMIT or ROLLBACK must be entered manually in this same MySQL connection.
 """

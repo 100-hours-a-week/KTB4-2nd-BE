@@ -10,8 +10,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import tools.jackson.databind.ObjectMapper;
 
-import javax.imageio.ImageIO;
 import java.awt.Color;
+import java.util.HashMap;
+import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -22,7 +23,6 @@ import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
@@ -34,7 +34,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -47,9 +46,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.Locale;
 
 class TripAttachmentDerivativeServiceTest {
@@ -64,6 +61,7 @@ class TripAttachmentDerivativeServiceTest {
         meterRegistry = new SimpleMeterRegistry();
         scheduler = new TripDerivativeScheduler(1, 1, 10, 20, meterRegistry);
         service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler);
+        service.registerWorkerGauges();
     }
 
     @AfterEach
@@ -72,9 +70,45 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @Test
+    void 비동기_배치_종료_계측은_원래_요청_ID를_유지한다() throws Exception {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(TripAttachmentDerivativeService.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(storage.open("event-original")).thenAnswer(invocation -> {
+            started.countDown();
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            return new ByteArrayInputStream(jpeg());
+        });
+        when(storage.storeDerived(any(String.class), any(Path.class), any(String.class)))
+                .thenAnswer(invocation -> "event/" + ((Path) invocation.getArgument(1)).getFileName());
+        try {
+            org.slf4j.MDC.put("request_id", "event-request");
+            var future = service.createAll("event-execution", List.of("event-original"), List.of("image/jpeg"));
+            org.slf4j.MDC.clear();
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            release.countDown();
+            future.get(5, TimeUnit.SECONDS);
+            var end = appender.list.stream().flatMap(event -> event.getKeyValuePairs().stream())
+                    .filter(pair -> pair.key.equals("worker"))
+                    .map(pair -> (Map<?, ?>) pair.value)
+                    .filter(event -> event.get("stage").equals("end")).findFirst().orElseThrow();
+            assertEquals("event-request", end.get("batch_id"));
+        } finally {
+            release.countDown();
+            org.slf4j.MDC.clear();
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    @Test
     void 원본에서_분석용_JPEG와_미리보기_WebP를_생성하고_임시파일을_삭제한다() throws Exception {
         AtomicReference<byte[]> analyzeBytes = new AtomicReference<>();
         AtomicReference<byte[]> previewBytes = new AtomicReference<>();
+        AtomicReference<Integer> analyzeOrientation = new AtomicReference<>();
         AtomicReference<Path> analyzePath = new AtomicReference<>();
         AtomicReference<Path> previewPath = new AtomicReference<>();
 
@@ -83,6 +117,10 @@ class TripAttachmentDerivativeServiceTest {
                 .thenAnswer(invocation -> {
                     Path path = invocation.getArgument(1);
                     analyzeBytes.set(Files.readAllBytes(path));
+                    Process metadata = new ProcessBuilder("exiftool", "-s3", "-n", "-Orientation", path.toString()).start();
+                    String orientation = new String(metadata.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+                    assertEquals(0, metadata.waitFor());
+                    analyzeOrientation.set(Integer.parseInt(orientation));
                     analyzePath.set(path);
                     return "derived/analyze.jpg";
                 });
@@ -97,9 +135,14 @@ class TripAttachmentDerivativeServiceTest {
         List<DerivedPhotoKeys> result = service.createAll(
                 "run-1", List.of("original/key"), List.of("image/jpeg")).join();
 
+        for (String stage : List.of("convert_derivatives", "exif_extract", "exif_copy",
+                "original_read", "put_analyze", "put_preview")) {
+            assertEquals(1, meterRegistry.get("yeodam.image.worker.stage").tags("stage", stage, "outcome", "success").timer().count());
+        }
         assertEquals("original/key", result.getFirst().originalKey());
         assertEquals("derived/analyze.jpg", result.getFirst().analyzeKey());
         assertEquals("derived/preview.webp", result.getFirst().previewKey());
+        assertEquals(1, analyzeOrientation.get());
         assertArrayEquals(new byte[]{(byte) 0xff, (byte) 0xd8},
                 Arrays.copyOf(analyzeBytes.get(), 2));
         assertEquals("RIFF", new String(previewBytes.get(), 0, 4, StandardCharsets.US_ASCII));
@@ -114,6 +157,39 @@ class TripAttachmentDerivativeServiceTest {
                 .tags("stage", "image_derivative", "outcome", "success")
                 .timer()
                 .count());
+    }
+
+    @Test
+    void 사진_중간_실패는_시도와_미실행을_구분하고_보상한다() throws Exception {
+        when(storage.open("one")).thenReturn(new ByteArrayInputStream(jpeg()));
+        when(storage.open("two")).thenThrow(new IllegalStateException("read failure"));
+        when(storage.storeDerived(eq("counts"), any(Path.class), eq("image/jpeg"))).thenReturn("a");
+        when(storage.storeDerived(eq("counts"), any(Path.class), eq("image/webp"))).thenReturn("p");
+        assertThrows(CompletionException.class, () -> service.createAll("counts",
+                List.of("one", "two", "three"), List.of("image/jpeg", "image/jpeg", "image/jpeg")).join());
+        assertEquals(2, meterRegistry.get("yeodam.image.worker.photos").tag("outcome", "attempted").counter().count());
+        assertEquals(1, meterRegistry.get("yeodam.image.worker.photos").tag("outcome", "generated").counter().count());
+        assertEquals(1, meterRegistry.get("yeodam.image.worker.photos").tag("outcome", "failure").counter().count());
+        assertEquals(1, meterRegistry.get("yeodam.image.worker.photos").tag("outcome", "unexecuted").counter().count());
+        verify(storage).delete("a"); verify(storage).delete("p"); verify(storage, never()).open("three");
+    }
+
+    @Test
+    void 워커_종료의_인터럽트는_처리_실패와_구분한다() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        when(storage.open("cancelled")).thenAnswer(invocation -> {
+            started.countDown();
+            try { new CountDownLatch(1).await(); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }
+            return new ByteArrayInputStream(jpeg());
+        });
+        var result = service.createAll("cancel", List.of("cancelled", "later"), List.of("image/jpeg", "image/jpeg"));
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        scheduler.stop(1, TimeUnit.SECONDS);
+        assertThrows(java.util.concurrent.CancellationException.class, () -> result.get(2, TimeUnit.SECONDS));
+        assertEquals(1, meterRegistry.get("yeodam.image.worker.photos").tag("outcome", "cancelled").counter().count());
+        assertEquals(1, meterRegistry.get("yeodam.image.worker.batches").tag("outcome", "cancelled").counter().count());
+        assertEquals(1, meterRegistry.get("yeodam.image.worker.photos").tag("outcome", "unexecuted").counter().count());
     }
 
     @ParameterizedTest
@@ -510,7 +586,7 @@ class TripAttachmentDerivativeServiceTest {
         java.util.concurrent.atomic.AtomicBoolean interrupted = new java.util.concurrent.atomic.AtomicBoolean();
         Thread worker = new Thread(() -> {
             try {
-                org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "run", (Object) new String[]{
+                org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "run", "interrupt_test", (Object) new String[]{
                         "/bin/sh", "-c", "echo $$ > '" + pidFile + "'; exec sleep 30"});
             } catch (Throwable cause) { failure.set(cause); }
             finally { interrupted.set(Thread.currentThread().isInterrupted()); }
@@ -654,8 +730,11 @@ class TripAttachmentDerivativeServiceTest {
         when(storage.storeDerived(any(String.class), any(Path.class), any(String.class)))
                 .thenAnswer(call -> call.getArgument(0) + "/" + ((Path) call.getArgument(1)).getFileName());
 
+        SimpleMeterRegistry queueRegistry = new SimpleMeterRegistry();
+        TripDerivativeScheduler queueScheduler = new TripDerivativeScheduler(1, 1, 3, 3, queueRegistry);
         TripAttachmentDerivativeService service = new TripAttachmentDerivativeService(
-                storage, new ObjectMapper(), new SimpleMeterRegistry());
+                storage, new ObjectMapper(), queueRegistry, queueScheduler);
+        service.registerWorkerGauges();
         try {
             submittedAt.put("job-1", System.nanoTime());
             CompletableFuture<List<DerivedPhotoKeys>> first = service.createAll(
@@ -672,8 +751,15 @@ class TripAttachmentDerivativeServiceTest {
             assertThrows(RejectedExecutionException.class, () -> service.createAll(
                     "job-4", List.of("job-4"), List.of("image/jpeg")));
 
+            assertEquals(1, queueRegistry.get("yeodam.image.worker.active").gauge().value());
+            assertEquals(2, queueRegistry.get("yeodam.image.worker.queue").gauge().value());
+            assertEquals(1, queueRegistry.get("yeodam.image.worker.batches").tag("outcome", "rejected").counter().count());
             releaseFirst.countDown();
             for (CompletableFuture<List<DerivedPhotoKeys>> future : accepted) future.join();
+            long idleDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+            while (queueRegistry.get("yeodam.image.worker.active").gauge().value() > 0 && System.nanoTime() < idleDeadline) Thread.sleep(1);
+            assertEquals(0, queueRegistry.get("yeodam.image.worker.active").gauge().value());
+            assertEquals(0, queueRegistry.get("yeodam.image.worker.queue").gauge().value());
             assertEquals(3, firstReadAt.size());
             System.out.println("job,submit_to_first_read_ms");
             for (int n = 1; n <= 3; n++) {
@@ -684,7 +770,7 @@ class TripAttachmentDerivativeServiceTest {
             System.out.println("job-4,rejected");
         } finally {
             releaseFirst.countDown();
-            service.stop();
+            queueScheduler.stop();
         }
     }
 

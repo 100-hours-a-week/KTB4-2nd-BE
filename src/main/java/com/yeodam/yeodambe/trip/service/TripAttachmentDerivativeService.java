@@ -6,6 +6,11 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import jakarta.annotation.PostConstruct;
+import io.micrometer.core.instrument.Gauge;
+import java.util.LinkedHashMap;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -49,10 +54,15 @@ public class TripAttachmentDerivativeService {
             throw new IllegalArgumentException(TripInternalErrorMessage.SOURCE_KEY_MIME_TYPE_COUNT_MISMATCH.message());
         }
         Map<String, String> callerMdc = MDC.getCopyOfContextMap();
+        long submitted = System.nanoTime();
+        AtomicInteger attempted = new AtomicInteger();
+        event(executionId, -1, "submit", submitted, "attempt", originalKeys.size(), null);
+        count("batches", "submitted", 1);
         CompletableFuture<List<DerivedPhotoKeys>> result = new CompletableFuture<>();
         List<ArrayList<String>> uploadedByPhoto = new ArrayList<>();
         List<TripDerivativeScheduler.PhotoTask> tasks = new ArrayList<>();
         for (int index = 0; index < originalKeys.size(); index++) {
+            int photoIndex = index;
             String original = originalKeys.get(index);
             String mime = mimeTypes.get(index);
             ArrayList<String> uploaded = new ArrayList<>();
@@ -60,15 +70,61 @@ public class TripAttachmentDerivativeService {
             tasks.add(new TripDerivativeScheduler.PhotoTask(index, mime, () -> {
                 if (callerMdc == null) MDC.clear();
                 else MDC.setContextMap(callerMdc);
+                MDC.put("worker_batch_id", callerMdc == null ? executionId : callerMdc.getOrDefault("request_id", executionId));
+                MDC.put("job_id", executionId);
+                MDC.put("worker_photo_index", String.valueOf(photoIndex));
+                MDC.put("worker_format", mime);
+                long started = System.nanoTime();
+                if (attempted.getAndIncrement() == 0) {
+                    event(executionId, -1, "start", submitted, "accepted", originalKeys.size(), null);
+                    meterRegistry.timer("yeodam.image.worker.queue.wait").record(started - submitted, TimeUnit.NANOSECONDS);
+                }
+                count("photos", "attempted", 1);
+                event(executionId, photoIndex, "photo_start", started, "attempt", 1, null);
+                RuntimeException error = null;
                 try {
-                    return generateOne(executionId, original, mime, uploaded);
-                } finally { MDC.clear(); }
+                    DerivedPhotoKeys photo = generateOne(executionId, original, mime, uploaded);
+                    count("photos", "generated", 1);
+                    return photo;
+                } catch (RuntimeException failure) {
+                    error = failure;
+                    count("photos", Thread.currentThread().isInterrupted() ? "cancelled" : "failure", 1);
+                    throw failure;
+                } finally {
+                    event(executionId, photoIndex, "photo_end", started,
+                            error == null ? "success" : Thread.currentThread().isInterrupted() ? "cancelled" : "failure", 1, error);
+                    MDC.clear();
+                }
             }));
         }
         // 내부 완료는 모든 사진의 저장/임시 파일 정리가 끝난 신호다. 외부 Future 취소와 분리한다.
-        scheduler.submit(executionId, tasks, () -> !result.isCancelled() && active.getAsBoolean())
+        CompletableFuture<List<DerivedPhotoKeys>> scheduled;
+        try {
+            scheduled = scheduler.submit(executionId, tasks, () -> !result.isCancelled() && active.getAsBoolean());
+        } catch (RejectedExecutionException failure) {
+            count("batches", "rejected", 1);
+            event(executionId, -1, "rejected", submitted, "rejected", originalKeys.size(), failure);
+            throw failure;
+        }
+        count("batches", "accepted", 1);
+        count("photos", "accepted", originalKeys.size());
+        scheduled
                 .whenComplete((photos, failure) -> {
-                    if (failure == null && result.complete(photos)) return;
+                    count("photos", "unexecuted", originalKeys.size() - attempted.get());
+                    String outcome = failure == null && !result.isCancelled() ? "success"
+                            : result.isCancelled() || failure instanceof CancellationException || Thread.currentThread().isInterrupted() ? "cancelled" : "failure";
+                    count("batches", outcome, 1);
+                    Map<String, String> completionMdc = MDC.getCopyOfContextMap();
+                    try {
+                        if (callerMdc == null) MDC.clear(); else MDC.setContextMap(callerMdc);
+                        event(executionId, -1, "end", submitted, outcome, originalKeys.size(), failure);
+                    } finally {
+                        if (completionMdc == null) MDC.clear(); else MDC.setContextMap(completionMdc);
+                    }
+                    if (failure == null && result.complete(photos)) {
+                        count("photos", "committed", photos.size());
+                        return;
+                    }
                     Throwable cause = failure == null ? new CancellationException("사진 변환이 취소됐습니다.") : failure;
                     for (List<String> uploaded : uploadedByPhoto) {
                         for (String key : uploaded) {
@@ -79,6 +135,48 @@ public class TripAttachmentDerivativeService {
                     result.completeExceptionally(cause);
                 });
         return result;
+    }
+
+    private double workerGauge(String name) {
+        return meterRegistry.find(name).gauges().stream().mapToDouble(Gauge::value).sum();
+    }
+
+    @PostConstruct
+    void registerWorkerGauges() {
+        Gauge.builder("yeodam.image.worker.queue", this, value -> value.workerGauge("yeodam.trip.derivative.pending.photos")).register(meterRegistry);
+        Gauge.builder("yeodam.image.worker.active", this, value -> value.workerGauge("yeodam.trip.derivative.active.photos")).register(meterRegistry);
+    }
+
+    private void count(String kind, String outcome, int amount) {
+        meterRegistry.counter("yeodam.image.worker." + kind, "outcome", outcome).increment(amount);
+    }
+
+    private void event(String executionId, int index, String stage, long start, String outcome,
+                       int count, Throwable failure) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("batch_id", MDC.get("request_id") == null ? executionId : MDC.get("request_id"));
+        values.put("execution_id", executionId);
+        values.put("photo_index", index);
+        values.put("stage", stage);
+        values.put("start_ns", start);
+        values.put("end_ns", System.nanoTime());
+        values.put("epoch_ms", System.currentTimeMillis());
+        values.put("outcome", outcome);
+        values.put("photo_count", count);
+        if (MDC.get("worker_format") != null) values.put("format", MDC.get("worker_format"));
+        if (MDC.get("worker_mp") != null) values.put("mp", MDC.get("worker_mp"));
+        values.put("queue_size", workerGauge("yeodam.trip.derivative.pending.photos"));
+        values.put("active_batches", workerGauge("yeodam.trip.derivative.active.photos"));
+        if (failure != null) values.put("error_type", failure.getClass().getSimpleName());
+        log.atInfo().addKeyValue("event", "image_worker").addKeyValue("job_id", executionId)
+                .addKeyValue("worker", values).log("이미지 워커 단계");
+    }
+
+    private void stage(String stage, long started, Throwable failure) {
+        String outcome = failure == null ? "success" : "failure";
+        meterRegistry.timer("yeodam.image.worker.stage", "stage", stage, "outcome", outcome)
+                .record(System.nanoTime() - started, TimeUnit.NANOSECONDS);
+        event(MDC.get("job_id"), Integer.parseInt(MDC.get("worker_photo_index") == null ? "-1" : MDC.get("worker_photo_index")), stage, started, outcome, 1, failure);
     }
 
     public void cancelExecution(String executionId) { scheduler.cancelExecution(executionId); }
@@ -102,6 +200,8 @@ public class TripAttachmentDerivativeService {
         Path display = dir.resolve("display.jpg");
 
         try {
+            long readStart = System.nanoTime();
+            Throwable readFailure = null;
             Timer.Sample readSample = Timer.start(meterRegistry);
             String readOutcome = "success";
 
@@ -111,8 +211,10 @@ public class TripAttachmentDerivativeService {
                 }
             } catch (IOException | RuntimeException failure) {
                 readOutcome = "failure";
+                readFailure = failure;
                 throw failure;
             } finally {
+                stage("original_read", readStart, readFailure);
                 readSample.stop(Timer.builder("yeodam.trip.stage")
                         .tags("stage", "original_s3_read", "outcome", readOutcome)
                         .register(meterRegistry));
@@ -123,10 +225,13 @@ public class TripAttachmentDerivativeService {
 
             try {
                 JsonNode metadata = metadata(original);
+                if (metadata.has("ImageWidth") && metadata.has("ImageHeight")) {
+                    MDC.put("worker_mp", String.valueOf(metadata.path("ImageWidth").asLong() * metadata.path("ImageHeight").asLong() / 1_000_000.0));
+                }
                 convertDerivatives(original, mimeType, metadata, analyze, preview, display);
 
                 // 필요한 촬영 정보만 AI용 JPEG에 복사한다. 회전은 이미 픽셀에 반영됐다.
-                run("exiftool", "-overwrite_original",
+                run("exif_copy", "exiftool", "-overwrite_original",
                         "-TagsFromFile", original.toString(),
                         "-DateTimeOriginal", "-SubSecTimeOriginal",
                         "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
@@ -134,7 +239,7 @@ public class TripAttachmentDerivativeService {
 
                 String analyzeKey;
                 try {
-                    analyzeKey = storage.storeDerived(executionId, analyze, "image/jpeg");
+                    analyzeKey = put(executionId, analyze, "image/jpeg", "put_analyze");
                 } catch (AttachmentStorageException failure) {
                     uploadedKeys.add(failure.getObjectKey());
                     throw failure;
@@ -142,7 +247,7 @@ public class TripAttachmentDerivativeService {
                 uploadedKeys.add(analyzeKey);
                 String previewKey;
                 try {
-                    previewKey = storage.storeDerived(executionId, preview, "image/webp");
+                    previewKey = put(executionId, preview, "image/webp", "put_preview");
                 } catch (AttachmentStorageException failure) {
                     uploadedKeys.add(failure.getObjectKey());
                     throw failure;
@@ -152,7 +257,7 @@ public class TripAttachmentDerivativeService {
                 String displayKey = null;
                 if ("image/heic".equals(mimeType)) {
                     try {
-                        displayKey = storage.storeDerived(executionId, display, "image/jpeg");
+                        displayKey = put(executionId, display, "image/jpeg", "put_display");
                     } catch (AttachmentStorageException failure) {
                         uploadedKeys.add(failure.getObjectKey());
                         throw failure;
@@ -184,30 +289,44 @@ public class TripAttachmentDerivativeService {
         }
     }
 
+    private String put(String executionId, Path file, String mimeType, String name) {
+        long started = System.nanoTime();
+        RuntimeException error = null;
+        try { return storage.storeDerived(executionId, file, mimeType); }
+        catch (RuntimeException failure) { error = failure; throw failure; }
+        finally { stage(name, started, error); }
+    }
+
     private JsonNode metadata(Path original) {
+        long started = System.nanoTime();
+        Throwable error = null;
         Path output = original.resolveSibling("metadata.json");
         Process process = null;
         try {
-            process = new ProcessBuilder("exiftool", "-j", "-n",
+            process = processBuilder("exif_extract", "exiftool", "-j", "-n",
                     "-Orientation", "-DateTimeOriginal", "-OffsetTimeOriginal",
                     "-GPSLatitude", "-GPSLongitude",
-                    "-Make", "-Model", original.toString())
+                    "-Make", "-Model", "-ImageWidth", "-ImageHeight", original.toString())
                     .redirectOutput(output.toFile())
                     .redirectError(ProcessBuilder.Redirect.DISCARD)
                     .start();
-            if (!process.waitFor(120, TimeUnit.SECONDS) || process.exitValue() != 0) {
+            if (!process.waitFor(commandWaitSeconds(), TimeUnit.SECONDS) || process.exitValue() != 0) {
                 throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_FAILED.message());
             }
             JsonNode values = json.readTree(Files.readAllBytes(output));
             if (!values.isArray() || values.isEmpty()) throw new IllegalStateException(TripInternalErrorMessage.EXIF_RESULT_MISSING.message());
             return values.get(0);
         } catch (IOException e) {
+            error = e;
             throw new IllegalStateException(TripInternalErrorMessage.EXIF_TOOL_EXECUTION_FAILED.message(), e);
         } catch (InterruptedException e) {
+            error = e;
             Thread.currentThread().interrupt();
             throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_INTERRUPTED.message(), e);
-        } finally {
+        } catch (RuntimeException e) { error = e; throw e; }
+        finally {
             stopProcess(process);
+            stage("exif_extract", started, error);
             try { Files.deleteIfExists(output); }
             catch (IOException failure) { log.warn("임시 EXIF 파일 삭제 실패: {}", output, failure); }
         }
@@ -249,7 +368,7 @@ public class TripAttachmentDerivativeService {
                 "(", "+clone", "-background", "white", "-alpha", "remove", "-alpha", "off",
                 "-write", analyze.toString(), "+delete", ")",
                 "-quality", "75", preview.toString()));
-        run(command.toArray(String[]::new));
+        run("convert_derivatives", command.toArray(String[]::new));
     }
 
     private String orientation(JsonNode metadata) {
@@ -283,26 +402,51 @@ public class TripAttachmentDerivativeService {
         return combined.isEmpty() || combined.length() > 100 ? null : combined;
     }
 
-    private void run(String... command) {
+    private ProcessBuilder processBuilder(String stage, String... command) {
+        ProcessBuilder builder = new ProcessBuilder(command);
+        String directory = System.getenv("YEODAM_PERF_COMMAND_DIR");
+        if (directory != null) {
+            builder.command().set(0, Path.of(directory, command[0]).toString());
+            for (String key : List.of("request_id", "job_id", "worker_batch_id", "worker_photo_index", "worker_format")) {
+                String value = MDC.get(key);
+                if (value != null) builder.environment().put("YEODAM_PERF_" + key.toUpperCase(java.util.Locale.ROOT), value);
+            }
+            builder.environment().put("YEODAM_PERF_STAGE", stage);
+        }
+        return builder;
+    }
+
+    private long commandWaitSeconds() {
+        if (System.getenv("YEODAM_PERF_COMMAND_DIR") == null) return 120;
+        return Long.parseLong(System.getenv().getOrDefault("YEODAM_PERF_COMMAND_TIMEOUT_SECONDS", "120")) + 10;
+    }
+
+    private void run(String name, String... command) {
+        long started = System.nanoTime();
+        Throwable error = null;
         Process process = null;
         try {
-            process = new ProcessBuilder(command)
+            process = processBuilder(name, command)
                     .redirectErrorStream(true)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .start();
 
-            if (!process.waitFor(120, TimeUnit.SECONDS)) {
+            if (!process.waitFor(commandWaitSeconds(), TimeUnit.SECONDS)) {
+                process.destroyForcibly();
                 throw new IllegalStateException(TripInternalErrorMessage.COMMAND_TIMEOUT.message().formatted(command[0]));
             }
             if (process.exitValue() != 0) {
                 throw new IllegalStateException(TripInternalErrorMessage.COMMAND_FAILED.message().formatted(command[0]));
             }
         } catch (IOException e) {
+            error = e;
             throw new IllegalStateException(TripInternalErrorMessage.COMMAND_UNAVAILABLE.message().formatted(command[0]), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            error = e;
             throw new IllegalStateException(TripInternalErrorMessage.COMMAND_INTERRUPTED.message().formatted(command[0]), e);
-        } finally { stopProcess(process); }
+        } catch (RuntimeException e) { error = e; throw e; }
+        finally { stopProcess(process); stage(name, started, error); }
     }
 
     private void stopProcess(Process process) {

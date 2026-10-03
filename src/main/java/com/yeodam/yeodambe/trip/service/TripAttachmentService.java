@@ -109,7 +109,7 @@ public class TripAttachmentService {
             savedAttachments = persisted.attachments();
 
             failureStage = "processing_check";
-            requireProcessing(tripId, userId);
+            measureBoundary(executionId, "processing_check", () -> { requireProcessing(tripId, userId); return null; });
 
             failureStage = "ai_request";
             JsonNode result = analysis.analyze(
@@ -265,19 +265,26 @@ public class TripAttachmentService {
             storage.retain(List.copyOf(objectKeys(originalKeys, derivedKeys)));
 
             failureStage = "execution_checkpoint";
-            snapshot = executions.completeBatch(
-                    tripId,
-                    executionId,
-                    batchNo,
-                    batchBytes,
-                    storedPhotos(persisted, derivedKeys),
-                    complete
-            );
+            long checkpointStarted = System.nanoTime();
+            try {
+                snapshot = executions.completeBatch(
+                        tripId,
+                        executionId,
+                        batchNo,
+                        batchBytes,
+                        storedPhotos(persisted, derivedKeys),
+                        complete
+                );
+            } catch (RuntimeException failure) {
+                traceBoundary(executionId, "batch_checkpoint", checkpointStarted, System.nanoTime(), "failure", files.size());
+                throw failure;
+            }
+            traceBoundary(executionId, "batch_checkpoint", checkpointStarted, System.nanoTime(), "success", files.size());
             if (!complete) return Optional.empty();
             finalBatchReady = true;
 
             failureStage = "processing_check";
-            requireProcessing(tripId, userId);
+            measureBoundary(executionId, "processing_check", () -> { requireProcessing(tripId, userId); return null; });
             List<TripAttachment> allAttachments = snapshot.photos().stream()
                     .map(InitialUploadExecutionRegistry.StoredPhoto::attachment)
                     .toList();
@@ -505,6 +512,8 @@ public class TripAttachmentService {
             if (key == null || key.isBlank()) throw new IllegalStateException(TripInternalErrorMessage.S3_OBJECT_KEY_MISSING.message());
             originalsKeys.add(key);
         }
+        long completed = System.nanoTime();
+        traceBoundary(executionId, "originals_saved", completed, completed, "success", files.size());
     }
 
     private List<DerivedPhotoKeys> createDerived(
@@ -604,44 +613,67 @@ public class TripAttachmentService {
         throw new UnsupportedAttachmentFormatException();
     }
 
+    private <T> T measureBoundary(String executionId, String stage, java.util.function.Supplier<T> action) {
+        long started = System.nanoTime();
+        try {
+            T result = action.get();
+            traceBoundary(executionId, stage, started, System.nanoTime(), "success", 0);
+            return result;
+        } catch (RuntimeException failure) {
+            traceBoundary(executionId, stage, started, System.nanoTime(), "failure", 0);
+            throw failure;
+        }
+    }
+
+    private void traceBoundary(String executionId, String stage, long started, long ended, String outcome, int count) {
+        if (System.getProperty("load.runDir") == null) return;
+        log.atInfo().addKeyValue("event", "image_worker").addKeyValue("worker", Map.of(
+                "batch_id", Objects.requireNonNullElse(org.slf4j.MDC.get("request_id"), "unassociated"),
+                "execution_id", executionId, "stage", stage, "start_ns", started, "end_ns", ended,
+                "epoch_ms", System.currentTimeMillis(), "outcome", outcome, "photo_count", count))
+                .log("사진 처리 연결 단계");
+    }
+
     private TripPhotoAnalysisRequest analysisRequest(
             String executionId,
             Trip trip,
             List<TripAttachment> saved,
             List<DerivedPhotoKeys> derived
     ) {
-        List<TripPhotoAnalysisRequest.Region> coordinates = regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(trip.getId())
-                .stream()
-                .map(r -> new TripPhotoAnalysisRequest.Region(r.getLatitude(), r.getLongitude()))
-                .toList();
+        return measureBoundary(executionId, "request_build", () -> {
+            List<TripPhotoAnalysisRequest.Region> coordinates = regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(trip.getId())
+                    .stream()
+                    .map(r -> new TripPhotoAnalysisRequest.Region(r.getLatitude(), r.getLongitude()))
+                    .toList();
 
-        if (coordinates.isEmpty()) throw new IllegalStateException(TripInternalErrorMessage.TRIP_REGION_MISSING.message());
+            if (coordinates.isEmpty()) throw new IllegalStateException(TripInternalErrorMessage.TRIP_REGION_MISSING.message());
 
-        List<TripPhotoAnalysisRequest.Photo> photos = new ArrayList<>(saved.size());
-        for (int i = 0; i < saved.size(); i++) {
-            TripAttachment photo = saved.get(i);
-            DerivedPhotoKeys metadata = derived.get(i);
-            photos.add(
-                    new TripPhotoAnalysisRequest.Photo(
-                            photo.getId(),
-                            photo.getAnalyzeStorageKey(),
-                            metadata.takenAt(),
-                            metadata.latitude(),
-                            metadata.longitude(),
-                            metadata.deviceModel()
-                    )
+            List<TripPhotoAnalysisRequest.Photo> photos = new ArrayList<>(saved.size());
+            for (int i = 0; i < saved.size(); i++) {
+                TripAttachment photo = saved.get(i);
+                DerivedPhotoKeys metadata = derived.get(i);
+                photos.add(
+                        new TripPhotoAnalysisRequest.Photo(
+                                photo.getId(),
+                                photo.getAnalyzeStorageKey(),
+                                metadata.takenAt(),
+                                metadata.latitude(),
+                                metadata.longitude(),
+                                metadata.deviceModel()
+                        )
+                );
+            }
+
+            return new TripPhotoAnalysisRequest(
+                    executionId,
+                    trip.getTripName(),
+                    new TripPhotoAnalysisRequest.Period(
+                            trip.getStartDate(),
+                            trip.getEndDate()
+                    ),
+                    coordinates,
+                    photos
             );
-        }
-
-        return new TripPhotoAnalysisRequest(
-                executionId,
-                trip.getTripName(),
-                new TripPhotoAnalysisRequest.Period(
-                        trip.getStartDate(),
-                        trip.getEndDate()
-                ),
-                coordinates,
-                photos
-        );
+        });
     }
 }

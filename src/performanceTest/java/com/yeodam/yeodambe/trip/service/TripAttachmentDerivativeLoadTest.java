@@ -94,8 +94,10 @@ class TripAttachmentDerivativeLoadTest {
         when(storage.storeDerived(any(String.class), any(Path.class), any(String.class)))
                 .thenAnswer(call -> call.getArgument(0) + "/derived/" + nextKey.getAndIncrement());
 
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        TripDerivativeScheduler scheduler = new TripDerivativeScheduler(1, 1, 10, 20, registry);
         TripAttachmentDerivativeService service = new TripAttachmentDerivativeService(
-                storage, new ObjectMapper(), new SimpleMeterRegistry());
+                storage, new ObjectMapper(), registry, scheduler);
         record Submitted(String job, long at, AtomicLong completedAt,
                          CompletableFuture<List<DerivedPhotoKeys>> future) {}
         List<Submitted> accepted = new ArrayList<>();
@@ -126,7 +128,7 @@ class TripAttachmentDerivativeLoadTest {
             }
             resources.print(format, resolution, concurrency, repeat);
         } finally {
-            service.stop();
+            scheduler.stop();
         }
     }
 

@@ -81,6 +81,7 @@ public class TripPhotoAnalysisService {
     ) {
         long workerReadyStartedAt = System.nanoTime();
         String workerFailureStage = "ec2_start";
+        long readinessStageStarted = System.nanoTime();
 
         log.atInfo()
                 .addKeyValue("event", "worker_ready")
@@ -90,10 +91,15 @@ public class TripPhotoAnalysisService {
                 .log("AI Worker 준비를 시작했습니다.");
 
         try {
+            long ec2Started = readinessStageStarted;
             starter.ensureRunning();
+            traceBoundary(executionId, "ai_ec2_ready", ec2Started, "success");
 
             workerFailureStage = "health_check";
+            long healthStarted = System.nanoTime();
+            readinessStageStarted = healthStarted;
             waitUntilReady();
+            traceBoundary(executionId, "ai_health_ready", healthStarted, "success");
 
             log.atInfo()
                     .addKeyValue("event", "worker_ready")
@@ -103,6 +109,7 @@ public class TripPhotoAnalysisService {
                     .addKeyValue("duration_ms", elapsedMillis(workerReadyStartedAt))
                     .log("AI Worker 준비를 완료했습니다.");
         } catch (RuntimeException failure) {
+            traceBoundary(executionId, workerFailureStage.equals("ec2_start") ? "ai_ec2_ready" : "ai_health_ready", readinessStageStarted, "failure");
             log.atError()
                     .addKeyValue("event", "worker_ready")
                     .addKeyValue("result", "failure")
@@ -129,6 +136,7 @@ public class TripPhotoAnalysisService {
         JsonNode response;
 
         try {
+            traceBoundary(executionId, "ai_request_start", System.nanoTime(), "success");
             response = restClient.post()
                     .uri("/trips/{tripId}/process", tripId)
                     .headers(this::setAiHeaders)
@@ -355,6 +363,16 @@ public class TripPhotoAnalysisService {
         if (requestId != null) {
             headers.set("X-Request-ID", requestId);
         }
+    }
+
+    private void traceBoundary(String executionId, String stage, long started, String outcome) {
+        if (System.getProperty("load.runDir") == null) return;
+        long ended = stage.equals("ai_request_start") ? started : System.nanoTime();
+        log.atInfo().addKeyValue("event", "image_worker").addKeyValue("worker", java.util.Map.of(
+                "batch_id", java.util.Objects.requireNonNullElse(MDC.get("request_id"), "unassociated"),
+                "execution_id", executionId, "stage", stage, "start_ns", started, "end_ns", ended,
+                "epoch_ms", System.currentTimeMillis(), "outcome", outcome, "photo_count", 0))
+                .log("AI 요청 준비 단계");
     }
 
     private void waitUntilReady() {

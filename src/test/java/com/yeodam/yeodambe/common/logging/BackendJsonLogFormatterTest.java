@@ -46,7 +46,8 @@ class BackendJsonLogFormatterTest {
                 new KeyValuePair("failure_stage", "archive_upload"),
                 new KeyValuePair("error_code", "INTERNAL_SERVER_ERROR"),
                 new KeyValuePair("expected_count", 5),
-                new KeyValuePair("saved_count", 3)
+                new KeyValuePair("saved_count", 3),
+                new KeyValuePair("worker", Map.of("stage", "put_preview", "photo_index", 1))
         ));
         event.setThrowableProxy(new ThrowableProxy(new IllegalStateException("S3 업로드 실패")));
 
@@ -54,6 +55,8 @@ class BackendJsonLogFormatterTest {
 
         assertThat(json.path("timestamp").asString()).isEqualTo("2026-09-28T07:10:21.315Z");
         assertThat(json.path("level").asString()).isEqualTo("ERROR");
+        assertThat(json.path("worker").path("stage").asString()).isEqualTo("put_preview");
+        assertThat(json.path("worker").path("photo_index").asInt()).isEqualTo(1);
         assertThat(json.path("service").asString()).isEqualTo("backend");
         assertThat(json.path("logger").asString())
                 .isEqualTo("com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService");

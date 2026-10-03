@@ -13,6 +13,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -36,6 +38,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class VuRefreshTokenSeedIntegrationTest {
     @Autowired private UserRepository users;
     @Autowired private LoginSessionRepository sessions;
+    @Autowired private LoginSessionStore redisSessions;
+    @Autowired private StringRedisTemplate redis;
     @Autowired private LoginSessionIssuer issuer;
     @Autowired private AccessTokenRefreshService refreshService;
     @Autowired private DataSource dataSource;
@@ -50,6 +54,7 @@ class VuRefreshTokenSeedIntegrationTest {
 
         JsonNode tokens = new ObjectMapper().readTree(output.resolve("tokens.json").toFile()).path("tokens");
         assertThat(tokens.size()).isEqualTo(7);
+        assertThat(runRedisScript(output.resolve("seed.redis.lua"))).isEqualTo(7);
         for (JsonNode token : tokens) {
             String sid = token.path("sid").asString();
             String original = token.path("refreshToken").asString();
@@ -67,10 +72,12 @@ class VuRefreshTokenSeedIntegrationTest {
             executeScript(connection, output.resolve("cleanup.sql"));
             connection.commit();
         }
+        assertThat(runRedisScript(output.resolve("cleanup.redis.lua"))).isEqualTo(7);
         for (JsonNode token : tokens) {
+            assertThat(redisSessions.findBySid(token.path("sid").asString())).isEmpty();
             assertThat(sessions.findBySid(token.path("sid").asString())).isEmpty();
         }
-        assertThat(sessions.findBySid(existing.sid())).isPresent();
+        assertThat(redisSessions.findBySid(existing.sid())).isPresent();
         assertThat(users.findAllById(owners.stream().map(User::getUserId).toList())).hasSize(7);
     }
 
@@ -142,6 +149,10 @@ class VuRefreshTokenSeedIntegrationTest {
                 connection.rollback();
             }
         }
+    }
+
+    private Long runRedisScript(Path path) throws Exception {
+        return redis.execute(RedisScript.of(Files.readString(path), Long.class), List.of(), "yeodam:test:auth:");
     }
 
     private void executeScript(Connection connection, Path script) throws Exception {

@@ -1,0 +1,30 @@
+services:
+  derivative:
+    build:
+      context: .
+      dockerfile: performance/derivative/Dockerfile
+    image: yeodam-derivative-measurement:local
+    cpus: ${DERIVATIVE_CPUS:-2}
+    mem_limit: ${DERIVATIVE_MEMORY:-2g}
+    ports:
+      - "127.0.0.1:18080:18080"
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      YEODAM_PERF_COMMAND_DIR: /opt/worker
+      YEODAM_PERF_COMMAND_SAMPLES: /run-data/commands
+      YEODAM_PERF_COMMAND_TIMEOUT_SECONDS: ${DERIVATIVE_COMMAND_TIMEOUT:-120}
+      JAVA_TOOL_OPTIONS: -Xmx768m
+      MAGICK_THREAD_LIMIT: "1"
+    volumes:
+      - .:/workspace
+      - ${DERIVATIVE_RUN_DIR:?run directory required}:/run-data
+      - derivative-gradle-cache:/root/.gradle
+    command: ["./gradlew", "derivativeK6ServerTest", "--no-daemon", "--console=plain", "-Pload.runDir=/run-data", "-Pload.config=/run-data/server-config.json", "-Pload.mysql=jdbc:mysql://mysql:3306/yeodam?serverTimezone=Asia/Seoul&characterEncoding=utf8", "-Pload.s3=http://localstack:4566"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+volumes:
+  derivative-gradle-cache:

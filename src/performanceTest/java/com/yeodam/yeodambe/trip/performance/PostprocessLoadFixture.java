@@ -36,11 +36,11 @@ final class PostprocessLoadFixture {
     static class Config {
         @Bean static StageMeasurements measurements() {return new StageMeasurements();}
         @Bean PostprocessLoadFixture fixture() {return new PostprocessLoadFixture();}
-        @Bean SmartInitializingSingleton installSaveMeasurement(StageMeasurements m,TripAnalysisResultService results) {
-            return ()->m.instrumentSave(results);
+        @Bean SmartInitializingSingleton installSaveMeasurement(StageMeasurements m,TripAnalysisResultService results,com.yeodam.yeodambe.trip.service.TripAttachmentTransactionService attachments) {
+            return ()->{m.instrumentSave(results);m.instrumentAttachmentSave(attachments);};
         }
         @Bean(destroyMethod="close") S3Client performanceS3() {
-            return S3Client.builder().region(Region.AP_NORTHEAST_2).endpointOverride(URI.create("http://127.0.0.1:14566"))
+            return S3Client.builder().region(Region.AP_NORTHEAST_2).endpointOverride(URI.create(System.getProperty("load.s3", "http://127.0.0.1:14566")))
                 .forcePathStyle(true).credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("test","test"))).build();
         }
     }
@@ -69,9 +69,9 @@ final class PostprocessLoadFixture {
     static LocalAnalysisStub newStub() {try{return new LocalAnalysisStub();}catch(IOException e){throw new UncheckedIOException(e);}}
     static void properties(DynamicPropertyRegistry r,LocalAnalysisStub stub) {
         r.add("spring.config.import",()->"");
-        r.add("spring.datasource.url",()->"jdbc:mysql://127.0.0.1:13307/yeodam?serverTimezone=Asia/Seoul&characterEncoding=utf8");
+        r.add("spring.datasource.url",()->System.getProperty("load.mysql", "jdbc:mysql://127.0.0.1:13307/yeodam?serverTimezone=Asia/Seoul&characterEncoding=utf8"));
         r.add("spring.datasource.username",()->"yeodam");r.add("spring.datasource.password",()->"yeodam");
-        r.add("attachment.s3.endpoint",()->"http://127.0.0.1:14566");r.add("attachment.s3.bucket",()->"yeodam-performance");
+        r.add("attachment.s3.endpoint",()->System.getProperty("load.s3", "http://127.0.0.1:14566"));r.add("attachment.s3.bucket",()->"yeodam-performance");
         r.add("attachment.s3.path-style",()->"true");
         r.add("ai.server.base-url",()->stub.aiBaseUrl().toString());r.add("ai.server.api-key",()->"test");
         r.add("ai.server.instance-id",()->"i-performance");r.add("kakao.local.base-url",()->stub.kakaoBaseUrl().toString());
@@ -90,6 +90,15 @@ final class PostprocessLoadFixture {
             performanceS3.headBucket(b->b.bucket("yeodam-performance"));
         } catch(IOException e) {throw new UncheckedIOException(e);}
     }
+    void export(java.nio.file.Path target, List<TripFixture> fixtures) throws IOException {
+        java.nio.file.Path temp = target.resolveSibling(target.getFileName() + ".tmp");
+        java.nio.file.Files.writeString(temp, json.writeValueAsString(fixtures.stream().map(f -> Map.of(
+                "trip_id", f.tripId(), "cookie", "accessToken=" + f.accessToken() + "; CSRF_CONTEXT=" + f.csrfContext(),
+                "csrf", f.csrfToken(), "photo_count", f.photoCount())).toList()));
+        java.nio.file.Files.setPosixFilePermissions(temp, java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+        java.nio.file.Files.move(temp, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+
     TripFixture prepare(int n,int h,Long sharedUser) throws Exception {
         if(n<1||n>200||h<0)throw new IllegalArgumentException("Invalid fixture size");
         long user=sharedUser==null?insert("insert into users(email,nickname) values (?,?)",UUID.randomUUID()+"@fixture.invalid","부하테스트"):sharedUser;

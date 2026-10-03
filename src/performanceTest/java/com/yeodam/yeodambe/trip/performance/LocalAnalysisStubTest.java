@@ -9,6 +9,33 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class LocalAnalysisStubTest {
     private final HttpClient http = HttpClient.newHttpClient();
+    @Test void readinessDeadlineExpiresAndCanBeReset() throws Exception {
+        try (var stub = new LocalAnalysisStub()) {
+            var request = HttpRequest.newBuilder(stub.aiBaseUrl().resolve("/health")).GET().build();
+            stub.setReadyDelay(200);
+            assertFalse(new ObjectMapper().readTree(http.send(request,HttpResponse.BodyHandlers.ofString()).body()).path("model_loaded").asBoolean());
+            Thread.sleep(250);
+            assertTrue(new ObjectMapper().readTree(http.send(request,HttpResponse.BodyHandlers.ofString()).body()).path("model_loaded").asBoolean());
+            stub.setReadyDelay(10000); stub.setReadyDelay(0);
+            assertTrue(new ObjectMapper().readTree(http.send(request,HttpResponse.BodyHandlers.ofString()).body()).path("model_loaded").asBoolean());
+            assertThrows(IllegalArgumentException.class, () -> stub.setReadyDelay(-1));
+        }
+    }
+    @Test void reportsReceiptOnceWithoutRequestBody() throws Exception {
+        try (var stub = new LocalAnalysisStub()) {
+            var receipts = new java.util.concurrent.CopyOnWriteArrayList<LocalAnalysisStub.AnalysisReceipt>();
+            stub.onAnalysisReceived(receipts::add);
+            stub.register(7, new LocalAnalysisStub.RunSpec(1,1,LocalAnalysisStub.FaultMode.NONE,0,0,0,false));
+            long before = System.nanoTime();
+            var response = http.send(HttpRequest.newBuilder(stub.aiBaseUrl().resolve("/trips/7/process"))
+                .header("X-Request-ID","receipt")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"execution_id\":\"exec\",\"secret\":\"hidden\",\"attachments\":[{\"trip_attachment_id\":11}]}" )).build(),HttpResponse.BodyHandlers.ofString());
+            assertEquals(200,response.statusCode()); assertEquals(1,receipts.size());
+            var receipt = receipts.getFirst();
+            assertEquals(7,receipt.tripId()); assertEquals("exec",receipt.executionId()); assertEquals("receipt",receipt.requestId());
+            assertTrue(receipt.receivedNanos() >= before); assertFalse(receipt.toString().contains("hidden"));
+        }
+    }
     @Test void dynamicResultUsesRequestIds() throws Exception {
         try (var stub = new LocalAnalysisStub()) {
             stub.register(7, new LocalAnalysisStub.RunSpec(2, 1, LocalAnalysisStub.FaultMode.NONE, 0, 0, 0, false));

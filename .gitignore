@@ -114,3 +114,7 @@ $RECYCLE.BIN/
 /performance/*.md
 /performance/postprocess/*.md
 /src/performanceTest/resources/*.local.*
+
+/performance/derivative/runtime/
+/performance/derivative/__pycache__/
+/performance/derivative/archived-runtime/

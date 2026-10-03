@@ -35,6 +35,7 @@ final class StageMeasurements implements BeanPostProcessor, Ordered {
             case "s3TripAttachmentStorageClient" -> "head";
             default -> null;
         };
+        if (name.equals("s3TripAttachmentStorageClient")) bean=wrap(bean,"storage_retain");
         return stage==null?bean:wrap(bean,stage);
     }
     // Installed after singleton construction, when the transaction proxy is certain to exist.
@@ -42,6 +43,11 @@ final class StageMeasurements implements BeanPostProcessor, Ordered {
         if(!(bean instanceof Advised a) || Arrays.stream(a.getAdvisors()).noneMatch(ad -> ad.getAdvice() instanceof org.springframework.transaction.interceptor.TransactionInterceptor))
             throw new IllegalStateException("Result service must retain its transaction advisor");
         a.addAdvice(0,interceptor("save"));
+    }
+    void instrumentAttachmentSave(Object bean) {
+        if (!(bean instanceof Advised a) || Arrays.stream(a.getAdvisors()).noneMatch(ad -> ad.getAdvice() instanceof org.springframework.transaction.interceptor.TransactionInterceptor))
+            throw new IllegalStateException("Attachment service must retain its transaction advisor");
+        a.addAdvice(0,interceptor("attachment_save"));
     }
     Object wrap(Object bean,String stage) {
         if(bean instanceof Advised a) {a.addAdvice(0,interceptor(stage));return bean;}
@@ -54,6 +60,8 @@ final class StageMeasurements implements BeanPostProcessor, Ordered {
             boolean target=switch(stage) {
                 case "ai" -> method.equals("analyze");case "resolve" -> method.equals("resolve");
                 case "save" -> method.equals("saveCompleted");case "stats" -> method.equals("refreshFromActiveTrips");
+                case "attachment_save" -> method.equals("saveFilesAndAttachments");
+                case "storage_retain" -> method.equals("retain");
                 case "head" -> method.equals("size");default -> true;
             };
             String run=runId;

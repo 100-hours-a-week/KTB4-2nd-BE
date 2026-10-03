@@ -71,6 +71,7 @@ tasks.named('test') {
     useJUnitPlatform { excludeTags 'performance' }
 }
 [
+    derivativeK6ServerTest: ['DerivativeK6ServerTest', 'DerivativeK6PipelineTest'],
     performanceSupportTest: ['LocalAnalysisStubTest', 'StageMeasurementsTest', 'LoadReportTest', 'PostprocessLoadRunnerTest'],
     postprocessSmokeTest: ['PostprocessUploadSmokeTest'],
     postprocessLoadTest: ['PostprocessUploadLoadTest'],
@@ -87,6 +88,9 @@ tasks.named('test') {
         }
         testClasses.each { include "**/${it}.class" }
         maxParallelForks = 1
+        environment 'AWS_ACCESS_KEY_ID', 'test'
+        environment 'AWS_SECRET_ACCESS_KEY', 'test'
+        environment 'AWS_EC2_METADATA_DISABLED', 'true'
         outputs.upToDateWhen { false }
         project.properties.findAll { key, value -> key.startsWith('load.') }.each { key, value ->
             systemProperty key, value

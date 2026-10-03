@@ -21,6 +21,7 @@ final class LocalAnalysisStub implements AutoCloseable {
                 || aiDelayMs < 0 || kakaoDelayMs < 0 || slowDelayMs < 0) throw new IllegalArgumentException("Invalid run spec");
         }
     }
+    record AnalysisReceipt(long tripId, String executionId, String requestId, long receivedNanos) {}
     record Coordinate(BigDecimal latitude, BigDecimal longitude) {}
     record CallEvent(int coordinateIndex, int attempt, long startNanos, long endNanos, int status) {}
     record StubSnapshot(int attempts, int retries, int peakActive, List<CallEvent> events) {}
@@ -34,6 +35,13 @@ final class LocalAnalysisStub implements AutoCloseable {
         volatile JsonNode response;
         Run(RunSpec spec) { this.spec = spec; if (!spec.holdAnalysis()) release.countDown(); }
     }
+    private volatile long readyDeadline;
+    private volatile java.util.function.Consumer<AnalysisReceipt> receiptListener = receipt -> {};
+    void setReadyDelay(long delayMs) {
+        if (delayMs < 0 || delayMs > 600000) throw new IllegalArgumentException("Invalid ready delay");
+        readyDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delayMs);
+    }
+    void onAnalysisReceived(java.util.function.Consumer<AnalysisReceipt> listener) { receiptListener = Objects.requireNonNull(listener); }
     private final ObjectMapper json = new ObjectMapper();
     private final ConcurrentMap<Long, Run> runs = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, long[]> coordinates = new ConcurrentHashMap<>();
@@ -80,7 +88,7 @@ final class LocalAnalysisStub implements AutoCloseable {
     }
     private void analysis(HttpExchange x) throws IOException {
         try {
-            if(x.getRequestURI().getPath().equals("/health")) { send(x,200,Map.of("status","ok","model_loaded",true)); return; }
+            if(x.getRequestURI().getPath().equals("/health")) { send(x,200,Map.of("status","ok","model_loaded",System.nanoTime() >= readyDeadline)); return; }
             String[] path = x.getRequestURI().getPath().split("/");
             if(path.length!=4 || !path[1].equals("trips") || !path[3].equals("process")) {send(x,404,Map.of());return;}
             long id=Long.parseLong(path[2]); Run r=runs.get(id);
@@ -95,6 +103,8 @@ final class LocalAnalysisStub implements AutoCloseable {
             }
             if(!x.getRequestMethod().equals("POST")) {send(x,405,Map.of());return;}
             JsonNode request=json.readTree(x.getRequestBody());
+            receiptListener.accept(new AnalysisReceipt(id,request.path("execution_id").asString(),
+                Objects.requireNonNullElse(x.getRequestHeaders().getFirst("X-Request-ID"),"unassociated"),System.nanoTime()));
             r.response=buildResponse(id,r.spec,request); r.state="PROCESSING";r.arrived.countDown();
             if(!r.release.await(600,TimeUnit.SECONDS)) {r.state="FAILED";send(x,504,Map.of());return;}
             Thread.sleep(r.spec.aiDelayMs()); r.state="COMPLETED"; send(x,200,r.response);

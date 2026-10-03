@@ -8,7 +8,6 @@ import com.yeodam.yeodambe.user.security.session.LoginSession;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
 import com.yeodam.yeodambe.user.security.session.RefreshTokenGenerator;
 import com.yeodam.yeodambe.user.security.TokenHasher;
-import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -22,7 +21,6 @@ public class AccessTokenRefreshService {
     private final UserRepository userRepository;
     private final AccessTokenIssuer accessTokenIssuer;
 
-    @Transactional
     public Result refresh(String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {
             throw new RefreshTokenInvalidOrExpiredException();

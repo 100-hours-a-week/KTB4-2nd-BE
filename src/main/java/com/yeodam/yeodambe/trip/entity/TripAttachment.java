@@ -76,6 +76,15 @@ public class TripAttachment {
     @Column(name = "display_storage_key", length = 500)
     private String displayStorageKey;
 
+    @Column(name = "analyze_size_bytes")
+    private Long analyzeSizeBytes;
+
+    @Column(name = "preview_size_bytes")
+    private Long previewSizeBytes;
+
+    @Column(name = "display_size_bytes")
+    private Long displaySizeBytes;
+
     @Column(name = "evaluation")
     private Integer evaluation;
 
@@ -153,6 +162,16 @@ public class TripAttachment {
         this.longitude = longitude;
         this.deviceModel = deviceModel;
         if (latitude != null && longitude != null) this.regionOrigin = RegionOrigin.EXIF;
+    }
+
+    public void storageSizes(
+            long analyzeSizeBytes,
+            long previewSizeBytes,
+            Long displaySizeBytes
+    ) {
+        this.analyzeSizeBytes = analyzeSizeBytes;
+        this.previewSizeBytes = previewSizeBytes;
+        this.displaySizeBytes = displaySizeBytes;
     }
 
     public void softDelete(LocalDateTime deletedAt) {

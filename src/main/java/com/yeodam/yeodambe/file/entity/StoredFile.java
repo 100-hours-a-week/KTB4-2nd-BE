@@ -41,6 +41,9 @@ public class StoredFile {
     @Column(name = "object_key", nullable = false, length = 500)
     private String objectKey;
 
+    @Column(name = "original_size_bytes")
+    private Long originalSizeBytes;
+
     @Column(name = "mime_type", nullable = false, length = 100)
     private String mimeType;
 
@@ -84,6 +87,10 @@ public class StoredFile {
         file.uploadStatus = UploadStatus.READY;
         file.uploadedAt = LocalDateTime.now();
         return file;
+    }
+
+    public void storageSize(long originalSizeBytes) {
+        this.originalSizeBytes = originalSizeBytes;
     }
 
     public void softDelete(LocalDateTime deletedAt) {

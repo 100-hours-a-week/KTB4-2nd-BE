@@ -1,6 +1,16 @@
 spring:
   application:
     name: yeodam-be
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
+      password: ${REDIS_PASSWORD:}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:2s}
+      timeout: ${REDIS_TIMEOUT:2s}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
   servlet:
     multipart:
       max-file-size: 15MB
@@ -42,6 +52,8 @@ management:
     health:
       show-details: never
 auth:
+  session:
+    key-prefix: ${AUTH_SESSION_KEY_PREFIX:yeodam:local:auth:}
   jwt:
     audience: yeodam-api
     access-token-ttl: 30m
@@ -163,6 +175,8 @@ oauth:
     secure: false
 
 auth:
+  session:
+    key-prefix: ${AUTH_SESSION_KEY_PREFIX:yeodam:performance:auth:}
   jwt:
     secret: ${JWT_SECRET:local-development-jwt-secret-key-32-bytes}
     issuer: ${JWT_ISSUER:http://localhost:8080}
@@ -200,6 +214,8 @@ oauth:
   browser-context-cookie:
     secure: true
 auth:
+  session:
+    key-prefix: ${AUTH_SESSION_KEY_PREFIX:yeodam:prod:auth:}
   jwt:
     secret: ${JWT_SECRET}
     issuer: ${JWT_ISSUER}
@@ -237,6 +253,8 @@ oauth:
   browser-context-cookie:
     secure: false
 auth:
+  session:
+    key-prefix: "yeodam:test:auth:"
   jwt:
     secret: test-jwt-secret-key-must-be-at-least-32-bytes
     issuer: https://api.yeodam.test

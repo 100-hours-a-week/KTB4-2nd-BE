@@ -61,6 +61,69 @@ START TRANSACTION;
 DELETE FROM login_sessions WHERE sid IN ({sids});
 SELECT ROW_COUNT() AS removed_sessions;
 """
+    # Redis V2 output is separate: preserve the existing RDB baseline SQL artifacts.
+    redis_rows = ",\n".join(
+        "{sid='%s', userId='%s', hash='%s'}" % (
+            item["sid"], item["userId"], hashlib.sha256(item["refreshToken"].encode()).hexdigest())
+        for item in tokens
+    )
+    redis_seed = """-- Verify all seven active users in MySQL before applying this file.
+-- redis-cli --eval seed.redis.lua , <auth.session.key-prefix>
+local prefix = ARGV[1]
+if not prefix or prefix == '' then return redis.error_reply('Missing namespace') end
+local items = {
+""" + redis_rows + """
+}
+-- Validate the entire batch before writing any session.
+for _, item in ipairs(items) do
+    if redis.call('EXISTS', prefix .. 'session:' .. item.sid, prefix .. 'refresh:' .. item.hash) > 0 then
+        return redis.error_reply('Session collision')
+    end
+    local kind = redis.call('TYPE', prefix .. 'user-sessions:' .. item.userId).ok
+    if kind ~= 'none' and kind ~= 'zset' then return redis.error_reply('Invalid index type') end
+end
+local time = redis.call('TIME')
+local now = time[1] * 1000 + math.floor(time[2] / 1000)
+local ttl = 604800000
+for _, item in ipairs(items) do
+    local session = prefix .. 'session:' .. item.sid
+    local index = prefix .. 'user-sessions:' .. item.userId
+    redis.call('HSET', session, 'userId', item.userId, 'refreshTokenHash', item.hash, 'expiresAt', now + ttl)
+    redis.call('PEXPIRE', session, ttl)
+    redis.call('SET', prefix .. 'refresh:' .. item.hash, item.sid, 'PX', ttl)
+    redis.call('ZREMRANGEBYSCORE', index, '-inf', now)
+    redis.call('ZADD', index, now + ttl, item.sid)
+    redis.call('PEXPIRE', index, ttl)
+end
+return #items
+"""
+    redis_cleanup = """-- Removes only this run's sessions, including rotated tokens.
+-- redis-cli --eval cleanup.redis.lua , <auth.session.key-prefix>
+local prefix = ARGV[1]
+if not prefix or prefix == '' then return redis.error_reply('Missing namespace') end
+local items = {
+""" + redis_rows + """
+}
+for _, item in ipairs(items) do
+    local kind = redis.call('TYPE', prefix .. 'session:' .. item.sid).ok
+    if kind ~= 'none' and kind ~= 'hash' then return redis.error_reply('Invalid session type') end
+    local indexKind = redis.call('TYPE', prefix .. 'user-sessions:' .. item.userId).ok
+    if indexKind ~= 'none' and indexKind ~= 'zset' then return redis.error_reply('Invalid index type') end
+end
+local count = 0
+for _, item in ipairs(items) do
+    local session = prefix .. 'session:' .. item.sid
+    if redis.call('HGET', session, 'userId') == item.userId then
+        local hash = redis.call('HGET', session, 'refreshTokenHash')
+        if hash then redis.call('DEL', prefix .. 'refresh:' .. hash) end
+        count = count + redis.call('DEL', session)
+        local index = prefix .. 'user-sessions:' .. item.userId
+        redis.call('ZREM', index, item.sid)
+        if redis.call('ZCARD', index) == 0 then redis.call('DEL', index) end
+    end
+end
+return count
+"""
     output_dir = Path(output_dir)
     output_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
     try:
@@ -68,6 +131,8 @@ SELECT ROW_COUNT() AS removed_sessions;
             {"runId": output_dir.name, "tokens": tokens}, indent=2) + "\n")
         write_private(output_dir / "seed.sql", seed)
         write_private(output_dir / "cleanup.sql", cleanup)
+        write_private(output_dir / "seed.redis.lua", redis_seed)
+        write_private(output_dir / "cleanup.redis.lua", redis_cleanup)
     except OSError:
         shutil.rmtree(output_dir)
         raise
@@ -88,7 +153,7 @@ def main():
     except OSError:
         parser.exit(1, "생성 실패: 출력 경로 중복 또는 파일 쓰기 권한을 확인하세요.\n")
     print("VU 토큰 7개 생성 완료 (DB 등록은 별도):")
-    for name in ("tokens.json", "seed.sql", "cleanup.sql"):
+    for name in ("tokens.json", "seed.sql", "cleanup.sql", "seed.redis.lua", "cleanup.redis.lua"):
         print(output.resolve() / name)
 
 

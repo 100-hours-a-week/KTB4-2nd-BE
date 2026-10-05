@@ -1,0 +1,62 @@
+# Private capacity stack; never uses the existing performance MySQL volume.
+services:
+  auth-mysql:
+    image: mysql:9.7.2
+    cpus: ${AUTH_MYSQL_CPUS:-2}
+    mem_limit: ${AUTH_MYSQL_MEMORY:-2560m}
+    environment:
+      MYSQL_DATABASE: auth_performance
+      MYSQL_USER: yeodam
+      MYSQL_PASSWORD: yeodam
+      MYSQL_ROOT_PASSWORD: root
+    command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --innodb-buffer-pool-size=1073741824]
+    volumes: [auth-capacity-mysql:/var/lib/mysql]
+    healthcheck:
+      test: [CMD-SHELL, 'mysqladmin ping -h localhost -uroot -proot']
+      interval: 2s
+      timeout: 3s
+      retries: 60
+  auth-redis:
+    profiles: [redis]
+    image: redis:8.8.0
+    cpus: 0.5
+    mem_limit: 512m
+    command: [redis-server, --maxmemory, 256mb, --maxmemory-policy, noeviction, --save, '', --appendonly, '${AUTH_REDIS_AOF:-no}', --appendfsync, everysec]
+    volumes: [auth-capacity-redis:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  auth-backend:
+    image: ${AUTH_JAVA_IMAGE:-eclipse-temurin:25-jre-noble}
+    cpus: 2
+    mem_limit: 1536m
+    working_dir: /opt/auth
+    ports: ['127.0.0.1:${AUTH_PORT:-18081}:8080']
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_EC2_METADATA_DISABLED: 'true'
+    volumes:
+      - ${AUTH_DISTRIBUTION:?Build authCapacityDistribution}:/opt/auth:ro
+      - ${AUTH_RESULTS:?Set private result directory}:/results
+    command:
+      - java
+      - -Xms1g
+      - -Xmx1g
+      - -Dload.container=true
+      - -Dload.runDir=/results
+      - -Dload.mysql=jdbc:mysql://auth-mysql:3306/auth_performance?serverTimezone=Asia/Seoul&characterEncoding=utf8
+      - -Dload.store=${AUTH_STORE:-rdb}
+      - -Dload.csrfStore=${AUTH_CSRF_STORE:-rdb}
+      - -Dload.dataset=${AUTH_DATASET:-capacity}
+      - -Dload.users=10000
+      - -Dload.activeUsers=10000
+      - -Dload.budgetSeconds=3600
+      - -cp
+      - classes:lib/*
+      - com.yeodam.yeodambe.user.performance.AuthCapacityServer
+volumes:
+  auth-capacity-mysql:
+  auth-capacity-redis:

@@ -1,79 +1,41 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
-import com.yeodam.yeodambe.user.entity.OAuthStateEntity;
-import com.yeodam.yeodambe.user.repository.OAuthStateRepository;
 import com.yeodam.yeodambe.user.security.TokenHasher;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
-import java.util.Optional;
 
 @Component
-@RequiredArgsConstructor
 public class OAuthStateStore {
+    private final RedisOAuthTokenOperations operations;
+    private final TokenHasher hasher;
+    private final String prefix;
 
-    private static final Duration STATE_TTL =
-            Duration.ofMinutes(5);
-
-    private final OAuthStateRepository oauthStateRepository;
-    private final TokenHasher tokenHasher;
-
-    public void save(
-            String state,
-            String browserContext
-    ) {
-        LocalDateTime expiresAt =
-                LocalDateTime.now().plus(STATE_TTL);
-
-        OAuthStateEntity entity = new OAuthStateEntity(
-                tokenHasher.hash(state),
-                tokenHasher.hash(browserContext),
-                expiresAt
-        );
-
-        oauthStateRepository.save(entity);
+    public OAuthStateStore(RedisOAuthTokenOperations operations, TokenHasher hasher,
+                           @Value("${auth.session.key-prefix}") String prefix) {
+        this.operations = operations;
+        this.hasher = hasher;
+        this.prefix = prefix;
     }
 
-    @Transactional
-    public boolean consume(
-            String state,
-            String browserContext
-    ) {
-        if (state == null
-                || state.isBlank()
-                || browserContext == null
-                || browserContext.isBlank()) {
-            return false;
+    public void save(String state, String browserContext) {
+        if (isBlank(state) || isBlank(browserContext)) {
+            throw new IllegalArgumentException("OAuth state 입력이 유효하지 않습니다.");
         }
+        operations.saveState(key(state), hasher.hash(browserContext), Duration.ofMinutes(5));
+    }
 
-        String stateHash = tokenHasher.hash(state);
-        String browserContextHash =
-                tokenHasher.hash(browserContext);
+    public boolean consume(String state, String browserContext) {
+        return !isBlank(state) && !isBlank(browserContext)
+                && operations.consumeState(key(state), hasher.hash(browserContext));
+    }
 
-        Optional<OAuthStateEntity> result =
-                oauthStateRepository.findByStateHashForUpdate(
-                        stateHash
-                );
+    private String key(String state) {
+        return prefix + "oauth-state:" + hasher.hash(state);
+    }
 
-        if (result.isEmpty()) {
-            return false;
-        }
-
-        OAuthStateEntity entity = result.get();
-
-        if (entity.isExpired(LocalDateTime.now())) {
-            oauthStateRepository.delete(entity);
-            return false;
-        }
-
-        if (!entity.matchesBrowserContext(browserContextHash)) {
-            return false;
-        }
-
-        oauthStateRepository.delete(entity);
-        return true;
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

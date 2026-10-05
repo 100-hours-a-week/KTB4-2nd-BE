@@ -1,21 +1,23 @@
 package com.yeodam.yeodambe.user.service;
 
-import com.yeodam.yeodambe.user.entity.CsrfTokenEntity;
-import com.yeodam.yeodambe.user.repository.CsrfTokenRepository;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenGenerator;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import com.yeodam.yeodambe.TestcontainersConfiguration;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import java.util.concurrent.TimeUnit;
 import org.springframework.context.annotation.Import;
 
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DataJpaTest
-@Import({CsrfTokenService.class, CsrfTokenStore.class, CsrfTokenGenerator.class, TokenHasher.class})
+@SpringBootTest
+@ActiveProfiles("test")
+@Import(TestcontainersConfiguration.class)
 class CsrfTokenServiceTest {
 
     @Autowired
@@ -25,7 +27,7 @@ class CsrfTokenServiceTest {
     private CsrfTokenStore csrfTokenStore;
 
     @Autowired
-    private CsrfTokenRepository csrfTokenRepository;
+    private StringRedisTemplate redis;
 
     @Autowired
     private TokenHasher tokenHasher;
@@ -51,12 +53,10 @@ class CsrfTokenServiceTest {
     }
 
     @Test
-    void 만료된_토큰은_새로_발급한다() {
-        csrfTokenRepository.save(new CsrfTokenEntity(
-                tokenHasher.hash("expired-browser"),
-                "expired-token",
-                LocalDateTime.now().minusSeconds(1)
-        ));
+    void 만료된_토큰은_새로_발급한다() throws Exception {
+        csrfTokenStore.save("expired-browser", "expired-token");
+        redis.expire("yeodam:test:auth:csrf:" + tokenHasher.hash("expired-browser"), java.time.Duration.ofMillis(1));
+        Thread.sleep(20);
 
         String issued = csrfTokenService.issue("expired-browser");
 

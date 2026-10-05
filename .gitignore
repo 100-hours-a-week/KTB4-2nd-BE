@@ -118,3 +118,6 @@ $RECYCLE.BIN/
 /performance/derivative/runtime/
 /performance/derivative/__pycache__/
 /performance/derivative/archived-runtime/
+
+/performance/auth/__pycache__/
+/performance/auth/runtime/

@@ -72,6 +72,8 @@ tasks.named('test') {
     useJUnitPlatform { excludeTags 'performance' }
 }
 [
+    authPerformanceServerTest: ['AuthPerformanceServerTest'],
+    authPerformanceSupportTest: ['AuthMeasurementsTest', 'AuthCsrfFixtureTest'],
     derivativeK6ServerTest: ['DerivativeK6ServerTest', 'DerivativeK6PipelineTest'],
     performanceSupportTest: ['LocalAnalysisStubTest', 'StageMeasurementsTest', 'LoadReportTest', 'PostprocessLoadRunnerTest'],
     postprocessSmokeTest: ['PostprocessUploadSmokeTest'],
@@ -89,6 +91,10 @@ tasks.named('test') {
         }
         testClasses.each { include "**/${it}.class" }
         maxParallelForks = 1
+        if (taskName == 'authPerformanceServerTest') {
+            minHeapSize = '1g'
+            maxHeapSize = '1g'
+        }
         environment 'AWS_ACCESS_KEY_ID', 'test'
         environment 'AWS_SECRET_ACCESS_KEY', 'test'
         environment 'AWS_EC2_METADATA_DISABLED', 'true'
@@ -96,5 +102,28 @@ tasks.named('test') {
         project.properties.findAll { key, value -> key.startsWith('load.') }.each { key, value ->
             systemProperty key, value
         }
+    }
+}
+
+// The launcher already exists in test runtime; expose it to the standalone harness.
+dependencies { performanceTestImplementation 'org.junit.platform:junit-platform-launcher' }
+tasks.register('authCapacityDistribution', Sync) {
+    dependsOn tasks.named('performanceTestClasses')
+    into layout.buildDirectory.dir('auth-capacity')
+    from(sourceSets.main.output) { into 'classes' }
+    from(sourceSets.performanceTest.output) { into 'classes' }
+    from(configurations.performanceTestRuntimeClasspath) { into 'lib' }
+    from('data') { into 'data' }
+}
+tasks.named('authCapacityDistribution') {
+    doLast {
+        def source = file('src/main/java/com/yeodam/yeodambe/user/security/session/LoginSessionStore.java')
+        def csrfSource = file('src/main/java/com/yeodam/yeodambe/user/security/csrf/CsrfTokenStore.java')
+        def metadata = [csrfStore: csrfSource.text.contains('StringRedisTemplate') ? 'redis' : 'rdb',
+                        csrfSourceSha256: java.security.MessageDigest.getInstance('SHA-256').digest(csrfSource.bytes).encodeHex().toString(),
+                        store: source.text.contains('StringRedisTemplate') ? 'redis' : 'rdb',
+                        sourceCommit: file('auth-capacity-source.json').exists() ? new groovy.json.JsonSlurper().parse(file('auth-capacity-source.json')).commit : ['git', 'rev-parse', 'HEAD'].execute(null, projectDir).text.trim(),
+                        sessionSourceSha256: java.security.MessageDigest.getInstance('SHA-256').digest(source.bytes).encodeHex().toString()]
+        file('build/auth-capacity/implementation.json').text = groovy.json.JsonOutput.toJson(metadata)
     }
 }

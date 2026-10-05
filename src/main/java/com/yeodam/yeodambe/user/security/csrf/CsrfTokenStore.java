@@ -1,149 +1,105 @@
 package com.yeodam.yeodambe.user.security.csrf;
 
-import com.yeodam.yeodambe.user.entity.CsrfTokenEntity;
-import com.yeodam.yeodambe.user.repository.CsrfTokenRepository;
+import com.yeodam.yeodambe.user.exception.CsrfStoreUnavailableException;
 import com.yeodam.yeodambe.user.security.TokenHasher;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
-import java.util.Optional;
 import java.util.function.Supplier;
 
 @Component
-@RequiredArgsConstructor
 public class CsrfTokenStore {
+    private static final Duration TOKEN_TTL = Duration.ofDays(7);
+    private final StringRedisTemplate redis;
+    private final TokenHasher hasher;
+    private final String prefix;
 
-    private static final Duration TOKEN_TTL =
-            Duration.ofDays(7);
-
-    private final CsrfTokenRepository csrfTokenRepository;
-    private final TokenHasher tokenHasher;
-
-    @Transactional
-    public String findOrCreate(String browserContext, Supplier<String> tokenGenerator) {
-        String browserContextHash = tokenHasher.hash(browserContext);
-        Optional<CsrfTokenEntity> result =
-                csrfTokenRepository.findByBrowserContextHashForUpdate(browserContextHash);
-        LocalDateTime now = LocalDateTime.now();
-
-        if (result.isPresent() && !result.get().isExpired(now)) {
-            return result.get().getTokenValue();
-        }
-
-        String token = tokenGenerator.get();
-        LocalDateTime expiresAt = now.plus(TOKEN_TTL);
-        if (result.isPresent()) {
-            result.get().update(token, expiresAt);
-        } else {
-            csrfTokenRepository.saveAndFlush(new CsrfTokenEntity(
-                    browserContextHash, token, expiresAt
-            ));
-        }
-        return token;
+    public CsrfTokenStore(StringRedisTemplate redis, TokenHasher hasher,
+                          @Value("${auth.session.key-prefix}") String prefix) {
+        this.redis = redis;
+        this.hasher = hasher;
+        this.prefix = prefix;
     }
 
-    @Transactional
-    public void save(
-            String browserContext,
-            String token
-    ) {
-        String browserContextHash =
-                tokenHasher.hash(browserContext);
-
-        Optional<CsrfTokenEntity> result =
-                csrfTokenRepository
-                        .findByBrowserContextHashForUpdate(
-                                browserContextHash
-                        );
-
-        LocalDateTime expiresAt =
-                LocalDateTime.now().plus(TOKEN_TTL);
-
-        if (result.isPresent()) {
-            result.get().update(token, expiresAt);
-            return;
+    public String findOrCreate(String browserContext, Supplier<String> generator) {
+        requireValue(browserContext);
+        try {
+            String key = key(browserContext);
+            for (int attempt = 0; attempt < 16; attempt++) {
+                String existing = read(key);
+                if (existing != null) {
+                    return existing;
+                }
+                String token = generator.get();
+                requireValue(token);
+                if (Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(key, token, TOKEN_TTL))) {
+                    return token;
+                }
+            }
+            throw new CsrfStoreUnavailableException();
+        } catch (DataAccessException exception) {
+            throw new CsrfStoreUnavailableException();
         }
-
-        csrfTokenRepository.save(new CsrfTokenEntity(
-                browserContextHash,
-                token,
-                expiresAt
-        ));
     }
 
-    @Transactional
-    public boolean matches(
-            String browserContext,
-            String token
-    ) {
-        if (browserContext == null
-                || browserContext.isBlank()
-                || token == null
-                || token.isBlank()) {
-            return false;
+    public void save(String browserContext, String token) {
+        requireValue(browserContext);
+        requireValue(token);
+        try {
+            redis.opsForValue().set(key(browserContext), token, TOKEN_TTL);
+        } catch (DataAccessException exception) {
+            throw new CsrfStoreUnavailableException();
         }
-
-        Optional<CsrfTokenEntity> result =
-                findEntity(browserContext);
-
-        if (result.isEmpty()) {
-            return false;
-        }
-
-        CsrfTokenEntity entity = result.get();
-
-        if (entity.isExpired(LocalDateTime.now())) {
-            csrfTokenRepository.delete(entity);
-            return false;
-        }
-
-        return token.equals(entity.getTokenValue());
     }
 
-    @Transactional
     public String find(String browserContext) {
-        if (browserContext == null
-                || browserContext.isBlank()) {
+        if (isBlank(browserContext)) {
             return null;
         }
-
-        Optional<CsrfTokenEntity> result =
-                findEntity(browserContext);
-
-        if (result.isEmpty()) {
-            return null;
+        try {
+            return read(key(browserContext));
+        } catch (DataAccessException exception) {
+            throw new CsrfStoreUnavailableException();
         }
-
-        CsrfTokenEntity entity = result.get();
-
-        if (entity.isExpired(LocalDateTime.now())) {
-            csrfTokenRepository.delete(entity);
-            return null;
-        }
-
-        return entity.getTokenValue();
     }
 
-    @Transactional
+    public boolean matches(String browserContext, String token) {
+        return !isBlank(browserContext) && !isBlank(token) && token.equals(find(browserContext));
+    }
+
     public void delete(String browserContext) {
-        if (browserContext == null
-                || browserContext.isBlank()) {
+        if (isBlank(browserContext)) {
             return;
         }
-
-        csrfTokenRepository.deleteByBrowserContextHash(
-                tokenHasher.hash(browserContext)
-        );
+        try {
+            redis.delete(key(browserContext));
+        } catch (DataAccessException exception) {
+            throw new CsrfStoreUnavailableException();
+        }
     }
 
-    private Optional<CsrfTokenEntity> findEntity(
-            String browserContext
-    ) {
-        return csrfTokenRepository.findByBrowserContextHash(
-                tokenHasher.hash(browserContext)
-        );
+    private String read(String key) {
+        String value = redis.opsForValue().get(key);
+        if (value != null && value.isBlank()) {
+            throw new CsrfStoreUnavailableException();
+        }
+        return value;
+    }
+
+    private String key(String browserContext) {
+        return prefix + "csrf:" + hasher.hash(browserContext);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static void requireValue(String value) {
+        if (isBlank(value)) {
+            throw new IllegalArgumentException("CSRF 저장소 입력이 유효하지 않습니다.");
+        }
     }
 }

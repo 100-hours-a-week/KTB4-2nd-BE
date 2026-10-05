@@ -208,7 +208,7 @@ class WithdrawalIntegrationTest {
     }
 
     @Test
-    void csrfDeletionFailureRollsBackWithdrawalAndSessionDeletion() {
+    void csrfCleanupFailureAfterCommitStillWithdrawsAndDeletesSessions() {
         String unique = UUID.randomUUID().toString();
         User user = userRegistrationService.register(
                 "rollback-" + unique + "@yeodam.test", "롤백회원",
@@ -224,20 +224,19 @@ class WithdrawalIntegrationTest {
             throw new IllegalStateException("Simulated failure after CSRF deletion");
         }).when(csrfTokenStore).delete(browserContext);
 
-        assertThatThrownBy(() -> withdrawalService.withdraw(user.getUserId(), browserContext))
-                .isInstanceOf(WithdrawalFailedException.class);
+        withdrawalService.withdraw(user.getUserId(), browserContext);
 
         for (String table : new String[]{"users", "oauth_accounts", "consents", "user_stats"}) {
             assertThat(jdbcTemplate.queryForObject(
                     "SELECT deleted_at FROM " + table + " WHERE user_id = ?",
-                    Object.class, user.getUserId())).isNull();
+                    Object.class, user.getUserId())).isNotNull();
         }
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT deleted_at FROM trips WHERE trip_id = ?",
-                Object.class, trip.getId())).isNull();
-        assertThat(loginSessionStore.findBySid(session.sid())).isPresent();
-        assertThat(loginSessionStore.findSidByRefreshTokenHash(tokenHasher.hash(session.refreshToken()))).contains(session.sid());
-        assertThat(csrfTokenStore.find(browserContext)).isEqualTo("rollback-csrf-token");
+                Object.class, trip.getId())).isNotNull();
+        assertThat(loginSessionStore.findBySid(session.sid())).isEmpty();
+        assertThat(loginSessionStore.findSidByRefreshTokenHash(tokenHasher.hash(session.refreshToken()))).isEmpty();
+        assertThat(csrfTokenStore.find(browserContext)).isNull();
     }
 
     @Test

@@ -1,87 +1,63 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
-import com.yeodam.yeodambe.user.entity.LoginTicketEntity;
-import com.yeodam.yeodambe.user.repository.LoginTicketRepository;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.UUID;
 
 @Component
-@RequiredArgsConstructor
 public class LoginTicketStore {
+    private final RedisOAuthTokenOperations operations;
+    private final TokenHasher hasher;
+    private final String prefix;
 
-    private static final Duration TICKET_TTL =
-            Duration.ofMinutes(1);
-
-    private final LoginTicketRepository loginTicketRepository;
-    private final TokenHasher tokenHasher;
-
-    public void save(
-            String ticket,
-            KakaoUserIdentity identity,
-            String browserContext
-    ) {
-        LoginTicketEntity entity = new LoginTicketEntity(
-                tokenHasher.hash(ticket),
-                tokenHasher.hash(browserContext),
-                identity.providerUserId(),
-                identity.email(),
-                identity.profileImageUrl(),
-                LocalDateTime.now().plus(TICKET_TTL)
-        );
-
-        loginTicketRepository.save(entity);
+    public LoginTicketStore(RedisOAuthTokenOperations operations, TokenHasher hasher,
+                              @Value("${auth.session.key-prefix}") String prefix) {
+        this.operations = operations;
+        this.hasher = hasher;
+        this.prefix = prefix;
     }
 
-    @Transactional
-    public Optional<KakaoUserIdentity> consume(
-            String ticket,
-            String browserContext
-    ) {
-        if (ticket == null
-                || ticket.isBlank()
-                || browserContext == null
-                || browserContext.isBlank()) {
-            return Optional.empty();
+    public void save(String token, KakaoUserIdentity identity, String browserContext) {
+        if (isBlank(token) || isBlank(browserContext)) {
+            throw new IllegalArgumentException("OAuth 티켓 입력이 유효하지 않습니다.");
         }
+        operations.save(key(token), identity, hasher.hash(browserContext), Duration.ofMinutes(1), UUID.randomUUID().toString());
+    }
 
-        String ticketHash = tokenHasher.hash(ticket);
-        String browserContextHash =
-                tokenHasher.hash(browserContext);
+    public Optional<KakaoUserIdentity> consume(String token, String browserContext) {
+        String owner = UUID.randomUUID().toString();
+        return claim(token, browserContext, owner).map(claim -> {
+            complete(token, owner);
+            return claim.identity();
+        });
+    }
 
-        Optional<LoginTicketEntity> result =
-                loginTicketRepository.findByTicketHashForUpdate(
-                        ticketHash
-                );
+    public Optional<OAuthTokenClaim> claim(String token, String browserContext, String owner) {
+        return isBlank(token) || isBlank(browserContext) ? Optional.empty() : operations.claim(key(token), hasher.hash(browserContext), owner);
+    }
 
-        if (result.isEmpty()) {
-            return Optional.empty();
+    public void complete(String token, String owner) {
+        if (!isBlank(token)) {
+            operations.complete(key(token), owner);
         }
+    }
 
-        LoginTicketEntity entity = result.get();
-
-        if (entity.isExpired(LocalDateTime.now())) {
-            loginTicketRepository.delete(entity);
-            return Optional.empty();
+    public void release(String token, String owner) {
+        if (!isBlank(token)) {
+            operations.release(key(token), owner);
         }
+    }
 
-        if (!entity.matchesBrowserContext(browserContextHash)) {
-            return Optional.empty();
-        }
+    private String key(String token) {
+        return prefix + "login-ticket:" + hasher.hash(token);
+    }
 
-        KakaoUserIdentity identity = new KakaoUserIdentity(
-                entity.getProviderUserId(),
-                entity.getEmail(),
-                entity.getProfileImageUrl()
-        );
-
-        loginTicketRepository.delete(entity);
-        return Optional.of(identity);
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

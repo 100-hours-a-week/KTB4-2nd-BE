@@ -53,6 +53,11 @@ aws:
   region: ${AWS_REGION:ap-northeast-2}
 
 attachment:
+  derivative:
+    heic-workers: ${ATTACHMENT_DERIVATIVE_HEIC_WORKERS:1}
+    light-workers: ${ATTACHMENT_DERIVATIVE_LIGHT_WORKERS:1}
+    heic-max-inflight-photos: ${ATTACHMENT_DERIVATIVE_HEIC_MAX_INFLIGHT_PHOTOS:10}
+    light-max-inflight-photos: ${ATTACHMENT_DERIVATIVE_LIGHT_MAX_INFLIGHT_PHOTOS:20}
   s3:
     bucket: ${ATTACHMENT_S3_BUCKET}
     read-url-ttl: ${ATTACHMENT_S3_READ_URL_TTL:10m}

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripProcessingCannotBeCanceledException;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
@@ -34,11 +35,19 @@ public class TripProcessingCancellationService {
     private final InitialUploadExecutionRegistry executions;
     private final TransactionOperations transactions;
     private final InitialAttachmentUploadBatchRepository uploadBatches;
+    private final TripAttachmentDerivativeService derivatives;
 
     public void cancel(Long tripId, Long userId) {
         transactions.executeWithoutResult(status -> cancelInTransaction(tripId, userId));
 
         boolean legacyAnalysisStarted = executions.cancel(tripId);
+        String executionId = null;
+        try {
+            executionId = executions.snapshot(tripId).executionId();
+        } catch (TripInitialAttachmentUploadNotAllowedException absent) {
+            // 재시작 또는 이미 정착한 실행은 메모리 레지스트리에 없다.
+        }
+        if (executionId != null) derivatives.cancelExecution(executionId);
         if (legacyAnalysisStarted || uploadBatches.existsByTripIdAndStatus(
                 tripId, InitialAttachmentUploadStatus.ANALYZING)) cancelAnalysis(tripId);
     }

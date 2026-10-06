@@ -92,7 +92,7 @@ public class TripAttachmentService {
                     .log("사진 원본 저장을 완료했습니다.");
 
             failureStage = "derivative_create";
-            derivedKeys = createDerived(executionId, originalsKeys, types);
+            derivedKeys = createDerived(tripId, executionId, originalsKeys, types);
 
             failureStage = "attachment_persist";
             TripAttachmentTransactionService.SavedAttachments persisted = transactions
@@ -255,7 +255,7 @@ public class TripAttachmentService {
                     .log("사진 원본 저장을 완료했습니다.");
 
             failureStage = "derivative_create";
-            derivedKeys = createDerived(executionId, originalKeys, types);
+            derivedKeys = createDerived(tripId, executionId, originalKeys, types);
 
             failureStage = "attachment_persist";
             persisted = transactions.saveFilesAndAttachments(
@@ -508,10 +508,11 @@ public class TripAttachmentService {
     }
 
     private List<DerivedPhotoKeys> createDerived(
-            String executionId, List<String> originalsKeys, List<String> mimeTypes
+            Long tripId, String executionId, List<String> originalsKeys, List<String> mimeTypes
     ) {
         List<DerivedPhotoKeys> derived = derivatives.createAll(
-                executionId, List.copyOf(originalsKeys), mimeTypes).join();
+                executionId, List.copyOf(originalsKeys), mimeTypes,
+                () -> executions.isCurrent(tripId, executionId)).join();
         if (derived == null || derived.size() != mimeTypes.size()) {
             throw new IllegalStateException(TripInternalErrorMessage.DERIVED_ATTACHMENT_COUNT_MISMATCH.message());
         }

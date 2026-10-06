@@ -74,8 +74,8 @@ class InitialAttachmentUploadFlowIntegrationTest {
         when(derivatives.createAll(anyString(), anyList(), anyList())).thenAnswer(call -> {
             List<String> keys = call.getArgument(1);
             return CompletableFuture.completedFuture(keys.stream().map(key -> new DerivedPhotoKeys(
-                    key, key + "-analyze", key + "-preview", TAKEN_AT,
-                    BigDecimal.ONE, BigDecimal.TEN, "camera")).toList());
+                    key, key + "-analyze", key + "-preview", null, TAKEN_AT,
+                    BigDecimal.ONE, BigDecimal.TEN, "camera", 12L, 8L, 4L, null)).toList());
         });
         when(analysis.analyze(anyLong(), anyString(), any(), any())).thenAnswer(call -> {
             assertThat(((BooleanSupplier) call.getArgument(3)).getAsBoolean()).isTrue();
@@ -115,6 +115,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
         assertThat(request.regions()).hasSize(1);
         verify(derivatives, times(2)).createAll(anyString(), anyList(), anyList());
         assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getAttachmentCount()).isEqualTo(2);
+        assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getStorageUsedBytes()).isEqualTo(48L);
     }
 
     @Test

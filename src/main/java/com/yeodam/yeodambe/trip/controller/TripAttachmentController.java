@@ -30,6 +30,12 @@ import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.request.BulkAttachmentDownloadRequest;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
+import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 
 import java.util.List;
 import java.util.Optional;
@@ -43,6 +49,46 @@ public class TripAttachmentController {
     private final TripAttachmentDeletionService tripAttachmentDeletionService;
     private final TripAttachmentDownloadService tripAttachmentDownloadService;
     private final BulkAttachmentDownloadService bulkAttachmentDownloadService;
+    private final InitialAttachmentUploadUrlService uploadUrlService;
+    private final InitialAttachmentUploadCompletionService uploadCompletion;
+
+    @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> completeInitialAttachmentUpload(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestBody InitialAttachmentUploadCompleteRequest request
+    ) {
+        if (request == null || request.uploadId() == null || request.uploadId().isBlank()) {
+            throw new InvalidAttachmentUploadException();
+        }
+        Optional<TripProcessingStatusResponse> result = uploadCompletion.complete(
+                tripId, Long.valueOf(jwt.getSubject()), request);
+        if (result.isEmpty()) return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(new ApiResponse<>(SuccessMessage.TRIP_PROCESSING_STATUS_FOUND, result.get()));
+    }
+
+    @PostMapping(
+            value = "/trips/{tripId}/initial-attachments/upload-urls",
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<ApiResponse<InitialAttachmentUploadUrlResponse>>
+    issueInitialAttachmentUploadUrls(
+            @PathVariable Long tripId,
+            @RequestBody InitialAttachmentUploadUrlRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        InitialAttachmentUploadUrlResponse data =
+                uploadUrlService.issueUploadUrls(tripId, userId, request);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        SuccessMessage.TRIP_INITIAL_ATTACHMENT_UPLOAD_URLS_ISSUED,
+                        data
+                )
+        );
+    }
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> uploadInitialAttachments(

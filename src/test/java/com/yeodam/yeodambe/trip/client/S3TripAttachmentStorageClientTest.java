@@ -63,6 +63,32 @@ class S3TripAttachmentStorageClientTest {
     }
 
     @Test
+    void 업로드_URL에_파일_위치와_필수_헤더와_유효기간을_서명한다() {
+        URI uri = URI.create(storageClient.createUploadUrl(
+                "trip-uploads/execution/original/photo-key",
+                "image/jpeg",
+                Duration.ofMinutes(10)
+        ));
+        String query = URLDecoder.decode(uri.getRawQuery(), StandardCharsets.UTF_8);
+
+        assertThat(uri.getHost())
+                .isEqualTo("test-bucket.s3.ap-northeast-2.amazonaws.com");
+        assertThat(uri.getPath())
+                .isEqualTo("/trip-uploads/execution/original/photo-key");
+        assertThat(query)
+                .contains("X-Amz-Expires=600")
+                .contains("X-Amz-SignedHeaders=content-type;host;if-none-match")
+                .contains("X-Amz-Signature=");
+
+        URI shorterUrl = URI.create(storageClient.createUploadUrl(
+                "trip-uploads/execution/original/photo-key",
+                "image/jpeg",
+                Duration.ofMinutes(3)
+        ));
+        assertThat(shorterUrl.getRawQuery()).contains("X-Amz-Expires=180");
+    }
+
+    @Test
     void 객체_키로_십분간_유효한_조회_URL을_만든다() {
         String url = storageClient.createReadUrl(
                 "trip-uploads/execution/preview.webp"

@@ -158,10 +158,19 @@ public class TripAttachmentTransactionService {
                 throw new IllegalArgumentException(TripInternalErrorMessage.SOURCE_AND_DERIVED_ATTACHMENT_ORDER_MISMATCH.message());
             }
 
+            original.storageSize(photo.originalSizeBytes());
+
             TripAttachment attachment = TripAttachment.initial(
                     tripId, original.getId(), photo.analyzeKey(), photo.previewKey(),
                     photo.displayKey());
             attachment.originalMetadata(photo.takenAt(), photo.latitude(), photo.longitude(), photo.deviceModel());
+
+            attachment.storageSizes(
+                    photo.analyzeSizeBytes(),
+                    photo.previewSizeBytes(),
+                    photo.displaySizeBytes()
+            );
+
             attachments.add(attachment);
         }
         return new SavedAttachments(originals, attachmentRepository.saveAll(attachments));

@@ -7,15 +7,28 @@ import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiPredicate;
 
 @Component
 public class InitialUploadExecutionRegistry {
     private static final long MAX_TOTAL_BYTES = 3L * 1024 * 1024 * 1024;
+
+    private final Clock clock;
+
+    public InitialUploadExecutionRegistry() {
+        this(Clock.systemUTC());
+    }
+
+    InitialUploadExecutionRegistry(Clock clock) {
+        this.clock = clock;
+    }
 
     private final ConcurrentHashMap<Long, Execution> executions = new ConcurrentHashMap<>();
 
@@ -27,7 +40,7 @@ public class InitialUploadExecutionRegistry {
         if (batchNo == 1) {
             String executionId = UUID.randomUUID().toString();
             Execution created = new Execution(
-                    executionId, State.STORING, 1, 1, totalAttachmentCount, 0, 0, List.of());
+                    executionId, State.STORING, 1, 1, totalAttachmentCount, 0, 0, List.of(), null);
             if (executions.putIfAbsent(tripId, created) != null) {
                 throw new TripInitialAttachmentUploadNotAllowedException();
             }
@@ -39,7 +52,7 @@ public class InitialUploadExecutionRegistry {
             return new Execution(
                     current.id(), State.STORING, current.nextBatchNo(), batchNo,
                     current.totalAttachmentCount(), current.attachmentCount(),
-                    current.uploadedBytes(), current.photos());
+                    current.uploadedBytes(), current.photos(), null);
         });
         return new Reservation(reserved.id(), false);
     }
@@ -72,7 +85,7 @@ public class InitialUploadExecutionRegistry {
             return new Execution(
                     current.id(), complete ? State.STORING : State.UPLOADING,
                     batchNo + 1, 0, current.totalAttachmentCount(), attachmentCount,
-                    uploadedBytes, List.copyOf(photos));
+                    uploadedBytes, List.copyOf(photos), complete ? null : clock.instant());
         });
         return Snapshot.from(updated);
     }
@@ -84,8 +97,20 @@ public class InitialUploadExecutionRegistry {
             return new Execution(
                     current.id(), State.UPLOADING, batchNo, 0,
                     current.totalAttachmentCount(), current.attachmentCount(),
-                    current.uploadedBytes(), current.photos());
+                    current.uploadedBytes(), current.photos(), null);
         });
+    }
+
+    // ponytail: 단일 JVM 메모리 기준이다. 재시작 복구가 필요하면 대기 시각을 영속화한다.
+    public void expireWaiting(Instant cutoff, BiPredicate<Long, Snapshot> fail) {
+        for (Long tripId : executions.keySet()) {
+            // 다음 배치 예약과 같은 키의 compute로 직렬화한다. DB 커밋 전에는 예약을 해제하지 않는다.
+            executions.computeIfPresent(tripId, (ignored, current) -> {
+                if (current.state() != State.UPLOADING || current.waitingSince() == null
+                        || current.waitingSince().isAfter(cutoff)) return current;
+                return fail.test(tripId, Snapshot.from(current)) ? null : current;
+            });
+        }
     }
 
     public Snapshot snapshot(Long tripId) {
@@ -113,7 +138,7 @@ public class InitialUploadExecutionRegistry {
             return new Execution(
                     current.id(), State.ANALYZING, current.nextBatchNo(), 0,
                     current.totalAttachmentCount(), current.attachmentCount(),
-                    current.uploadedBytes(), current.photos());
+                    current.uploadedBytes(), current.photos(), null);
         });
         return started.get();
     }
@@ -130,7 +155,7 @@ public class InitialUploadExecutionRegistry {
             return new Execution(
                     current.id(), State.CANCELED, current.nextBatchNo(), 0,
                     current.totalAttachmentCount(), current.attachmentCount(),
-                    current.uploadedBytes(), current.photos());
+                    current.uploadedBytes(), current.photos(), null);
         });
         return analysisStarted.get();
     }
@@ -205,7 +230,8 @@ public class InitialUploadExecutionRegistry {
             int totalAttachmentCount,
             int attachmentCount,
             long uploadedBytes,
-            List<StoredPhoto> photos
+            List<StoredPhoto> photos,
+            Instant waitingSince
     ) {
     }
 }

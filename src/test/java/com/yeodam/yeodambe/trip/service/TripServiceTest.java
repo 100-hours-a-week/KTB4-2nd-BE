@@ -68,7 +68,8 @@ class TripServiceTest {
                 regionCatalog,
                 tripAttachmentRepository,
                 tripAttachmentStorageClient,
-                tripAccessService
+                tripAccessService,
+                new tools.jackson.databind.ObjectMapper()
         );
     }
 

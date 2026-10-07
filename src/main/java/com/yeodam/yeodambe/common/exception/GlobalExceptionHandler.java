@@ -122,6 +122,17 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.TRIP_UPDATE_NOT_ALLOWED, null);
     }
 
+    @ExceptionHandler(TripAttachmentAddNotAllowedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleTripAttachmentAddNotAllowed(
+            TripAttachmentAddNotAllowedException e
+    ) {
+        return new ApiResponse<>(
+                ErrorMessage.TRIP_ATTACHMENT_ADD_NOT_ALLOWED,
+                null
+        );
+    }
+
     @ExceptionHandler(PlaceQueryProviderUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handlePlaceQueryProviderUnavailableException(PlaceQueryProviderUnavailableException e) {

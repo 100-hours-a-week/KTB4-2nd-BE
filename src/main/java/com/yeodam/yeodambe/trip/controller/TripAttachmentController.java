@@ -36,6 +36,9 @@ import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlRespo
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
+import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse;
 
 import java.util.List;
 import java.util.Optional;
@@ -51,6 +54,7 @@ public class TripAttachmentController {
     private final BulkAttachmentDownloadService bulkAttachmentDownloadService;
     private final InitialAttachmentUploadUrlService uploadUrlService;
     private final InitialAttachmentUploadCompletionService uploadCompletion;
+    private final AdditionalAttachmentUploadUrlService additionalAttachmentUploadUrlService;
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> completeInitialAttachmentUpload(
@@ -85,6 +89,33 @@ public class TripAttachmentController {
         return ResponseEntity.ok(
                 new ApiResponse<>(
                         SuccessMessage.TRIP_INITIAL_ATTACHMENT_UPLOAD_URLS_ISSUED,
+                        data
+                )
+        );
+    }
+
+    @PostMapping(
+            value = "/trips/{tripId}/attachments/upload-urls",
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<ApiResponse<AdditionalAttachmentUploadUrlResponse>>
+    issueAdditionalAttachmentUploadUrls(
+            @PathVariable Long tripId,
+            @RequestBody AdditionalAttachmentUploadUrlRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        AdditionalAttachmentUploadUrlResponse data =
+                additionalAttachmentUploadUrlService.issueUploadUrls(
+                        tripId,
+                        userId,
+                        request
+                );
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        SuccessMessage.TRIP_ATTACHMENT_UPLOAD_URLS_ISSUED,
                         data
                 )
         );

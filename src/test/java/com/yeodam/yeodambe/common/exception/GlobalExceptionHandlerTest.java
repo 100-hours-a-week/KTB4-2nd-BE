@@ -62,6 +62,7 @@ class GlobalExceptionHandlerTest {
             "trip-deletion-not-allowed, 409, TRIP_DELETION_NOT_ALLOWED",
             "processing-cannot-be-canceled, 409, TRIP_PROCESSING_CANNOT_BE_CANCELED",
             "attachment-not-allowed, 409, TRIP_INITIAL_ATTACHMENT_UPLOAD_NOT_ALLOWED",
+            "attachment-add-not-allowed, 409, TRIP_ATTACHMENT_ADD_NOT_ALLOWED",
             "attachment-limit, 413, ATTACHMENT_UPLOAD_LIMIT_EXCEEDED",
             "unsupported-attachment, 415, UNSUPPORTED_ATTACHMENT_FORMAT",
             "place-folder-not-found, 404, PLACE_FOLDER_NOT_FOUND",
@@ -323,6 +324,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/attachment-not-allowed")
         void attachmentNotAllowed() {
             throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+
+        @GetMapping("/test/attachment-add-not-allowed")
+        void attachmentAddNotAllowed() {
+            throw new TripAttachmentAddNotAllowedException();
         }
 
         @GetMapping("/test/attachment-limit")

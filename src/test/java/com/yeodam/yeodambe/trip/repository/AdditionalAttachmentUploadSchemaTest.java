@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -80,6 +81,33 @@ class AdditionalAttachmentUploadSchemaTest {
         assertThat(batches.findForUpdate(uploadId, tripId, otherUserId)).isEmpty();
         assertThat(batches.findForUpdate(uploadId, otherTripId, userId)).isEmpty();
         assertThat(batches.findForUpdate(UUID.randomUUID().toString(), tripId, userId)).isEmpty();
+    }
+
+    @Test
+    void detectsOnlyOtherAdditionsInRequestedStatesOfSameTrip() {
+        String currentAdditionId = UUID.randomUUID().toString();
+        insertBatch(UUID.randomUUID().toString(), currentAdditionId, 1);
+        var activeStates = List.of(AdditionalAttachmentUploadStatus.PENDING,
+                AdditionalAttachmentUploadStatus.VERIFIED,
+                AdditionalAttachmentUploadStatus.QUEUED,
+                AdditionalAttachmentUploadStatus.PROCESSING);
+        assertThat(batches.existsByTripIdAndAdditionIdNotAndStatusIn(
+                tripId, currentAdditionId, activeStates)).isFalse();
+
+        Long otherBatchId = insertBatch(UUID.randomUUID().toString(), UUID.randomUUID().toString(), 1);
+        assertThat(batches.existsByTripIdAndAdditionIdNotAndStatusIn(
+                tripId, currentAdditionId, activeStates)).isTrue();
+        Long otherTripId = trips.saveAndFlush(new Trip(userId, "다른여행", LocalDate.now(), LocalDate.now())).getId();
+        assertThat(batches.existsByTripIdAndAdditionIdNotAndStatusIn(
+                otherTripId, currentAdditionId, activeStates)).isFalse();
+
+        for (String terminal : List.of("COMPLETED", "FAILED")) {
+            jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET status = ? WHERE upload_batch_id = ?",
+                    terminal, otherBatchId);
+            entityManager.clear();
+            assertThat(batches.existsByTripIdAndAdditionIdNotAndStatusIn(
+                    tripId, currentAdditionId, activeStates)).isFalse();
+        }
     }
 
     @Test

@@ -7,6 +7,9 @@ import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
 import org.springframework.http.MediaType;
@@ -94,6 +97,9 @@ class TripAttachmentSecurityIntegrationTest {
     private InitialAttachmentUploadUrlService uploadUrlService;
 
     @MockitoBean
+    private AdditionalAttachmentUploadUrlService additionalUploadUrlService;
+
+    @MockitoBean
     private com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService uploadCompletion;
 
     @MockitoBean
@@ -109,6 +115,87 @@ class TripAttachmentSecurityIntegrationTest {
     void allowSessionValidation() {
         given(activeLoginSessionValidator.validate(any(Jwt.class)))
                 .willReturn(OAuth2TokenValidatorResult.success());
+    }
+
+    @Test
+    void 추가_업로드_URL은_JSON과_JWT_사용자_ID로_요청하고_명세_응답을_반환한다() throws Exception {
+        String token = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        var request = new AdditionalAttachmentUploadUrlRequest(
+                "550e8400-e29b-41d4-a716-446655440000", 1, 1, true,
+                List.of(new AdditionalAttachmentUploadUrlRequest.Attachment("photo.jpg", "image/jpeg", 1024L)));
+        given(additionalUploadUrlService.issueUploadUrls(7L, 42L, request)).willReturn(
+                new AdditionalAttachmentUploadUrlResponse("upload-id", List.of(
+                        new AdditionalAttachmentUploadUrlResponse.Attachment(
+                                "photo.jpg", "https://example.test/additional-upload", "PUT",
+                                Map.of("Content-Type", "image/jpeg", "If-None-Match", "*"),
+                                OffsetDateTime.parse("2026-10-07T09:10:00Z")))));
+
+        mockMvc.perform(post("/api/trips/7/attachments/upload-urls")
+                        .contextPath("/api").servletPath("/trips/7/attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(additionalUploadUrlBody())
+                        .cookie(new Cookie("accessToken", token), new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_UPLOAD_URLS_ISSUED"))
+                .andExpect(jsonPath("$.data.uploadId").value("upload-id"))
+                .andExpect(jsonPath("$.data.attachments[0].fileName").value("photo.jpg"))
+                .andExpect(jsonPath("$.data.attachments[0].uploadUrl").value("https://example.test/additional-upload"))
+                .andExpect(jsonPath("$.data.attachments[0].method").value("PUT"))
+                .andExpect(jsonPath("$.data.attachments[0].headers['Content-Type']").value("image/jpeg"))
+                .andExpect(jsonPath("$.data.attachments[0].headers['If-None-Match']").value("*"))
+                .andExpect(jsonPath("$.data.attachments[0].expiresAt").isNotEmpty());
+        then(additionalUploadUrlService).should().issueUploadUrls(7L, 42L, request);
+    }
+
+    @Test
+    void 추가_업로드_URL_요청에_인증이_없으면_401이며_서비스를_호출하지_않는다() throws Exception {
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        mockMvc.perform(post("/api/trips/7/attachments/upload-urls")
+                        .contextPath("/api").servletPath("/trips/7/attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(additionalUploadUrlBody())
+                        .cookie(new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+        then(additionalUploadUrlService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void 추가_업로드_URL_요청의_CSRF가_틀리면_403이며_서비스를_호출하지_않는다() throws Exception {
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        mockMvc.perform(post("/api/trips/7/attachments/upload-urls")
+                        .contextPath("/api").servletPath("/trips/7/attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(additionalUploadUrlBody())
+                        .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")),
+                                new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "wrong-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+        then(additionalUploadUrlService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void 추가_업로드_URL_접수가_허용되지_않으면_409를_반환한다() throws Exception {
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        given(additionalUploadUrlService.issueUploadUrls(eq(7L), eq(42L), any()))
+                .willThrow(new com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException());
+        mockMvc.perform(post("/api/trips/7/attachments/upload-urls")
+                        .contextPath("/api").servletPath("/trips/7/attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(additionalUploadUrlBody())
+                        .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")),
+                                new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_ADD_NOT_ALLOWED"));
+    }
+
+    private String additionalUploadUrlBody() {
+        return """
+                {"additionId":"550e8400-e29b-41d4-a716-446655440000",
+                 "batchNo":1,"totalAttachmentCount":1,"complete":true,
+                 "attachments":[{"fileName":"photo.jpg","contentType":"image/jpeg","sizeBytes":1024}]}
+                """;
     }
 
     @Test

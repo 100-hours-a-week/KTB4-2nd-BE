@@ -157,10 +157,11 @@ class InitialAttachmentUploadTransactionServiceTest {
         start();
         var takenAt = OffsetDateTime.parse("2026-10-01T10:00:00+09:00");
         var results = List.of(
-                new DerivedPhotoKeys("key-one", "analyze-one", "preview-one", takenAt,
-                        new BigDecimal("35.1"), new BigDecimal("129.1"), "camera"),
+                new DerivedPhotoKeys("key-one", "analyze-one", "preview-one", null, takenAt,
+                        new BigDecimal("35.1"), new BigDecimal("129.1"), "camera",
+                        1024L, 128L, 64L, null),
                 new DerivedPhotoKeys("key-two", "analyze-two", "preview-two", "display-two",
-                        null, null, null, null));
+                        null, null, null, null, 2048L, 256L, 128L, 512L));
 
         var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), results);
 
@@ -317,7 +318,8 @@ class InitialAttachmentUploadTransactionServiceTest {
         items.save(new InitialAttachmentUploadItem(next, 1, "next.jpg", "image/jpeg", 1024L, "next-key"));
         service.startProcessing(trip.getId(), owner.getUserId(), next.getUploadId());
         service.saveAttachments(trip.getId(), owner.getUserId(), next.getUploadId(),
-                List.of(new DerivedPhotoKeys("next-key", "next-analyze", "next-preview")));
+                List.of(new DerivedPhotoKeys("next-key", "next-analyze", "next-preview", null,
+                        null, null, null, null, 1024L, 128L, 64L, null)));
 
         service.failBatch(trip.getId(), owner.getUserId(), next.getUploadId());
 
@@ -403,8 +405,10 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     private List<DerivedPhotoKeys> validResults() {
-        return List.of(new DerivedPhotoKeys("key-one", "analyze-one", "preview-one"),
-                new DerivedPhotoKeys("key-two", "analyze-two", "preview-two"));
+        return List.of(new DerivedPhotoKeys("key-one", "analyze-one", "preview-one", null,
+                        null, null, null, null, 1024L, 128L, 64L, null),
+                new DerivedPhotoKeys("key-two", "analyze-two", "preview-two", null,
+                        null, null, null, null, 2048L, 256L, 128L, null));
     }
 
     private void assertRowCounts(int expected) {

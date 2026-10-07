@@ -74,8 +74,9 @@ class InitialAttachmentUploadFlowIntegrationTest {
         when(derivatives.createAll(anyString(), anyList(), anyList())).thenAnswer(call -> {
             List<String> keys = call.getArgument(1);
             return CompletableFuture.completedFuture(keys.stream().map(key -> new DerivedPhotoKeys(
-                    key, key + "-analyze", key + "-preview", TAKEN_AT,
-                    BigDecimal.ONE, BigDecimal.TEN, "camera")).toList());
+                    key, key + "-analyze", key + "-preview", null, TAKEN_AT,
+                    BigDecimal.ONE, BigDecimal.TEN, "camera",
+                    12L, 5L, 3L, null)).toList());
         });
         when(analysis.analyze(anyLong(), anyString(), any(), any())).thenAnswer(call -> {
             assertThat(((BooleanSupplier) call.getArgument(3)).getAsBoolean()).isTrue();
@@ -115,6 +116,13 @@ class InitialAttachmentUploadFlowIntegrationTest {
         assertThat(request.regions()).hasSize(1);
         verify(derivatives, times(2)).createAll(anyString(), anyList(), anyList());
         assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getAttachmentCount()).isEqualTo(2);
+        assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getStorageUsedBytes()).isEqualTo(40L);
+        assertThat(jdbc.queryForList("SELECT original_size_bytes FROM files WHERE user_id = ?", Long.class, owner.getUserId()))
+                .containsOnly(12L).hasSize(2);
+        assertThat(jdbc.queryForList("SELECT analyze_size_bytes FROM trip_attachments WHERE trip_id = ?", Long.class, trip.getId()))
+                .containsOnly(5L).hasSize(2);
+        assertThat(jdbc.queryForList("SELECT preview_size_bytes FROM trip_attachments WHERE trip_id = ?", Long.class, trip.getId()))
+                .containsOnly(3L).hasSize(2);
     }
 
     @Test

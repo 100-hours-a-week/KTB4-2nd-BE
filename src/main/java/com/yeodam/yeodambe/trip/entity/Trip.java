@@ -86,6 +86,16 @@ public class Trip {
         this.favorite = favorite;
     }
 
+    public void changeInformation(
+            String tripName,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
+        this.tripName = tripName;
+        this.startDate = startDate;
+        this.endDate = endDate;
+    }
+
     public void changeThumbnailKey(String thumbnailKey) {
         this.thumbnailKey = thumbnailKey;
     }

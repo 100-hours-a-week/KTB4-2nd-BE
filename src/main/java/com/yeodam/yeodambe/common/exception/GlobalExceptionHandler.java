@@ -23,6 +23,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.slf4j.spi.LoggingEventBuilder;
+import org.springframework.web.servlet.HandlerMapping;
 
 @Slf4j
 @RestControllerAdvice
@@ -70,7 +71,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    ApiResponse<Void> handleUnreadableRequest(HttpMessageNotReadableException e) {
+    ApiResponse<Void> handleUnreadableRequest(
+            HttpMessageNotReadableException e,
+            HttpServletRequest request
+    ) {
+        Object matchedPath = request.getAttribute(
+                HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        if ("PATCH".equals(request.getMethod())
+                && "/trips/{tripId}".equals(matchedPath)) {
+            return new ApiResponse<>(ErrorMessage.INVALID_TRIP_REQUEST, null);
+        }
         return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
     }
 
@@ -102,6 +112,14 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.CONFLICT)
     ApiResponse<Void> handleTripNameDuplicatedException(TripNameDuplicatedException e) {
         return new ApiResponse<>(ErrorMessage.TRIP_NAME_DUPLICATED, null);
+    }
+
+    @ExceptionHandler(TripUpdateNotAllowedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleTripUpdateNotAllowed(
+            TripUpdateNotAllowedException e
+    ) {
+        return new ApiResponse<>(ErrorMessage.TRIP_UPDATE_NOT_ALLOWED, null);
     }
 
     @ExceptionHandler(PlaceQueryProviderUnavailableException.class)

@@ -2,6 +2,11 @@ package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
+import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
+import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
+import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.PatchMapping;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
@@ -46,6 +51,27 @@ public class TripController {
     ) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
+    }
+
+    @PatchMapping("/trips/{tripId}")
+    public ResponseEntity<ApiResponse<TripUpdateResponse>> updateTrip(
+            @PathVariable Long tripId,
+            @Valid @RequestBody TripUpdateRequest request,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        if (bindingResult.hasErrors()) {
+            throw new InvalidTripRequestException();
+        }
+
+        Long userId = Long.valueOf(jwt.getSubject());
+        TripUpdateResponse data = tripService.updateTrip(
+                tripId, userId, request
+        );
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.TRIP_UPDATE_SUCCESS, data)
+        );
     }
 
     @PostMapping("/trips/{tripId}/favorite")
@@ -146,4 +172,5 @@ public class TripController {
                         Long.valueOf(jwt.getSubject()), tripId, cursor)
         ));
     }
+
 }

@@ -4,6 +4,9 @@ import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
+import com.yeodam.yeodambe.common.exception.TripUpdateNotAllowedException;
+import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
+import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
@@ -31,6 +34,7 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import lombok.extern.slf4j.Slf4j;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -57,7 +61,11 @@ public class TripService {
 
     @Transactional
     public TripCreateResponse createTrip(Long userId, TripCreateRequest request) {
-        validateTrip(request);
+        validateTrip(
+                request.startDate(),
+                request.endDate(),
+                request.regionCodes()
+        );
 
         List<RegionCatalog.Region> regions = request.regionCodes().stream()
                 .map(regionCatalog::getRequired)
@@ -88,6 +96,70 @@ public class TripService {
 
         tripRegionRepository.saveAll(tripRegions);
         return new TripCreateResponse(trip.getId(), ProcessingStatus.PROCESSING);
+    }
+
+    @Transactional
+    public TripUpdateResponse updateTrip(
+            Long tripId,
+            Long userId,
+            TripUpdateRequest request
+    ) {
+        Trip trip = tripRepository.findOwnedActiveForUpdate(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
+
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new TripUpdateNotAllowedException();
+        }
+
+        List<TripRegion> existingRegions = tripRegionRepository
+                .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId);
+
+        String tripName = request.tripName() != null
+                ? request.tripName() : trip.getTripName();
+        LocalDate startDate = request.startDate() != null
+                ? request.startDate() : trip.getStartDate();
+        LocalDate endDate = request.endDate() != null
+                ? request.endDate() : trip.getEndDate();
+        List<String> regionCodes = request.regionCodes() != null
+                ? request.regionCodes()
+                : existingRegions.stream()
+                .map(TripRegion::getRegionCode)
+                .toList();
+
+        validateTrip(startDate, endDate, regionCodes);
+
+        List<RegionCatalog.Region> requestedRegions = regionCodes.stream()
+                .map(regionCatalog::getRequired)
+                .toList();
+
+        if (tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(
+                userId, tripName, tripId
+        )) {
+            throw new TripNameDuplicatedException();
+        }
+
+        trip.changeInformation(tripName, startDate, endDate);
+
+        if (request.regionCodes() != null) {
+            updateRegions(trip, existingRegions, requestedRegions);
+        }
+
+        List<TripUpdateResponse.Region> regions = tripRegionRepository
+                .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId).stream()
+                .map(region -> new TripUpdateResponse.Region(
+                        region.getId(),
+                        region.getRegionCode(),
+                        region.getRegionName()
+                ))
+                .toList();
+
+        return new TripUpdateResponse(
+                trip.getId(),
+                trip.getTripName(),
+                trip.getStartDate(),
+                trip.getEndDate(),
+                regions
+        );
     }
 
     @Transactional
@@ -374,15 +446,51 @@ public class TripService {
         return tripAttachmentStorageClient.createReadUrl(thumbnailKey);
     }
 
-    private void validateTrip(TripCreateRequest request) {
+    private void updateRegions(
+            Trip trip,
+            List<TripRegion> existingRegions,
+            List<RegionCatalog.Region> requestedRegions
+    ) {
+        LocalDateTime deletedAt = LocalDateTime.now();
+
+        for (TripRegion existing : existingRegions) {
+            boolean retained = requestedRegions.stream()
+                    .anyMatch(region ->
+                            region.code().equals(existing.getRegionCode()));
+
+            if (!retained) {
+                existing.softDelete(deletedAt);
+            }
+        }
+
+        List<TripRegion> addedRegions = requestedRegions.stream()
+                .filter(region -> existingRegions.stream()
+                        .noneMatch(existing ->
+                                existing.getRegionCode().equals(region.code())))
+                .map(region -> new TripRegion(
+                        trip,
+                        region.code(),
+                        region.name(),
+                        region.latitude(),
+                        region.longitude()
+                ))
+                .toList();
+
+        tripRegionRepository.saveAll(addedRegions);
+    }
+
+    private void validateTrip(
+            LocalDate startDate,
+            LocalDate endDate,
+            List<String> regionCodes
+    ) {
         LocalDate today = LocalDate.now();
 
-        if (request.endDate().isBefore(request.startDate())
-                || request.startDate().isAfter(today)
-                || request.endDate().isAfter(today)
-                || ChronoUnit.DAYS.between(
-                request.startDate(), request.endDate()) + 1 > 92
-                || new HashSet<>(request.regionCodes()).size() != request.regionCodes().size()) {
+        if (endDate.isBefore(startDate)
+                || startDate.isAfter(today)
+                || endDate.isAfter(today)
+                || ChronoUnit.DAYS.between(startDate, endDate) + 1 > 92
+                || new HashSet<>(regionCodes).size() != regionCodes.size()) {
             throw new InvalidTripRequestException();
         }
     }

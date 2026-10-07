@@ -42,6 +42,40 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             """)
     long countActiveByTripId(@Param("tripId") Long tripId);
 
+    @Query("""
+        select attachment
+        from TripAttachment attachment
+        join attachment.file file
+        where attachment.tripId = :tripId
+          and attachment.deletedAt is null
+          and file.deletedAt is null
+          and (
+                :cursorCreatedAt is null
+                or attachment.createdAt < :cursorCreatedAt
+                or (
+                    attachment.createdAt = :cursorCreatedAt
+                    and attachment.id < :cursorId
+                )
+          )
+        order by attachment.createdAt desc, attachment.id desc
+        """)
+    List<TripAttachment> findForEditWithCursor(
+            @Param("tripId") Long tripId,
+            @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable
+    );
+
+    @Query("""
+        select count(attachment)
+        from TripAttachment attachment
+        join attachment.file file
+        where attachment.tripId = :tripId
+          and attachment.deletedAt is null
+          and file.deletedAt is null
+        """)
+    long countForEditByTripId(@Param("tripId") Long tripId);
+
     List<TripAttachment> findAllByTripId(Long tripId);
 
     List<TripAttachment> findAllByTripIdAndDeletedAtIsNull(Long tripId);

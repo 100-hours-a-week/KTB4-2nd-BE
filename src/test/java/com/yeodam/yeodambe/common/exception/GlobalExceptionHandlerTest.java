@@ -70,7 +70,8 @@ class GlobalExceptionHandlerTest {
             "invalid-place-folder-cursor, 400, INVALID_PLACE_FOLDER_CURSOR",
             "invalid-attachment-ids, 400, INVALID_ATTACHMENT_IDS",
             "write-permission-required, 403, WRITE_PERMISSION_REQUIRED",
-            "trip-detail-not-available, 409, TRIP_DETAIL_NOT_AVAILABLE"
+            "trip-detail-not-available, 409, TRIP_DETAIL_NOT_AVAILABLE",
+            "trip-update-not-allowed, 409, TRIP_UPDATE_NOT_ALLOWED"
     })
     void 초기_첨부_예외를_공개_API_오류로_변환한다(String path, int statusCode, String message) throws Exception {
         mockMvc.perform(get("/test/" + path))
@@ -259,8 +260,40 @@ class GlobalExceptionHandlerTest {
                 .andExpect(content().json("{\"message\":\"UNAUTHORIZED\",\"data\":null}"));
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "PATCH, /trips/7, INVALID_TRIP_REQUEST",
+            "POST, /trips/7, INVALID_REQUEST",
+            "PATCH, /test/unreadable, INVALID_REQUEST"
+    })
+    void 깨진_JSON은_여행_수정_요청에서만_여행_입력_오류로_반환한다(
+            String method, String path, String message
+    ) throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .request(org.springframework.http.HttpMethod.valueOf(method), "/api" + path)
+                        .contextPath("/api")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{broken"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().json("{\"message\":\"" + message + "\",\"data\":null}"));
+    }
+
     @RestController
     static class TestController {
+        @org.springframework.web.bind.annotation.RequestMapping(
+                path = {"/trips/{tripId}", "/test/unreadable"},
+                method = {org.springframework.web.bind.annotation.RequestMethod.PATCH,
+                        org.springframework.web.bind.annotation.RequestMethod.POST})
+        void unreadableRequest(
+                @org.springframework.web.bind.annotation.RequestBody java.util.Map<String, Object> body
+        ) {
+        }
+
+
+        @GetMapping("/test/trip-update-not-allowed")
+        void tripUpdateNotAllowed() {
+            throw new TripUpdateNotAllowedException();
+        }
 
         @GetMapping("/test/invalid-attachment")
         void invalidAttachment() {

@@ -90,6 +90,32 @@ class TripControllerTest {
                 request.sort() == TripSort.OLDEST && request.favorite()));
     }
 
+    @Test
+    void 수정_요청은_JWT_회원_ID로_전달하고_성공_응답을_감싼다() {
+        var request = new com.yeodam.yeodambe.trip.service.request.TripUpdateRequest(
+                "수정 여행", null, null, null);
+        var data = new com.yeodam.yeodambe.trip.service.response.TripUpdateResponse(
+                7L, "수정 여행", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 3), List.of());
+        var binding = mock(org.springframework.validation.BindingResult.class);
+        when(tripService.updateTrip(7L, 1L, request)).thenReturn(data);
+        var response = controller.updateTrip(7L, request, binding, jwt());
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().message()).isEqualTo("TRIP_UPDATE_SUCCESS");
+        assertThat(response.getBody().data()).isSameAs(data);
+        verify(tripService).updateTrip(7L, 1L, request);
+    }
+
+    @Test
+    void 수정_DTO_검증에_실패하면_서비스를_호출하지_않는다() {
+        var binding = mock(org.springframework.validation.BindingResult.class);
+        when(binding.hasErrors()).thenReturn(true);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.updateTrip(
+                7L, new com.yeodam.yeodambe.trip.service.request.TripUpdateRequest(
+                        null, null, null, null), binding, jwt()))
+                .isInstanceOf(com.yeodam.yeodambe.common.exception.InvalidTripRequestException.class);
+        verifyNoInteractions(tripService);
+    }
+
     private Jwt jwt() {
         return Jwt.withTokenValue("token").header("alg", "HS256").subject("1").build();
     }

@@ -1,27 +1,30 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
-import com.yeodam.yeodambe.user.entity.LoginTicketEntity;
-import com.yeodam.yeodambe.user.repository.LoginTicketRepository;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import com.yeodam.yeodambe.TestcontainersConfiguration;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import org.springframework.context.annotation.Import;
 
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DataJpaTest
-@Import({LoginTicketStore.class, TokenHasher.class})
+@SpringBootTest
+@ActiveProfiles("test")
+@Import(TestcontainersConfiguration.class)
 class LoginTicketStoreTest {
 
     @Autowired
     private LoginTicketStore loginTicketStore;
 
     @Autowired
-    private LoginTicketRepository loginTicketRepository;
+    private StringRedisTemplate redis;
 
     @Autowired
     private TokenHasher tokenHasher;
@@ -54,7 +57,6 @@ class LoginTicketStoreTest {
     void storesHashesAndOneMinuteExpiration() {
         String ticket = "login-ticket-hash";
         String browserContext = "browser-hash";
-        LocalDateTime beforeSave = LocalDateTime.now();
 
         loginTicketStore.save(
                 ticket,
@@ -65,18 +67,8 @@ class LoginTicketStoreTest {
                 browserContext
         );
 
-        LoginTicketEntity saved = loginTicketRepository
-                .findByTicketHashForUpdate(tokenHasher.hash(ticket))
-                .orElseThrow();
-
-        assertThat(saved.getTicketHash()).isNotEqualTo(ticket);
-        assertThat(saved.getBrowserContextHash())
-                .isEqualTo(tokenHasher.hash(browserContext));
-        assertThat(saved.getExpiresAt())
-                .isBetween(
-                        beforeSave.plusMinutes(1),
-                        LocalDateTime.now().plusMinutes(1)
-                );
+        assertThat(key(ticket)).doesNotContain(ticket);
+        assertThat(redis.getExpire(key(ticket), TimeUnit.MILLISECONDS)).isBetween(55000L, 60000L);
     }
 
     @Test
@@ -105,21 +97,16 @@ class LoginTicketStoreTest {
     }
 
     @Test
-    void expiredTicketCannotBeConsumedAndIsDeleted() {
+    void expiredTicketCannotBeConsumedAndIsDeleted() throws Exception {
         String ticket = "login-ticket-expired";
-        String ticketHash = tokenHasher.hash(ticket);
 
-        loginTicketRepository.save(new LoginTicketEntity(
-                ticketHash,
-                tokenHasher.hash("browser-1"),
-                "123456789",
-                "member@example.com",
-                LocalDateTime.now().minusSeconds(1)
-        ));
-
-        assertThat(loginTicketStore.consume(ticket, "browser-1"))
-                .isEmpty();
-        assertThat(loginTicketRepository.findByTicketHashForUpdate(ticketHash))
-                .isEmpty();
+        loginTicketStore.save(ticket, new KakaoUserIdentity("provider", "expire@example.com"), "browser-1");
+        redis.expire(key(ticket), Duration.ofMillis(1));
+        Thread.sleep(20);
+        assertThat(loginTicketStore.consume(ticket, "browser-1")).isEmpty();
+        assertThat(redis.hasKey(key(ticket))).isFalse();
+    }
+    private String key(String token) {
+        return "yeodam:test:auth:login-ticket:" + tokenHasher.hash(token);
     }
 }

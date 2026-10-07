@@ -22,6 +22,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
+import com.yeodam.yeodambe.user.security.oauth.OAuthTokenClaim;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronization;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -50,6 +55,7 @@ class ProfileRegistrationServiceTest {
 
     @BeforeEach
     void setUp() {
+        TransactionSynchronizationManager.initSynchronization();
         service = new ProfileRegistrationService(
                 profileTokenStore,
                 userRegistrationService,
@@ -64,6 +70,7 @@ class ProfileRegistrationServiceTest {
 
     @AfterEach
     void tearDown() {
+        TransactionSynchronizationManager.clearSynchronization();
         serviceLogger.detachAppender(logAppender);
         logAppender.stop();
     }
@@ -77,8 +84,8 @@ class ProfileRegistrationServiceTest {
                         "https://k.kakaocdn.net/new-thumbnail.jpg"
                 );
         User user = mock(User.class);
-        given(profileTokenStore.find("profile-1"))
-                .willReturn(Optional.of(identity));
+        given(profileTokenStore.claim(eq("profile-1"), anyString()))
+                .willAnswer(invocation -> Optional.of(new OAuthTokenClaim(identity, invocation.getArgument(1))));
         given(userRegistrationService.register(
                 "member@example.com", "여행자", OAuthProvider.KAKAO, "kakao-1",
                 "https://k.kakaocdn.net/new-thumbnail.jpg"
@@ -100,14 +107,15 @@ class ProfileRegistrationServiceTest {
                 profileTokenStore, userRegistrationService,
                 loginSessionIssuer, accessTokenIssuer
         );
-        order.verify(profileTokenStore).find("profile-1");
+        order.verify(profileTokenStore).claim(eq("profile-1"), anyString());
         order.verify(userRegistrationService).register(
                 "member@example.com", "여행자", OAuthProvider.KAKAO, "kakao-1",
                 "https://k.kakaocdn.net/new-thumbnail.jpg"
         );
         order.verify(loginSessionIssuer).issue(42L);
         order.verify(accessTokenIssuer).issue(42L, "sid-1");
-        order.verify(profileTokenStore).delete("profile-1");
+        TransactionSynchronizationManager.getSynchronizations().forEach(callback -> callback.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
+        order.verify(profileTokenStore).complete(eq("profile-1"), anyString());
 
         ILoggingEvent event = logAppender.list.stream()
                 .filter(logEvent -> "auth_login".equals(keyValue(logEvent, "event")))
@@ -123,13 +131,13 @@ class ProfileRegistrationServiceTest {
 
     @Test
     void rejectsExpiredTokenBeforeCreatingMemberOrSession() {
-        given(profileTokenStore.find("expired"))
+        given(profileTokenStore.claim(eq("expired"), anyString()))
                 .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.register("expired", "여행자"))
                 .isInstanceOf(OnboardingTokenInvalidOrExpiredException.class);
 
-        then(profileTokenStore).should().find("expired");
+        then(profileTokenStore).should().claim(eq("expired"), anyString());
         verifyNoInteractions(userRegistrationService, loginSessionIssuer, accessTokenIssuer);
         verifyNoMoreInteractions(profileTokenStore);
     }
@@ -138,8 +146,8 @@ class ProfileRegistrationServiceTest {
     void keepsProfileTokenWhenRegistrationFails() {
         KakaoUserIdentity identity =
                 new KakaoUserIdentity("kakao-1", "member@example.com");
-        given(profileTokenStore.find("profile-1"))
-                .willReturn(Optional.of(identity));
+        given(profileTokenStore.claim(eq("profile-1"), anyString()))
+                .willAnswer(invocation -> Optional.of(new OAuthTokenClaim(identity, invocation.getArgument(1))));
         given(userRegistrationService.register(
                 "member@example.com", "잘못 된닉네임", OAuthProvider.KAKAO, "kakao-1", null
         )).willThrow(new InvalidNicknameException());
@@ -147,7 +155,7 @@ class ProfileRegistrationServiceTest {
         assertThatThrownBy(() -> service.register("profile-1", "잘못 된닉네임"))
                 .isInstanceOf(InvalidNicknameException.class);
 
-        then(profileTokenStore).should().find("profile-1");
+        then(profileTokenStore).should().claim(eq("profile-1"), anyString());
         verifyNoInteractions(loginSessionIssuer, accessTokenIssuer);
         verifyNoMoreInteractions(profileTokenStore);
     }

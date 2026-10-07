@@ -158,10 +158,9 @@ class InitialAttachmentUploadTransactionServiceTest {
         var takenAt = OffsetDateTime.parse("2026-10-01T10:00:00+09:00");
         var results = List.of(
                 new DerivedPhotoKeys("key-one", "analyze-one", "preview-one", null, takenAt,
-                        new BigDecimal("35.1"), new BigDecimal("129.1"), "camera",
-                        1024L, 128L, 64L, null),
+                        new BigDecimal("35.1"), new BigDecimal("129.1"), "camera", 1024L, 512L, 128L, null),
                 new DerivedPhotoKeys("key-two", "analyze-two", "preview-two", "display-two",
-                        null, null, null, null, 2048L, 256L, 128L, 512L));
+                        null, null, null, null, 2048L, 1024L, 256L, 2048L));
 
         var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), results);
 
@@ -170,19 +169,22 @@ class InitialAttachmentUploadTransactionServiceTest {
                 .extracting(InitialAttachmentUploadItem::getTripAttachmentId)
                 .containsExactly(saved.get(0).getId(), saved.get(1).getId());
         var original = jdbcTemplate.queryForMap(
-                "SELECT user_id, original_file_name, object_key, mime_type, upload_status FROM files WHERE file_id = ?",
+                "SELECT user_id, original_file_name, object_key, mime_type, upload_status, original_size_bytes FROM files WHERE file_id = ?",
                 saved.get(0).getFileId());
         assertThat(original).containsEntry("user_id", owner.getUserId())
                 .containsEntry("original_file_name", "same.jpg")
                 .containsEntry("object_key", "key-one")
                 .containsEntry("mime_type", "image/jpeg")
-                .containsEntry("upload_status", "READY");
+                .containsEntry("upload_status", "READY")
+                .containsEntry("original_size_bytes", 1024L);
         var attachment = jdbcTemplate.queryForMap(
-                "SELECT analyze_storage_key, preview_storage_key, latitude, longitude, device_model, taken_at FROM trip_attachments WHERE trip_attachment_id = ?",
+                "SELECT analyze_storage_key, preview_storage_key, latitude, longitude, device_model, taken_at, analyze_size_bytes, preview_size_bytes FROM trip_attachments WHERE trip_attachment_id = ?",
                 saved.get(0).getId());
         assertThat(attachment).containsEntry("analyze_storage_key", "analyze-one")
                 .containsEntry("preview_storage_key", "preview-one")
-                .containsEntry("device_model", "camera");
+                .containsEntry("device_model", "camera")
+                .containsEntry("analyze_size_bytes", 512L)
+                .containsEntry("preview_size_bytes", 128L);
         assertThat((BigDecimal) attachment.get("latitude")).isEqualByComparingTo("35.1");
         assertThat((BigDecimal) attachment.get("longitude")).isEqualByComparingTo("129.1");
         assertThat(jdbcTemplate.queryForObject(
@@ -192,6 +194,9 @@ class InitialAttachmentUploadTransactionServiceTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT display_storage_key FROM trip_attachments WHERE trip_attachment_id = ?",
                 String.class, saved.get(1).getId())).isEqualTo("display-two");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT display_size_bytes FROM trip_attachments WHERE trip_attachment_id = ?",
+                Long.class, saved.get(1).getId())).isEqualTo(2048L);
         assertThat(storedStatus()).isEqualTo("PROCESSING");
     }
 
@@ -319,7 +324,7 @@ class InitialAttachmentUploadTransactionServiceTest {
         service.startProcessing(trip.getId(), owner.getUserId(), next.getUploadId());
         service.saveAttachments(trip.getId(), owner.getUserId(), next.getUploadId(),
                 List.of(new DerivedPhotoKeys("next-key", "next-analyze", "next-preview", null,
-                        null, null, null, null, 1024L, 128L, 64L, null)));
+                        null, null, null, null, 1024L, 512L, 128L, null)));
 
         service.failBatch(trip.getId(), owner.getUserId(), next.getUploadId());
 
@@ -406,9 +411,9 @@ class InitialAttachmentUploadTransactionServiceTest {
 
     private List<DerivedPhotoKeys> validResults() {
         return List.of(new DerivedPhotoKeys("key-one", "analyze-one", "preview-one", null,
-                        null, null, null, null, 1024L, 128L, 64L, null),
+                        null, null, null, null, 1024L, 512L, 128L, null),
                 new DerivedPhotoKeys("key-two", "analyze-two", "preview-two", null,
-                        null, null, null, null, 2048L, 256L, 128L, null));
+                        null, null, null, null, 2048L, 1024L, 256L, null));
     }
 
     private void assertRowCounts(int expected) {

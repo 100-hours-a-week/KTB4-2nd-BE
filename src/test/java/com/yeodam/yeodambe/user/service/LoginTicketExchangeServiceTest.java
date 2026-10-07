@@ -25,6 +25,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
+import com.yeodam.yeodambe.user.security.oauth.OAuthTokenClaim;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronization;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -60,6 +65,7 @@ class LoginTicketExchangeServiceTest {
 
     @BeforeEach
     void setUp() {
+        TransactionSynchronizationManager.initSynchronization();
         service = new LoginTicketExchangeService(
                 loginTicketStore,
                 oauthAccountRepository,
@@ -76,20 +82,21 @@ class LoginTicketExchangeServiceTest {
 
     @AfterEach
     void tearDown() {
+        TransactionSynchronizationManager.clearSynchronization();
         serviceLogger.detachAppender(logAppender);
         logAppender.stop();
     }
 
     @Test
     void rejectsExpiredOrAlreadyConsumedTicket() {
-        given(loginTicketStore.consume("expired-ticket", "browser-1"))
+        given(loginTicketStore.claim(eq("expired-ticket"), eq("browser-1"), anyString()))
                 .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.exchange("expired-ticket", "browser-1"))
                 .isInstanceOf(LoginTicketInvalidOrExpiredException.class);
 
         then(loginTicketStore).should()
-                .consume("expired-ticket", "browser-1");
+                .claim(eq("expired-ticket"), eq("browser-1"), anyString());
         verifyNoInteractions(oauthAccountRepository, loginSessionIssuer, accessTokenIssuer);
 
         ILoggingEvent event = findAuthLoginEvent("failure");
@@ -104,8 +111,8 @@ class LoginTicketExchangeServiceTest {
     void returnsOnboardingDecisionWhenKakaoAccountIsNotLinked() {
         KakaoUserIdentity identity =
                 new KakaoUserIdentity("kakao-user-1", "user@example.com");
-        given(loginTicketStore.consume("valid-ticket", "browser-1"))
-                .willReturn(Optional.of(identity));
+        given(loginTicketStore.claim(eq("valid-ticket"), eq("browser-1"), anyString()))
+                .willAnswer(invocation -> Optional.of(new OAuthTokenClaim(identity, invocation.getArgument(2))));
         given(oauthAccountRepository
                 .findByProviderAndProviderUserIdAndDeletedAtIsNull(
                         OAuthProvider.KAKAO,
@@ -122,9 +129,9 @@ class LoginTicketExchangeServiceTest {
                 new LoginExchangeDecision.Onboarding("new-profile-token")
         );
         then(loginTicketStore).should()
-                .consume("valid-ticket", "browser-1");
+                .claim(eq("valid-ticket"), eq("browser-1"), anyString());
         then(profileTokenStore).should()
-                .save("new-profile-token", identity);
+                .save(eq("new-profile-token"), eq(identity), anyString());
         verifyNoInteractions(loginSessionIssuer, accessTokenIssuer);
 
         ILoggingEvent event = findAuthLoginEvent("onboarding_required");
@@ -145,8 +152,8 @@ class LoginTicketExchangeServiceTest {
         User user = mock(User.class);
         OAuthAccount account = mock(OAuthAccount.class);
 
-        given(loginTicketStore.consume("valid-ticket", "browser-2"))
-                .willReturn(Optional.of(identity));
+        given(loginTicketStore.claim(eq("valid-ticket"), eq("browser-2"), anyString()))
+                .willAnswer(invocation -> Optional.of(new OAuthTokenClaim(identity, invocation.getArgument(2))));
         given(oauthAccountRepository
                 .findByProviderAndProviderUserIdAndDeletedAtIsNull(
                         OAuthProvider.KAKAO,

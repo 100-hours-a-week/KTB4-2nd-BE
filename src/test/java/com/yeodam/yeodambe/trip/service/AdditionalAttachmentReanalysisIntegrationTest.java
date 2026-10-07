@@ -51,6 +51,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     @Autowired private StoredFileRepository files;
     @Autowired private UserRepository users;
     @Autowired private UserStatsRepository stats;
+    @Autowired private InitialAttachmentUploadBatchRepository initialBatches;
+    @Autowired private InitialAttachmentUploadItemRepository initialItems;
     @Autowired private JdbcTemplate jdbc;
     @MockitoBean private TripAttachmentStorageClient storage;
     @MockitoBean private TripAttachmentDerivativeService derivatives;
@@ -273,6 +275,66 @@ class AdditionalAttachmentReanalysisIntegrationTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
         assertThat(batchStatus()).isEqualTo("PREPARED");
+    }
+
+    @Test
+    void queueBatchHasOnlyNewKeysAndProcessHasAllPhotosWithSameAttemptId() {
+        var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest(), "queue-attempt");
+        var ready = prepared.photosReady();
+        var process = prepared.process().orElseThrow();
+        assertThat(ready.type()).isEqualTo("photos_ready");
+        assertThat(ready.tripId()).isEqualTo(tripId);
+        assertThat(ready.batchNo()).isEqualTo(1);
+        assertThat(ready.attachments()).hasSize(1);
+        assertThat(ready.attachments()).extracting(photo -> photo.tripAttachmentId()).doesNotContain(oldPhotoId);
+        assertThat(process.type()).isEqualTo("process");
+        assertThat(process.attachments()).hasSize(2);
+        assertThat(process.executionId()).isEqualTo(ready.executionId()).isEqualTo("queue-attempt");
+        var readyJson = json.valueToTree(ready).path("attachments").get(0);
+        assertThat(readyJson.size()).isEqualTo(2);
+        assertThat(readyJson.has("taken_at")).isFalse();
+        assertThat(json.valueToTree(process).path("trip_id").asLong()).isEqualTo(tripId);
+        clearInvocations(derivatives);
+        var repeated = completion.prepareQueueBatch(tripId, userId, completeRequest(), "queue-attempt");
+        assertThat(repeated).isEqualTo(prepared);
+        verifyNoInteractions(derivatives);
+    }
+
+    @Test
+    void preservesRawInitialAndAdditionalTimesAndOmitsInferredCoordinates() {
+        var sourceBatch = initialBatches.saveAndFlush(new InitialAttachmentUploadBatch(
+                UUID.randomUUID().toString(), UUID.randomUUID().toString(), tripId, userId, 1, 1, true));
+        var sourceItem = new InitialAttachmentUploadItem(sourceBatch, 1, "old.jpg", "image/jpeg", 12L, "old-original");
+        sourceItem.linkAttachment(oldPhotoId);
+        sourceItem.recordTakenAt(OffsetDateTime.parse("2026-10-01T10:00:00+05:30"));
+        initialItems.saveAndFlush(sourceItem);
+        jdbc.update("UPDATE trip_attachments SET region_origin = 'INFERRED', taken_at = '2099-01-01 00:00:00', latitude = 50, longitude = 60 WHERE trip_attachment_id = ?",
+                oldPhotoId);
+        var message = completion.prepareQueueBatch(tripId, userId, completeRequest(), "queue-attempt")
+                .process().orElseThrow();
+        var old = message.attachments().stream().filter(photo -> photo.tripAttachmentId().equals(oldPhotoId)).findFirst().orElseThrow();
+        assertThat(old.takenAt()).isEqualTo(OffsetDateTime.parse("2026-10-01T10:00:00+05:30"));
+        assertThat(old.latitude()).isNull();
+        assertThat(old.longitude()).isNull();
+        var added = message.attachments().stream().filter(photo -> !photo.tripAttachmentId().equals(oldPhotoId)).findFirst().orElseThrow();
+        assertThat(added.takenAt()).isEqualTo(OffsetDateTime.parse("2026-10-07T12:00:00+09:00"));
+        assertThat(added.latitude()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(added.longitude()).isEqualByComparingTo(BigDecimal.TEN);
+    }
+
+    @Test
+    void missingOriginalTimeStaysNullInsteadOfUsingAiCorrectedTime() {
+        jdbc.update("UPDATE trip_attachments SET taken_at = '2099-01-01 00:00:00', region_origin = 'UNKNOWN' WHERE trip_attachment_id = ?", oldPhotoId);
+        var message = completion.prepareQueueBatch(tripId, userId, completeRequest(), "queue-attempt")
+                .process().orElseThrow();
+        var old = message.attachments().stream().filter(photo -> photo.tripAttachmentId().equals(oldPhotoId)).findFirst().orElseThrow();
+        assertThat(old.takenAt()).isNull();
+        assertThat(old.latitude()).isNull();
+        assertThat(old.longitude()).isNull();
+        assertThat(old.deviceModel()).isEqualTo("camera");
+        var body = json.valueToTree(message);
+        assertThat(body.path("attachments").get(0).has("taken_at")).isTrue();
+        assertThat(body.path("attachments").get(0).path("taken_at").isNull()).isTrue();
     }
 
     private JsonNode result(AdditionalAttachmentAnalysisPreparationService.PreparedAnalysis prepared, boolean invalidScore) {

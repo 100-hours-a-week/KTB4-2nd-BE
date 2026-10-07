@@ -12,6 +12,8 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import lombok.extern.slf4j.Slf4j;
+import com.yeodam.yeodambe.integration.service.request.PhotosReadyMessage;
+import com.yeodam.yeodambe.integration.service.request.PhotoProcessMessage;
 
 @Service
 @RequiredArgsConstructor
@@ -119,6 +121,17 @@ public class AdditionalAttachmentUploadCompletionService {
             throw failure;
         }
     }
+
+    public PreparedQueueBatch prepareQueueBatch(
+            Long tripId, Long userId, AdditionalAttachmentUploadCompleteRequest request, String executionId
+    ) {
+        if (executionId == null || executionId.isBlank()) throw new InvalidAttachmentUploadException();
+        var analysis = prepareAddition(tripId, userId, request);
+        PhotosReadyMessage ready = analysisPreparationService.photosReady(tripId, userId, request.uploadId(), executionId);
+        return new PreparedQueueBatch(ready, analysis.map(value -> value.processMessage(executionId)));
+    }
+
+    public record PreparedQueueBatch(PhotosReadyMessage photosReady, Optional<PhotoProcessMessage> process) {}
 
     private boolean hasCleanupFailure(Throwable failure) {
         return failure.getSuppressed().length > 0

@@ -2,6 +2,8 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.integration.service.request.TripPhotoAnalysisRequest;
+import com.yeodam.yeodambe.integration.service.request.PhotosReadyMessage;
+import com.yeodam.yeodambe.integration.service.request.PhotoProcessMessage;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
@@ -10,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.*;
 
 @Service
@@ -68,9 +69,10 @@ public class AdditionalAttachmentAnalysisPreparationService {
         if (regions.isEmpty()) throw new IllegalStateException(TripInternalErrorMessage.TRIP_REGION_MISSING.message());
         List<TripPhotoAnalysisRequest.Photo> inputs = photos.stream().map(photo ->
                 new TripPhotoAnalysisRequest.Photo(photo.getId(), photo.getAnalyzeStorageKey(),
-                        takenAt.getOrDefault(photo.getId(), photo.getTakenAt() == null ? null
-                                : photo.getTakenAt().atOffset(ZoneOffset.ofHours(9))),
-                        photo.getLatitude(), photo.getLongitude(), photo.getDeviceModel())).toList();
+                        takenAt.get(photo.getId()),
+                        photo.getRegionOrigin() == RegionOrigin.EXIF ? photo.getLatitude() : null,
+                        photo.getRegionOrigin() == RegionOrigin.EXIF ? photo.getLongitude() : null,
+                        photo.getDeviceModel())).toList();
         batches.forEach(AdditionalAttachmentUploadBatch::markPrepared);
         return new PreparedAnalysis(tripId, last.getAdditionId(), new TripPhotoAnalysisRequest(
                 last.getAdditionId(), trip.getTripName(),
@@ -86,5 +88,34 @@ public class AdditionalAttachmentAnalysisPreparationService {
                 && tripRepository.findByIdAndUserIdAndDeletedAtIsNull(tripId, userId).isPresent();
     }
 
-    public record PreparedAnalysis(Long tripId, String additionId, TripPhotoAnalysisRequest request) {}
+    @Transactional
+    public PhotosReadyMessage photosReady(Long tripId, Long userId, String uploadId, String executionId) {
+        Trip trip = tripRepository.findOwnedActiveForUpdate(tripId, userId).orElseThrow(TripNotFoundException::new);
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) throw new TripAttachmentAddNotAllowedException();
+        AdditionalAttachmentUploadBatch batch = uploadBatchRepository.findForUpdate(uploadId, tripId, userId)
+                .orElseThrow(InvalidAttachmentUploadException::new);
+        if (batch.getStatus() != AdditionalAttachmentUploadStatus.VERIFIED
+                && batch.getStatus() != AdditionalAttachmentUploadStatus.PREPARED) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+        List<AdditionalAttachmentUploadItem> items = uploadItemRepository.findAllByBatch_IdOrderByFileOrderAsc(batch.getId());
+        if (items.isEmpty() || items.stream().anyMatch(item -> item.getTripAttachmentId() == null)) {
+            throw new InvalidAttachmentUploadException();
+        }
+        List<PhotosReadyMessage.Attachment> ready = new ArrayList<>();
+        for (AdditionalAttachmentUploadItem item : items) {
+            TripAttachment photo = tripAttachmentRepository.findById(item.getTripAttachmentId())
+                    .orElseThrow(TripAttachmentAddNotAllowedException::new);
+            if (!photo.getTripId().equals(tripId) || photo.getDeletedAt() != null
+                    || photo.getFile().getDeletedAt() != null) throw new TripAttachmentAddNotAllowedException();
+            ready.add(new PhotosReadyMessage.Attachment(photo.getId(), photo.getAnalyzeStorageKey()));
+        }
+        return PhotosReadyMessage.create(tripId, executionId, batch.getBatchNo(), ready);
+    }
+
+    public record PreparedAnalysis(Long tripId, String additionId, TripPhotoAnalysisRequest request) {
+        public PhotoProcessMessage processMessage(String executionId) {
+            return PhotoProcessMessage.from(tripId, executionId, request);
+        }
+    }
 }

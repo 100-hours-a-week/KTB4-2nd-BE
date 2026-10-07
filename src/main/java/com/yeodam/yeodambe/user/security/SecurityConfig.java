@@ -1,7 +1,9 @@
 package com.yeodam.yeodambe.user.security;
 
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
-import com.yeodam.yeodambe.user.security.csrf.RdbCsrfTokenRepository;
+import com.yeodam.yeodambe.user.security.csrf.RedisCsrfTokenRepository;
+import com.yeodam.yeodambe.user.security.csrf.CsrfStoreFailureFilter;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -29,10 +31,11 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             CsrfAccessDeniedHandler csrfAccessDeniedHandler,
-            RdbCsrfTokenRepository rdbCsrfTokenRepository,
+            RedisCsrfTokenRepository redisCsrfTokenRepository,
             CookieAccessTokenResolver cookieAccessTokenResolver,
             ApiAuthenticationEntryPoint apiAuthenticationEntryPoint,
-            Environment environment
+            Environment environment,
+            ObjectMapper objectMapper
 
     ) throws Exception {
         http.cors(Customizer.withDefaults());
@@ -68,7 +71,7 @@ public class SecurityConfig {
         );
 
         http.csrf(csrf -> csrf
-                .csrfTokenRepository(rdbCsrfTokenRepository)
+                .csrfTokenRepository(redisCsrfTokenRepository)
                 .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                 .sessionAuthenticationStrategy(new NullAuthenticatedSessionStrategy())
                 .withObjectPostProcessor(new ObjectPostProcessor<CsrfFilter>() {
@@ -80,6 +83,8 @@ public class SecurityConfig {
                     }
                 })
         );
+
+        http.addFilterBefore(new CsrfStoreFailureFilter(objectMapper), CsrfFilter.class);
 
         http.sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS)

@@ -64,8 +64,7 @@ public class WithdrawalService {
             userStats.withdraw(withdrawnAt);
             user.withdraw(withdrawnAt);
 
-            csrfTokenStore.delete(csrfContext);
-            deleteSessionsAfterCommit(userId);
+            cleanupAfterCommit(userId, csrfContext);
         } catch (
                 UserNotFoundException
                 | WithdrawalFailedException
@@ -77,25 +76,37 @@ public class WithdrawalService {
         }
     }
 
-    private void deleteSessionsAfterCommit(Long userId) {
+    private void cleanupAfterCommit(Long userId, String csrfContext) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            loginSessionStore.deleteByUserId(userId);
+            cleanupAuthenticationData(userId, csrfContext);
             return;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                try {
-                    loginSessionStore.deleteByUserId(userId);
-                } catch (RuntimeException exception) {
-                    // DB withdrawal is committed. Member-state validation already denies access.
-                    log.atError().addKeyValue("event", "auth_session_withdrawal_cleanup")
-                            .addKeyValue("result", "failure")
-                            .addKeyValue("failure_stage", "session_cleanup")
-                            .addKeyValue("error_code", "AUTH_STORE_UNAVAILABLE")
-                            .log("탈퇴 완료 후 Redis 로그인 세션 정리에 실패했습니다.");
-                }
+                cleanupAuthenticationData(userId, csrfContext);
             }
         });
+    }
+
+    private void cleanupAuthenticationData(Long userId, String csrfContext) {
+        try {
+            csrfTokenStore.delete(csrfContext);
+        } catch (RuntimeException exception) {
+            logCleanupFailure("csrf_cleanup");
+        }
+        try {
+            loginSessionStore.deleteByUserId(userId);
+        } catch (RuntimeException exception) {
+            logCleanupFailure("session_cleanup");
+        }
+    }
+
+    private void logCleanupFailure(String stage) {
+        log.atError().addKeyValue("event", "auth_session_withdrawal_cleanup")
+                .addKeyValue("result", "failure")
+                .addKeyValue("failure_stage", stage)
+                .addKeyValue("error_code", "AUTH_STORE_UNAVAILABLE")
+                .log("탈퇴 완료 후 Redis 인증 데이터 정리에 실패했습니다.");
     }
 }

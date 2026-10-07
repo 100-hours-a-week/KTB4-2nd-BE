@@ -32,13 +32,14 @@ class InitialAttachmentUploadCompletionServiceTest {
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final TripAttachmentDerivativeService derivatives = mock(TripAttachmentDerivativeService.class);
     private final InitialAttachmentUploadCompletionService service =
-            new InitialAttachmentUploadCompletionService(storage, derivatives,
+            new InitialAttachmentUploadCompletionService(storage, new AttachmentDerivativePreparationService(derivatives),
                     mock(InitialAttachmentUploadTransactionService.class),
                     mock(com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository.class),
                     mock(com.yeodam.yeodambe.trip.repository.TripRegionRepository.class),
                     mock(com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService.class),
                     mock(TripPlaceNameService.class), mock(TripAnalysisResultService.class),
-                    mock(TripProcessingStatusService.class));
+                    mock(TripProcessingStatusService.class),
+                    new AttachmentUploadedFileValidator(storage));
     private final InitialAttachmentUploadBatch batch = new InitialAttachmentUploadBatch(
             "upload-id", "execution-id", 7L, 42L, 1, 2, true);
 

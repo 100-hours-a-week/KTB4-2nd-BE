@@ -15,6 +15,8 @@ import java.util.Optional;
 public interface AdditionalAttachmentUploadBatchRepository
         extends JpaRepository<AdditionalAttachmentUploadBatch, Long> {
 
+    boolean existsByTripIdAndStatusIn(Long tripId, Collection<AdditionalAttachmentUploadStatus> statuses);
+
     boolean existsByTripIdAndAdditionIdNotAndStatusIn(
             Long tripId,
             String additionId,

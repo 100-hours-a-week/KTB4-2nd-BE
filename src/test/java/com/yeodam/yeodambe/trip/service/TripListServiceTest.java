@@ -37,7 +37,7 @@ class TripListServiceTest {
         tripRegionRepository = mock(TripRegionRepository.class);
         tripAttachmentRepository = mock(TripAttachmentRepository.class);
         storageClient = mock(TripAttachmentStorageClient.class);
-        tripService = new TripService(
+        tripService = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
                 tripRepository,
                 tripRegionRepository,
                 mock(RegionCatalog.class),

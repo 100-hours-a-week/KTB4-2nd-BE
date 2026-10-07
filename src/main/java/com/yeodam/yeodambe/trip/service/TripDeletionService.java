@@ -24,6 +24,7 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class TripDeletionService {
+    private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
     private final TripRepository trips;
     private final TripRegionRepository regions;
     private final TripDetailPlaceRepository places;
@@ -54,6 +55,12 @@ public class TripDeletionService {
                 .orElseThrow(TripNotFoundException::new);
 
         if (trip.getProcessingStatus() == ProcessingStatus.PROCESSING) {
+            throw new TripDeletionNotAllowedException();
+        }
+
+        try {
+            additionalAttachmentModificationGuard.check(tripId, userId);
+        } catch (com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException e) {
             throw new TripDeletionNotAllowedException();
         }
 

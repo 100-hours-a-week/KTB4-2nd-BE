@@ -46,7 +46,7 @@ class TripDeletionServiceTest {
             callback.accept(mock(TransactionStatus.class));
             return null;
         }).when(transactions).executeWithoutResult(any());
-        service = new TripDeletionService(
+        service = new TripDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
                 trips, regions, places, attachments, files, userStats, transactions, meterRegistry);
     }
 

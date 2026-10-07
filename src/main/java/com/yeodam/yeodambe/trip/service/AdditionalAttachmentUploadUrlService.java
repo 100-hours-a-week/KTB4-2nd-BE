@@ -108,6 +108,8 @@ public class AdditionalAttachmentUploadUrlService {
                         List.of(
                                 AdditionalAttachmentUploadStatus.PENDING,
                                 AdditionalAttachmentUploadStatus.VERIFIED,
+                                AdditionalAttachmentUploadStatus.CONVERTING,
+                                AdditionalAttachmentUploadStatus.PREPARED,
                                 AdditionalAttachmentUploadStatus.QUEUED,
                                 AdditionalAttachmentUploadStatus.PROCESSING
                         )

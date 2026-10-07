@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -82,5 +83,58 @@ public class AdditionalAttachmentUploadBatch {
         this.totalAttachmentCount = totalAttachmentCount;
         this.lastBatch = lastBatch;
         this.status = AdditionalAttachmentUploadStatus.PENDING;
+    }
+
+    public void markVerified() {
+        if (status == AdditionalAttachmentUploadStatus.VERIFIED) {
+            return;
+        }
+
+        if (status != AdditionalAttachmentUploadStatus.PENDING) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+
+        status = AdditionalAttachmentUploadStatus.VERIFIED;
+    }
+
+    public void claimConversion(String token) {
+        if (status != AdditionalAttachmentUploadStatus.VERIFIED || workerToken != null) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+        status = AdditionalAttachmentUploadStatus.CONVERTING;
+        workerToken = token;
+    }
+
+    public boolean isConversionOwner(String token) {
+        return status == AdditionalAttachmentUploadStatus.CONVERTING
+                && workerToken != null && workerToken.equals(token);
+    }
+
+    public void releaseConversion(String token) {
+        if (!isConversionOwner(token)) throw new TripAttachmentAddNotAllowedException();
+        status = AdditionalAttachmentUploadStatus.VERIFIED;
+        workerToken = null;
+    }
+
+    public void markPrepared() {
+        if (status != AdditionalAttachmentUploadStatus.VERIFIED
+                && status != AdditionalAttachmentUploadStatus.PREPARED) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+        status = AdditionalAttachmentUploadStatus.PREPARED;
+    }
+
+    public void completeAddition() {
+        if (status != AdditionalAttachmentUploadStatus.PREPARED) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+        status = AdditionalAttachmentUploadStatus.COMPLETED;
+    }
+
+    public void failAddition() {
+        if (status != AdditionalAttachmentUploadStatus.PREPARED) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+        status = AdditionalAttachmentUploadStatus.FAILED;
     }
 }

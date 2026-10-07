@@ -146,6 +146,7 @@ public class TripAttachment {
 
     public void unclassify(AttachmentIssue issue, RegionOrigin origin, LocalDateTime takenAt,
                            BigDecimal latitude, BigDecimal longitude, Integer evaluation) {
+        this.tripPlaceId = null;
         this.issue = issue;
         this.regionOrigin = origin;
         this.classificationStatus = ClassificationStatus.UNCLASSIFIED;

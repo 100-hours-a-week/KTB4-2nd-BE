@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop"
 })
-@Import(TripService.class)
+@Import({TripService.class, AdditionalAttachmentModificationGuard.class})
 class TripFavoritePersistenceTest {
     @Autowired
     private TripService tripService;

@@ -38,7 +38,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop"
 })
-@Import({TripAttachmentDeletionService.class, TripObjectCleanupService.class, UserStatsService.class})
+@Import({AdditionalAttachmentModificationGuard.class, TripAttachmentDeletionService.class, TripObjectCleanupService.class, UserStatsService.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripAttachmentDeletionPersistenceTest {
     @Autowired private TripAttachmentDeletionService service;

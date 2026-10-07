@@ -78,6 +78,16 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
 
     List<TripAttachment> findAllByTripId(Long tripId);
 
+    @Query("""
+            select attachment from TripAttachment attachment
+            join fetch attachment.file file
+            where attachment.tripId = :tripId
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+            order by attachment.id
+            """)
+    List<TripAttachment> findAllForReanalysis(@Param("tripId") Long tripId);
+
     List<TripAttachment> findAllByTripIdAndDeletedAtIsNull(Long tripId);
 
     @Query("""

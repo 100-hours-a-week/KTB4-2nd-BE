@@ -54,6 +54,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class TripService {
+    private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
     private static final int TRIP_LIST_SIZE = 7;
     private static final int TRIP_LIST_FETCH_SIZE = TRIP_LIST_SIZE + 1;
     private static final int EDIT_ATTACHMENT_PAGE_SIZE = 18;
@@ -115,6 +116,12 @@ public class TripService {
                 .orElseThrow(TripNotFoundException::new);
 
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new TripUpdateNotAllowedException();
+        }
+
+        try {
+            additionalAttachmentModificationGuard.check(tripId, userId);
+        } catch (com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException e) {
             throw new TripUpdateNotAllowedException();
         }
 

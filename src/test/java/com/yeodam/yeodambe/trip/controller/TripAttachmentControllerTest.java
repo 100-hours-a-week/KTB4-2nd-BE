@@ -316,7 +316,7 @@ class TripAttachmentControllerTest {
         TripAttachmentRepository repository = mock(TripAttachmentRepository.class);
         UserStatsService stats = mock(UserStatsService.class);
         TripAttachmentDeletionService realDeletionService =
-                new TripAttachmentDeletionService(repository, stats);
+                new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), repository, stats);
         TripAttachmentController realController = new TripAttachmentController(
                 service, listService, detailService, realDeletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class), additionalUploadUrlService);
         String ids = LongStream.rangeClosed(1, 201)

@@ -75,6 +75,32 @@ public class TripAnalysisResultService {
             Long tripId, Long userId, List<TripAttachment> attachments,
             JsonNode result, Map<String, String> placeNames
     ) {
+        validateResult(attachments, result, placeNames);
+        if (trips.finishInitialUpload(
+                tripId,
+                userId,
+                ProcessingStatus.PROCESSING,
+                ProcessingStatus.COMPLETED
+        ) != 1) {
+            throw new IllegalStateException(TripInternalErrorMessage.CURRENT_EXECUTION_AI_RESULT_MISMATCH.message());
+        }
+
+        applyClassification(tripId, userId, attachments, result, placeNames);
+    }
+
+    @Transactional
+    public void replaceCompleted(Long tripId, Long userId, JsonNode result, Map<String, String> placeNames) {
+        Trip trip = trips.findOwnedActiveForUpdate(tripId, userId).orElseThrow(TripNotFoundException::new);
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException();
+        }
+        List<TripAttachment> attachments = attachmentRepository.findAllForReanalysis(tripId);
+        validateResult(attachments, result, placeNames);
+        placeRepository.softDeleteByTripId(tripId, LocalDateTime.now());
+        applyClassification(tripId, userId, attachments, result, placeNames);
+    }
+
+    private void validateResult(List<TripAttachment> attachments, JsonNode result, Map<String, String> placeNames) {
         if (result == null || !result.path("places").isArray() || !result.path("unclassified").isArray()) {
             throw new IllegalStateException(TripInternalErrorMessage.AI_RESULT_FORMAT_INVALID.message());
         }
@@ -109,15 +135,10 @@ public class TripAnalysisResultService {
 
         validatePlaceNames(placeIds, placeNames);
 
-        if (trips.finishInitialUpload(
-                tripId,
-                userId,
-                ProcessingStatus.PROCESSING,
-                ProcessingStatus.COMPLETED
-        ) != 1) {
-            throw new IllegalStateException(TripInternalErrorMessage.CURRENT_EXECUTION_AI_RESULT_MISMATCH.message());
-        }
+    }
 
+    private void applyClassification(Long tripId, Long userId, List<TripAttachment> attachments,
+                                     JsonNode result, Map<String, String> placeNames) {
         Map<Long, TripAttachment> byId = new HashMap<>();
         for (TripAttachment attachment : attachments) byId.put(attachment.getId(), attachment);
 

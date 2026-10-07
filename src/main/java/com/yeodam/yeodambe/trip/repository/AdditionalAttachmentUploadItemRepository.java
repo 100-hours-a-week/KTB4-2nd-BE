@@ -6,9 +6,11 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Collection;
 
 public interface AdditionalAttachmentUploadItemRepository
         extends JpaRepository<AdditionalAttachmentUploadItem, Long> {
+    List<AdditionalAttachmentUploadItem> findAllByTripAttachmentIdIn(Collection<Long> attachmentIds);
 
     List<AdditionalAttachmentUploadItem>
     findAllByBatch_IdOrderByFileOrderAsc(Long batchId);

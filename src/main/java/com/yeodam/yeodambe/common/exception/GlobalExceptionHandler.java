@@ -3,6 +3,8 @@ package com.yeodam.yeodambe.common.exception;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 
+import com.yeodam.yeodambe.story.exception.StoryDataIntegrityException;
+import com.yeodam.yeodambe.story.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.user.exception.*;
 import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -297,6 +300,26 @@ public class GlobalExceptionHandler {
     ApiResponse<Void> handleUnexpectedException(Exception e) {
         logFailure(log.atError(), ErrorMessage.INTERNAL_SERVER_ERROR,
                 "예상하지 못한 서버 오류가 발생했습니다.", e);
+        return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleMethodValidation(HandlerMethodValidationException e) {
+        return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
+    }
+
+    @ExceptionHandler(StoryNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleStoryNotFound(StoryNotFoundException e) {
+        return new ApiResponse<>(ErrorMessage.STORY_NOT_FOUND, null);
+    }
+
+    @ExceptionHandler(StoryDataIntegrityException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    ApiResponse<Void> handleStoryDataIntegrity(StoryDataIntegrityException e) {
+        logFailure(log.atError(), ErrorMessage.INTERNAL_SERVER_ERROR,
+                "스토리 조회 데이터의 정합성 검증에 실패했습니다.", e);
         return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
     }
 

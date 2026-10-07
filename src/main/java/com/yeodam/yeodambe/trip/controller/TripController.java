@@ -16,6 +16,7 @@ import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
+import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
@@ -132,6 +133,23 @@ public class TripController {
                 SuccessMessage.TRIP_FOUND,
                 tripService.findTripDetail(tripId, Long.valueOf(jwt.getSubject()))
         ));
+    }
+
+    @GetMapping("/trips/{tripId}/edit")
+    public ResponseEntity<ApiResponse<TripEditResponse>> findTripForEdit(
+            @PathVariable Long tripId,
+            @RequestParam(required = false) String cursor,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        TripEditResponse data = tripService.findTripForEdit(
+                tripId, userId, cursor
+        );
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.TRIP_EDIT_FOUND, data)
+        );
     }
 
     @GetMapping("/trips/map")

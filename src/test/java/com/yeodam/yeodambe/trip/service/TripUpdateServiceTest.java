@@ -24,7 +24,8 @@ class TripUpdateServiceTest {
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final TripService service = new TripService(
-            trips, regions, catalog, attachments, storage, mock(TripAccessService.class));
+            trips, regions, catalog, attachments, storage, mock(TripAccessService.class),
+            new tools.jackson.databind.ObjectMapper());
     private Trip trip;
     private TripRegion seoul;
     private final LocalDate start = LocalDate.of(2026, 9, 1);

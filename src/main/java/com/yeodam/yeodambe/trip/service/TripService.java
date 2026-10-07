@@ -32,6 +32,11 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.service.request.AttachmentCursor;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
+import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
+import tools.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
@@ -51,6 +56,7 @@ import java.util.stream.Collectors;
 public class TripService {
     private static final int TRIP_LIST_SIZE = 7;
     private static final int TRIP_LIST_FETCH_SIZE = TRIP_LIST_SIZE + 1;
+    private static final int EDIT_ATTACHMENT_PAGE_SIZE = 18;
 
     private final TripRepository tripRepository;
     private final TripRegionRepository tripRegionRepository;
@@ -58,6 +64,7 @@ public class TripService {
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
     private final TripAccessService tripAccessService;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public TripCreateResponse createTrip(Long userId, TripCreateRequest request) {
@@ -159,6 +166,74 @@ public class TripService {
                 trip.getStartDate(),
                 trip.getEndDate(),
                 regions
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public TripEditResponse findTripForEdit(
+            Long tripId,
+            Long userId,
+            String cursor
+    ) {
+        Trip trip = tripAccessService.requireReadableTrip(tripId, userId);
+
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new TripUpdateNotAllowedException();
+        }
+
+        AttachmentCursor attachmentCursor = AttachmentCursor.decode(
+                cursor, objectMapper
+        );
+
+        List<TripAttachment> attachments =
+                tripAttachmentRepository.findForEditWithCursor(
+                        tripId,
+                        attachmentCursor == null
+                                ? null : attachmentCursor.createdAt(),
+                        attachmentCursor == null
+                                ? null : attachmentCursor.tripAttachmentId(),
+                        PageRequest.of(0, EDIT_ATTACHMENT_PAGE_SIZE + 1)
+                );
+
+        boolean hasNext = attachments.size() > EDIT_ATTACHMENT_PAGE_SIZE;
+
+        List<TripAttachmentListResponse.Item> items = attachments.stream()
+                .limit(EDIT_ATTACHMENT_PAGE_SIZE)
+                .map(attachment -> new TripAttachmentListResponse.Item(
+                        attachment.getId(),
+                        tripAttachmentStorageClient.createReadUrl(
+                                attachment.getPreviewStorageKey()
+                        )
+                ))
+                .toList();
+
+        String nextCursor = null;
+        if (hasNext) {
+            TripAttachment last = attachments.get(
+                    EDIT_ATTACHMENT_PAGE_SIZE - 1
+            );
+            nextCursor = new AttachmentCursor(
+                    last.getCreatedAt(), last.getId()
+            ).encode(objectMapper);
+        }
+
+        List<TripEditResponse.Region> regions = tripRegionRepository
+                .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId).stream()
+                .map(region -> new TripEditResponse.Region(
+                        region.getId(),
+                        region.getRegionCode(),
+                        region.getRegionName()
+                ))
+                .toList();
+
+        return new TripEditResponse(
+                trip.getId(),
+                trip.getTripName(),
+                trip.getStartDate(),
+                trip.getEndDate(),
+                regions,
+                tripAttachmentRepository.countForEditByTripId(tripId),
+                new TripAttachmentListResponse(items, hasNext, nextCursor)
         );
     }
 

@@ -29,6 +29,21 @@ import org.springframework.web.servlet.HandlerMapping;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(InvalidSearchQueryException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidSearchQuery(InvalidSearchQueryException e) {
+        return new ApiResponse<>(ErrorMessage.INVALID_SEARCH_QUERY, null);
+    }
+
+    @ExceptionHandler(AiQueryUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handleAiQueryUnavailable(AiQueryUnavailableException e) {
+        logFailure(log.atWarn(), ErrorMessage.SEARCH_SERVICE_UNAVAILABLE,
+                "AI 검색 서비스를 사용할 수 없습니다.", e);
+        return new ApiResponse<>(ErrorMessage.SEARCH_SERVICE_UNAVAILABLE, null);
+    }
+
+
     @ExceptionHandler(AiStatusUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handleAiStatusUnavailable(AiStatusUnavailableException e) {

@@ -66,7 +66,7 @@ class SessionTransactionIntegrationTest {
 
 
     @Test
-    void rollbackDeletesOnlyNewSessionAndItsRefreshIndex() {
+    void 롤백하면_새_세션과_그_리프레시_인덱스만_삭제한다() {
         User user = users.saveAndFlush(new User(UUID.randomUUID() + "@yeodam.test", "보상회원"));
         IssuedLoginSession existing = issuer.issue(user.getUserId());
         AtomicReference<IssuedLoginSession> created = new AtomicReference<>();
@@ -82,7 +82,7 @@ class SessionTransactionIntegrationTest {
     }
 
     @Test
-    void failedSidCollisionMustNotDeleteExistingSessionOnRollback() {
+    void SID_충돌로_실패한_작업은_롤백_시_기존_세션을_삭제하지_않는다() {
         User user = users.saveAndFlush(new User(UUID.randomUUID() + "@yeodam.test", "충돌회원"));
         IssuedLoginSession existing = issuer.issue(user.getUserId());
         doReturn(existing.sid()).when(sessionIds).generate();
@@ -94,7 +94,7 @@ class SessionTransactionIntegrationTest {
     }
 
     @Test
-    void successfulCommitKeepsIssuedSession() {
+    void 커밋에_성공하면_발급한_세션을_유지한다() {
         User user = users.saveAndFlush(new User(UUID.randomUUID() + "@yeodam.test", "커밋회원"));
         IssuedLoginSession issued = new TransactionTemplate(transactionManager)
                 .execute(status -> issuer.issue(user.getUserId()));
@@ -103,7 +103,7 @@ class SessionTransactionIntegrationTest {
     }
 
     @Test
-    void jwtFailureRollsBackRegistrationAndPreservesProfileToken() {
+    void JWT_발급_실패는_회원_가입을_롤백하고_가입_토큰을_유지한다() {
         String unique = UUID.randomUUID().toString();
         String email = unique + "@yeodam.test";
         profiles.save(unique, new KakaoUserIdentity(unique, email));

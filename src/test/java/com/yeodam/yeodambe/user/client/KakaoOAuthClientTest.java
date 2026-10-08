@@ -45,7 +45,7 @@ class KakaoOAuthClientTest {
     }
 
     @Test
-    void exchangesAuthorizationCodeForToken() {
+    void 인가_코드를_카카오_토큰으로_교환한다() {
         MultiValueMap<String, String> expectedForm =
                 new LinkedMultiValueMap<>();
 
@@ -92,7 +92,7 @@ class KakaoOAuthClientTest {
     }
 
     @Test
-    void getsKakaoUserWithAccessToken() {
+    void 액세스_토큰으로_카카오_사용자를_조회한다() {
         server.expect(
                         once(),
                         requestTo("https://kapi.kakao.com/v2/user/me")
@@ -137,7 +137,7 @@ class KakaoOAuthClientTest {
     }
 
     @Test
-    void throwsAuthenticationFailedWhenTokenRequestIsRejected() {
+    void 토큰_요청이_거부되면_인증_실패_예외를_던진다() {
         server.expect(
                         once(),
                         requestTo("https://kauth.kakao.com/oauth/token")
@@ -152,7 +152,7 @@ class KakaoOAuthClientTest {
     }
 
     @Test
-    void throwsProviderUnavailableWhenUserInfoServiceFails() {
+    void 사용자_정보_서비스가_실패하면_제공자_불가_예외를_던진다() {
         server.expect(
                         once(),
                         requestTo("https://kapi.kakao.com/v2/user/me")

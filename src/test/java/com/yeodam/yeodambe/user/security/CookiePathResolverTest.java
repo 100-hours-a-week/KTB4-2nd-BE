@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CookiePathResolverTest {
 
     @Test
-    void keepsRootPathAndPrefixesNonRootApiPaths() {
+    void 루트_경로는_유지하고_나머지_API_경로에는_접두사를_붙인다() {
         CookiePathResolver resolver = new CookiePathResolver("/api");
 
         assertThat(resolver.apiPath("/")).isEqualTo("/");

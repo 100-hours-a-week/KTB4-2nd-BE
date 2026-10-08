@@ -39,7 +39,7 @@ class AttachmentFileUniqueMigrationTest {
 
     @Test
     void 기존_첨부를_유지하면서_같은_파일의_중복_첨부를_거절한다() {
-        migrate("12");
+        migrate("13");
         assertThat(jdbc.queryForObject(
                 "SELECT file_id FROM trip_attachments WHERE trip_attachment_id = 9001", Long.class))
                 .isEqualTo(9001L);
@@ -49,14 +49,14 @@ class AttachmentFileUniqueMigrationTest {
     @Test
     void 소프트_삭제된_첨부의_파일도_재사용을_거절한다() {
         jdbc.update("UPDATE trip_attachments SET deleted_at = CURRENT_TIMESTAMP WHERE trip_attachment_id = 9001");
-        migrate("12");
+        migrate("13");
         assertThrows(DuplicateKeyException.class, () -> insertAttachment(9002));
     }
 
     @Test
     void 기존_파일_중복이_있으면_마이그레이션을_중단하고_자료를_지우지_않는다() {
         insertAttachment(9002);
-        assertThrows(org.flywaydb.core.api.FlywayException.class, () -> migrate("12"));
+        assertThrows(org.flywaydb.core.api.FlywayException.class, () -> migrate("13"));
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM trip_attachments WHERE file_id = 9001", Long.class))
                 .isEqualTo(2L);

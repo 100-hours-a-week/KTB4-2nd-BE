@@ -2,7 +2,7 @@ package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.story.entity.StoryBlock;
-import com.yeodam.yeodambe.story.exception.StoryDataIntegrityException;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
 import com.yeodam.yeodambe.trip.entity.*;
 import org.junit.jupiter.api.Test;

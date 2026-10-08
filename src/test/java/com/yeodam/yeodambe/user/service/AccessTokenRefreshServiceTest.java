@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.user.service;
 
 import com.yeodam.yeodambe.user.entity.User;
-import com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.RefreshTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;

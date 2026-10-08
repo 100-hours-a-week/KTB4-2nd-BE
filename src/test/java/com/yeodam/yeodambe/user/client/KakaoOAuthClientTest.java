@@ -9,8 +9,8 @@ import org.springframework.http.MediaType;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.http.HttpHeaders;
-import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
-import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
+import com.yeodam.yeodambe.common.exception.KakaoAuthenticationFailedException;
+import com.yeodam.yeodambe.common.exception.OAuthProviderUnavailableException;
 import org.springframework.http.HttpStatus;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

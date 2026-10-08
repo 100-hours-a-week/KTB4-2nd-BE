@@ -4,7 +4,7 @@ import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
-import com.yeodam.yeodambe.user.exception.CsrfStoreUnavailableException;
+import com.yeodam.yeodambe.common.exception.CsrfStoreUnavailableException;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;
 import com.yeodam.yeodambe.user.security.oauth.ProfileTokenStore;

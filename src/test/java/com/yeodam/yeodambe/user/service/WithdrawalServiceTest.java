@@ -5,7 +5,7 @@ import com.yeodam.yeodambe.user.entity.Consent;
 import com.yeodam.yeodambe.user.entity.OAuthAccount;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
-import com.yeodam.yeodambe.user.exception.WithdrawalFailedException;
+import com.yeodam.yeodambe.common.exception.WithdrawalFailedException;
 import com.yeodam.yeodambe.user.repository.ConsentRepository;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;

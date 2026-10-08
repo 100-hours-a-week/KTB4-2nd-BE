@@ -1,8 +1,8 @@
 package com.yeodam.yeodambe.user.service;
 
 import com.yeodam.yeodambe.user.client.KakaoOAuthClient;
-import com.yeodam.yeodambe.user.exception.LoginTicketIssueFailedException;
-import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.LoginTicketIssueFailedException;
+import com.yeodam.yeodambe.common.exception.OAuthStateInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

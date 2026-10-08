@@ -3,7 +3,7 @@ package com.yeodam.yeodambe.user.service;
 import com.yeodam.yeodambe.user.entity.OAuthAccount;
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
-import com.yeodam.yeodambe.user.exception.UserNotFoundException;
+import com.yeodam.yeodambe.common.exception.UserNotFoundException;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.service.response.CurrentUserResponse;

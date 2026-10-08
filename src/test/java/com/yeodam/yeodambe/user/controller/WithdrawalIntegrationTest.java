@@ -21,7 +21,7 @@ import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.service.UserRegistrationService;
 import com.yeodam.yeodambe.user.service.WithdrawalService;
-import com.yeodam.yeodambe.user.exception.WithdrawalFailedException;
+import com.yeodam.yeodambe.common.exception.WithdrawalFailedException;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

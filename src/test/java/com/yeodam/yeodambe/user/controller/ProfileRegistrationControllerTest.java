@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
-import com.yeodam.yeodambe.user.exception.OnboardingTokenInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.OnboardingTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.service.ProfileRegistrationService;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;

@@ -1,4 +1,4 @@
-package com.yeodam.yeodambe.user.exception;
+package com.yeodam.yeodambe.common.exception;
 
 public class UserNotFoundException extends RuntimeException {
 

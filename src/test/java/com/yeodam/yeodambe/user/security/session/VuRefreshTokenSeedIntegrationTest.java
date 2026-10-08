@@ -3,7 +3,7 @@ package com.yeodam.yeodambe.user.security.session;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.user.entity.LoginSessionEntity;
 import com.yeodam.yeodambe.user.entity.User;
-import com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.RefreshTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.repository.LoginSessionRepository;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.service.AccessTokenRefreshService;

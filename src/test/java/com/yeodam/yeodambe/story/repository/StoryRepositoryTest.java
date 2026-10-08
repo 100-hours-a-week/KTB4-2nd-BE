@@ -3,7 +3,7 @@ package com.yeodam.yeodambe.story.repository;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.story.entity.*;
-import com.yeodam.yeodambe.story.exception.StoryNotFoundException;
+import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.story.service.StoryReadService;
 import com.yeodam.yeodambe.story.service.StoryValidator;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;

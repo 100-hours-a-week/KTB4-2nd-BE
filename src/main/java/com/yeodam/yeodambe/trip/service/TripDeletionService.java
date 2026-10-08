@@ -70,10 +70,9 @@ public class TripDeletionService {
         attachments.softDeleteByTripId(tripId, deletedAt);
         trip.softDelete(deletedAt);
 
-        List<Long> unreferencedFileIds = fileIds.stream()
-                .filter(fileId -> !attachments.existsByFileIdAndDeletedAtIsNull(fileId))
-                .toList();
-        if (!unreferencedFileIds.isEmpty()) files.softDeleteByIds(unreferencedFileIds, deletedAt);
+        if (!fileIds.isEmpty()) {
+            files.softDeleteByIds(fileIds, deletedAt);
+        }
 
         userStats.refreshFromActiveTrips(userId);
     }

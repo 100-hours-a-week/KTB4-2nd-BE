@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.repository;
 
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -238,5 +239,44 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     List<TripAttachment> findAllActiveByTripId(
             @Param("tripId") Long tripId,
             @Param("classificationStatus") ClassificationStatus classificationStatus
+    );
+
+    @Query("""
+            select new com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount(
+                    attachment.issue,
+                    count(attachment)
+            )
+            from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripId = :tripId
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.UNCLASSIFIED
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and attachment.issue in (
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.UNCLEAR_LOCATION,
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.BLURRY,
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.DUPLICATED
+              )
+            group by attachment.issue
+            """)
+    List<UnclassifiedFolderAttachmentCount> countUnclassifiedByIssue(
+            @Param("tripId") Long tripId
+    );
+
+    @Query("""
+            select attachment
+            from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripId = :tripId
+              and attachment.issue = :issue
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.UNCLASSIFIED
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+            order by attachment.createdAt desc, attachment.id desc
+            """)
+    List<TripAttachment> findUnclassifiedRepresentatives(
+            @Param("tripId") Long tripId,
+            @Param("issue") AttachmentIssue issue,
+            Pageable pageable
     );
 }

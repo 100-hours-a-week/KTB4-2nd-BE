@@ -105,6 +105,49 @@ class TripAttachmentSecurityIntegrationTest {
     @MockitoBean
     private CsrfTokenGenerator csrfTokenGenerator;
 
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService unclassifiedFolderListService;
+
+    @Test
+    void 미분류_폴더를_쿠키_인증으로_CSRF없이_조회한다() throws Exception {
+        var folder = new com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse.Folder(
+                com.yeodam.yeodambe.trip.entity.AttachmentIssue.BLURRY, "흐릿한 첨부", 2L,
+                new com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse.RepresentativeAttachment(
+                        503L, "https://example.test/preview"));
+        given(unclassifiedFolderListService.findFolders(42L, 7L)).willReturn(
+                new com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse(List.of(folder)));
+        mockMvc.perform(get("/api/trips/7/unclassified-folders")
+                        .contextPath("/api").servletPath("/trips/7/unclassified-folders")
+                        .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("UNCLASSIFIED_FOLDER_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.folders[0].issue").value("BLURRY"))
+                .andExpect(jsonPath("$.data.folders[0].name").value("흐릿한 첨부"))
+                .andExpect(jsonPath("$.data.folders[0].attachmentCount").value(2))
+                .andExpect(jsonPath("$.data.folders[0].representativeAttachment.tripAttachmentId").value(503))
+                .andExpect(jsonPath("$.data.folders[0].representativeAttachment.thumbnailUrl").value("https://example.test/preview"));
+        then(unclassifiedFolderListService).should().findFolders(42L, 7L);
+    }
+
+    @Test
+    void 미분류_폴더의_미인증_요청은_서비스_호출없이_401이다() throws Exception {
+        mockMvc.perform(get("/api/trips/7/unclassified-folders")
+                        .contextPath("/api").servletPath("/trips/7/unclassified-folders"))
+                .andExpect(status().isUnauthorized());
+        then(unclassifiedFolderListService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void 미분류_폴더의_접근불가_여행은_404이다() throws Exception {
+        given(unclassifiedFolderListService.findFolders(42L, 7L))
+                .willThrow(new com.yeodam.yeodambe.common.exception.TripNotFoundException());
+        mockMvc.perform(get("/api/trips/7/unclassified-folders")
+                        .contextPath("/api").servletPath("/trips/7/unclassified-folders")
+                        .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42"))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"));
+    }
+
     @BeforeEach
     void allowSessionValidation() {
         given(activeLoginSessionValidator.validate(any(Jwt.class)))

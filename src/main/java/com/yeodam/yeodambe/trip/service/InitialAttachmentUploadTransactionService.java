@@ -119,6 +119,7 @@ public class InitialAttachmentUploadTransactionService {
                     item.getObjectKey(),
                     item.getContentType()
             ));
+            original.storageSize(photo.originalSizeBytes());
 
             TripAttachment attachment = TripAttachment.initial(
                     tripId,
@@ -126,6 +127,11 @@ public class InitialAttachmentUploadTransactionService {
                     photo.analyzeKey(),
                     photo.previewKey(),
                     photo.displayKey()
+            );
+            attachment.storageSizes(
+                    photo.analyzeSizeBytes(),
+                    photo.previewSizeBytes(),
+                    photo.displaySizeBytes()
             );
 
             attachment.originalMetadata(

@@ -7,7 +7,7 @@ import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.exception.WithdrawalFailedException;
 import com.yeodam.yeodambe.user.repository.ConsentRepository;
-import com.yeodam.yeodambe.user.repository.LoginSessionRepository;
+import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
@@ -44,7 +44,7 @@ class WithdrawalServiceTest {
     @Mock
     private UserStatsRepository userStatsRepository;
     @Mock
-    private LoginSessionRepository loginSessionRepository;
+    private LoginSessionStore loginSessionStore;
     @Mock
     private TripWithdrawalService tripWithdrawalService;
     @Mock
@@ -77,7 +77,7 @@ class WithdrawalServiceTest {
         then(consent).should().withdraw(withdrawnAt.getValue());
         then(userStats).should().withdraw(withdrawnAt.getValue());
         then(user).should().withdraw(withdrawnAt.getValue());
-        then(loginSessionRepository).should().deleteByUser_UserId(USER_ID);
+        then(loginSessionStore).should().deleteByUserId(USER_ID);
         then(csrfTokenStore).should().delete(CSRF_CONTEXT);
     }
 
@@ -96,6 +96,6 @@ class WithdrawalServiceTest {
                 .isInstanceOf(WithdrawalFailedException.class);
 
         then(oauthAccount).should(never()).withdraw(org.mockito.ArgumentMatchers.any());
-        verifyNoInteractions(tripWithdrawalService, loginSessionRepository, csrfTokenStore);
+        verifyNoInteractions(tripWithdrawalService, loginSessionStore, csrfTokenStore);
     }
 }

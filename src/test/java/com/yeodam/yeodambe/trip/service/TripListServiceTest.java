@@ -43,7 +43,8 @@ class TripListServiceTest {
                 mock(RegionCatalog.class),
                 tripAttachmentRepository,
                 storageClient,
-                mock(TripAccessService.class)
+                mock(TripAccessService.class),
+                new tools.jackson.databind.ObjectMapper()
         );
     }
 

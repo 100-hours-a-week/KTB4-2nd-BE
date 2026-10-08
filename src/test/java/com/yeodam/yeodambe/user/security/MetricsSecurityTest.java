@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.user.security;
 
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
-import com.yeodam.yeodambe.user.security.csrf.RdbCsrfTokenRepository;
+import com.yeodam.yeodambe.user.security.csrf.RedisCsrfTokenRepository;
 import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
 import com.yeodam.yeodambe.user.security.jwt.CookieAccessTokenResolver;
 import org.junit.jupiter.api.Test;
@@ -33,7 +33,7 @@ abstract class MetricsSecuritySupport {
     MockMvc mockMvc;
 
     @MockitoBean
-    RdbCsrfTokenRepository csrfTokenRepository;
+    RedisCsrfTokenRepository csrfTokenRepository;
 
     @MockitoBean
     JwtDecoder jwtDecoder;

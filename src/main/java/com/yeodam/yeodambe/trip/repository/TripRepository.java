@@ -88,6 +88,12 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
 
     boolean existsByUserIdAndTripNameAndDeletedAtIsNull(Long userId, String tripName);
 
+    boolean existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(
+            Long userId,
+            String tripName,
+            Long tripId
+    );
+
     boolean existsByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
 
     boolean existsByThumbnailKeyAndDeletedAtIsNull(String thumbnailKey);

@@ -10,7 +10,7 @@ class ProfileTokenGeneratorTest {
             new ProfileTokenGenerator();
 
     @Test
-    void generatesUrlSafeRandomToken() {
+    void URL에_안전한_무작위_토큰을_생성한다() {
         String firstToken = generator.generate();
         String secondToken = generator.generate();
 

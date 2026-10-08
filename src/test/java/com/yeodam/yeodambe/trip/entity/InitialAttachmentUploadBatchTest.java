@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class InitialAttachmentUploadBatchTest {
     @Test
-    void pendingBatchCanStartAndCompleteProcessing() {
+    void 대기_배치는_처리를_시작하고_완료할_수_있다() {
         var batch = newBatch();
 
         assertThat(batch.getStatus()).isEqualTo(InitialAttachmentUploadStatus.PENDING);
@@ -19,7 +19,7 @@ class InitialAttachmentUploadBatchTest {
     }
 
     @Test
-    void pendingBatchCannotSkipProcessingToSuccessOrFailure() {
+    void 대기_배치는_처리_단계를_건너뛰어_성공이나_실패로_전환할_수_없다() {
         var batch = newBatch();
 
         assertThatThrownBy(batch::completeProcessing)
@@ -30,7 +30,7 @@ class InitialAttachmentUploadBatchTest {
     }
 
     @Test
-    void processingBatchCannotStartAgainButCanFail() {
+    void 처리_중인_배치는_다시_시작할_수_없지만_실패로_전환할_수_있다() {
         var batch = newBatch();
         batch.startProcessing();
 
@@ -42,7 +42,7 @@ class InitialAttachmentUploadBatchTest {
     }
 
     @Test
-    void completedBatchRejectsFurtherTransitions() {
+    void 완료된_배치는_추가_상태_전환을_거부한다() {
         var completed = newBatch();
         completed.startProcessing();
         completed.completeProcessing();
@@ -60,7 +60,7 @@ class InitialAttachmentUploadBatchTest {
     }
 
     @Test
-    void failedBatchCanRetryButAnalyzingBatchCannotStartAgain() {
+    void 실패한_배치는_재시도할_수_있지만_분석_중인_배치는_다시_시작할_수_없다() {
         var batch = new InitialAttachmentUploadBatch("upload", "execution", 7L, 42L, 1, 1, true);
         batch.startProcessing();
         batch.failProcessing();

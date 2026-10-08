@@ -58,7 +58,7 @@ class AuthenticationStoreFailureIntegrationTest {
     }
 
     @Test
-    void databaseFailureDuringJwtValidationReturnsServiceUnavailable()
+    void JWT_검증_중_DB_장애가_발생하면_서비스_불가_응답을_반환한다()
             throws Exception {
         String unique = UUID.randomUUID().toString();
         User user = userRegistrationService.register(

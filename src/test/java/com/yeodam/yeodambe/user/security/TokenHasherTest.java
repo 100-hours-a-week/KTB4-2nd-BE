@@ -10,7 +10,7 @@ class TokenHasherTest {
             new TokenHasher();
 
     @Test
-    void sameTokenHasSameHashWithoutExposingRawValue() {
+    void 같은_토큰은_같은_해시를_가지며_원본을_노출하지_않는다() {
         String firstHash = hasher.hash("refresh-token-1");
 
         assertThat(firstHash)

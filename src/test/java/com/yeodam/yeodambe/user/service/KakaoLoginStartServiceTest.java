@@ -36,7 +36,7 @@ class KakaoLoginStartServiceTest {
     }
 
     @Test
-    void createsAuthorizationUrlAndStoresState() {
+    void 인가_URL을_만들고_OAuth_상태를_저장한다() {
         given(stateGenerator.generate()).willReturn("fixed-state");
 
         String authorizationUrl = service.start("browser-1");
@@ -55,7 +55,7 @@ class KakaoLoginStartServiceTest {
     }
 
     @Test
-    void convertsStateGenerationFailureToContractException() {
+    void OAuth_상태_생성_실패를_계약에_맞는_예외로_변환한다() {
         given(stateGenerator.generate())
                 .willThrow(new IllegalStateException("state generation failed"));
 

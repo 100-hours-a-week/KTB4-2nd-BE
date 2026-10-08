@@ -8,7 +8,7 @@ import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenGenerator;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
-import com.yeodam.yeodambe.user.security.csrf.RdbCsrfTokenRepository;
+import com.yeodam.yeodambe.user.security.csrf.RedisCsrfTokenRepository;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.jwt.ActiveLoginSessionValidator;
 import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
@@ -40,7 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @Import({SecurityConfig.class, JwtConfig.class, AccessTokenIssuer.class,
         CookieAccessTokenResolver.class, ApiAuthenticationEntryPoint.class,
-        CsrfAccessDeniedHandler.class, RdbCsrfTokenRepository.class})
+        CsrfAccessDeniedHandler.class, RedisCsrfTokenRepository.class})
 class StorySourceFolderControllerTest {
     @Autowired
     private MockMvc mockMvc;

@@ -1,26 +1,29 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
-import com.yeodam.yeodambe.user.entity.OAuthStateEntity;
-import com.yeodam.yeodambe.user.repository.OAuthStateRepository;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import com.yeodam.yeodambe.TestcontainersConfiguration;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import org.springframework.context.annotation.Import;
 
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DataJpaTest
-@Import({OAuthStateStore.class, TokenHasher.class})
+@SpringBootTest
+@ActiveProfiles("test")
+@Import(TestcontainersConfiguration.class)
 class OAuthStateStoreTest {
 
     @Autowired
     private OAuthStateStore oauthStateStore;
 
     @Autowired
-    private OAuthStateRepository oauthStateRepository;
+    private StringRedisTemplate redis;
 
     @Autowired
     private TokenHasher tokenHasher;
@@ -54,38 +57,25 @@ class OAuthStateStoreTest {
     void storesHashesAndFiveMinuteExpiration() {
         String state = "oauth-state-hash";
         String browserContext = "browser-hash";
-        LocalDateTime beforeSave = LocalDateTime.now();
 
         oauthStateStore.save(state, browserContext);
 
-        OAuthStateEntity saved = oauthStateRepository
-                .findByStateHashForUpdate(tokenHasher.hash(state))
-                .orElseThrow();
-
-        assertThat(saved.getStateHash()).isNotEqualTo(state);
-        assertThat(saved.getBrowserContextHash())
-                .isEqualTo(tokenHasher.hash(browserContext));
-        assertThat(saved.getExpiresAt())
-                .isBetween(
-                        beforeSave.plusMinutes(5),
-                        LocalDateTime.now().plusMinutes(5)
-                );
+        assertThat(key(state)).doesNotContain(state);
+        assertThat(redis.opsForValue().get(key(state))).isEqualTo(tokenHasher.hash(browserContext));
+        assertThat(redis.getExpire(key(state), TimeUnit.MILLISECONDS)).isBetween(295000L, 300000L);
     }
 
     @Test
-    void expiredStateCannotBeConsumedAndIsDeleted() {
+    void expiredStateCannotBeConsumedAndIsDeleted() throws Exception {
         String state = "oauth-state-expired";
-        String stateHash = tokenHasher.hash(state);
 
-        oauthStateRepository.save(new OAuthStateEntity(
-                stateHash,
-                tokenHasher.hash("browser-1"),
-                LocalDateTime.now().minusSeconds(1)
-        ));
-
-        assertThat(oauthStateStore.consume(state, "browser-1"))
-                .isFalse();
-        assertThat(oauthStateRepository.findByStateHashForUpdate(stateHash))
-                .isEmpty();
+        oauthStateStore.save(state, "browser-1");
+        redis.expire(key(state), Duration.ofMillis(1));
+        Thread.sleep(20);
+        assertThat(oauthStateStore.consume(state, "browser-1")).isFalse();
+        assertThat(redis.hasKey(key(state))).isFalse();
+    }
+    private String key(String token) {
+        return "yeodam:test:auth:oauth-state:" + tokenHasher.hash(token);
     }
 }

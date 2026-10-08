@@ -4,14 +4,22 @@ import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.exception.OnboardingTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
+import com.yeodam.yeodambe.user.security.oauth.OAuthTokenClaim;
 import com.yeodam.yeodambe.user.security.oauth.ProfileTokenStore;
 import com.yeodam.yeodambe.user.security.session.IssuedLoginSession;
 import com.yeodam.yeodambe.user.security.session.LoginSessionIssuer;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.util.UUID;
+
 
 @Service
 @Slf4j
@@ -26,7 +34,10 @@ public class ProfileRegistrationService {
     @Transactional
     public Result register(String profileToken, String nickname) {
         long startedAt = System.nanoTime();
-        KakaoUserIdentity identity = profileTokenStore.find(profileToken)
+        String claimOwner = UUID.randomUUID().toString();
+        registerTokenCompletion(profileToken, claimOwner);
+        KakaoUserIdentity identity = profileTokenStore.claim(profileToken, claimOwner)
+                .map(OAuthTokenClaim::identity)
                 .orElseThrow(OnboardingTokenInvalidOrExpiredException::new);
 
         User user = userRegistrationService.register(
@@ -40,7 +51,6 @@ public class ProfileRegistrationService {
         IssuedLoginSession session = loginSessionIssuer.issue(user.getUserId());
         String accessToken = accessTokenIssuer.issue(user.getUserId(), session.sid());
 
-        profileTokenStore.delete(profileToken);
         log.atInfo()
                 .addKeyValue("event", "auth_login")
                 .addKeyValue("result", "success")
@@ -53,6 +63,30 @@ public class ProfileRegistrationService {
                 accessToken,
                 session.refreshToken()
         );
+    }
+
+    private void registerTokenCompletion(String token, String owner) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                try {
+                    switch (status) {
+                        case STATUS_COMMITTED -> profileTokenStore.complete(token, owner);
+                        case STATUS_ROLLED_BACK -> profileTokenStore.release(token, owner);
+                        default -> logCompletionFailure();
+                    }
+                } catch (RuntimeException exception) {
+                    logCompletionFailure();
+                }
+            }
+        });
+    }
+
+    private void logCompletionFailure() {
+        log.atError().addKeyValue("event", "auth_oauth_completion")
+                .addKeyValue("result", "failure").addKeyValue("failure_stage", "profile_completion")
+                .addKeyValue("error_code", "AUTH_STORE_UNAVAILABLE")
+                .log("가입 토큰의 Redis 완료 처리에 실패했습니다.");
     }
 
     private long elapsedMillis(long startedAt) {

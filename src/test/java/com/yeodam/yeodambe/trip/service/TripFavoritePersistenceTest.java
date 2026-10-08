@@ -37,6 +37,8 @@ class TripFavoritePersistenceTest {
     private TripAttachmentStorageClient tripAttachmentStorageClient;
     @MockitoBean
     private TripAccessService tripAccessService;
+    @MockitoBean
+    private tools.jackson.databind.ObjectMapper objectMapper;
 
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)

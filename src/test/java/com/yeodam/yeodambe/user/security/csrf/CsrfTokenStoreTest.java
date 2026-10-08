@@ -1,26 +1,28 @@
 package com.yeodam.yeodambe.user.security.csrf;
 
-import com.yeodam.yeodambe.user.entity.CsrfTokenEntity;
-import com.yeodam.yeodambe.user.repository.CsrfTokenRepository;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import com.yeodam.yeodambe.TestcontainersConfiguration;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import java.util.concurrent.TimeUnit;
 import org.springframework.context.annotation.Import;
 
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DataJpaTest
-@Import({CsrfTokenStore.class, TokenHasher.class})
+@SpringBootTest
+@ActiveProfiles("test")
+@Import(TestcontainersConfiguration.class)
 class CsrfTokenStoreTest {
 
     @Autowired
     private CsrfTokenStore csrfTokenStore;
 
     @Autowired
-    private CsrfTokenRepository csrfTokenRepository;
+    private StringRedisTemplate redis;
 
     @Autowired
     private TokenHasher tokenHasher;
@@ -65,48 +67,34 @@ class CsrfTokenStoreTest {
                 "new-token"
         )).isTrue();
 
-        assertThat(csrfTokenRepository.count()).isEqualTo(1L);
+        assertThat(redis.opsForValue().get(key("browser-rotation"))).isEqualTo("new-token");
     }
 
     @Test
     void storesBrowserHashAndSevenDayExpiration() {
-        LocalDateTime beforeSave = LocalDateTime.now();
 
         csrfTokenStore.save(
                 "browser-ttl",
                 "csrf-token"
         );
 
-        CsrfTokenEntity saved = csrfTokenRepository
-                .findByBrowserContextHash(
-                        tokenHasher.hash("browser-ttl")
-                )
-                .orElseThrow();
-
-        assertThat(saved.getBrowserContextHash())
-                .isNotEqualTo("browser-ttl");
-        assertThat(saved.getTokenValue()).isEqualTo("csrf-token");
-        assertThat(saved.getExpiresAt())
-                .isBetween(
-                        beforeSave.plusDays(7),
-                        LocalDateTime.now().plusDays(7)
-                );
+        assertThat(key("browser-ttl")).doesNotContain("browser-ttl");
+        assertThat(redis.opsForValue().get(key("browser-ttl"))).isEqualTo("csrf-token");
+        assertThat(redis.getExpire(key("browser-ttl"), TimeUnit.MILLISECONDS))
+                .isBetween(604795000L, 604800000L);
     }
 
     @Test
-    void expiredTokenCannotBeFoundAndIsDeleted() {
+    void expiredTokenCannotBeFoundAndIsDeleted() throws Exception {
         String browserContext = "browser-expired";
-        String browserContextHash = tokenHasher.hash(browserContext);
 
-        csrfTokenRepository.save(new CsrfTokenEntity(
-                browserContextHash,
-                "expired-token",
-                LocalDateTime.now().minusSeconds(1)
-        ));
-
+        csrfTokenStore.save(browserContext, "expired-token");
+        redis.expire(key(browserContext), java.time.Duration.ofMillis(1));
+        Thread.sleep(20);
         assertThat(csrfTokenStore.find(browserContext)).isNull();
-        assertThat(csrfTokenRepository.findByBrowserContextHash(
-                browserContextHash
-        )).isEmpty();
+        assertThat(redis.hasKey(key(browserContext))).isFalse();
+    }
+    private String key(String context) {
+        return "yeodam:test:auth:csrf:" + tokenHasher.hash(context);
     }
 }

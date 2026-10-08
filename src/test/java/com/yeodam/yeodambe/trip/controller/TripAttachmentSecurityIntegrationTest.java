@@ -18,7 +18,7 @@ import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenGenerator;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
-import com.yeodam.yeodambe.user.security.csrf.RdbCsrfTokenRepository;
+import com.yeodam.yeodambe.user.security.csrf.RedisCsrfTokenRepository;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.jwt.ActiveLoginSessionValidator;
 import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
@@ -62,7 +62,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         CookieAccessTokenResolver.class,
         ApiAuthenticationEntryPoint.class,
         CsrfAccessDeniedHandler.class,
-        RdbCsrfTokenRepository.class
+        RedisCsrfTokenRepository.class
 })
 class TripAttachmentSecurityIntegrationTest {
 

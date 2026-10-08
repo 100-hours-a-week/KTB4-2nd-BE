@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
-public class RdbCsrfTokenRepository implements CsrfTokenRepository {
+public class RedisCsrfTokenRepository implements CsrfTokenRepository {
 
     private final CsrfTokenStore csrfTokenStore;
 

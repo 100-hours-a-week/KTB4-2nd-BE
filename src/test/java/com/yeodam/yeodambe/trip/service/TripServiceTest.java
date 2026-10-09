@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
@@ -69,7 +70,8 @@ class TripServiceTest {
                 tripAttachmentRepository,
                 tripAttachmentStorageClient,
                 tripAccessService,
-                new tools.jackson.databind.ObjectMapper()
+                new tools.jackson.databind.ObjectMapper(),
+                mock(StoryRepository.class)
         );
     }
 

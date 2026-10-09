@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
@@ -17,7 +18,7 @@ class TripSearchServiceTest {
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final TripService service = new TripService(mock(TripRepository.class), regions,
             mock(RegionCatalog.class), attachments, storage, mock(TripAccessService.class),
-            new tools.jackson.databind.ObjectMapper());
+            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class));
 
     @Test
     void 사진_ID가_없으면_DB_조회와_URL_생성을_생략한다() {

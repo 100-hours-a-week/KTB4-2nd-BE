@@ -373,8 +373,17 @@ class TripCreationSecurityIntegrationTest {
     void 상세_API는_CSRF_없이_Jwt_subject를_전달한다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         given(tripService.findTripDetail(7L, 42L)).willReturn(new TripDetailResponse(
-                7L, "제주 여행", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2),
-                1L, List.of(), 3L, false, true));
+                7L,
+                "제주 여행",
+                LocalDate.of(2026, 9, 1),
+                LocalDate.of(2026, 9, 2),
+                1L,
+                List.of(),
+                3L,
+                6L,
+                true,
+                true
+        ));
 
         mockMvc.perform(get("/trips/7")
                         .cookie(new Cookie("accessToken", accessToken)))
@@ -383,10 +392,34 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(jsonPath("$.data.tripId").value(7))
                 .andExpect(jsonPath("$.data.nightCount").value(1))
                 .andExpect(jsonPath("$.data.attachmentCount").value(3))
-                .andExpect(jsonPath("$.data.hasStory").value(false));
+                .andExpect(jsonPath("$.data.unclassifiedAttachmentCount").value(6))
+                .andExpect(jsonPath("$.data.hasStory").value(true));
 
         then(tripService).should().findTripDetail(7L, 42L);
         verifyNoInteractions(csrfTokenStore);
+    }
+
+    @Test
+    void 상세_API는_미분류_사진과_현재_스토리가_없어도_필드를_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(tripService.findTripDetail(7L, 42L)).willReturn(new TripDetailResponse(
+                7L,
+                "제주 여행",
+                LocalDate.of(2026, 9, 1),
+                LocalDate.of(2026, 9, 2),
+                1L,
+                List.of(),
+                0L,
+                0L,
+                false,
+                true
+        ));
+
+        mockMvc.perform(get("/trips/7")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unclassifiedAttachmentCount").value(0))
+                .andExpect(jsonPath("$.data.hasStory").value(false));
     }
 
     @Test

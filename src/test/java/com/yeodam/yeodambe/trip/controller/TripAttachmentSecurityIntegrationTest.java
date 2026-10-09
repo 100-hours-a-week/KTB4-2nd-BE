@@ -24,7 +24,16 @@ import com.yeodam.yeodambe.user.security.jwt.ActiveLoginSessionValidator;
 import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
 import com.yeodam.yeodambe.user.security.jwt.CookieAccessTokenResolver;
 import com.yeodam.yeodambe.user.security.jwt.JwtConfig;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
+import com.yeodam.yeodambe.user.security.jwt.JwtProperties;
 import jakarta.servlet.http.Cookie;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,6 +81,12 @@ class TripAttachmentSecurityIntegrationTest {
     @Autowired
     private AccessTokenIssuer accessTokenIssuer;
 
+    @Autowired
+    private JwtEncoder jwtEncoder;
+
+    @Autowired
+    private JwtProperties jwtProperties;
+
     @MockitoBean
     private TripAttachmentService tripAttachmentService;
 
@@ -107,6 +122,72 @@ class TripAttachmentSecurityIntegrationTest {
 
     @MockitoBean
     private com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService unclassifiedFolderListService;
+
+    @Test
+    void 미분류_사진_목록을_쿠키_인증으로_CSRF없이_조회한다() throws Exception {
+        given(unclassifiedFolderListService.findAttachments(42L, 7L, "BLURRY", "cursor"))
+                .willReturn(new UnclassifiedAttachmentListResponse(
+                        AttachmentIssue.BLURRY,
+                        "흐릿한 첨부",
+                        1L,
+                        List.of(new UnclassifiedAttachmentListResponse.Item(
+                                502L,
+                                "https://example.test/preview",
+                                AttachmentIssue.BLURRY,
+                                31L
+                        )),
+                        false,
+                        null
+                ));
+
+        mockMvc.perform(get("/api/trips/7/unclassified-folders/BLURRY/attachments")
+                        .contextPath("/api")
+                        .servletPath("/trips/7/unclassified-folders/BLURRY/attachments")
+                        .param("cursor", "cursor")
+                        .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("UNCLASSIFIED_ATTACHMENT_DETAIL_FOUND"))
+                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(31));
+
+        then(unclassifiedFolderListService).should().findAttachments(42L, 7L, "BLURRY", "cursor");
+        then(csrfTokenStore).shouldHaveNoInteractions();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "-1", "not-a-number"})
+    void 미분류_사진_목록의_tripId가_양수가_아니면_400이다(String tripId) throws Exception {
+        mockMvc.perform(get("/trips/{tripId}/unclassified-folders/BLURRY/attachments", tripId)
+                        .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+
+        then(unclassifiedFolderListService).shouldHaveNoInteractions();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "invalid", "expired"})
+    void 미분류_사진_목록의_인증_쿠키가_없거나_유효하지_않으면_401이다(String tokenState)
+            throws Exception {
+        var request = get("/trips/7/unclassified-folders/BLURRY/attachments");
+        if ("invalid".equals(tokenState)) {
+            request.cookie(new Cookie("accessToken", "invalid-token"));
+        } else if ("expired".equals(tokenState)) {
+            AccessTokenIssuer expiredIssuer = new AccessTokenIssuer(
+                    jwtEncoder,
+                    jwtProperties,
+                    Clock.fixed(Instant.parse("2000-01-01T00:00:00Z"), ZoneOffset.UTC)
+            );
+            request.cookie(new Cookie("accessToken", expiredIssuer.issue(42L, "sid-42")));
+        }
+
+        mockMvc.perform(request)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+
+        then(unclassifiedFolderListService).shouldHaveNoInteractions();
+    }
 
     @Test
     void 미분류_폴더를_쿠키_인증으로_CSRF없이_조회한다() throws Exception {

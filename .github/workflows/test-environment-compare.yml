@@ -1,0 +1,66 @@
+name: Test environment comparison
+
+on:
+  push:
+    branches: ['112-test-*']
+    paths: ['.github/workflows/test-environment-compare.yml']
+  workflow_dispatch:
+    inputs:
+      variants:
+        description: Sequential comparison variants
+        type: choice
+        default: A B B A A B
+        options:
+          - A B B A A B
+          - baseline cache A B B A A B
+          - baseline
+          - cache
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-environment-comparison-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  comparison:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 130
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Java
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Install image processing tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends imagemagick libimage-exiftool-perl
+
+      - name: Verify comparison support
+        run: |
+          python3 -m unittest discover -s performance/test-environment -p 'test_*.py'
+          ./gradlew testEnvironmentVerification testEnvironmentSmartVerification --no-daemon --no-watch-fs --max-workers=2
+
+      - name: Compare test environments
+        env:
+          COMPARISON_VARIANTS: ${{ inputs.variants || 'baseline cache A B B A A B' }}
+        run: |
+          read -r -a variants <<< "$COMPARISON_VARIANTS"
+          python3 performance/test-environment/run.py run --variants "${variants[@]}" \
+            --output performance/test-environment/results/ci
+
+      - name: Upload raw evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: test-environment-${{ github.run_id }}
+          path: performance/test-environment/results/
+          if-no-files-found: warn
+          retention-days: 14

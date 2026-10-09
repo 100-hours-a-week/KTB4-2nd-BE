@@ -127,3 +127,5 @@ tasks.named('authCapacityDistribution') {
         file('build/auth-capacity/implementation.json').text = groovy.json.JsonOutput.toJson(metadata)
     }
 }
+
+apply from: 'gradle/test-environment.gradle'

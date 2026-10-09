@@ -121,3 +121,5 @@ $RECYCLE.BIN/
 
 /performance/auth/__pycache__/
 /performance/auth/runtime/
+
+/performance/test-environment/__pycache__/

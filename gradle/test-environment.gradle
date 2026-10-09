@@ -1,0 +1,83 @@
+sourceSets {
+    testEnvironment {
+        compileClasspath += sourceSets.test.output + sourceSets.test.compileClasspath
+        runtimeClasspath += sourceSets.test.output + sourceSets.test.runtimeClasspath
+    }
+}
+configurations {
+    testEnvironmentImplementation.extendsFrom testImplementation
+    testEnvironmentRuntimeOnly.extendsFrom testRuntimeOnly
+    testEnvironmentSmartContext
+}
+dependencies {
+    testEnvironmentImplementation 'org.junit.platform:junit-platform-launcher'
+    testEnvironmentSmartContext('com.github.seregamorph:spring-test-smart-context:1.1') {
+        transitive = false
+    }
+}
+
+tasks.register('testEnvironmentVerification', Test) {
+    group = 'verification'
+    description = 'Verify shared MySQL isolation and lifecycle without running the comparison suite'
+    testClassesDirs = sourceSets.testEnvironment.output.classesDirs
+    classpath = sourceSets.testEnvironment.runtimeClasspath
+    useJUnitPlatform()
+    include '**/SharedMysqlConfigurationTest.class'
+    maxParallelForks = 1
+}
+
+tasks.register('testEnvironmentSmartVerification', Test) {
+    group = 'verification'
+    description = 'Verify the B-only context listener loads with the current Spring and JUnit versions'
+    testClassesDirs = sourceSets.testEnvironment.output.classesDirs
+    classpath = sourceSets.testEnvironment.runtimeClasspath + configurations.testEnvironmentSmartContext
+    useJUnitPlatform()
+    include '**/*SmartContextTest.class'
+    maxParallelForks = 1
+}
+
+['Baseline', 'A', 'B', 'Cache'].each { variant ->
+    tasks.register("testEnvironment${variant}", Test) {
+        group = 'verification'
+        description = "Run the unchanged backend test inventory with environment variant ${variant}"
+        dependsOn tasks.named('testEnvironmentClasses')
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath + sourceSets.testEnvironment.output
+        if (variant == 'B') {
+            classpath += configurations.testEnvironmentSmartContext
+        }
+        useJUnitPlatform {
+            excludeTags 'performance'
+        }
+        maxParallelForks = 1
+        forkEvery = 0
+        minHeapSize = '512m'
+        maxHeapSize = '512m'
+        systemProperty 'junit.jupiter.execution.parallel.enabled', 'false'
+        systemProperty 'spring.test.context.cache.maxSize', variant == 'Cache' ? '2' : '32'
+        systemProperty 'test.environment.mysql', variant == 'A' ? 'shared' : 'isolated'
+        def outputDirectory = providers.gradleProperty('testEnvironment.output')
+                .orElse(layout.buildDirectory.dir("test-environment/${variant}").map { it.asFile.absolutePath })
+        systemProperty 'test.environment.output', outputDirectory.get()
+        reports.junitXml.outputLocation = file("${outputDirectory.get()}/xml")
+        reports.html.outputLocation = file("${outputDirectory.get()}/html")
+        outputs.upToDateWhen { false }
+        doFirst {
+            def directory = file(outputDirectory.get())
+            directory.mkdirs()
+            file("${directory}/task-start-ms.txt").text = System.currentTimeMillis().toString()
+        }
+        doLast {
+            file("${outputDirectory.get()}/task-end-ms.txt").text = System.currentTimeMillis().toString()
+        }
+    }
+}
+
+tasks.register('testEnvironmentPrepare') {
+    group = 'verification'
+    description = 'Compile test code and resolve the B-only library before timed comparison runs'
+    dependsOn tasks.named('testEnvironmentClasses')
+    doLast {
+        configurations.testEnvironmentSmartContext.files.each { logger.lifecycle("B-only dependency: ${it.name}") }
+    }
+}

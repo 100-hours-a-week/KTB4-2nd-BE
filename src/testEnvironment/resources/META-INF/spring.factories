@@ -1,0 +1,2 @@
+org.springframework.test.context.ContextCustomizerFactory=com.yeodam.yeodambe.TestEnvironmentMetrics
+org.springframework.test.context.TestExecutionListener=com.yeodam.yeodambe.TestEnvironmentMetrics

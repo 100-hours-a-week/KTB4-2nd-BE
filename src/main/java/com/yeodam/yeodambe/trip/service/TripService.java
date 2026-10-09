@@ -5,6 +5,8 @@ import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
 import com.yeodam.yeodambe.common.exception.TripUpdateNotAllowedException;
+import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
+import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -39,6 +41,7 @@ import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import tools.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Collection;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.time.LocalDate;
@@ -65,6 +68,62 @@ public class TripService {
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
     private final TripAccessService tripAccessService;
     private final ObjectMapper objectMapper;
+
+    @Transactional(readOnly = true)
+    public List<Long> findSearchCandidateIds(Long userId, TripSearchCondition condition) {
+        List<String> regionNames = condition.regionNames() == null
+                ? List.of() : condition.regionNames();
+        boolean filterRegions = !regionNames.isEmpty();
+        LocalDateTime takenFrom = condition.dateFrom() == null
+                ? null : condition.dateFrom().atStartOfDay();
+        LocalDateTime takenBefore = condition.dateTo() == null
+                ? null : condition.dateTo().plusDays(1).atStartOfDay();
+
+        return tripAttachmentRepository.findSearchCandidateIds(
+                userId, takenFrom, takenBefore, filterRegions,
+                filterRegions ? regionNames : List.of("")
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public TripSearchResultResponse findSearchResults(Long userId, Collection<Long> attachmentIds) {
+        if (attachmentIds.isEmpty()) {
+            return new TripSearchResultResponse(List.of(), List.of());
+        }
+
+        List<TripAttachment> attachments = tripAttachmentRepository.findSearchResults(userId, attachmentIds);
+        if (attachments.isEmpty()) {
+            return new TripSearchResultResponse(List.of(), List.of());
+        }
+
+        Map<Long, Trip> trips = attachments.stream()
+                .collect(Collectors.toMap(TripAttachment::getTripId, TripAttachment::getTrip,
+                        (first, duplicate) -> first, LinkedHashMap::new));
+
+        List<Long> tripIds = List.copyOf(trips.keySet());
+
+        Map<Long, List<String>> regionNames = tripRegionRepository.findNamesByTripIds(tripIds).stream()
+                .collect(Collectors.groupingBy(TripRegionName::tripId,
+                        Collectors.mapping(TripRegionName::regionName, Collectors.toList())));
+
+        Map<Long, Long> counts = tripAttachmentRepository.countActiveByTripIds(tripIds).stream()
+                .collect(Collectors.toMap(TripAttachmentCount::tripId, TripAttachmentCount::attachmentCount));
+
+        List<TripSearchResultResponse.Attachment> photos = attachments.stream()
+                .map(attachment -> new TripSearchResultResponse.Attachment(
+                        attachment.getId(), attachment.getTripId(), attachment.getTripPlaceId(),
+                        tripAttachmentStorageClient.createReadUrl(attachment.getPreviewStorageKey())))
+                .toList();
+
+        List<TripSearchResultResponse.Folder> folders = trips.values().stream()
+                .map(trip -> new TripSearchResultResponse.Folder(
+                        trip.getId(), trip.getTripName(), trip.getStartDate(), trip.getEndDate(),
+                        regionNames.getOrDefault(trip.getId(), List.of()).stream().limit(3).toList(),
+                        counts.getOrDefault(trip.getId(), 0L), createThumbnailUrl(trip)))
+                .toList();
+
+        return new TripSearchResultResponse(photos, folders);
+    }
 
     @Transactional
     public TripCreateResponse createTrip(Long userId, TripCreateRequest request) {

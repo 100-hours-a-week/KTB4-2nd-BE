@@ -16,6 +16,67 @@ import java.util.Optional;
 
 public interface TripAttachmentRepository extends JpaRepository<TripAttachment, Long> {
     @Query("""
+            select attachment.id
+            from TripAttachment attachment
+            join attachment.trip trip
+            join attachment.file file
+            where trip.userId = :userId
+              and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
+              and trip.deletedAt is null
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+              and (:takenFrom is null or attachment.takenAt >= :takenFrom)
+              and (:takenBefore is null or attachment.takenAt < :takenBefore)
+              and (:filterRegions = false or exists (
+                  select region.id from TripRegion region
+                  where region.trip.id = trip.id
+                    and region.deletedAt is null
+                    and region.regionName in :regionNames
+              ))
+            order by attachment.id
+            """)
+    List<Long> findSearchCandidateIds(
+            @Param("userId") Long userId,
+            @Param("takenFrom") LocalDateTime takenFrom,
+            @Param("takenBefore") LocalDateTime takenBefore,
+            @Param("filterRegions") boolean filterRegions,
+            @Param("regionNames") Collection<String> regionNames
+    );
+
+    @Query("""
+            select attachment
+            from TripAttachment attachment
+            join fetch attachment.trip trip
+            join fetch attachment.file file
+            where attachment.id in :attachmentIds
+              and trip.userId = :userId
+              and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
+              and trip.deletedAt is null
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+            """)
+    List<TripAttachment> findSearchResults(
+            @Param("userId") Long userId,
+            @Param("attachmentIds") Collection<Long> attachmentIds
+    );
+
+    @Query("""
+            select new com.yeodam.yeodambe.trip.repository.TripAttachmentCount(
+                attachment.tripId, count(attachment)
+            )
+            from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripId in :tripIds
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+            group by attachment.tripId
+            """)
+    List<TripAttachmentCount> countActiveByTripIds(@Param("tripIds") Collection<Long> tripIds);
+
+    @Query("""
             select new com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount(
                     attachment.tripPlaceId,
                     count(attachment)

@@ -83,6 +83,8 @@ ai:
     instance-id: ${AI_EC2_INSTANCE_ID}
     connection-timeout: ${AI_ANALYSIS_CONNECTION_TIMEOUT:10s}
     analysis_timeout: ${AI_ANALYSIS_READ_TIMEOUT:30m}
+    query-connection-timeout: ${AI_QUERY_CONNECTION_TIMEOUT:5s}
+    query-read-timeout: ${AI_QUERY_READ_TIMEOUT:30s}
     health-connection-timeout: ${AI_HEALTH_CONNECTION_TIMEOUT:5s}
     health_read_timeout: ${AI_HEALTH_READ_TIMEOUT:5s}
 

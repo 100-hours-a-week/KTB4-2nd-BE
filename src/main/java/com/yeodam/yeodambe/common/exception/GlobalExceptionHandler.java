@@ -5,6 +5,8 @@ import com.yeodam.yeodambe.common.response.ErrorMessage;
 
 import com.yeodam.yeodambe.story.exception.StoryDataIntegrityException;
 import com.yeodam.yeodambe.story.exception.StoryNotFoundException;
+import com.yeodam.yeodambe.story.exception.InvalidStoryRequestException;
+import com.yeodam.yeodambe.story.exception.StoryGenerationForbiddenException;
 import com.yeodam.yeodambe.user.exception.*;
 import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
@@ -307,6 +309,20 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleMethodValidation(HandlerMethodValidationException e) {
         return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
+    }
+
+    @ExceptionHandler(InvalidStoryRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidStoryRequest(InvalidStoryRequestException e) {
+        return new ApiResponse<>(ErrorMessage.INVALID_STORY_REQUEST, null);
+    }
+
+    @ExceptionHandler(StoryGenerationForbiddenException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    ApiResponse<Void> handleStoryGenerationForbidden(
+            StoryGenerationForbiddenException e
+    ) {
+        return new ApiResponse<>(ErrorMessage.STORY_GENERATION_FORBIDDEN, null);
     }
 
     @ExceptionHandler(StoryNotFoundException.class)

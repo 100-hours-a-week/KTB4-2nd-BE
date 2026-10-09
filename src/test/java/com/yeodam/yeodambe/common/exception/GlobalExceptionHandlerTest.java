@@ -57,6 +57,8 @@ class GlobalExceptionHandlerTest {
 
     @ParameterizedTest
     @CsvSource({
+            "invalid-story-request, 400, INVALID_STORY_REQUEST",
+            "story-generation-forbidden, 403, STORY_GENERATION_FORBIDDEN",
             "invalid-attachment, 400, INVALID_ATTACHMENT_UPLOAD",
             "trip-not-found, 404, TRIP_NOT_FOUND",
             "trip-deletion-not-allowed, 409, TRIP_DELETION_NOT_ALLOWED",
@@ -280,6 +282,16 @@ class GlobalExceptionHandlerTest {
 
     @RestController
     static class TestController {
+        @GetMapping("/test/story-generation-forbidden")
+        void storyGenerationForbidden() {
+            throw new com.yeodam.yeodambe.story.exception.StoryGenerationForbiddenException();
+        }
+
+        @GetMapping("/test/invalid-story-request")
+        void invalidStoryRequest() {
+            throw new com.yeodam.yeodambe.story.exception.InvalidStoryRequestException();
+        }
+
         @org.springframework.web.bind.annotation.RequestMapping(
                 path = {"/trips/{tripId}", "/test/unreadable"},
                 method = {org.springframework.web.bind.annotation.RequestMethod.PATCH,

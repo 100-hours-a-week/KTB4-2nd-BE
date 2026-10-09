@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
-import com.yeodam.yeodambe.user.exception.OnboardingTokenInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.OnboardingTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.service.ProfileRegistrationService;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
@@ -45,7 +45,7 @@ class ProfileRegistrationControllerTest {
     }
 
     @Test
-    void successfulRegistrationReturnsCreatedAndReplacesProfileCookie() throws Exception {
+    void 가입에_성공하면_201을_반환하고_가입_토큰_쿠키를_교체한다() throws Exception {
         given(service.register("profile-1", "여행자"))
                 .willReturn(new ProfileRegistrationService.Result(
                         42L, "여행자", "access-1", "refresh-1"
@@ -78,7 +78,7 @@ class ProfileRegistrationControllerTest {
     }
 
     @Test
-    void expiredProfileTokenReturnsUnauthorized() throws Exception {
+    void 만료된_가입_토큰은_401을_반환한다() throws Exception {
         given(service.register("expired", "여행자"))
                 .willThrow(new OnboardingTokenInvalidOrExpiredException());
 
@@ -93,7 +93,7 @@ class ProfileRegistrationControllerTest {
     }
 
     @Test
-    void accessTokenWithoutProfileTokenReturnsForbidden() throws Exception {
+    void 가입_토큰_없이_액세스_토큰만_있으면_403을_반환한다() throws Exception {
         mockMvc.perform(post("/users/me/profile")
                         .cookie(new Cookie("accessToken", "access-1"))
                         .contentType(MediaType.APPLICATION_JSON)

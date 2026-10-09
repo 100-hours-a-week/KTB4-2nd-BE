@@ -4,17 +4,17 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
-import com.yeodam.yeodambe.user.exception.InvalidEmailException;
-import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
-import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
-import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
-import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
-import com.yeodam.yeodambe.user.exception.LoginTicketIssueFailedException;
-import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
-import com.yeodam.yeodambe.user.exception.OAuthStateCreateFailedException;
-import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
-import com.yeodam.yeodambe.user.exception.UserNotFoundException;
+import com.yeodam.yeodambe.common.exception.DuplicateEmailException;
+import com.yeodam.yeodambe.common.exception.InvalidEmailException;
+import com.yeodam.yeodambe.common.exception.InvalidNicknameException;
+import com.yeodam.yeodambe.common.exception.DuplicateOAuthAccountException;
+import com.yeodam.yeodambe.common.exception.KakaoAuthenticationFailedException;
+import com.yeodam.yeodambe.common.exception.LoginTicketInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.LoginTicketIssueFailedException;
+import com.yeodam.yeodambe.common.exception.OAuthProviderUnavailableException;
+import com.yeodam.yeodambe.common.exception.OAuthStateCreateFailedException;
+import com.yeodam.yeodambe.common.exception.OAuthStateInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.UserNotFoundException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -82,7 +82,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsConflictWhenEmailAlreadyInUse() throws Exception {
+    void 이미_사용_중인_이메일이면_409를_반환한다() throws Exception {
         mockMvc.perform(get("/test/duplicate-email"))
                 .andExpect(status().isConflict())
                 .andExpect(content().json("""
@@ -94,7 +94,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsBadRequestWhenNicknameIsInvalid() throws Exception {
+    void 닉네임이_유효하지_않으면_400을_반환한다() throws Exception {
         mockMvc.perform(get("/test/invalid-nickname"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().json("""
@@ -113,7 +113,7 @@ class GlobalExceptionHandlerTest {
             "illegal-argument, 500, INTERNAL_SERVER_ERROR",
             "illegal-state, 500, INTERNAL_SERVER_ERROR"
     })
-    void distinguishesInvalidInputFromInternalRuntimeErrors(String path, int statusCode, String message)
+    void 잘못된_입력과_내부_런타임_오류를_구분한다(String path, int statusCode, String message)
             throws Exception {
         mockMvc.perform(get("/test/" + path))
                 .andExpect(status().is(statusCode))
@@ -121,7 +121,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsConflictWhenOAuthAccountAlreadyRegistered() throws Exception {
+    void 이미_등록된_OAuth_계정이면_409를_반환한다() throws Exception {
         mockMvc.perform(get("/test/duplicate-oauth-account"))
                 .andExpect(status().isConflict())
                 .andExpect(content().json("""
@@ -133,7 +133,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsBadRequestWhenOAuthStateIsInvalidOrExpired() throws Exception {
+    void OAuth_상태가_유효하지_않거나_만료되면_400을_반환한다() throws Exception {
         mockMvc.perform(get("/test/oauth-state-invalid"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().json("""
@@ -145,7 +145,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsUnauthorizedWhenKakaoAuthenticationFails() throws Exception {
+    void 카카오_인증이_실패하면_401을_반환한다() throws Exception {
         mockMvc.perform(get("/test/kakao-authentication-failed"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().json("""
@@ -157,7 +157,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsUnauthorizedWhenLoginTicketIsInvalidOrExpired() throws Exception {
+    void 로그인_티켓이_유효하지_않거나_만료되면_401을_반환한다() throws Exception {
         mockMvc.perform(get("/test/login-ticket-invalid"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().json("""
@@ -169,7 +169,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsServiceUnavailableWhenOAuthProviderFails() throws Exception {
+    void OAuth_제공자가_실패하면_503을_반환한다() throws Exception {
         mockMvc.perform(get("/test/oauth-provider-unavailable"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(content().json("""
@@ -181,7 +181,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsServiceUnavailableWhenAuthenticationDatabaseFails() throws Exception {
+    void 인증_DB가_실패하면_503을_반환한다() throws Exception {
         mockMvc.perform(get("/test/auth-database-unavailable"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(content().json("""
@@ -193,7 +193,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsNotFoundWhenActiveUserDoesNotExist() throws Exception {
+    void 활성_회원이_없으면_404를_반환한다() throws Exception {
         mockMvc.perform(get("/test/user-not-found"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().json("""
@@ -217,7 +217,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsInternalServerErrorWhenOAuthStateCreationFails() throws Exception {
+    void OAuth_상태_생성이_실패하면_500을_반환한다() throws Exception {
         mockMvc.perform(get("/test/oauth-state-create-failed"))
                 .andExpect(status().isInternalServerError())
                 .andExpect(content().json("""
@@ -229,7 +229,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsInternalServerErrorWhenLoginTicketIssueFails() throws Exception {
+    void 로그인_티켓_발급이_실패하면_500을_반환한다() throws Exception {
         mockMvc.perform(get("/test/login-ticket-issue-failed"))
                 .andExpect(status().isInternalServerError())
                 .andExpect(content().json("""
@@ -256,7 +256,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsUnauthorizedWhenAuthenticationIsMissing() throws Exception {
+    void 인증이_없으면_401을_반환한다() throws Exception {
         mockMvc.perform(get("/test/authentication-missing"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().json("{\"message\":\"UNAUTHORIZED\",\"data\":null}"));
@@ -284,12 +284,12 @@ class GlobalExceptionHandlerTest {
     static class TestController {
         @GetMapping("/test/story-generation-forbidden")
         void storyGenerationForbidden() {
-            throw new com.yeodam.yeodambe.story.exception.StoryGenerationForbiddenException();
+            throw new com.yeodam.yeodambe.common.exception.StoryGenerationForbiddenException();
         }
 
         @GetMapping("/test/invalid-story-request")
         void invalidStoryRequest() {
-            throw new com.yeodam.yeodambe.story.exception.InvalidStoryRequestException();
+            throw new com.yeodam.yeodambe.common.exception.InvalidStoryRequestException();
         }
 
         @org.springframework.web.bind.annotation.RequestMapping(

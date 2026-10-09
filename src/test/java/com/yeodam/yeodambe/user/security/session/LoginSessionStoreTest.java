@@ -60,7 +60,7 @@ class LoginSessionStoreTest {
     private TokenHasher tokenHasher;
 
     @Test
-    void savesAndFindsSessionBySidAndRefreshTokenHash() {
+    void SID와_리프레시_토큰_해시로_세션을_저장하고_조회한다() {
         User user = saveUser("lookup");
         String sid = UUID.randomUUID().toString();
         String refreshHash = tokenHasher.hash("refresh-token-lookup");
@@ -76,7 +76,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void storesSevenDayExpiration() {
+    void 세션의_7일_유효기간을_저장한다() {
         User user = saveUser("expiration");
         String sid = UUID.randomUUID().toString();
         String refreshHash = tokenHasher.hash("refresh-token-expiration");
@@ -96,7 +96,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void rotatesRefreshTokenAndExtendsExpiration() {
+    void 리프레시_토큰을_회전하고_유효기간을_연장한다() {
         User user = saveUser("rotation");
         String sid = UUID.randomUUID().toString();
         String oldHash = tokenHasher.hash("old-refresh-token");
@@ -124,7 +124,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void expiredSessionCannotBeFoundAndIsDeleted() {
+    void 만료된_세션은_조회할_수_없고_삭제된다() {
         User user = saveUser("expired");
         String sid = UUID.randomUUID().toString();
         String refreshHash = tokenHasher.hash("expired-refresh-token");
@@ -145,7 +145,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void deletesOnlyRequestedSession() {
+    void 요청한_세션만_삭제한다() {
         User user = saveUser("logout");
         String requestedSid = UUID.randomUUID().toString();
         String otherSid = UUID.randomUUID().toString();
@@ -169,7 +169,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void onlyOneConcurrentRotationOfSameTokenSucceeds() throws Exception {
+    void 같은_토큰의_동시_회전은_하나의_요청만_성공한다() throws Exception {
         User user = saveUser("concurrent");
         String sid = UUID.randomUUID().toString();
         String oldHash = tokenHasher.hash("concurrent-old-token");
@@ -216,7 +216,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void sessionWritesDoNotCreateRdbRows() {
+    void 세션을_저장해도_RDB_행을_만들지_않는다() {
         User user = saveUser("redis-only");
         String sid = UUID.randomUUID().toString();
         loginSessionStore.save(sid, user.getUserId(), tokenHasher.hash(sid));
@@ -225,7 +225,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void deletesEverySessionAndRefreshIndexOnlyForRequestedUser() {
+    void 요청한_사용자의_모든_세션과_리프레시_인덱스만_삭제한다() {
         User user = saveUser("withdraw");
         User other = saveUser("other-owner");
         String first = UUID.randomUUID().toString();
@@ -245,7 +245,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void rotatedSessionDeletionRemovesCurrentRefreshIndex() {
+    void 회전한_세션을_삭제하면_현재_리프레시_인덱스도_제거한다() {
         User user = saveUser("rotated-logout");
         String sid = UUID.randomUUID().toString();
         String oldHash = tokenHasher.hash(sid);
@@ -260,7 +260,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void doesNotFallBackToLegacyRdbSession() {
+    void 기존_RDB_세션으로_대체하지_않는다() {
         User user = saveUser("legacy");
         String sid = UUID.randomUUID().toString();
         String hash = tokenHasher.hash(sid);
@@ -270,7 +270,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void missingSessionCannotBeResolvedThroughStaleRefreshIndex() {
+    void 남아있는_리프레시_인덱스로_없는_세션을_조회하지_않는다() {
         String hash = tokenHasher.hash(UUID.randomUUID().toString());
         String key = "yeodam:test:auth:refresh:" + hash;
         redis.opsForValue().set(key, "missing-sid", Duration.ofDays(7));
@@ -279,7 +279,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void redisClockExpirationDoesNotDropLiveSessionsFromUserIndex() {
+    void Redis_시간으로_만료를_계산해도_활성_세션을_사용자_인덱스에서_제거하지_않는다() {
         User user = saveUser("clock-skew");
         String existing = UUID.randomUUID().toString();
         loginSessionStore.save(existing, user.getUserId(), tokenHasher.hash(existing));
@@ -295,7 +295,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void sessionLifecycleWorksWhenServerForbidsLua() {
+    void 서버에서_Lua를_금지해도_세션_생명주기가_동작한다() {
         String username = "template-test-" + UUID.randomUUID();
         String password = UUID.randomUUID().toString();
         acl("SETUSER", username, "on", ">" + password, "~yeodam:test:auth:*",
@@ -341,7 +341,7 @@ class LoginSessionStoreTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void transactionDelayDoesNotLetLiveSessionExpireAfterItsUserIndexScore() {
+    void 트랜잭션이_지연되어도_활성_세션이_사용자_인덱스_점수보다_늦게_만료되지_않는다() {
         StringRedisTemplate delayed = spy(redis);
         doAnswer(invocation -> {
             Object result = invocation.callRealMethod();
@@ -378,7 +378,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void deletingSessionMissingFromIndexPreservesOtherLiveSessionMembership() {
+    void 인덱스에_없는_세션을_삭제해도_다른_활성_세션의_인덱스_연결을_유지한다() {
         User user = saveUser("missing-index-member");
         String sid = UUID.randomUUID().toString();
         String otherSid = UUID.randomUUID().toString();
@@ -394,12 +394,12 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void rotationRacingWithLogoutDoesNotLeaveSessionOrRefreshIndexes() throws Exception {
+    void 토큰_회전과_로그아웃이_경합해도_세션과_리프레시_인덱스를_남기지_않는다() throws Exception {
         assertRotationDeletionRace(false);
     }
 
     @Test
-    void rotationRacingWithUserDeletionDoesNotLeaveSessionOrRefreshIndexes() throws Exception {
+    void 토큰_회전과_탈퇴가_경합해도_세션과_리프레시_인덱스를_남기지_않는다() throws Exception {
         assertRotationDeletionRace(true);
     }
 

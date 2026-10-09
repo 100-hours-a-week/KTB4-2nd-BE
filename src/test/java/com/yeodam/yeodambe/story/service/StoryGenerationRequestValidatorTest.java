@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.entity.Story;
-import com.yeodam.yeodambe.story.exception.InvalidStoryRequestException;
+import com.yeodam.yeodambe.common.exception.InvalidStoryRequestException;
 import com.yeodam.yeodambe.story.service.request.StoryGenerationRequest;
 import jakarta.validation.Validation;
 import jakarta.validation.ValidatorFactory;

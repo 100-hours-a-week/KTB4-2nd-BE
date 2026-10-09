@@ -90,7 +90,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void completesOrderedBatchesOnceAndPreservesOffsetAfterDatabaseReload() {
+    void 순서대로_배치를_한_번씩_완료하고_DB_재조회_후에도_오프셋을_유지한다() {
         var first = prepare(1, 2, false);
         assertThat(complete(first)).isEmpty();
         assertThat(latestStatus()).isEqualTo("COMPLETED");
@@ -126,7 +126,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void retriesAnalysisFailureWithoutGeneratingOrPersistingPhotosAgain() {
+    void 분석_실패를_재시도할_때_사진을_다시_생성하거나_저장하지_않는다() {
         var batch = prepare(1, 1, true);
         doAnswer(call -> {
             ((BooleanSupplier) call.getArgument(3)).getAsBoolean();
@@ -148,7 +148,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void cleansFailedRetentionBeforeReleasingBatchForRetryAndKeepsOriginal() {
+    void 재시도를_위해_배치를_해제하기_전에_보존_실패를_정리하고_원본을_유지한다() {
         var batch = prepare(1, 1, true);
         doThrow(new IllegalStateException("retain failed")).doNothing().when(storage).retain(anyList());
         assertThatThrownBy(() -> complete(batch)).hasMessage("retain failed");
@@ -166,7 +166,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void blocksRetryWhenS3CleanupFailedInsteadOfDeletingDatabaseReferences() {
+    void S3_정리가_실패하면_DB_참조를_삭제하지_않고_재시도를_차단한다() {
         var batch = prepare(1, 1, true);
         doThrow(new IllegalStateException("retain failed")).when(storage).retain(anyList());
         doThrow(new IllegalStateException("delete failed")).when(storage).delete(anyString());
@@ -179,7 +179,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void cleansPreviouslyPersistedDerivativesWhenRetryOriginalVerificationFails() {
+    void 재시도_중_원본_검증이_실패하면_이전에_저장한_파생_파일을_정리한다() {
         var batch = prepare(1, 1, true);
         doThrow(new IllegalStateException("ai unavailable")).when(analysis).analyze(anyLong(), anyString(), any(), any());
         assertThatThrownBy(() -> complete(batch)).hasMessage("ai unavailable");
@@ -194,7 +194,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void rejectsLateAiResultAfterCancellationAndDoesNotResurrectPhotos() {
+    void 취소_후_늦게_온_AI_결과를_거부하고_사진을_복원하지_않는다() {
         var batch = prepare(1, 1, true);
         doAnswer(call -> {
             assertThat(((BooleanSupplier) call.getArgument(3)).getAsBoolean()).isTrue();
@@ -212,7 +212,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void rollsBackTripAndBatchCompletionWhenAiResultCannotBePersisted() {
+    void AI_결과를_저장할_수_없으면_여행과_배치_완료를_롤백한다() {
         var batch = prepare(1, 1, true);
         doAnswer(call -> {
             ((BooleanSupplier) call.getArgument(3)).getAsBoolean();
@@ -227,7 +227,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void rejectsCompletionByAnotherOwnerBeforeContactingStorage() {
+    void 저장소를_호출하기_전에_다른_소유자의_완료_요청을_거부한다() {
         var batch = prepare(1, 1, true);
         User other = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원"));
         assertThatThrownBy(() -> completion.complete(trip.getId(), other.getUserId(),
@@ -238,7 +238,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void lateMultipartUploadCannotOverwriteNewDirectUploadBatch() {
+    void 늦게_온_멀티파트_업로드는_새_직접_업로드_배치를_덮어쓸_수_없다() {
         var reservation = legacy.reserveBatch(trip.getId(), owner.getUserId(), 1, 1);
         var batch = prepare(1, 1, true);
         var upload = new org.springframework.mock.web.MockMultipartFile("attachments[]", "photo.jpg", "image/jpeg", new byte[]{1});

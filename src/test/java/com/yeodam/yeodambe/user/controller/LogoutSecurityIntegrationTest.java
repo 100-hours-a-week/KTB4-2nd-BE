@@ -71,7 +71,7 @@ class LogoutSecurityIntegrationTest {
     }
 
     @Test
-    void validAccessTokenAndCsrfTokenAllowLogout() throws Exception {
+    void 유효한_액세스_토큰과_CSRF_토큰으로_로그아웃할_수_있다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("logout-browser"))
                 .willReturn("csrf-token");
@@ -88,7 +88,7 @@ class LogoutSecurityIntegrationTest {
     }
 
     @Test
-    void missingAccessTokenReturnsUnauthorized() throws Exception {
+    void 액세스_토큰이_없으면_401을_반환한다() throws Exception {
         given(csrfTokenStore.find("missing-access-browser"))
                 .willReturn("csrf-token");
 
@@ -105,7 +105,7 @@ class LogoutSecurityIntegrationTest {
     }
 
     @Test
-    void invalidCsrfTokenReturnsForbidden() throws Exception {
+    void 유효하지_않은_CSRF_토큰은_403을_반환한다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("invalid-csrf-browser"))
                 .willReturn("csrf-token");

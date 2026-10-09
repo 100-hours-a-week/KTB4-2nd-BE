@@ -1,6 +1,6 @@
 package com.yeodam.yeodambe.story.service;
 
-import com.yeodam.yeodambe.story.exception.StoryDataIntegrityException;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
 import org.springframework.stereotype.Component;
 

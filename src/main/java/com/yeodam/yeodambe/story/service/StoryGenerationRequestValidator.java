@@ -1,6 +1,6 @@
 package com.yeodam.yeodambe.story.service;
 
-import com.yeodam.yeodambe.story.exception.InvalidStoryRequestException;
+import com.yeodam.yeodambe.common.exception.InvalidStoryRequestException;
 import com.yeodam.yeodambe.story.service.request.StoryGenerationRequest;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;

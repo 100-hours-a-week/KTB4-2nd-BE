@@ -3,11 +3,6 @@ package com.yeodam.yeodambe.common.exception;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 
-import com.yeodam.yeodambe.story.exception.StoryDataIntegrityException;
-import com.yeodam.yeodambe.story.exception.StoryNotFoundException;
-import com.yeodam.yeodambe.story.exception.InvalidStoryRequestException;
-import com.yeodam.yeodambe.story.exception.StoryGenerationForbiddenException;
-import com.yeodam.yeodambe.user.exception.*;
 import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -33,6 +28,21 @@ import org.springframework.web.servlet.HandlerMapping;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(InvalidSearchQueryException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidSearchQuery(InvalidSearchQueryException e) {
+        return new ApiResponse<>(ErrorMessage.INVALID_SEARCH_QUERY, null);
+    }
+
+    @ExceptionHandler(AiQueryUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handleAiQueryUnavailable(AiQueryUnavailableException e) {
+        logFailure(log.atWarn(), ErrorMessage.SEARCH_SERVICE_UNAVAILABLE,
+                "AI 검색 서비스를 사용할 수 없습니다.", e);
+        return new ApiResponse<>(ErrorMessage.SEARCH_SERVICE_UNAVAILABLE, null);
+    }
+
 
     @ExceptionHandler(AiStatusUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)

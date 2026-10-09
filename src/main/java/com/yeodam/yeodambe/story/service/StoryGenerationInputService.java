@@ -1,11 +1,11 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
-import com.yeodam.yeodambe.story.exception.StoryGenerationForbiddenException;
+import com.yeodam.yeodambe.common.exception.StoryGenerationForbiddenException;
 import com.yeodam.yeodambe.story.service.request.StoryGenerationRequest;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.story.exception.InvalidStoryRequestException;
+import com.yeodam.yeodambe.common.exception.InvalidStoryRequestException;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;

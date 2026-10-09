@@ -13,7 +13,7 @@ class CookieAccessTokenResolverTest {
     private final CookieAccessTokenResolver resolver = new CookieAccessTokenResolver();
 
     @Test
-    void readsAccessTokenCookieOnProtectedPath() {
+    void 보호된_경로에서는_액세스_토큰_쿠키를_읽는다() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setServletPath("/users/me");
         request.setCookies(
@@ -25,7 +25,7 @@ class CookieAccessTokenResolverTest {
     }
 
     @Test
-    void ignoresStaleAccessTokenCookieOnPublicPaths() {
+    void 공개_경로에서는_유효하지_않은_액세스_토큰_쿠키를_무시한다() {
         for (String path : List.of(
                 "/actuator/health",
                 "/auth/csrf",
@@ -44,7 +44,7 @@ class CookieAccessTokenResolverTest {
     }
 
     @Test
-    void returnsNullWhenAccessTokenCookieIsMissingOrBlank() {
+    void 액세스_토큰_쿠키가_없거나_공백이면_null을_반환한다() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setServletPath("/users/me");
 
@@ -56,7 +56,7 @@ class CookieAccessTokenResolverTest {
     }
 
     @Test
-    void doesNotReadAuthorizationHeaderAsCookie() {
+    void Authorization_헤더를_쿠키로_읽지_않는다() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setServletPath("/users/me");
         request.addHeader("Authorization", "Bearer header-token");

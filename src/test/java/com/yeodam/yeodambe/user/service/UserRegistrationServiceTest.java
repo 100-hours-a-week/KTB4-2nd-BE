@@ -3,8 +3,8 @@ package com.yeodam.yeodambe.user.service;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
-import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
-import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
+import com.yeodam.yeodambe.common.exception.DuplicateEmailException;
+import com.yeodam.yeodambe.common.exception.DuplicateOAuthAccountException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,7 +28,7 @@ class UserRegistrationServiceTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void registrationCreatesAllMemberData() {
+    void 회원_가입으로_모든_회원_데이터를_저장한다() {
         User user = userRegistrationService.register(
                 "signup@yeodam.test",
                 "가입회원",
@@ -63,7 +63,7 @@ class UserRegistrationServiceTest {
     }
 
     @Test
-    void registrationRollsBackWhenOAuthAccountSaveFails() {
+    void OAuth_계정_저장이_실패하면_회원_가입을_롤백한다() {
         String email = "rollback@yeodam.test";
 
         assertThatThrownBy(() -> userRegistrationService.register(
@@ -83,7 +83,7 @@ class UserRegistrationServiceTest {
     }
 
     @Test
-    void registrationRejectsDuplicateEmail() {
+    void 회원_가입_시_중복_이메일을_거부한다() {
         String email = "duplicate-email@yeodam.test";
 
         userRegistrationService.register(
@@ -102,7 +102,7 @@ class UserRegistrationServiceTest {
     }
 
     @Test
-    void registrationRejectsDuplicateOAuthAccount() {
+    void 회원_가입_시_중복_OAuth_계정을_거부한다() {
         String providerUserId = "kakao-duplicate-oauth-1";
 
         userRegistrationService.register(
@@ -121,7 +121,7 @@ class UserRegistrationServiceTest {
     }
 
     @Test
-    void registrationRejectsNicknameContainingWhitespace() {
+    void 회원_가입_시_공백이_포함된_닉네임을_거부한다() {
         assertThatThrownBy(() -> userRegistrationService.register(
                 "invalid-nickname@yeodam.test",
                 "잘못 된닉네임",
@@ -131,7 +131,7 @@ class UserRegistrationServiceTest {
     }
 
     @Test
-    void registrationTrimsEmailWithoutChangingCase() {
+    void 회원_가입_시_이메일의_대소문자는_유지하고_앞뒤_공백을_제거한다() {
         User user = userRegistrationService.register(
                 "  CaseSensitive@yeodam.test  ",
                 "공백회원",
@@ -144,7 +144,7 @@ class UserRegistrationServiceTest {
     }
 
     @Test
-    void registrationRejectsEmailContainingInternalWhitespace() {
+    void 회원_가입_시_내부_공백이_포함된_이메일을_거부한다() {
         assertThatThrownBy(() -> userRegistrationService.register(
                 "invalid email@yeodam.test",
                 "메일회원",

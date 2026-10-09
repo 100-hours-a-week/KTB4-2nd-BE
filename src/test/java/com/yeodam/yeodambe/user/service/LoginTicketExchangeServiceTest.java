@@ -88,7 +88,7 @@ class LoginTicketExchangeServiceTest {
     }
 
     @Test
-    void rejectsExpiredOrAlreadyConsumedTicket() {
+    void 만료되거나_이미_소비한_티켓을_거부한다() {
         given(loginTicketStore.claim(eq("expired-ticket"), eq("browser-1"), anyString()))
                 .willReturn(Optional.empty());
 
@@ -108,7 +108,7 @@ class LoginTicketExchangeServiceTest {
     }
 
     @Test
-    void returnsOnboardingDecisionWhenKakaoAccountIsNotLinked() {
+    void 카카오_계정이_연결되지_않았으면_가입_필요_결과를_반환한다() {
         KakaoUserIdentity identity =
                 new KakaoUserIdentity("kakao-user-1", "user@example.com");
         given(loginTicketStore.claim(eq("valid-ticket"), eq("browser-1"), anyString()))
@@ -142,7 +142,7 @@ class LoginTicketExchangeServiceTest {
     }
 
     @Test
-    void returnsExistingMemberDecisionWhenKakaoAccountIsLinked() {
+    void 카카오_계정이_연결되어_있으면_기존_회원_결과를_반환한다() {
         KakaoUserIdentity identity =
                 new KakaoUserIdentity(
                         "kakao-user-2",

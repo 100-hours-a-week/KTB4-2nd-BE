@@ -53,7 +53,7 @@ class KakaoAuthControllerTest {
     }
 
     @Test
-    void redirectsUsingExistingBrowserContext() throws Exception {
+    void 기존_브라우저_컨텍스트로_리다이렉트한다() throws Exception {
         String authorizationUrl =
                 "https://kauth.kakao.com/oauth/authorize?state=fixed-state";
 
@@ -77,7 +77,7 @@ class KakaoAuthControllerTest {
     }
 
     @Test
-    void createsBrowserContextCookieWhenMissing() throws Exception {
+    void 브라우저_컨텍스트_쿠키가_없으면_생성한다() throws Exception {
         String authorizationUrl =
                 "https://kauth.kakao.com/oauth/authorize?state=fixed-state";
 
@@ -123,7 +123,7 @@ class KakaoAuthControllerTest {
     }
 
     @Test
-    void redirectsToFrontendWithLoginTicket() throws Exception {
+    void 로그인_티켓과_함께_프론트엔드로_리다이렉트한다() throws Exception {
         given(loginCallbackService.issueLoginTicket(
                 "authorization-code",
                 "valid-state",
@@ -163,7 +163,7 @@ class KakaoAuthControllerTest {
     }
 
     @Test
-    void redirectsToFrontendWhenKakaoLoginIsCancelled() throws Exception {
+    void 카카오_로그인이_취소되면_프론트엔드로_리다이렉트한다() throws Exception {
         mockMvc.perform(
                         get("/auth/kakao/callback")
                                 .param("error", "access_denied")
@@ -181,7 +181,7 @@ class KakaoAuthControllerTest {
     }
 
     @Test
-    void redirectsToFrontendWhenKakaoReturnsUnknownError() throws Exception {
+    void 카카오가_알_수_없는_오류를_반환하면_프론트엔드로_리다이렉트한다() throws Exception {
         mockMvc.perform(
                         get("/auth/kakao/callback")
                                 .param("error", "invalid_request")
@@ -197,7 +197,7 @@ class KakaoAuthControllerTest {
     }
 
     @Test
-    void redirectsToFrontendWhenOAuthStateIsInvalid() throws Exception {
+    void OAuth_상태가_유효하지_않으면_프론트엔드로_리다이렉트한다() throws Exception {
         assertCallbackFailureRedirect(
                 new OAuthStateInvalidOrExpiredException(),
                 "OAUTH_STATE_INVALID_OR_EXPIRED"
@@ -205,7 +205,7 @@ class KakaoAuthControllerTest {
     }
 
     @Test
-    void redirectsToFrontendWhenKakaoAuthenticationFails() throws Exception {
+    void 카카오_인증이_실패하면_프론트엔드로_리다이렉트한다() throws Exception {
         assertCallbackFailureRedirect(
                 new KakaoAuthenticationFailedException(),
                 "KAKAO_AUTHENTICATION_FAILED"
@@ -213,7 +213,7 @@ class KakaoAuthControllerTest {
     }
 
     @Test
-    void redirectsToFrontendWhenKakaoProviderIsUnavailable() throws Exception {
+    void 카카오_제공자를_사용할_수_없으면_프론트엔드로_리다이렉트한다() throws Exception {
         assertCallbackFailureRedirect(
                 new OAuthProviderUnavailableException(),
                 "OAUTH_PROVIDER_UNAVAILABLE"
@@ -221,7 +221,7 @@ class KakaoAuthControllerTest {
     }
 
     @Test
-    void redirectsToFrontendWhenAuthenticationStoreIsUnavailable() throws Exception {
+    void 인증_저장소를_사용할_수_없으면_프론트엔드로_리다이렉트한다() throws Exception {
         assertCallbackFailureRedirect(
                 new DataAccessResourceFailureException("database unavailable"),
                 "AUTH_STORE_UNAVAILABLE"
@@ -229,7 +229,7 @@ class KakaoAuthControllerTest {
     }
 
     @Test
-    void redirectsToFrontendWhenLoginTicketIssueFails() throws Exception {
+    void 로그인_티켓_발급이_실패하면_프론트엔드로_리다이렉트한다() throws Exception {
         assertCallbackFailureRedirect(
                 new LoginTicketIssueFailedException(new IllegalStateException()),
                 "LOGIN_TICKET_ISSUE_FAILED"

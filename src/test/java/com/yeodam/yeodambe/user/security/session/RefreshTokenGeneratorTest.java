@@ -10,7 +10,7 @@ class RefreshTokenGeneratorTest {
             new RefreshTokenGenerator();
 
     @Test
-    void generatesDistinctUrlSafeTokens() {
+    void 서로_다르고_URL에_안전한_토큰을_생성한다() {
         String first = generator.generate();
         String second = generator.generate();
 

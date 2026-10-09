@@ -89,7 +89,7 @@ class WithdrawalIntegrationTest {
     private StoredFileRepository storedFileRepository;
 
     @Test
-    void withdrawalSoftDeletesMemberAndTripDataRevokesSessionsAndInvalidatesAccessToken()
+    void 탈퇴하면_회원과_여행을_소프트_삭제하고_세션을_제거하며_액세스_토큰을_무효화한다()
             throws Exception {
         String unique = UUID.randomUUID().toString();
         User user = userRegistrationService.register(
@@ -179,7 +179,7 @@ class WithdrawalIntegrationTest {
     }
 
     @Test
-    void withdrawalWithoutCsrfTokenDoesNotChangeMemberData() throws Exception {
+    void CSRF_토큰이_없는_탈퇴는_회원_데이터를_변경하지_않는다() throws Exception {
         String unique = UUID.randomUUID().toString();
         User user = userRegistrationService.register(
                 "csrf-" + unique + "@yeodam.test",
@@ -208,7 +208,7 @@ class WithdrawalIntegrationTest {
     }
 
     @Test
-    void csrfCleanupFailureAfterCommitStillWithdrawsAndDeletesSessions() {
+    void 커밋_후_CSRF_정리가_실패해도_탈퇴를_완료하고_세션을_삭제한다() {
         String unique = UUID.randomUUID().toString();
         User user = userRegistrationService.register(
                 "rollback-" + unique + "@yeodam.test", "롤백회원",
@@ -240,7 +240,7 @@ class WithdrawalIntegrationTest {
     }
 
     @Test
-    void sessionCleanupFailureAfterCommitStillCompletesWithdrawalAndRejectsAccess() throws Exception {
+    void 커밋_후_세션_정리가_실패해도_탈퇴를_완료하고_접근을_거부한다() throws Exception {
         String unique = UUID.randomUUID().toString();
         User user = userRegistrationService.register(unique + "@yeodam.test", "정리실패", OAuthProvider.KAKAO, unique);
         IssuedLoginSession session = loginSessionIssuer.issue(user.getUserId());

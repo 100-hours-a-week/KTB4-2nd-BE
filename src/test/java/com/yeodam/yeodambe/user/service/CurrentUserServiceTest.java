@@ -42,7 +42,7 @@ class CurrentUserServiceTest {
     }
 
     @Test
-    void returnsActiveUserAndOAuthConnection() {
+    void 활성_회원과_OAuth_연결_정보를_반환한다() {
         User user = mock(User.class);
         OAuthAccount oauthAccount = mock(OAuthAccount.class);
         given(userRepository.findById(42L))
@@ -71,7 +71,7 @@ class CurrentUserServiceTest {
     }
 
     @Test
-    void rejectsDeletedUserBeforeReadingOAuthConnection() {
+    void OAuth_연결을_읽기_전에_탈퇴한_사용자를_거부한다() {
         User user = mock(User.class);
         given(userRepository.findById(42L))
                 .willReturn(Optional.of(user));

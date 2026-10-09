@@ -50,7 +50,7 @@ class OAuthTemporaryDataTransactionIntegrationTest {
     @MockitoSpyBean private ProfileTokenGenerator profileGenerator;
 
     @Test
-    void rolledBackExchangeRestoresTicketAndRemovesNewProfileToken() {
+    void 교환이_롤백되면_티켓을_복원하고_새_가입_토큰을_제거한다() {
         String token = UUID.randomUUID().toString();
         tickets.save(token, new KakaoUserIdentity(UUID.randomUUID().toString(), "retry@example.com"), "browser");
         TransactionTemplate tx = new TransactionTemplate(transactions);
@@ -66,7 +66,7 @@ class OAuthTemporaryDataTransactionIntegrationTest {
     }
 
     @Test
-    void failedRegistrationKeepsProfileForRetry() {
+    void 회원_가입이_실패하면_재시도를_위해_가입_토큰을_유지한다() {
         String token = UUID.randomUUID().toString();
         String email = token + "@yeodam.test";
         profiles.save(token, new KakaoUserIdentity(token, email));
@@ -79,7 +79,7 @@ class OAuthTemporaryDataTransactionIntegrationTest {
     }
 
     @Test
-    void jwtFailureRollsBackMemberAndDeletesNewSessionWhileKeepingProfile() {
+    void JWT_발급_실패는_회원을_롤백하고_새_세션을_삭제하며_가입_토큰을_유지한다() {
         String token = UUID.randomUUID().toString();
         String email = token + "@yeodam.test";
         profiles.save(token, new KakaoUserIdentity(token, email));
@@ -98,7 +98,7 @@ class OAuthTemporaryDataTransactionIntegrationTest {
     }
 
     @Test
-    void beforeCommitFailureReleasesProfileAndRollsBackMember() {
+    void 커밋_전_실패는_가입_토큰_선점을_해제하고_회원을_롤백한다() {
         String token = UUID.randomUUID().toString();
         String email = token + "@yeodam.test";
         profiles.save(token, new KakaoUserIdentity(token, email));
@@ -116,7 +116,7 @@ class OAuthTemporaryDataTransactionIntegrationTest {
     }
 
     @Test
-    void lostClaimResponseIsReleasedOnlyAfterKnownRollback() {
+    void 선점_응답을_잃어도_롤백이_확인된_후에만_선점을_해제한다() {
         String token = UUID.randomUUID().toString();
         tickets.save(token, new KakaoUserIdentity(token, token + "@yeodam.test"), "browser");
         doAnswer(invocation -> {
@@ -130,7 +130,7 @@ class OAuthTemporaryDataTransactionIntegrationTest {
     }
 
     @Test
-    void completionFailureKeepsCommittedProfileClaimUnavailable() {
+    void 완료_처리가_실패해도_커밋된_가입_토큰_선점은_사용할_수_없다() {
         String token = UUID.randomUUID().toString();
         String email = token + "@yeodam.test";
         profiles.save(token, new KakaoUserIdentity(token, email));
@@ -142,7 +142,7 @@ class OAuthTemporaryDataTransactionIntegrationTest {
     }
 
     @Test
-    void lostProfileIssuanceResponseIsCleanedUpAndTicketCanRetry() {
+    void 가입_토큰_발급_응답을_잃으면_발급분을_정리하고_티켓으로_재시도할_수_있다() {
         String ticket = UUID.randomUUID().toString();
         String profile = UUID.randomUUID().toString();
         tickets.save(ticket, new KakaoUserIdentity(ticket, ticket + "@yeodam.test"), "browser");
@@ -158,7 +158,7 @@ class OAuthTemporaryDataTransactionIntegrationTest {
     }
 
     @Test
-    void unknownCompletionDoesNotReleaseTicketClaim() {
+    void 완료_여부를_모르면_티켓_선점을_해제하지_않는다() {
         String ticket = UUID.randomUUID().toString();
         tickets.save(ticket, new KakaoUserIdentity(ticket, ticket + "@yeodam.test"), "browser");
         new TransactionTemplate(transactions).execute(status -> {
@@ -172,7 +172,7 @@ class OAuthTemporaryDataTransactionIntegrationTest {
     }
 
     @Test
-    void profileIssuanceCollisionDoesNotDeleteExistingTokenAndRestoresTicket() {
+    void 가입_토큰_발급_충돌은_기존_토큰을_삭제하지_않고_티켓을_복원한다() {
         String ticket = UUID.randomUUID().toString();
         String profile = UUID.randomUUID().toString();
         KakaoUserIdentity existing = new KakaoUserIdentity("existing", "existing@example.com");
@@ -186,7 +186,7 @@ class OAuthTemporaryDataTransactionIntegrationTest {
     }
 
     @Test
-    void unknownCompletionDoesNotReleaseProfileClaim() {
+    void 완료_여부를_모르면_가입_토큰_선점을_해제하지_않는다() {
         String token = UUID.randomUUID().toString();
         profiles.save(token, new KakaoUserIdentity(token, token + "@yeodam.test"));
         new TransactionTemplate(transactions).execute(status -> {

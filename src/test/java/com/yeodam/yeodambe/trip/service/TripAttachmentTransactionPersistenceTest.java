@@ -77,12 +77,12 @@ class TripAttachmentTransactionPersistenceTest {
         stats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(
                 user.getUserId(), "표시본", LocalDate.now(), LocalDate.now()));
-        StoredFile file = files.saveAndFlush(StoredFile.uploaded(
+        StoredFile file = saveMeasuredFile(StoredFile.uploaded(
                 user.getUserId(), "photo.heic", "original", "image/heic"));
 
-        TripAttachment heic = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment heic = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze", "preview", "display"));
-        TripAttachment legacy = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment legacy = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "legacy-analyze", "legacy-preview"));
 
         assertThat(attachments.findById(heic.getId()).orElseThrow().getDisplayStorageKey())
@@ -126,11 +126,11 @@ class TripAttachmentTransactionPersistenceTest {
         stats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(
                 user.getUserId(), "결과롤백", LocalDate.now(), LocalDate.now()));
-        StoredFile file = files.saveAndFlush(StoredFile.uploaded(
+        StoredFile file = saveMeasuredFile(StoredFile.uploaded(
                 user.getUserId(), "photo.jpg", "original", "image/jpeg"));
-        TripAttachment classified = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment classified = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze-1", "preview-1"));
-        TripAttachment invalid = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment invalid = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze-2", "preview-2"));
         String executionId = executions.reserve(trip.getId());
 
@@ -192,13 +192,13 @@ class TripAttachmentTransactionPersistenceTest {
         stats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(
                 user.getUserId(), "대표사진", LocalDate.now(), LocalDate.now()));
-        StoredFile file = files.saveAndFlush(StoredFile.uploaded(
+        StoredFile file = saveMeasuredFile(StoredFile.uploaded(
                 user.getUserId(), "photo.jpg", "thumbnail-original", "image/jpeg"));
-        TripAttachment low = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment low = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze-low", "preview-low"));
-        TripAttachment highFirst = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment highFirst = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze-high-first", "preview-high-first"));
-        TripAttachment highLater = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment highLater = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze-high-later", "preview-high-later"));
         String executionId = executions.reserve(trip.getId());
         var result = json.readTree("""
@@ -230,15 +230,15 @@ class TripAttachmentTransactionPersistenceTest {
         stats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(
                 user.getUserId(), "여행대표", LocalDate.now(), LocalDate.now()));
-        StoredFile file = files.saveAndFlush(StoredFile.uploaded(
+        StoredFile file = saveMeasuredFile(StoredFile.uploaded(
                 user.getUserId(), "photo.jpg", "trip-thumbnail-original", "image/jpeg"));
-        TripAttachment lowRepresentative = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment lowRepresentative = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze-low", "preview-low"));
-        TripAttachment excludedHigh = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment excludedHigh = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze-excluded", "preview-excluded"));
-        TripAttachment highFirst = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment highFirst = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze-high-first", "preview-high-first"));
-        TripAttachment highLater = attachments.saveAndFlush(TripAttachment.initial(
+        TripAttachment highLater = saveMeasuredAttachment(TripAttachment.initial(
                 trip.getId(), file.getId(), "analyze-high-later", "preview-high-later"));
         String executionId = executions.reserve(trip.getId());
         var result = json.readTree("""
@@ -272,4 +272,16 @@ class TripAttachmentTransactionPersistenceTest {
         assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo("preview-excluded");
     }
+
+    private StoredFile saveMeasuredFile(StoredFile file) {
+        file.storageSize(10L);
+        return files.saveAndFlush(file);
+    }
+
+    private TripAttachment saveMeasuredAttachment(TripAttachment attachment) {
+        attachment.storageSizes(10L, 10L,
+                attachment.getDisplayStorageKey() == null ? null : 10L);
+        return attachments.saveAndFlush(attachment);
+    }
+
 }

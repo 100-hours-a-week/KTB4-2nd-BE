@@ -3,17 +3,7 @@ package com.yeodam.yeodambe.trip.entity;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 
 import com.yeodam.yeodambe.file.entity.StoredFile;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -51,7 +41,7 @@ public class TripAttachment {
     @Column(name = "file_id", nullable = false)
     private Long fileId;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @OneToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "file_id", nullable = false, insertable = false, updatable = false)
     private StoredFile file;
 
@@ -75,6 +65,15 @@ public class TripAttachment {
 
     @Column(name = "display_storage_key", length = 500)
     private String displayStorageKey;
+
+    @Column(name = "analyze_size_bytes")
+    private Long analyzeSizeBytes;
+
+    @Column(name = "preview_size_bytes")
+    private Long previewSizeBytes;
+
+    @Column(name = "display_size_bytes")
+    private Long displaySizeBytes;
 
     @Column(name = "evaluation")
     private Integer evaluation;
@@ -153,6 +152,16 @@ public class TripAttachment {
         this.longitude = longitude;
         this.deviceModel = deviceModel;
         if (latitude != null && longitude != null) this.regionOrigin = RegionOrigin.EXIF;
+    }
+
+    public void storageSizes(
+            long analyzeSizeBytes,
+            long previewSizeBytes,
+            Long displaySizeBytes
+    ) {
+        this.analyzeSizeBytes = analyzeSizeBytes;
+        this.previewSizeBytes = previewSizeBytes;
+        this.displaySizeBytes = displaySizeBytes;
     }
 
     public void softDelete(LocalDateTime deletedAt) {

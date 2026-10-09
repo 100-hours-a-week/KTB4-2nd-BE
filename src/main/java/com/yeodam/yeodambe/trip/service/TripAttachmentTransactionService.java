@@ -27,6 +27,7 @@ public class TripAttachmentTransactionService {
     private final StoredFileRepository storedFileRepository;
     private final TripAttachmentRepository attachmentRepository;
     private final InitialUploadExecutionRegistry executions;
+    private final com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository uploadBatches;
 
     @Transactional
     public Reservation reserve(Long tripId, Long userId) {
@@ -58,6 +59,9 @@ public class TripAttachmentTransactionService {
             if (!batch.firstBatch()) {
                 if (tripRepository.findProcessableForUpdate(
                         tripId, userId, ProcessingStatus.PROCESSING).isPresent()) {
+                    if (uploadBatches.existsByTripId(tripId)) {
+                        throw new TripInitialAttachmentUploadNotAllowedException();
+                    }
                     return new Reservation(executionId, List.of());
                 }
                 if (!tripRepository.existsByIdAndUserIdAndDeletedAtIsNull(tripId, userId)) {
@@ -79,6 +83,9 @@ public class TripAttachmentTransactionService {
             }
 
             List<TripAttachment> staleAttachments = attachmentRepository.findAllByTripId(tripId);
+            if (uploadBatches.existsByTripId(tripId)) {
+                throw new TripInitialAttachmentUploadNotAllowedException();
+            }
             List<Long> staleFileIds = staleAttachments.stream()
                     .map(TripAttachment::getFileId)
                     .toList();
@@ -126,6 +133,9 @@ public class TripAttachmentTransactionService {
                 tripId, userId, ProcessingStatus.PROCESSING).isEmpty()) {
             throw new TripInitialAttachmentUploadNotAllowedException();
         }
+        if (uploadBatches.existsByTripId(tripId)) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
 
         List<StoredFile> originals = new ArrayList<>(files.size());
         for (int i = 0; i < files.size(); i++) {
@@ -148,10 +158,19 @@ public class TripAttachmentTransactionService {
                 throw new IllegalArgumentException(TripInternalErrorMessage.SOURCE_AND_DERIVED_ATTACHMENT_ORDER_MISMATCH.message());
             }
 
+            original.storageSize(photo.originalSizeBytes());
+
             TripAttachment attachment = TripAttachment.initial(
                     tripId, original.getId(), photo.analyzeKey(), photo.previewKey(),
                     photo.displayKey());
             attachment.originalMetadata(photo.takenAt(), photo.latitude(), photo.longitude(), photo.deviceModel());
+
+            attachment.storageSizes(
+                    photo.analyzeSizeBytes(),
+                    photo.previewSizeBytes(),
+                    photo.displaySizeBytes()
+            );
+
             attachments.add(attachment);
         }
         return new SavedAttachments(originals, attachmentRepository.saveAll(attachments));
@@ -173,6 +192,10 @@ public class TripAttachmentTransactionService {
     ) {
         requireCurrentExecution(tripId, executionId);
 
+        if (tripRepository.findProcessableForUpdate(tripId, userId, ProcessingStatus.PROCESSING).isEmpty()
+                || uploadBatches.existsByTripId(tripId)) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
         if (tripRepository.finishInitialUpload(
                 tripId, userId, ProcessingStatus.PROCESSING, ProcessingStatus.FAILED) != 1) {
             throw new IllegalStateException(TripInternalErrorMessage.TRIP_NOT_ELIGIBLE_FOR_FAILURE.message());

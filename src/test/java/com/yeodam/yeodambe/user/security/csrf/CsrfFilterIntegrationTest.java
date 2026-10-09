@@ -41,7 +41,7 @@ class CsrfFilterIntegrationTest {
     }
 
     @Test
-    void validTokenReachesController() throws Exception {
+    void 유효한_CSRF_토큰은_컨트롤러까지_도달한다() throws Exception {
         csrfTokenStore.save("browser-valid", "known-token");
 
         mockMvc.perform(post("/test/csrf-probe")
@@ -52,7 +52,7 @@ class CsrfFilterIntegrationTest {
     }
 
     @Test
-    void invalidTokenIsRejected() throws Exception {
+    void 유효하지_않은_CSRF_토큰을_거부한다() throws Exception {
         csrfTokenStore.save("browser-wrong-token", "known-token");
 
         mockMvc.perform(post("/test/csrf-probe")
@@ -64,7 +64,7 @@ class CsrfFilterIntegrationTest {
     }
 
     @Test
-    void profileRegistrationWithoutCsrfTokenIsRejected() throws Exception {
+    void CSRF_토큰이_없는_회원_가입을_거부한다() throws Exception {
         mockMvc.perform(post("/users/me/profile")
                         .cookie(new Cookie("profileToken", "unused-profile-token"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -74,7 +74,7 @@ class CsrfFilterIntegrationTest {
     }
 
     @Test
-    void tokenRefreshWithoutCsrfTokenIsRejected() throws Exception {
+    void CSRF_토큰이_없는_토큰_재발급을_거부한다() throws Exception {
         mockMvc.perform(post("/auth/token/refresh")
                         .servletPath("/auth/token/refresh")
                         .cookie(
@@ -86,7 +86,7 @@ class CsrfFilterIntegrationTest {
     }
 
     @Test
-    void profileRegistrationWithValidCsrfReachesTokenValidation() throws Exception {
+    void 유효한_CSRF_토큰이_있는_회원_가입은_가입_토큰_검증까지_도달한다() throws Exception {
         csrfTokenStore.save("profile-browser", "profile-csrf-token");
 
         mockMvc.perform(post("/users/me/profile")

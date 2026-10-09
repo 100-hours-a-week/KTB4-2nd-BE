@@ -265,9 +265,20 @@ public class TripAttachmentDerivativeService {
                     uploadedKeys.add(displayKey);
                 }
 
-                return new DerivedPhotoKeys(originalKey, analyzeKey, previewKey, displayKey,
-                        takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
-                        coordinate(metadata, "GPSLongitude", 180), deviceModel(metadata));
+                return new DerivedPhotoKeys(
+                        originalKey,
+                        analyzeKey,
+                        previewKey,
+                        displayKey,
+                        takenAt(metadata),
+                        coordinate(metadata, "GPSLatitude", 90),
+                        coordinate(metadata, "GPSLongitude", 180),
+                        deviceModel(metadata),
+                        fileSize(original),
+                        fileSize(analyze),
+                        fileSize(preview),
+                        displayKey == null ? null : fileSize(display)
+                );
             } catch (RuntimeException failure) {
                 derivativeOutcome = "failure";
                 throw failure;
@@ -292,9 +303,22 @@ public class TripAttachmentDerivativeService {
     private String put(String executionId, Path file, String mimeType, String name) {
         long started = System.nanoTime();
         RuntimeException error = null;
-        try { return storage.storeDerived(executionId, file, mimeType); }
-        catch (RuntimeException failure) { error = failure; throw failure; }
-        finally { stage(name, started, error); }
+        try {
+            return storage.storeDerived(executionId, file, mimeType);
+        } catch (RuntimeException failure) {
+            error = failure;
+            throw failure;
+        } finally {
+            stage(name, started, error);
+        }
+    }
+
+    private long fileSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
     }
 
     private JsonNode metadata(Path original) {

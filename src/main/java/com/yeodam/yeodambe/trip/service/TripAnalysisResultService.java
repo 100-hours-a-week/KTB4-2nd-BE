@@ -6,6 +6,9 @@ import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,6 +34,7 @@ public class TripAnalysisResultService {
     private final TripDetailPlaceRepository placeRepository;
     private final InitialUploadExecutionRegistry executions;
     private final UserStatsService userStats;
+    private final InitialAttachmentUploadBatchRepository uploadBatches;
 
     @Transactional
     public void saveCompleted(
@@ -44,6 +48,33 @@ public class TripAnalysisResultService {
         if (!executions.isCurrent(tripId, executionId)) {
             throw new IllegalStateException(TripInternalErrorMessage.CURRENT_EXECUTION_AI_RESULT_MISMATCH.message());
         }
+        if (uploadBatches.existsByTripId(tripId)) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+        persistCompleted(tripId, userId, attachments, result, placeNames);
+    }
+
+    @Transactional
+    public void saveDirectUploadCompleted(
+            Long tripId, Long userId, String uploadId,
+            List<TripAttachment> attachments, JsonNode result, Map<String, String> placeNames
+    ) {
+        Trip trip = trips.findOwnedActiveForUpdate(tripId, userId).orElseThrow(TripNotFoundException::new);
+        InitialAttachmentUploadBatch batch = uploadBatches.findForUpdate(uploadId, tripId, userId)
+                .orElseThrow(TripInitialAttachmentUploadNotAllowedException::new);
+        if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING
+                || batch.getStatus() != InitialAttachmentUploadStatus.ANALYZING || !batch.getLastBatch()) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+        persistCompleted(tripId, userId, attachments, result, placeNames);
+        batch.completeAnalysis();
+        uploadBatches.save(batch);
+    }
+
+    private void persistCompleted(
+            Long tripId, Long userId, List<TripAttachment> attachments,
+            JsonNode result, Map<String, String> placeNames
+    ) {
         if (result == null || !result.path("places").isArray() || !result.path("unclassified").isArray()) {
             throw new IllegalStateException(TripInternalErrorMessage.AI_RESULT_FORMAT_INVALID.message());
         }

@@ -6,6 +6,8 @@ import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusR
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
@@ -22,6 +24,7 @@ public class TripProcessingStatusService {
     private final TripAttachmentRepository attachments;
     private final TripPhotoAnalysisService analysis;
     private final InitialUploadExecutionRegistry executions;
+    private final InitialAttachmentUploadBatchRepository uploadBatches;
 
     public TripProcessingStatusResponse findStatus(Long tripId, Long userId) {
         Trip trip = findTrip(tripId, userId);
@@ -29,7 +32,14 @@ public class TripProcessingStatusService {
         if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING) {
             return fromDatabase(trip);
         }
-        if (!executions.isAnalysisStarted(tripId)) {
+        var latestBatch = uploadBatches.findFirstByTripIdAndUserIdOrderByIdDesc(tripId, userId);
+        if (latestBatch.isPresent() && latestBatch.get().getLastBatch()
+                && latestBatch.get().getStatus() == InitialAttachmentUploadStatus.FAILED) {
+            return new TripProcessingStatusResponse(tripId, Status.FAILED, null, null, null,
+                    new TripProcessingStatusResponse.Error("AI_PROCESSING_FAILED", "첨부 처리에 실패했습니다."));
+        }
+        if (!executions.isAnalysisStarted(tripId)
+                && !uploadBatches.existsByTripIdAndStatus(tripId, InitialAttachmentUploadStatus.ANALYZING)) {
             return processing(tripId);
         }
 

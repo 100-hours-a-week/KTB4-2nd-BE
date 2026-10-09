@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
+import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.RegionOrigin;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
@@ -23,6 +24,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -30,6 +32,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @DataJpaTest(properties = {
         "spring.flyway.enabled=false",
@@ -54,6 +57,8 @@ class TripAttachmentDeletionPersistenceTest {
         stats.saveAndFlush(new UserStats(owner));
         Trip trip = trips.saveAndFlush(Trip.localMock(
                 owner.getUserId(), "대표삭제", LocalDate.now(), LocalDate.now(), "preview-old"));
+        ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
+        trips.saveAndFlush(trip);
         TripDetailPlace place = savePlace(trip.getId(), "preview-old");
         TripAttachment old = saveAttachment(owner.getUserId(), trip.getId(), place.getId(),
                 "old", 100);
@@ -69,6 +74,9 @@ class TripAttachmentDeletionPersistenceTest {
                 .isEqualTo(replacement.getPreviewStorageKey());
         assertThat(attachments.findById(old.getId()).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(files.findById(old.getFileId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getStorageUsedBytes())
+                .isEqualTo(80L);
+        verifyNoInteractions(storage);
     }
 
     @Test
@@ -129,11 +137,14 @@ class TripAttachmentDeletionPersistenceTest {
             String key,
             int evaluation
     ) {
-        StoredFile file = files.saveAndFlush(StoredFile.uploaded(
-                userId, key + ".jpg", "original/" + key, "image/jpeg"));
+        StoredFile file = StoredFile.uploaded(
+                userId, key + ".jpg", "original/" + key, "image/jpeg");
+        file.storageSize(10L);
+        files.saveAndFlush(file);
         TripAttachment attachment = TripAttachment.initial(
                 tripId, file.getId(), "analyze/" + key, "preview-" + key,
                 "display/" + key);
+        attachment.storageSizes(10L, 10L, 10L);
         attachment.classify(
                 placeId,
                 RegionOrigin.EXIF,

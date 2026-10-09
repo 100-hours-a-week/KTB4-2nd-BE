@@ -55,7 +55,7 @@ class JwtSigningIntegrationTest {
     }
 
     @Test
-    void issuedTokenCanBeVerifiedAndDecoded() {
+    void 발급한_토큰을_검증하고_디코딩할_수_있다() {
         String token = accessTokenIssuer.issue(42L, "sid-1");
 
         Jwt decoded = jwtDecoder.decode(token);
@@ -68,7 +68,7 @@ class JwtSigningIntegrationTest {
     }
 
     @Test
-    void rejectsTokenIssuedForDifferentAudience() {
+    void 다른_수신자용으로_발급한_토큰을_거부한다() {
         Instant now = clock.instant();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer("https://api.yeodam.test")

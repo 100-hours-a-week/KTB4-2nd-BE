@@ -41,6 +41,9 @@ public class Trip {
     @Column(name = "is_favorite", nullable = false)
     private Boolean favorite;
 
+    @Column(name = "current_story_id")
+    private Long currentStoryId;
+
     @Column(name = "thumbnail_key", length = 500)
     private String thumbnailKey;
 
@@ -84,6 +87,16 @@ public class Trip {
 
     public void changeFavorite(boolean favorite) {
         this.favorite = favorite;
+    }
+
+    public void changeInformation(
+            String tripName,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
+        this.tripName = tripName;
+        this.startDate = startDate;
+        this.endDate = endDate;
     }
 
     public void changeThumbnailKey(String thumbnailKey) {

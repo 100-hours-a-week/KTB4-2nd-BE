@@ -57,18 +57,18 @@ class YeodamBeApplicationTests {
     private TokenHasher tokenHasher;
 
     @Test
-    void contextLoads() {
+    void 애플리케이션_컨텍스트를_불러온다() {
     }
 
     @Test
-    void healthCheckIsPublic() throws Exception {
+    void 인증_없이_헬스_체크를_조회한다() throws Exception {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
     }
 
     @Test
-    void prometheusEndpointIsDeniedOutsideMonitoringProfiles() throws Exception {
+    void 모니터링_프로필_외에서는_프로메테우스_접근을_거부한다() throws Exception {
         mockMvc.perform(get("/actuator/prometheus"))
                 .andExpect(status().isUnauthorized());
     }
@@ -90,7 +90,7 @@ class YeodamBeApplicationTests {
     }
 
     @Test
-    void csrfTokenCanBeIssuedWithoutAuthentication() throws Exception {
+    void 인증_없이_CSRF_토큰을_발급한다() throws Exception {
         MvcResult result = mockMvc.perform(get("/auth/csrf"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(
@@ -115,14 +115,14 @@ class YeodamBeApplicationTests {
     }
 
     @Test
-    void kakaoLoginStartIsPublic() throws Exception {
+    void 인증_없이_카카오_로그인을_시작한다() throws Exception {
         mockMvc.perform(get("/auth/kakao/authorize"))
                 .andExpect(status().isFound())
                 .andExpect(header().exists("Location"));
     }
 
     @Test
-    void tokenExchangeRejectsMissingCsrfToken() throws Exception {
+    void 토큰_교환에_CSRF_토큰이_없으면_거부한다() throws Exception {
         mockMvc.perform(post("/auth/token/exchange")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"loginTicket\":\"test-ticket\"}"))
@@ -132,7 +132,7 @@ class YeodamBeApplicationTests {
     }
 
     @Test
-    void tokenExchangeWithValidCsrfReachesTicketValidation() throws Exception {
+    void 유효한_CSRF_토큰이_있으면_로그인_티켓을_검증한다() throws Exception {
         csrfTokenStore.save("exchange-browser", "known-token");
 
         mockMvc.perform(post("/auth/token/exchange")
@@ -146,7 +146,7 @@ class YeodamBeApplicationTests {
     }
 
     @Test
-    void tokenExchangeRejectsMissingBody() throws Exception {
+    void 토큰_교환_요청_본문이_없으면_거부한다() throws Exception {
         csrfTokenStore.save("missing-body-browser", "known-token");
 
         mockMvc.perform(post("/auth/token/exchange")
@@ -158,7 +158,7 @@ class YeodamBeApplicationTests {
     }
 
     @Test
-    void tokenExchangeRejectsBlankTicket() throws Exception {
+    void 토큰_교환_티켓이_공백이면_거부한다() throws Exception {
         csrfTokenStore.save("blank-ticket-browser", "known-token");
 
         mockMvc.perform(post("/auth/token/exchange")
@@ -171,7 +171,7 @@ class YeodamBeApplicationTests {
     }
 
     @Test
-    void tokenExchangeRejectsMalformedJson() throws Exception {
+    void 토큰_교환_JSON_형식이_잘못되면_거부한다() throws Exception {
         csrfTokenStore.save("malformed-body-browser", "known-token");
 
         mockMvc.perform(post("/auth/token/exchange")
@@ -184,7 +184,7 @@ class YeodamBeApplicationTests {
     }
 
     @Test
-    void existingMemberExchangesTicketForWorkingLoginSession() throws Exception {
+    void 기존_회원은_티켓을_유효한_로그인_세션으로_교환한다() throws Exception {
         String suffix = UUID.randomUUID().toString();
         String providerUserId = "kakao-" + suffix;
         String email = "member-" + suffix + "@yeodam.test";

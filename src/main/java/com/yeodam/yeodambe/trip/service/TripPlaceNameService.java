@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.BooleanSupplier;
 
 @Slf4j
 @Service
@@ -44,13 +45,19 @@ public class TripPlaceNameService {
     }
 
     public Map<String, String> resolve(Long tripId, String executionId, JsonNode result) {
+        return resolve(tripId, executionId, result, () -> executions.isCurrent(tripId, executionId));
+    }
+
+    public Map<String, String> resolve(
+            Long tripId, String executionId, JsonNode result, BooleanSupplier currentExecution
+    ) {
         List<Place> places = validate(result);
 
         LinkedHashMap<Coordinate, Place> unique = new LinkedHashMap<>();
         for (Place place : places) unique.putIfAbsent(place.coordinate(), place);
 
         Map<Coordinate, KakaoLocalClient.LookupResult> lookups = lookupAll(
-                tripId, executionId, new ArrayList<>(unique.entrySet()));
+                tripId, executionId, new ArrayList<>(unique.entrySet()), currentExecution);
         List<String> bases = new ArrayList<>(places.size());
 
         for (Place place : places) {
@@ -79,14 +86,15 @@ public class TripPlaceNameService {
     private Map<Coordinate, KakaoLocalClient.LookupResult> lookupAll(
             Long tripId,
             String executionId,
-            List<Map.Entry<Coordinate, Place>> coordinates
+            List<Map.Entry<Coordinate, Place>> coordinates,
+            BooleanSupplier currentExecution
     ) {
         Map<Coordinate, KakaoLocalClient.LookupResult> results = new HashMap<>();
         Map<String, String> callerMdc = MDC.getCopyOfContextMap();
         ExecutorService executor = Executors.newFixedThreadPool(maxConcurrency);
         try {
             for (int from = 0; from < coordinates.size(); from += maxConcurrency) {
-                if (!executions.isCurrent(tripId, executionId)) {
+                if (!currentExecution.getAsBoolean()) {
                     throw new IllegalStateException(TripInternalErrorMessage.CURRENT_EXECUTION_AI_RESULT_MISMATCH.message());
                 }
 

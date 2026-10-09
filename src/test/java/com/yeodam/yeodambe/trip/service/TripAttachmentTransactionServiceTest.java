@@ -25,7 +25,7 @@ class TripAttachmentTransactionServiceTest {
     private final StoredFileRepository files = mock(StoredFileRepository.class);
     private final InitialUploadExecutionRegistry executions = new InitialUploadExecutionRegistry();
     private final TripAttachmentTransactionService service = new TripAttachmentTransactionService(
-            trips, files, attachments, executions);
+            trips, files, attachments, executions, mock(com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository.class));
 
     @Test
     void 메모리에_예약된_요청만_실행_ID를_받는다() {
@@ -105,7 +105,8 @@ class TripAttachmentTransactionServiceTest {
         String executionId = executions.reserve(7L);
         var upload = new MockMultipartFile("attachments[]", "photo.jpg", "image/jpeg", new byte[]{1});
         var derived = new com.yeodam.yeodambe.trip.service.DerivedPhotoKeys(
-                "original", "analyze", "preview", "display", null, null, null, null);
+                "original", "analyze", "preview", "display", null, null, null, null,
+                1L, 100L, 50L, 200L);
         when(trips.findProcessableForUpdate(
                 7L, 1L, ProcessingStatus.PROCESSING)).thenReturn(java.util.Optional.of(mock(
                 com.yeodam.yeodambe.trip.entity.Trip.class)));
@@ -122,6 +123,10 @@ class TripAttachmentTransactionServiceTest {
         assertEquals(20L, saved.attachments().getFirst().getFileId());
         assertEquals("analyze", saved.attachments().getFirst().getAnalyzeStorageKey());
         assertEquals("display", saved.attachments().getFirst().getDisplayStorageKey());
+        assertEquals(1L, saved.originals().getFirst().getOriginalSizeBytes());
+        assertEquals(100L, saved.attachments().getFirst().getAnalyzeSizeBytes());
+        assertEquals(50L, saved.attachments().getFirst().getPreviewSizeBytes());
+        assertEquals(200L, saved.attachments().getFirst().getDisplaySizeBytes());
         verify(files).saveAll(anyList());
         verify(attachments).saveAll(anyList());
     }

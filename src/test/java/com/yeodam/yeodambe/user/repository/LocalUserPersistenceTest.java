@@ -32,7 +32,7 @@ class LocalUserPersistenceTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void localH2SupportsFullUserRegistration() {
+    void 로컬_H2에서_회원_가입_데이터를_모두_저장한다() {
         User saved = userRegistrationService.register(
                 "local-h2@yeodam.test",
                 "로컬테스트",

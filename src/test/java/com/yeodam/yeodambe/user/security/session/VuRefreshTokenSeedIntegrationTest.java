@@ -3,7 +3,7 @@ package com.yeodam.yeodambe.user.security.session;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.user.entity.LoginSessionEntity;
 import com.yeodam.yeodambe.user.entity.User;
-import com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.RefreshTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.repository.LoginSessionRepository;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.service.AccessTokenRefreshService;
@@ -46,7 +46,7 @@ class VuRefreshTokenSeedIntegrationTest {
     @TempDir Path temporary;
 
     @Test
-    void generatedTokensRotateAndCleanupPreservesOtherSessionsAndUsers() throws Exception {
+    void 생성한_토큰은_회전하고_정리_시_다른_세션과_사용자를_유지한다() throws Exception {
         List<User> owners = saveUsers();
         IssuedLoginSession existing = issuer.issue(owners.getFirst().getUserId());
         Path output = generate(owners.stream().map(User::getUserId).toList());
@@ -82,14 +82,14 @@ class VuRefreshTokenSeedIntegrationTest {
     }
 
     @Test
-    void missingUserPreventsAllSevenSessionInserts() throws Exception {
+    void 사용자가_없으면_7개_세션을_모두_저장하지_않는다() throws Exception {
         List<Long> ids = new ArrayList<>(saveUsers().stream().map(User::getUserId).toList());
         ids.set(6, Long.MAX_VALUE);
         applySeed(generate(ids), 0);
     }
 
     @Test
-    void deletedUserPreventsAllSevenSessionInserts() throws Exception {
+    void 탈퇴한_사용자에게는_7개_세션을_모두_저장하지_않는다() throws Exception {
         List<User> owners = saveUsers();
         User deleted = owners.getLast();
         deleted.withdraw(LocalDateTime.now());

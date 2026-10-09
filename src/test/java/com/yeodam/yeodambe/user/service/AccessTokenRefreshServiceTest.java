@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.user.service;
 
 import com.yeodam.yeodambe.user.entity.User;
-import com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.RefreshTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
@@ -55,7 +55,7 @@ class AccessTokenRefreshServiceTest {
     }
 
     @Test
-    void rejectsMissingRefreshTokenBeforeReadingSession() {
+    void 세션을_읽기_전에_리프레시_토큰이_없는_요청을_거부한다() {
         assertThatThrownBy(() -> service.refresh(null))
                 .isInstanceOf(RefreshTokenInvalidOrExpiredException.class);
 
@@ -69,7 +69,7 @@ class AccessTokenRefreshServiceTest {
     }
 
     @Test
-    void rotatesRefreshTokenAndReturnsNewTokens() {
+    void 리프레시_토큰을_회전하고_새_토큰들을_반환한다() {
         User user = mock(User.class);
         given(tokenHasher.hash("old-refresh-token"))
                 .willReturn("old-refresh-hash");
@@ -108,7 +108,7 @@ class AccessTokenRefreshServiceTest {
     }
 
     @Test
-    void rejectsRequestThatLosesRefreshTokenRotationRace() {
+    void 리프레시_토큰_회전_경합에서_실패한_요청을_거부한다() {
         User user = mock(User.class);
         given(tokenHasher.hash("old-refresh-token"))
                 .willReturn("old-refresh-hash");

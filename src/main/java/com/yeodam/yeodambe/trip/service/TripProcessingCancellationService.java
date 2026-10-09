@@ -12,6 +12,8 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,12 +34,13 @@ public class TripProcessingCancellationService {
     private final TripPhotoAnalysisService analysis;
     private final InitialUploadExecutionRegistry executions;
     private final TransactionOperations transactions;
+    private final InitialAttachmentUploadBatchRepository uploadBatches;
     private final TripAttachmentDerivativeService derivatives;
 
     public void cancel(Long tripId, Long userId) {
         transactions.executeWithoutResult(status -> cancelInTransaction(tripId, userId));
 
-        boolean analysisStarted = executions.cancel(tripId);
+        boolean legacyAnalysisStarted = executions.cancel(tripId);
         String executionId = null;
         try {
             executionId = executions.snapshot(tripId).executionId();
@@ -45,7 +48,8 @@ public class TripProcessingCancellationService {
             // 재시작 또는 이미 정착한 실행은 메모리 레지스트리에 없다.
         }
         if (executionId != null) derivatives.cancelExecution(executionId);
-        if (analysisStarted) cancelAnalysis(tripId);
+        if (legacyAnalysisStarted || uploadBatches.existsByTripIdAndStatus(
+                tripId, InitialAttachmentUploadStatus.ANALYZING)) cancelAnalysis(tripId);
     }
 
     private void cancelInTransaction(Long tripId, Long userId) {

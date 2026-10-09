@@ -37,7 +37,7 @@ class TripProcessingStatusServiceTest {
         attachments = mock(TripAttachmentRepository.class);
         analysis = mock(TripPhotoAnalysisService.class);
         executions = mock(InitialUploadExecutionRegistry.class);
-        service = new TripProcessingStatusService(trips, places, attachments, analysis, executions);
+        service = new TripProcessingStatusService(trips, places, attachments, analysis, executions, mock(com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository.class));
     }
 
     @Test

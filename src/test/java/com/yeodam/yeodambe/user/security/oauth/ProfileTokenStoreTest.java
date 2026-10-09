@@ -30,7 +30,7 @@ class ProfileTokenStoreTest {
     private TokenHasher tokenHasher;
 
     @Test
-    void lookupKeepsTokenUntilExplicitDeletion() {
+    void 조회해도_명시적으로_삭제하기_전까지_토큰을_유지한다() {
         String token = "profile-token-lookup";
         KakaoUserIdentity identity = new KakaoUserIdentity(
                 "123456789",
@@ -49,7 +49,7 @@ class ProfileTokenStoreTest {
     }
 
     @Test
-    void storesHashAndTenMinuteExpiration() {
+    void 해시와_10분_유효기간을_저장한다() {
         String token = "profile-token-hash";
 
         profileTokenStore.save(
@@ -62,7 +62,7 @@ class ProfileTokenStoreTest {
     }
 
     @Test
-    void expiredTokenCannotBeFoundAndIsDeleted() throws Exception {
+    void 만료된_토큰은_조회할_수_없고_삭제된다() throws Exception {
         String token = "profile-token-expired";
 
         profileTokenStore.save(token, new KakaoUserIdentity("provider", "expire@example.com"));

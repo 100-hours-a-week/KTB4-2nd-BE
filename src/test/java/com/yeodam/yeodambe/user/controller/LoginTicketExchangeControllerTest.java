@@ -42,7 +42,7 @@ class LoginTicketExchangeControllerTest {
     }
 
     @Test
-    void existingMemberReceivesAccessAndRefreshCookies() throws Exception {
+    void 기존_회원에게_액세스_토큰과_리프레시_토큰_쿠키를_반환한다() throws Exception {
         given(service.exchange("ticket-1", "browser-1"))
                 .willReturn(new LoginExchangeDecision.ExistingMember(
                         42L, "member@example.com", "여행자", "access-1", "refresh-1"
@@ -75,7 +75,7 @@ class LoginTicketExchangeControllerTest {
     }
 
     @Test
-    void newMemberReceivesOnlyProfileCookie() throws Exception {
+    void 새_회원에게는_가입_토큰_쿠키만_반환한다() throws Exception {
         given(service.exchange("ticket-2", "browser-2"))
                 .willReturn(new LoginExchangeDecision.Onboarding("profile-1"));
 

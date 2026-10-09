@@ -62,7 +62,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void commitsProcessingStateBeforeReturningToCaller() {
+    void 호출자에게_반환하기_전에_처리_중_상태를_커밋한다() {
         var result = start();
 
         assertThat(result.getId()).isEqualTo(batch.getId());
@@ -71,7 +71,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void refusesProcessingButAllowsCleanedFailedBatchToRestart() {
+    void 처리_중인_배치는_거부하고_정리된_실패_배치의_재시작은_허용한다() {
         start();
         assertThatThrownBy(this::start)
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
@@ -83,7 +83,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void returnsCompletedBatchWithoutRestartEvenWhenTripIsCompleted() {
+    void 여행이_완료되어도_완료된_배치는_재시작_없이_반환한다() {
         setStatus("COMPLETED");
         jdbcTemplate.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", trip.getId());
 
@@ -95,7 +95,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void rejectsMissingUnknownOrMismatchedIdentifiers() {
+    void 누락되거나_알_수_없거나_일치하지_않는_식별자를_거부한다() {
         assertThatThrownBy(() -> service.startProcessing(trip.getId(), owner.getUserId(), null))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
         assertThatThrownBy(() -> service.startProcessing(trip.getId(), owner.getUserId(), " "))
@@ -113,7 +113,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void rejectsNonProcessingOrDeletedTripAndPreservesPendingBatch() {
+    void 처리_중이_아니거나_삭제된_여행을_거부하고_대기_배치를_유지한다() {
         jdbcTemplate.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", trip.getId());
         assertThatThrownBy(this::start)
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
@@ -123,7 +123,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void onlyOneOfTwoConcurrentRequestsStartsProcessing() throws Exception {
+    void 두_동시_요청_중_하나만_처리를_시작한다() throws Exception {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch go = new CountDownLatch(1);
         try (var executor = Executors.newFixedThreadPool(2)) {
@@ -152,7 +152,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void savesOriginalsAttachmentsMetadataAndItemLinksInFileOrder() {
+    void 파일순으로_원본과_첨부와_메타데이터와_항목_연결을_저장한다() {
         addItems();
         start();
         var takenAt = OffsetDateTime.parse("2026-10-01T10:00:00+09:00");
@@ -201,7 +201,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void refusesRepeatedSaveWithoutCreatingAdditionalRows() {
+    void 추가_행을_만들지_않고_반복_저장을_거부한다() {
         addItems();
         start();
         service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
@@ -216,7 +216,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void rollsBackFirstPhotoAndItsLinkWhenSecondOriginalDoesNotMatch() {
+    void 두_번째_원본이_일치하지_않으면_첫_사진과_그_연결을_롤백한다() {
         addItems();
         start();
         var invalid = List.of(validResults().getFirst(),
@@ -234,7 +234,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void rejectsWrongStateOwnerAndResultCountBeforePersisting() {
+    void 저장하기_전에_잘못된_상태와_소유자와_결과_개수를_거부한다() {
         addItems();
         assertThatThrownBy(() -> service.saveAttachments(
                 trip.getId(), owner.getUserId(), batch.getUploadId(), validResults()))
@@ -255,7 +255,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void commitsBatchCompletionAfterEveryItemIsLinkedAndLeavesTripProcessing() {
+    void 모든_항목_연결_후_배치_완료를_커밋하고_여행은_처리_중으로_유지한다() {
         addItems();
         start();
         service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
@@ -270,7 +270,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void rejectsEmptyUnlinkedAndPartiallyLinkedBatches() {
+    void 비어있거나_연결되지_않거나_일부만_연결된_배치를_거부한다() {
         start();
         assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
@@ -290,7 +290,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void rejectsCompletionForWrongOwnerTripOrBatchState() {
+    void 잘못된_소유자와_여행과_배치_상태의_완료_요청을_거부한다() {
         addItems();
         start();
         service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
@@ -313,7 +313,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void removesOnlyFailedBatchReferencesAndKeepsUploadMetadataAndCompletedBatch() {
+    void 실패한_배치의_참조만_제거하고_업로드_메타데이터와_완료된_배치를_유지한다() {
         addItems();
         start();
         var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
@@ -345,7 +345,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void marksFailureBeforeAnyAttachmentHasBeenStored() {
+    void 첨부를_저장하기_전에도_실패를_기록한다() {
         addItems();
         start();
 
@@ -358,7 +358,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void rejectsFailureCleanupForWrongOwnerStateAndDeletedTripWithoutRemovingRows() {
+    void 잘못된_소유자와_상태와_삭제된_여행의_실패_정리를_행_삭제_없이_거부한다() {
         addItems();
         start();
         var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
@@ -385,7 +385,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     }
 
     @Test
-    void rollsBackDeletionLinksAndFailureStateWhenEnclosingTransactionFails() {
+    void 외부_트랜잭션이_실패하면_삭제와_연결과_실패_상태를_롤백한다() {
         addItems();
         start();
         var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());

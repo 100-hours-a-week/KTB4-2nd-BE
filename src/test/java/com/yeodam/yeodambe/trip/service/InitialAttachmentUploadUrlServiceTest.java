@@ -43,7 +43,7 @@ class InitialAttachmentUploadUrlServiceTest {
             storage);
 
     @Test
-    void issuesOrderedFileUrlsWithRequiredHeadersAndTenMinuteExpiry() {
+    void 필수_헤더와_10분_유효기간이_있는_파일_URL을_순서대로_발급한다() {
         var request = request(2, true, List.of(
                 file("same.jpg", "image/jpeg", 1024),
                 file("same.jpg", "image/png", 2048)));
@@ -92,7 +92,7 @@ class InitialAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void acceptsAllowedMetadataAndReturnsTotalBytesWithoutReadingFiles() {
+    void 허용된_메타데이터를_받고_파일을_읽지_않은_채_전체_바이트를_반환한다() {
         InitialAttachmentUploadUrlRequest request = request(15, false, List.of(
                 file("same.jpg", "image/jpeg", 1024),
                 file("same.jpg", "image/png", 2048),
@@ -102,7 +102,7 @@ class InitialAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void rejectsMissingRequiredRequestFieldsButAllowsFalseComplete() {
+    void 필수_요청_필드_누락은_거부하고_완료_여부_false는_허용한다() {
         List<InitialAttachmentUploadUrlRequest.Attachment> files = List.of(file("photo.jpg", "image/jpeg", 1024));
 
         assertThatThrownBy(() -> service.validateRequest(null))
@@ -118,7 +118,7 @@ class InitialAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void rejectsMoreThanTenFilesOrMoreFilesThanDeclaredTotal() {
+    void 파일이_10개를_넘거나_선언한_전체_개수를_넘으면_거부한다() {
         var photo = file("photo.jpg", "image/jpeg", 1024);
 
         assertThatThrownBy(() -> service.validateRequest(request(15, false, Collections.nCopies(11, photo))))
@@ -128,7 +128,7 @@ class InitialAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void acceptsExactFileLimitAndRejectsOneExtraByte() {
+    void 파일_크기_제한값은_허용하고_1바이트_초과는_거부한다() {
         assertThat(service.validateRequest(request(1, true, List.of(file("photo.jpg", "image/jpeg", 15 * MIB)))))
                 .isEqualTo(15 * MIB);
         assertThatThrownBy(() -> service.validateRequest(request(1, true,
@@ -137,7 +137,7 @@ class InitialAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void acceptsExactBatchLimitAndRejectsOneExtraByte() {
+    void 배치_크기_제한값은_허용하고_1바이트_초과는_거부한다() {
         List<InitialAttachmentUploadUrlRequest.Attachment> files = new ArrayList<>(
                 Collections.nCopies(9, file("photo.jpg", "image/jpeg", 15 * MIB)));
         files.add(file("last.jpg", "image/jpeg", 10 * MIB));
@@ -150,7 +150,7 @@ class InitialAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void rejectsIncompleteFileMetadata() {
+    void 불완전한_파일_메타데이터를_거부한다() {
         List<InitialAttachmentUploadUrlRequest.Attachment> invalidFiles = Arrays.asList(
                 null,
                 file(" ", "image/jpeg", 1024),
@@ -166,7 +166,7 @@ class InitialAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void rejectsUnsupportedDeclaredContentType() {
+    void 지원하지_않는_선언된_콘텐츠_타입을_거부한다() {
         assertThatThrownBy(() -> service.validateRequest(request(1, true,
                 List.of(file("photo.gif", "image/gif", 1024)))))
                 .isInstanceOf(UnsupportedAttachmentFormatException.class);

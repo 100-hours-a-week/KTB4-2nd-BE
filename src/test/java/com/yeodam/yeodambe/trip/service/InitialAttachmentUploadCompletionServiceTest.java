@@ -43,7 +43,7 @@ class InitialAttachmentUploadCompletionServiceTest {
             "upload-id", "execution-id", 7L, 42L, 1, 2, true);
 
     @Test
-    void checksEveryStoredKeyAndAcceptsMatchingActualSizesWithoutChangingState() {
+    void 모든_저장_키를_확인하고_실제_크기가_일치하면_상태_변경_없이_허용한다() {
         when(storage.size("key-one")).thenReturn(1024L);
         when(storage.size("key-two")).thenReturn(2048L);
         when(storage.open("key-one")).thenReturn(new ByteArrayInputStream(jpeg(1024)));
@@ -63,7 +63,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void rejectsSizeMismatchAndStopsBeforeCheckingRemainingFiles() {
+    void 크기_불일치를_거부하고_남은_파일을_확인하기_전에_중단한다() {
         when(storage.size("key-one")).thenReturn(2048L);
 
         assertThatThrownBy(() -> service.verifyUploadedFiles(List.of(
@@ -75,7 +75,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void rejectsMissingObjectReportedAs404() {
+    void 상태_404로_보고된_없는_객체를_거부한다() {
         when(storage.size("key-one")).thenThrow(s3Failure(404, null));
 
         assertThatThrownBy(() -> service.verifyUploadedFiles(List.of(item(1, "key-one", 1024))))
@@ -83,7 +83,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void preserves403AsStorageFailureRatherThanClaimingObjectIsMissing() {
+    void 상태_403을_객체_누락으로_판단하지_않고_저장소_오류로_유지한다() {
         S3Exception failure = s3Failure(403, null);
         when(storage.size("key-one")).thenThrow(failure);
 
@@ -91,7 +91,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void preservesS3ServerErrorAndStoredKey() {
+    void S3_서버_오류와_저장_키를_유지한다() {
         S3Exception failure = s3Failure(500, null);
         when(storage.size("key-one")).thenThrow(failure);
 
@@ -99,7 +99,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void missingBucketIsStorageFailureEvenWhenStatusIs404() {
+    void 버킷이_없으면_상태가_404여도_저장소_오류로_처리한다() {
         S3Exception failure = s3Failure(404, "NoSuchBucket");
         when(storage.size("key-one")).thenThrow(failure);
 
@@ -107,7 +107,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void acceptsPngAndAllHeicBrandsRecognizedByExistingUploadFlow() {
+    void 기존_업로드가_인식하는_PNG와_모든_HEIC_브랜드를_허용한다() {
         byte[] png = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
         when(storage.size("png-key")).thenReturn((long) png.length);
         when(storage.open("png-key")).thenReturn(new ByteArrayInputStream(png));
@@ -128,7 +128,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void rejectsRecognizedTypeWhenItDiffersFromDeclaredType() {
+    void 인식한_파일_형식이_선언한_형식과_다르면_거부한다() {
         when(storage.size("key-one")).thenReturn(12L);
         when(storage.open("key-one")).thenReturn(new ByteArrayInputStream(jpeg(12)));
 
@@ -138,7 +138,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void rejectsUnsupportedAndTruncatedHeaders() {
+    void 지원하지_않거나_잘린_헤더를_거부한다() {
         List<byte[]> unsupported = List.of(
                 "GIF89a".getBytes(StandardCharsets.US_ASCII),
                 new byte[]{(byte) 0xff, (byte) 0xd8},
@@ -154,7 +154,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void closesStreamAfterReadingAtMostTwelveBytes() throws Exception {
+    void 최대_12바이트를_읽은_후_스트림을_닫는다() throws Exception {
         InputStream stream = mock(InputStream.class);
         when(stream.readNBytes(12)).thenReturn(jpeg(12));
         when(storage.size("key-one")).thenReturn(1024L);
@@ -168,7 +168,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void preservesReadFailureAndClosesStream() throws Exception {
+    void 읽기_오류를_유지하고_스트림을_닫는다() throws Exception {
         InputStream stream = mock(InputStream.class);
         IOException failure = new IOException("test read failure");
         when(stream.readNBytes(12)).thenThrow(failure);
@@ -184,7 +184,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void preservesGetObjectFailureAfterSuccessfulHeadCheck() {
+    void HEAD_확인이_성공한_후의_객체_조회_오류를_유지한다() {
         S3Exception failure = s3Failure(500, null);
         when(storage.size("key-one")).thenReturn(1024L);
         when(storage.open("key-one")).thenThrow(failure);
@@ -193,7 +193,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void passesOrderedKeysAndTypesAndReturnsConversionResultsWithMetadata() {
+    void 정렬된_키와_형식을_전달하고_메타데이터가_있는_변환_결과를_반환한다() {
         var takenAt = java.time.OffsetDateTime.parse("2026-10-01T10:00:00+09:00");
         List<DerivedPhotoKeys> results = List.of(
                 new DerivedPhotoKeys("key-one", "analyze-one", "preview-one", takenAt,
@@ -214,7 +214,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void rejectsMissingResultsOrIncorrectResultCount() {
+    void 결과가_없거나_결과_개수가_틀리면_거부한다() {
         for (List<DerivedPhotoKeys> results : java.util.Arrays.<List<DerivedPhotoKeys>>asList(null, List.of())) {
             when(derivatives.createAll("execution-id", List.of("key-one"), List.of("image/jpeg")))
                     .thenReturn(CompletableFuture.completedFuture(results));
@@ -226,7 +226,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void rejectsNullResultWrongOriginalOrMissingRequiredDerivedKeys() {
+    void null_결과와_잘못된_원본과_필수_파생_키_누락을_거부한다() {
         List<DerivedPhotoKeys> invalid = java.util.Arrays.asList(
                 null,
                 new DerivedPhotoKeys("other-key", "analyze", "preview"),
@@ -245,7 +245,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void requiresDisplayKeyForHeicAndAcceptsCompleteHeicResult() {
+    void HEIC에는_표시용_키가_필요하고_완전한_HEIC_결과를_허용한다() {
         var heic = new InitialAttachmentUploadItem(batch, 1, "photo.heic", "image/heic", 1024L, "key-one");
         for (String displayKey : java.util.Arrays.asList(null, " ", "display")) {
             List<DerivedPhotoKeys> results = List.of(new DerivedPhotoKeys(
@@ -263,7 +263,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void propagatesAsynchronousConversionFailure() {
+    void 비동기_변환_실패를_전파한다() {
         IllegalStateException failure = new IllegalStateException("conversion failed");
         when(derivatives.createAll("execution-id", List.of("key-one"), List.of("image/jpeg")))
                 .thenReturn(CompletableFuture.failedFuture(failure));
@@ -275,7 +275,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void retainsOriginalAndDerivedKeysOnceInOrderAndIncludesOnlyPresentDisplayKeys() {
+    void 원본과_파생_키를_순서대로_한_번씩_보존하고_존재하는_표시용_키만_포함한다() {
         service.retainFiles(List.of(
                 new DerivedPhotoKeys("original-one", "analyze-one", "preview-one"),
                 new DerivedPhotoKeys("original-two", "analyze-two", "preview-two", "display-two",
@@ -289,7 +289,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void propagatesRetentionFailureWithoutCallingOtherStorageOperations() {
+    void 다른_저장소_작업을_호출하지_않고_보존_실패를_전파한다() {
         S3Exception failure = s3Failure(403, null);
         org.mockito.Mockito.doThrow(failure).when(storage)
                 .retain(List.of("original", "analyze", "preview"));
@@ -302,7 +302,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void deletesEachDerivedKeyOnceAndExcludesEveryOriginalKey() {
+    void 모든_원본_키를_제외하고_각_파생_키를_한_번씩_삭제한다() {
         RuntimeException failure = new IllegalStateException("save failed");
 
         boolean cleaned = service.cleanupDerived(List.of(
@@ -323,7 +323,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void continuesCleanupAfterFailuresAndKeepsAllCleanupErrorsOnOriginalFailure() {
+    void 실패해도_정리를_계속하고_모든_정리_오류를_원래_예외에_유지한다() {
         RuntimeException failure = new IllegalStateException("save failed");
         S3Exception firstFailure = s3Failure(403, null);
         S3Exception secondFailure = s3Failure(500, null);
@@ -344,7 +344,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void emptyConversionResultsRequireNoStorageCleanup() {
+    void 변환_결과가_비어있으면_저장소를_정리하지_않는다() {
         RuntimeException failure = new IllegalStateException("validation failed");
 
         assertThat(service.cleanupDerived(List.of(), failure)).isTrue();

@@ -26,7 +26,7 @@ class CurrentUserControllerTest {
     private CurrentUserController controller;
 
     @Test
-    void returnsCurrentUserFromAuthenticatedJwtSubject() {
+    void 인증된_JWT의_사용자_ID로_현재_회원_정보를_반환한다() {
         Jwt jwt = mock(Jwt.class);
         CurrentUserResponse data = new CurrentUserResponse(
                 42L,

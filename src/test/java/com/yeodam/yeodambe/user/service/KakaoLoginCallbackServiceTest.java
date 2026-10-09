@@ -51,7 +51,7 @@ class KakaoLoginCallbackServiceTest {
     }
 
     @Test
-    void rejectsInvalidStateBeforeCallingKakao() {
+    void 카카오를_호출하기_전에_유효하지_않은_OAuth_상태를_거부한다() {
         given(stateStore.consume("invalid-state", "browser-1"))
                 .willReturn(false);
 
@@ -71,7 +71,7 @@ class KakaoLoginCallbackServiceTest {
     }
 
     @Test
-    void issuesLoginTicketAfterValidKakaoAuthentication() {
+    void 카카오_인증에_성공한_후_로그인_티켓을_발급한다() {
         given(stateStore.consume("valid-state", "browser-1"))
                 .willReturn(true);
 
@@ -129,7 +129,7 @@ class KakaoLoginCallbackServiceTest {
     }
 
     @Test
-    void convertsLoginTicketGenerationFailureToContractException() {
+    void 로그인_티켓_생성_실패를_계약에_맞는_예외로_변환한다() {
         givenValidKakaoAuthentication();
         given(loginTicketGenerator.generate())
                 .willThrow(new IllegalStateException("ticket generation failed"));
@@ -144,7 +144,7 @@ class KakaoLoginCallbackServiceTest {
     }
 
     @Test
-    void keepsDatabaseFailureForAuthStoreUnavailableResponse() {
+    void 인증_저장소_불가_응답을_위해_DB_예외를_유지한다() {
         givenValidKakaoAuthentication();
         given(loginTicketGenerator.generate()).willReturn("login-ticket");
 

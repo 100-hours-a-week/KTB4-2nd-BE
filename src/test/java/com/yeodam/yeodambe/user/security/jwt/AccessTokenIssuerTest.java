@@ -23,7 +23,7 @@ import static org.mockito.Mockito.mock;
 class AccessTokenIssuerTest {
 
     @Test
-    void issuesAccessTokenWithRequiredClaimsAndThirtyMinuteExpiry() {
+    void 필수_클레임과_30분_유효기간을_가진_액세스_토큰을_발급한다() {
         JwtEncoder jwtEncoder = mock(JwtEncoder.class);
         Instant now = Instant.parse("2026-09-17T00:00:00Z");
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);

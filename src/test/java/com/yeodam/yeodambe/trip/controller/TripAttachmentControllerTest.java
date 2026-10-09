@@ -53,7 +53,7 @@ class TripAttachmentControllerTest {
     private final BulkAttachmentDownloadService bulkDownloadService = mock(BulkAttachmentDownloadService.class);
     private final InitialAttachmentUploadUrlService uploadUrlService = mock(InitialAttachmentUploadUrlService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
-            service, listService, detailService, deletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class)
+            service, listService, detailService, deletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class), mock(com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService.class)
     );
 
     @Test
@@ -316,7 +316,7 @@ class TripAttachmentControllerTest {
         TripAttachmentDeletionService realDeletionService =
                 new TripAttachmentDeletionService(repository, stats);
         TripAttachmentController realController = new TripAttachmentController(
-                service, listService, detailService, realDeletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class));
+                service, listService, detailService, realDeletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class), mock(com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService.class));
         String ids = LongStream.rangeClosed(1, 201)
                 .mapToObj(Long::toString).collect(Collectors.joining(","));
 

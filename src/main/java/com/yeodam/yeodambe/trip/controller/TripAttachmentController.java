@@ -36,6 +36,8 @@ import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlRespo
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
+import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse;
 
 import java.util.List;
 import java.util.Optional;
@@ -51,6 +53,20 @@ public class TripAttachmentController {
     private final BulkAttachmentDownloadService bulkAttachmentDownloadService;
     private final InitialAttachmentUploadUrlService uploadUrlService;
     private final InitialAttachmentUploadCompletionService uploadCompletion;
+    private final UnclassifiedFolderListService unclassifiedFolderListService;
+
+    @GetMapping("/trips/{tripId}/unclassified-folders")
+    public ResponseEntity<ApiResponse<UnclassifiedFolderListResponse>> findUnclassifiedFolders(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+        UnclassifiedFolderListResponse result =
+                unclassifiedFolderListService.findFolders(userId, tripId);
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.UNCLASSIFIED_FOLDER_LIST_FOUND, result)
+        );
+    }
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> completeInitialAttachmentUpload(

@@ -3,9 +3,6 @@ package com.yeodam.yeodambe.common.exception;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 
-import com.yeodam.yeodambe.story.exception.StoryDataIntegrityException;
-import com.yeodam.yeodambe.story.exception.StoryNotFoundException;
-import com.yeodam.yeodambe.user.exception.*;
 import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

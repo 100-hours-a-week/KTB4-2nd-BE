@@ -2,7 +2,7 @@ package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.story.entity.Story;
-import com.yeodam.yeodambe.story.exception.*;
+import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.story.repository.*;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;

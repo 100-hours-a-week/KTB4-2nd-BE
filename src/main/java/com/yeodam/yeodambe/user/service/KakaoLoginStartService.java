@@ -1,6 +1,6 @@
 package com.yeodam.yeodambe.user.service;
 
-import com.yeodam.yeodambe.user.exception.OAuthStateCreateFailedException;
+import com.yeodam.yeodambe.common.exception.OAuthStateCreateFailedException;
 import com.yeodam.yeodambe.user.security.oauth.OAuthStateGenerator;
 import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import org.springframework.beans.factory.annotation.Value;

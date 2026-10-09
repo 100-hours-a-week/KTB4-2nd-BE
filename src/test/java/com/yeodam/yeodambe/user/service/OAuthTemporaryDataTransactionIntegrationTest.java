@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.user.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
-import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
+import com.yeodam.yeodambe.common.exception.InvalidNicknameException;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;

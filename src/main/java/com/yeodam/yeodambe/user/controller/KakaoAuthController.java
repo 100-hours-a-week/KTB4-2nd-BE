@@ -15,10 +15,10 @@ import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
-import com.yeodam.yeodambe.user.exception.LoginTicketIssueFailedException;
-import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
-import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.KakaoAuthenticationFailedException;
+import com.yeodam.yeodambe.common.exception.LoginTicketIssueFailedException;
+import com.yeodam.yeodambe.common.exception.OAuthProviderUnavailableException;
+import com.yeodam.yeodambe.common.exception.OAuthStateInvalidOrExpiredException;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 import java.net.URI;

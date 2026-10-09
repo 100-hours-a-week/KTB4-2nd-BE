@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.story.controller;
 
 import com.yeodam.yeodambe.story.entity.Story;
-import com.yeodam.yeodambe.story.exception.*;
+import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.story.service.StoryReadService;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.user.entity.User;

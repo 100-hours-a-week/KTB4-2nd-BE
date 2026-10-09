@@ -1,6 +1,6 @@
 package com.yeodam.yeodambe.user.controller;
 
-import com.yeodam.yeodambe.user.exception.WithdrawalFailedException;
+import com.yeodam.yeodambe.common.exception.WithdrawalFailedException;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.service.WithdrawalService;
 import org.junit.jupiter.api.Test;

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.exception;
 
 public enum TripInternalErrorMessage {
+    TRIP_LIST_CURSOR_ENCODE_FAILED("여행 목록 커서를 생성할 수 없습니다."),
     ATTACHMENT_CURSOR_ENCODE_FAILED("첨부 목록 커서를 생성할 수 없습니다."),
     PLACE_FOLDER_CURSOR_ENCODE_FAILED("장소 폴더 목록 커서를 생성할 수 없습니다."),
     UNSUPPORTED_DERIVATIVE_FILE_FORMAT("지원하지 않는 파생 파일 형식입니다."),

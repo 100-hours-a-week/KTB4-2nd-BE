@@ -516,7 +516,7 @@ public class TripService {
                     last.getFavorite(),
                     last.getStartDate(),
                     last.getId()
-            ).encode();
+            ).encode(objectMapper);
         }
         return new TripListResponse(items, hasNext, nextCursor);
     }

@@ -23,6 +23,7 @@ import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
 import jakarta.validation.Valid;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -44,6 +45,7 @@ public class TripController {
     private final TripProcessingCancellationService processingCancellationService;
     private final TripPlaceFolderListService tripPlaceFolderListService;
     private final TripDeletionService tripDeletionService;
+    private final ObjectMapper objectMapper;
 
     @PostMapping("/trips")
     public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(
@@ -171,7 +173,7 @@ public class TripController {
             @RequestParam(required = false) String favorite,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        TripListRequest request = TripListRequest.from(cursor, sort, favorite);
+        TripListRequest request = TripListRequest.from(cursor, sort, favorite, objectMapper);
         return ResponseEntity.ok(new ApiResponse<>(
                 SuccessMessage.TRIP_LIST_FOUND,
                 tripService.findTrips(Long.valueOf(jwt.getSubject()), request)

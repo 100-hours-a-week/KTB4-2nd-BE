@@ -1,13 +1,17 @@
 package com.yeodam.yeodambe.trip.service.request;
 
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+import com.yeodam.yeodambe.trip.util.CursorCodec;
 import com.yeodam.yeodambe.common.exception.InvalidPlaceFolderCursorException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.Base64;
 
-public record PlaceFolderCursor(Long tripId, String placeName, Long tripPlaceId) {
+public record PlaceFolderCursor(
+        Long tripId,
+        String placeName,
+        Long tripPlaceId
+) {
     public PlaceFolderCursor {
         if (tripId == null || tripId <= 0
                 || placeName == null || placeName.isBlank() || placeName.length() > 50
@@ -18,8 +22,7 @@ public record PlaceFolderCursor(Long tripId, String placeName, Long tripPlaceId)
 
     public String encode(ObjectMapper objectMapper) {
         try {
-            return Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString(objectMapper.writeValueAsBytes(this));
+            return CursorCodec.encode(this, objectMapper);
         } catch (JacksonException exception) {
             throw new IllegalStateException(
                     TripInternalErrorMessage.PLACE_FOLDER_CURSOR_ENCODE_FAILED.message(),
@@ -36,14 +39,11 @@ public record PlaceFolderCursor(Long tripId, String placeName, Long tripPlaceId)
         if (value == null) {
             return null;
         }
-        if (value.isBlank()) {
-            throw new InvalidPlaceFolderCursorException();
-        }
 
         PlaceFolderCursor cursor;
         try {
-            cursor = objectMapper.readValue(
-                    Base64.getUrlDecoder().decode(value),
+            cursor = objectMapper.treeToValue(
+                    CursorCodec.decode(value, objectMapper),
                     PlaceFolderCursor.class
             );
         } catch (JacksonException | IllegalArgumentException exception) {
@@ -54,5 +54,6 @@ public record PlaceFolderCursor(Long tripId, String placeName, Long tripPlaceId)
             throw new InvalidPlaceFolderCursorException();
         }
 
-        return cursor;    }
+        return cursor;
+    }
 }

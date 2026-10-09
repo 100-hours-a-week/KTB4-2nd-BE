@@ -13,6 +13,7 @@ import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
@@ -25,6 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class TripListServiceTest {
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private TripRepository tripRepository;
     private TripRegionRepository tripRegionRepository;
     private TripAttachmentRepository tripAttachmentRepository;
@@ -44,7 +46,7 @@ class TripListServiceTest {
                 tripAttachmentRepository,
                 storageClient,
                 mock(TripAccessService.class),
-                new tools.jackson.databind.ObjectMapper()
+                objectMapper
         );
     }
 
@@ -57,12 +59,12 @@ class TripListServiceTest {
         when(tripRepository.findListLatest(eq(1L), isNull(), isNull(), any(Pageable.class)))
                 .thenReturn(trips);
 
-        var response = tripService.findTrips(1L, TripListRequest.from(null, null, null));
+        var response = tripService.findTrips(1L, TripListRequest.from(null, null, null, objectMapper));
 
         assertThat(response.items()).extracting(item -> item.tripId())
                 .containsExactly(8L, 7L, 6L, 5L, 4L, 3L, 2L);
         assertThat(response.hasNext()).isTrue();
-        TripListCursor cursor = TripListCursor.decode(response.nextCursor());
+        TripListCursor cursor = TripListCursor.decode(response.nextCursor(), objectMapper);
         assertThat(cursor.tripId()).isEqualTo(2L);
         assertThat(cursor.startDate()).isEqualTo(LocalDate.of(2026, 9, 1));
         assertThat(cursor.favoriteGroup()).isFalse();
@@ -89,26 +91,26 @@ class TripListServiceTest {
                 eq(1L), eq(false), isNull(), isNull(), any(Pageable.class)))
                 .thenReturn(normals);
 
-        var response = tripService.findTrips(1L, TripListRequest.from(null, "LATEST", "true"));
+        var response = tripService.findTrips(1L, TripListRequest.from(null, "LATEST", "true", objectMapper));
 
         assertThat(response.items()).extracting(item -> item.tripId())
                 .containsExactly(9L, 8L, 7L, 6L, 5L, 4L, 3L);
         assertThat(response.hasNext()).isTrue();
-        assertThat(TripListCursor.decode(response.nextCursor()).favoriteGroup()).isFalse();
+        assertThat(TripListCursor.decode(response.nextCursor(), objectMapper).favoriteGroup()).isFalse();
     }
 
     @Test
     void 일반_그룹_커서부터는_즐겨찾기_그룹을_다시_조회하지_않는다() {
         LocalDate startDate = LocalDate.of(2026, 9, 22);
         String cursor = new TripListCursor(
-                TripSort.LATEST, true, false, startDate, 7L).encode();
+                TripSort.LATEST, true, false, startDate, 7L).encode(objectMapper);
         Trip nextNormal = trip(6L, false, ProcessingStatus.COMPLETED, null);
         when(tripRepository.findFavoriteGroupLatest(
                 eq(1L), eq(false), eq(startDate), eq(7L), any(Pageable.class)))
                 .thenReturn(List.of(nextNormal));
 
         var response = tripService.findTrips(
-                1L, TripListRequest.from(cursor, "LATEST", "true"));
+                1L, TripListRequest.from(cursor, "LATEST", "true", objectMapper));
 
         assertThat(response.items()).extracting(item -> item.tripId()).containsExactly(6L);
         verify(tripRepository, never()).findFavoriteGroupLatest(
@@ -132,7 +134,7 @@ class TripListServiceTest {
                 .thenReturn(List.of(new TripAttachmentCount(7L, 4L)));
         when(storageClient.createReadUrl("thumb/7.webp")).thenReturn("https://cdn.test/7");
 
-        var response = tripService.findTrips(1L, TripListRequest.from(null, "OLDEST", "false"));
+        var response = tripService.findTrips(1L, TripListRequest.from(null, "OLDEST", "false", objectMapper));
 
         assertThat(response.items().getFirst().placeSummary()).isEqualTo("제주, 부산, 서울");
         assertThat(response.items().getFirst().attachmentCount()).isEqualTo(4L);
@@ -150,7 +152,7 @@ class TripListServiceTest {
         when(tripRepository.findListLatest(eq(1L), isNull(), isNull(), any(Pageable.class)))
                 .thenReturn(List.of());
 
-        var response = tripService.findTrips(1L, TripListRequest.from(null, null, null));
+        var response = tripService.findTrips(1L, TripListRequest.from(null, null, null, objectMapper));
 
         assertThat(response.items()).isEmpty();
         assertThat(response.hasNext()).isFalse();

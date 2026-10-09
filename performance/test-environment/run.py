@@ -82,7 +82,7 @@ def cleanup_session(docker, directory, errors):
 
 class UnixConnection(http.client.HTTPConnection):
     def __init__(self, path):
-        super().__init__("localhost", timeout=5)
+        super().__init__("localhost", timeout=30)
         self.path = path
 
     def connect(self):
@@ -166,22 +166,25 @@ def monitor(docker, directory, stop, errors):
                 ThreadPoolExecutor(max_workers=32) as pool:
             while not stop.is_set():
                 started = time.monotonic()
-                pid, session = jvm_identity(directory / "events.tsv")
-                if session:
-                    if event_process is None:
-                        event_process = subprocess.Popen(
-                            ["docker", "events", "--since", str(start), "--filter", "type=container",
-                             "--format", "{{json .}}"], stdout=events, stderr=event_errors
-                        )
-                    if event_process.poll() is not None:
-                        raise RuntimeError("Docker event collection stopped unexpectedly")
-                    containers = [container for container in docker.containers(session)
-                                  if container["Image"].split(":")[0] in ("mysql", "redis")]
-                    memory = [value for value in pool.map(docker.memory, containers) if value is not None]
-                    sample = {"epoch_ms": int(time.time() * 1000), "collection_seconds": time.monotonic() - started,
-                              "jvm_rss_bytes": rss_bytes(pid), "containers": memory}
-                    samples.write(json.dumps(sample) + "\n")
-                    samples.flush()
+                try:
+                    pid, session = jvm_identity(directory / "events.tsv")
+                    if session:
+                        if event_process is None:
+                            event_process = subprocess.Popen(
+                                ["docker", "events", "--since", str(start), "--filter", "type=container",
+                                 "--format", "{{json .}}"], stdout=events, stderr=event_errors
+                            )
+                        if event_process.poll() is not None:
+                            raise RuntimeError("Docker event collection stopped unexpectedly")
+                        containers = [container for container in docker.containers(session)
+                                      if container["Image"].split(":")[0] in ("mysql", "redis")]
+                        memory = [value for value in pool.map(docker.memory, containers) if value is not None]
+                        sample = {"epoch_ms": int(time.time() * 1000), "collection_seconds": time.monotonic() - started,
+                                  "jvm_rss_bytes": rss_bytes(pid), "containers": memory}
+                        samples.write(json.dumps(sample) + "\n")
+                        samples.flush()
+                except Exception as failure:
+                    errors.append(f"{type(failure).__name__}: {failure}")
                 stop.wait(max(0, 1 - (time.monotonic() - started)))
     except Exception as failure:
         errors.append(f"{type(failure).__name__}: {failure}")

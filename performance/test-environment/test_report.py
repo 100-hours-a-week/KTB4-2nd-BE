@@ -40,6 +40,27 @@ class TestEvidence(unittest.TestCase):
                     run.cleanup_session(docker, path, errors)
                 self.assertEqual(len(errors), expected_errors)
 
+    def test_sampling_timeout_keeps_event_collection_and_next_sample_running(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            stop = Mock()
+            stop.is_set.side_effect = [False, False, True]
+            docker = Mock()
+            docker.containers.return_value = [{"Id": "mysql", "Image": "mysql:9.7.2"}]
+            docker.memory.side_effect = [TimeoutError("Docker timeout"), {"id": "mysql", "memory_bytes": 1}]
+            events = Mock()
+            events.poll.return_value = None
+            errors = []
+            with patch.object(run, "jvm_identity", return_value=(1, "session")), \
+                    patch.object(run, "rss_bytes", return_value=1), \
+                    patch.object(run.subprocess, "Popen", return_value=events) as start_events:
+                run.monitor(docker, path, stop, errors)
+            self.assertEqual(len(run.json_lines(path / "samples.jsonl")), 1)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("Docker timeout", errors[0])
+            start_events.assert_called_once()
+            events.terminate.assert_called_once()
+
     def test_different_test_lists_are_not_comparable(self):
         first = {"valid": True, "tests": [{"class": "One", "name": "test", "status": "passed"}]}
         second = {"valid": True, "tests": [{"class": "Two", "name": "test", "status": "passed"}]}

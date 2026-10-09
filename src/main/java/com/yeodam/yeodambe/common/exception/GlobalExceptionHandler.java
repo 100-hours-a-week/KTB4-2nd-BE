@@ -321,6 +321,20 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
     }
 
+    @ExceptionHandler(InvalidStoryRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidStoryRequest(InvalidStoryRequestException e) {
+        return new ApiResponse<>(ErrorMessage.INVALID_STORY_REQUEST, null);
+    }
+
+    @ExceptionHandler(StoryGenerationForbiddenException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    ApiResponse<Void> handleStoryGenerationForbidden(
+            StoryGenerationForbiddenException e
+    ) {
+        return new ApiResponse<>(ErrorMessage.STORY_GENERATION_FORBIDDEN, null);
+    }
+
     @ExceptionHandler(StoryNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     ApiResponse<Void> handleStoryNotFound(StoryNotFoundException e) {

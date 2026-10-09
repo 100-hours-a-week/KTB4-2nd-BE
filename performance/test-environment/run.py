@@ -23,7 +23,7 @@ import urllib.error
 import report
 
 REPO = Path(__file__).resolve().parents[2]
-TASKS = {"baseline": "testEnvironmentBaseline", "A": "testEnvironmentA",
+TASKS = {"original": "test", "baseline": "testEnvironmentBaseline", "A": "testEnvironmentA",
          "B": "testEnvironmentB", "cache": "testEnvironmentCache"}
 LABEL = "org.testcontainers.sessionId"
 
@@ -257,13 +257,22 @@ def prepare(output):
                     for image in images]})
 
 
+def run_arguments(variant, directory, tests):
+    args = ["./gradlew", TASKS[variant], "--no-daemon", "--no-watch-fs",
+            f"-PtestEnvironment.output={directory}"]
+    if variant == "original":
+        args += ["-PtestEnvironment.observeOriginal=true"]
+    else:
+        args += ["--max-workers=2", "--no-configuration-cache", "--no-build-cache"]
+    for test in tests:
+        args += ["--tests", test]
+    return args
+
+
 def run_variant(docker, root, variant, index, tests, timeout, memory_limit, fingerprint):
     directory = root / f"{index:02d}-{variant}"
     directory.mkdir()
-    args = ["./gradlew", TASKS[variant], "--no-daemon", "--no-watch-fs", "--max-workers=2",
-            "--no-configuration-cache", "--no-build-cache", f"-PtestEnvironment.output={directory}"]
-    for test in tests:
-        args += ["--tests", test]
+    args = run_arguments(variant, directory, tests)
     save(directory / "command.json", args)
     background = [{"id": container["Id"], "image": container["Image"]} for container in docker.containers()
                   if container["State"] == "running"]
@@ -306,8 +315,10 @@ def run_variant(docker, root, variant, index, tests, timeout, memory_limit, fing
         if all(path.exists() for path in timings) else None
     result = {"variant": variant, "directory": str(directory), "exit_code": process.returncode,
               "timed_out": timed_out, "gradle_seconds": elapsed, "test_task_seconds": task_seconds,
-              "tests": inventory, "resources": resources, "contexts": report.context_summary(directory / "events.tsv"),
+              "tests": inventory, "resources": resources, "contexts": None if variant == "original" else report.context_summary(directory / "events.tsv"),
               "observation_errors": errors, "background_containers": background,
+              "original_task_settings": json.loads((directory / "original-task-settings.json").read_text())
+                  if variant == "original" and (directory / "original-task-settings.json").exists() else None,
               "source_unchanged": source_fingerprint() == fingerprint,
               "background_unchanged": not background_events}
     result["valid"] = (process.returncode == 0 and bool(inventory)
@@ -351,7 +362,8 @@ def main():
         save(output / "environment.json", {"commit": command(["git", "rev-parse", "HEAD"]),
              "status": command(["git", "status", "--short"]), "java": command(["./gradlew", "--version"]),
              "docker": {"memory_bytes": info["MemTotal"], "cpus": info["NCPU"], "server_version": info["ServerVersion"]},
-             "test_filters": args.tests, "variants": args.variants, "jvm_heap_mib": 512, "test_forks": 1,
+             "test_filters": args.tests, "variants": args.variants, "jvm_heap_mib": None if "original" in args.variants else 512,
+             "test_forks": None if "original" in args.variants else 1,
              "source_sha256": fingerprint,
              "host_cgroup_memory_max": Path("/sys/fs/cgroup/memory.max").read_text().strip()
                  if Path("/sys/fs/cgroup/memory.max").exists() else None})

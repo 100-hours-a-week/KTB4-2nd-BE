@@ -13,6 +13,7 @@ on:
         options:
           - A B B A A B
           - baseline cache A B B A A B
+          - original
           - baseline
           - cache
 
@@ -50,7 +51,7 @@ jobs:
 
       - name: Compare test environments
         env:
-          COMPARISON_VARIANTS: ${{ inputs.variants || 'baseline cache A B B A A B' }}
+          COMPARISON_VARIANTS: ${{ inputs.variants || 'original' }}
         run: |
           read -r -a variants <<< "$COMPARISON_VARIANTS"
           python3 performance/test-environment/run.py run --variants "${variants[@]}" \

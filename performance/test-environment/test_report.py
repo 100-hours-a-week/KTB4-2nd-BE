@@ -61,6 +61,17 @@ class TestEvidence(unittest.TestCase):
             start_events.assert_called_once()
             events.terminate.assert_called_once()
 
+    def test_original_runs_ordinary_task_without_comparison_execution_overrides(self):
+        args = run.run_arguments("original", Path("output"), [])
+        self.assertEqual(args[1], "test")
+        self.assertIn("-PtestEnvironment.observeOriginal=true", args)
+        self.assertFalse(any(arg.startswith("--max-workers") for arg in args))
+        self.assertNotIn("--no-build-cache", args)
+        self.assertNotIn("--no-configuration-cache", args)
+        controlled = run.run_arguments("baseline", Path("output"), [])
+        self.assertIn("--max-workers=2", controlled)
+        self.assertNotIn("-PtestEnvironment.observeOriginal=true", controlled)
+
     def test_different_test_lists_are_not_comparable(self):
         first = {"valid": True, "tests": [{"class": "One", "name": "test", "status": "passed"}]}
         second = {"valid": True, "tests": [{"class": "Two", "name": "test", "status": "passed"}]}

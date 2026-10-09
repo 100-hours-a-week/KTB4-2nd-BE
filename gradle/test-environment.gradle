@@ -81,3 +81,44 @@ tasks.register('testEnvironmentPrepare') {
         configurations.testEnvironmentSmartContext.files.each { logger.lifecycle("B-only dependency: ${it.name}") }
     }
 }
+
+// Observe the ordinary task without changing its heap, forks, cache or Spring customizers.
+if (providers.gradleProperty('testEnvironment.observeOriginal').isPresent()) {
+    tasks.named('test', Test) {
+        dependsOn tasks.named('testEnvironmentClasses')
+        def observerResources = layout.buildDirectory.dir('test-environment/original-observer').get().asFile
+        classpath += files(observerResources)
+        def outputDirectory = providers.gradleProperty('testEnvironment.output').get()
+        systemProperty 'test.environment.output', outputDirectory
+        reports.junitXml.outputLocation = file("${outputDirectory}/xml")
+        reports.html.outputLocation = file("${outputDirectory}/html")
+        outputs.upToDateWhen { false }
+        doFirst {
+            copy {
+                from(sourceSets.testEnvironment.output.classesDirs) {
+                    include 'com/yeodam/yeodambe/TestEnvironmentMetrics*.class'
+                }
+                into observerResources
+            }
+            def service = new File(observerResources, 'META-INF/services/org.junit.platform.launcher.LauncherSessionListener')
+            service.parentFile.mkdirs()
+            service.text = 'com.yeodam.yeodambe.TestEnvironmentMetrics\n'
+            def directory = file(outputDirectory)
+            directory.mkdirs()
+            def settings = [task: name, minHeapSize: minHeapSize, maxHeapSize: maxHeapSize,
+                            allJvmArgs: allJvmArgs, maxParallelForks: maxParallelForks, forkEvery: forkEvery,
+                            maxWorkers: gradle.startParameter.maxWorkerCount,
+                            contextCacheProperty: systemProperties['spring.test.context.cache.maxSize'],
+                            junitParallelProperty: systemProperties['junit.jupiter.execution.parallel.enabled'],
+                            mysqlModeProperty: systemProperties['test.environment.mysql'],
+                            smartContextLibrary: classpath.files.any { it.name.contains('spring-test-smart-context') },
+                            springObserverFactories: classpath.files.contains(sourceSets.testEnvironment.output.resourcesDir)]
+            file("${directory}/original-task-settings.json").text = groovy.json.JsonOutput.prettyPrint(
+                    groovy.json.JsonOutput.toJson(settings))
+            file("${directory}/task-start-ms.txt").text = System.currentTimeMillis().toString()
+        }
+        doLast {
+            file("${outputDirectory}/task-end-ms.txt").text = System.currentTimeMillis().toString()
+        }
+    }
+}

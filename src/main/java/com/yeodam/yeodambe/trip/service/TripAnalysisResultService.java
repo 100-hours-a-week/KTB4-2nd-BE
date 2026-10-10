@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.stream.StreamSupport;
 
 @Service
 @RequiredArgsConstructor
@@ -108,6 +109,7 @@ public class TripAnalysisResultService {
         if (!expected.equals(actual)) throw new IllegalStateException(TripInternalErrorMessage.AI_RESULT_ATTACHMENT_LIST_MISMATCH.message());
 
         validatePlaceNames(placeIds, placeNames);
+        validateUnclassifiedPlaceReferences(result.path("unclassified"), placeIds);
 
         if (trips.finishInitialUpload(
                 tripId,
@@ -121,6 +123,7 @@ public class TripAnalysisResultService {
         Map<Long, TripAttachment> byId = new HashMap<>();
         for (TripAttachment attachment : attachments) byId.put(attachment.getId(), attachment);
 
+        Map<String, Long> savedPlaceIds = new HashMap<>();
         int order = 0;
 
         for (JsonNode place : result.path("places")) {
@@ -143,6 +146,7 @@ public class TripAnalysisResultService {
                     coordinate(place, "latitude"), coordinate(place, "longitude"),
                     time(place.path("first_taken_at")), time(place.path("last_taken_at")),
                     representative.getPreviewStorageKey()));
+            savedPlaceIds.put(placeId, savedPlace.getId());
 
             List<TripAttachment> placeAttachments = new ArrayList<>();
             for (JsonNode photo : place.path("attachments")) {
@@ -173,7 +177,8 @@ public class TripAnalysisResultService {
             if (issue == AttachmentIssue.NONE) throw new IllegalStateException(TripInternalErrorMessage.UNCLASSIFIED_ATTACHMENT_ISSUE_MISSING.message());
 
             byId.get(
-                    photo.path("trip_attachment_id").asLong(-1)).unclassify(issue,
+                    photo.path("trip_attachment_id").asLong(-1)).unclassify(
+                    resolveUnclassifiedPlaceId(photo, savedPlaceIds), issue,
                     origin(photo), time(photo.path("taken_at")),
                     optionalCoordinate(photo, "latitude"), optionalCoordinate(photo, "longitude"),
                     evaluation(photo)
@@ -196,6 +201,26 @@ public class TripAnalysisResultService {
 
         attachmentRepository.saveAll(attachments);
         userStats.refreshFromActiveTrips(userId);
+    }
+
+    private void validateUnclassifiedPlaceReferences(JsonNode unclassified, Set<String> placeIds) {
+        boolean invalidReference = StreamSupport.stream(unclassified.spliterator(), false)
+                .map(photo -> photo.path("place_id"))
+                .filter(placeId -> !placeId.isMissingNode() && !placeId.isNull())
+                .anyMatch(placeId -> !placeId.isString()
+                        || placeId.asString().isBlank()
+                        || !placeIds.contains(placeId.asString()));
+        if (invalidReference) {
+            throw new IllegalStateException(TripInternalErrorMessage.AI_UNCLASSIFIED_PLACE_REFERENCE_INVALID.message());
+        }
+    }
+
+    private Long resolveUnclassifiedPlaceId(JsonNode photo, Map<String, Long> savedPlaceIds) {
+        JsonNode placeId = photo.path("place_id");
+        if (placeId.isMissingNode() || placeId.isNull()) {
+            return null;
+        }
+        return savedPlaceIds.get(placeId.asString());
     }
 
     private void validatePlaceNames(Set<String> placeIds, Map<String, String> placeNames) {

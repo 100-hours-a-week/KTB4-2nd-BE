@@ -28,6 +28,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -154,6 +155,7 @@ class TripAttachmentTransactionPersistenceTest {
                   }],
                   "unclassified": [{
                     "trip_attachment_id": %d,
+                    "place_id": "p1",
                     "issue": "INVALID_ISSUE",
                     "region_origin": "UNKNOWN",
                     "taken_at": null,
@@ -183,6 +185,7 @@ class TripAttachmentTransactionPersistenceTest {
                             .isEqualTo(ClassificationStatus.UNCLASSIFIED);
                     assertThat(attachment.getRegionOrigin()).isEqualTo(RegionOrigin.UNKNOWN);
                     assertThat(attachment.getIssue()).isEqualTo(AttachmentIssue.NONE);
+                    assertThat(attachment.getTripPlaceId()).isNull();
                 });
     }
 
@@ -271,6 +274,48 @@ class TripAttachmentTransactionPersistenceTest {
 
         assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo("preview-excluded");
+    }
+
+    @Test
+    void 미분류_사진의_장소_FK와_null을_트랜잭션_완료_후_재조회한다() {
+        User user = users.saveAndFlush(new User("unclassified-place@yeodam.test", "장소참조"));
+        stats.saveAndFlush(new UserStats(user));
+        Trip trip = trips.saveAndFlush(new Trip(
+                user.getUserId(), "장소참조", LocalDate.now(), LocalDate.now()));
+        List<TripAttachment> photos = new ArrayList<>();
+        for (int index = 0; index < 4; index++) {
+            StoredFile file = saveMeasuredFile(StoredFile.uploaded(
+                    user.getUserId(), "photo.jpg", "place-original-" + index, "image/jpeg"));
+            photos.add(saveMeasuredAttachment(TripAttachment.initial(
+                    trip.getId(), file.getId(), "analyze-" + index, "preview-" + index)));
+        }
+        var result = json.readTree("""
+                {"places":[{"place_id":"p1","latitude":33.45,"longitude":126.94,
+                "first_taken_at":null,"last_taken_at":null,"representative_attachment_id":%d,
+                "attachments":[{"trip_attachment_id":%d,"taken_at":null,"latitude":33.45,
+                "longitude":126.94,"region_origin":"EXIF","evaluation":91}]}],
+                "unclassified":[
+                  {"trip_attachment_id":%d,"place_id":"p1","issue":"BLURRY","region_origin":"UNKNOWN"},
+                  {"trip_attachment_id":%d,"issue":"BLURRY","region_origin":"UNKNOWN"},
+                  {"trip_attachment_id":%d,"place_id":null,"issue":"UNCLEAR_LOCATION","region_origin":"UNKNOWN"}
+                ]}
+                """.formatted(photos.get(0).getId(), photos.get(0).getId(),
+                photos.get(1).getId(), photos.get(2).getId(), photos.get(3).getId()));
+
+        analysisResults.saveCompleted(trip.getId(), user.getUserId(), executions.reserve(trip.getId()),
+                photos, result, Map.of("p1", "성산일출봉"));
+
+        Long savedPlaceId = attachments.findById(photos.get(0).getId()).orElseThrow().getTripPlaceId();
+        assertThat(savedPlaceId).isNotNull();
+        assertThat(places.findById(savedPlaceId).orElseThrow().getTripId()).isEqualTo(trip.getId());
+        TripAttachment unclassified = attachments.findById(photos.get(1).getId()).orElseThrow();
+        assertThat(unclassified.getTripPlaceId()).isEqualTo(savedPlaceId);
+        assertThat(unclassified.getClassificationStatus()).isEqualTo(ClassificationStatus.UNCLASSIFIED);
+        assertThat(unclassified.getIssue()).isEqualTo(AttachmentIssue.BLURRY);
+        assertThat(attachments.findAllById(List.of(photos.get(2).getId(), photos.get(3).getId())))
+                .allSatisfy(photo -> assertThat(photo.getTripPlaceId()).isNull());
+        assertThat(trips.findById(trip.getId()).orElseThrow().getProcessingStatus())
+                .isEqualTo(ProcessingStatus.COMPLETED);
     }
 
     private StoredFile saveMeasuredFile(StoredFile file) {

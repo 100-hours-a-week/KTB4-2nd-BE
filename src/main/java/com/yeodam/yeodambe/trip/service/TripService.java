@@ -18,6 +18,9 @@ import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionName;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
+import com.yeodam.yeodambe.trip.exception.TripCreationMetadataMissingException;
+import com.yeodam.yeodambe.trip.service.response.TripCreationValidationResponse;
 import com.yeodam.yeodambe.trip.service.request.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
@@ -129,8 +132,32 @@ public class TripService {
         return new TripSearchResultResponse(photos, folders);
     }
 
+    public TripCreationValidationResponse validateCreation(List<TripAttachmentMetadataRequest> metadata) {
+        boolean canCreate = !allAttachmentsLackMetadata(metadata);
+        return new TripCreationValidationResponse(canCreate,
+                canCreate ? null : ErrorMessage.ALL_PHOTOS_METADATA_MISSING.name());
+    }
+
+    private boolean allAttachmentsLackMetadata(List<TripAttachmentMetadataRequest> metadata) {
+        return metadata.stream()
+                .allMatch(
+                        photo -> photo.takenAt() == null
+                                && photo.latitude() == null && photo.longitude() == null
+                );
+    }
+
+    private void validateCreationMetadata(List<TripAttachmentMetadataRequest> metadata) {
+        if (allAttachmentsLackMetadata(metadata)) {
+            log.atInfo()
+                    .addKeyValue("errorCode", ErrorMessage.ALL_PHOTOS_METADATA_MISSING)
+                    .log("사진 메타데이터가 없어 여행 생성을 거절했습니다.");
+            throw new TripCreationMetadataMissingException();
+        }
+    }
+
     @Transactional
     public TripCreateResponse createTrip(Long userId, TripCreateRequest request) {
+        validateCreationMetadata(request.attachmentMetadata());
         validateTrip(
                 request.startDate(),
                 request.endDate(),

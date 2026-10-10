@@ -13,6 +13,8 @@ import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import com.yeodam.yeodambe.trip.service.request.TripCreationValidationRequest;
+import com.yeodam.yeodambe.trip.service.response.TripCreationValidationResponse;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
@@ -47,13 +49,24 @@ public class TripController {
     private final TripDeletionService tripDeletionService;
     private final ObjectMapper objectMapper;
 
+    @PostMapping("/trips/creation-validation")
+    public ResponseEntity<ApiResponse<TripCreationValidationResponse>> validateCreation(
+            @Valid @RequestBody TripCreationValidationRequest request
+    ) {
+        TripCreationValidationResponse data = tripService.validateCreation(request.attachmentMetadata());
+        return ResponseEntity.ok(new ApiResponse<>(SuccessMessage.TRIP_CREATION_VALIDATED, data));
+    }
+
     @PostMapping("/trips")
     public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(
             @Valid @RequestBody TripCreateRequest request,
             @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
+                .body(new ApiResponse<>(
+                        SuccessMessage.TRIP_CREATED,
+                        tripService.createTrip(Long.valueOf(jwt.getSubject()), request)
+                        ));
     }
 
     @PatchMapping("/trips/{tripId}")

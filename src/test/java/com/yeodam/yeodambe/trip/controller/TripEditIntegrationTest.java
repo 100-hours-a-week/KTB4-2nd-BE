@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
@@ -27,6 +28,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -177,7 +179,9 @@ class TripEditIntegrationTest {
     private Long create(Long owner) {
         String name = createdTripCount++ == 0 ? "수정 여행" : "수정 여행" + createdTripCount;
         Long id = service.createTrip(owner, new TripCreateRequest(name,
-                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 3), List.of("11000"))).tripId();
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 3), List.of("11000"),
+                List.of(new TripAttachmentMetadataRequest(
+                        OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)))).tripId();
         jdbc.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", id);
         return id;
     }

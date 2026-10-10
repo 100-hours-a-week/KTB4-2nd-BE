@@ -1,10 +1,13 @@
 package com.yeodam.yeodambe.trip.service.request;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+import com.yeodam.yeodambe.trip.util.CursorCodec;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
-import java.util.Base64;
 
 public record TripListCursor(
         TripSort sort,
@@ -19,50 +22,35 @@ public record TripListCursor(
         }
     }
 
-    public String encode() {
-        String value = String.join(
-                "|",
-                sort.name(),
-                Boolean.toString(favorite),
-                Boolean.toString(favoriteGroup),
-                startDate.toString(),
-                Long.toString(tripId)
-        );
-        return Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
-    }
-
-    public static TripListCursor decode(String value) {
+    public String encode(ObjectMapper objectMapper) {
         try {
-            if (value == null || value.isBlank()) {
-                throw new InvalidTripListFilterException();
-            }
-            String decoded = new String(
-                    Base64.getUrlDecoder().decode(value),
-                    StandardCharsets.UTF_8
+            return CursorCodec.encode(this, objectMapper);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException(
+                    TripInternalErrorMessage.TRIP_LIST_CURSOR_ENCODE_FAILED.message(),
+                    exception
             );
-            String[] fields = decoded.split("\\|", -1);
-            if (fields.length != 5) {
-                throw new InvalidTripListFilterException();
-            }
-            return new TripListCursor(
-                    TripSort.valueOf(fields[0]),
-                    parseBoolean(fields[1]),
-                    parseBoolean(fields[2]),
-                    LocalDate.parse(fields[3]),
-                    Long.parseLong(fields[4])
-            );
-        } catch (InvalidTripListFilterException e) {
-            throw e;
-        } catch (RuntimeException e) {
+        }
+    }
+
+    public static TripListCursor decode(String value, ObjectMapper objectMapper) {
+        try {
+            JsonNode node = CursorCodec.decode(value, objectMapper);
+            validateJsonFields(node);
+            return objectMapper.treeToValue(node, TripListCursor.class);
+        } catch (JacksonException | IllegalArgumentException exception) {
             throw new InvalidTripListFilterException();
         }
     }
 
-    private static boolean parseBoolean(String value) {
-        if (!"true".equals(value) && !"false".equals(value)) {
+    private static void validateJsonFields(JsonNode node) {
+        if (!node.path("sort").isString()
+                || !node.path("favorite").isBoolean()
+                || !node.path("favoriteGroup").isBoolean()
+                || !node.path("startDate").isString()
+                || !node.path("tripId").isIntegralNumber()
+                || !node.path("tripId").canConvertToLong()) {
             throw new InvalidTripListFilterException();
         }
-        return Boolean.parseBoolean(value);
     }
 }

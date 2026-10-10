@@ -1,16 +1,22 @@
 package com.yeodam.yeodambe.trip.service.request;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
+import tools.jackson.databind.ObjectMapper;
 
 public record TripListRequest(
         TripListCursor cursor,
         TripSort sort,
         boolean favorite
 ) {
-    public static TripListRequest from(String cursor, String sort, String favorite) {
+    public static TripListRequest from(
+            String cursor,
+            String sort,
+            String favorite,
+            ObjectMapper objectMapper
+    ) {
         TripSort requestedSort = parseSort(sort);
         boolean requestedFavorite = parseFavorite(favorite);
-        TripListCursor decodedCursor = cursor == null ? null : TripListCursor.decode(cursor);
+        TripListCursor decodedCursor = cursor == null ? null : TripListCursor.decode(cursor, objectMapper);
 
         if (decodedCursor != null
                 && (decodedCursor.sort() != requestedSort

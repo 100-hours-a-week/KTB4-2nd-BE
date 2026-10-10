@@ -411,6 +411,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.PLACE_FOLDER_NOT_FOUND, null);
     }
 
+    @ExceptionHandler(InvalidAttachmentIssueException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidAttachmentIssue(
+            InvalidAttachmentIssueException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.INVALID_ATTACHMENT_ISSUE, null);
+    }
+
     @ExceptionHandler(InvalidCursorException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidCursor(

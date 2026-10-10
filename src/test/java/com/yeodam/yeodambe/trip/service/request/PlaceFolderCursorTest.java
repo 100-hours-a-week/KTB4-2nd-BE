@@ -43,6 +43,8 @@ class PlaceFolderCursorTest {
         assertInvalid("   ");
         assertInvalid("not-base64!");
         assertInvalid(encodedJson("{not-json"));
+        assertInvalid(encodedJson("null"));
+        assertInvalid(encodedJson("[]"));
         assertInvalid(encodedJson("{\"placeName\":\"제주\",\"tripPlaceId\":11}"));
         assertInvalid(encodedJson("{\"tripId\":8,\"placeName\":\"제주\",\"tripPlaceId\":11}"));
         assertInvalid(encodedJson("{\"tripId\":7,\"placeName\":\"\",\"tripPlaceId\":11}"));

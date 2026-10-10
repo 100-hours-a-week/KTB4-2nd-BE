@@ -374,4 +374,31 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             @Param("issue") AttachmentIssue issue,
             Pageable pageable
     );
+
+    @Query("""
+            select attachment
+            from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripId = :tripId
+              and attachment.issue = :issue
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.UNCLASSIFIED
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and (
+                  :cursorCreatedAt is null
+                  or attachment.createdAt < :cursorCreatedAt
+                  or (
+                      attachment.createdAt = :cursorCreatedAt
+                      and attachment.id < :cursorId
+                  )
+              )
+            order by attachment.createdAt desc, attachment.id desc
+            """)
+    List<TripAttachment> findUnclassifiedByIssueWithCursor(
+            @Param("tripId") Long tripId,
+            @Param("issue") AttachmentIssue issue,
+            @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable
+    );
 }

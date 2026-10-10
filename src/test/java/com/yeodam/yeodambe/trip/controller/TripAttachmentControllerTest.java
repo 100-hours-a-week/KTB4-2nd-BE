@@ -1,5 +1,11 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
+import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.response.AttachmentRestoreResponse;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
+import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
 import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
 import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
@@ -62,6 +68,8 @@ class TripAttachmentControllerTest {
     private final InitialAttachmentUploadUrlService uploadUrlService = mock(InitialAttachmentUploadUrlService.class);
     private final UnclassifiedFolderListService unclassifiedFolderListService =
             mock(UnclassifiedFolderListService.class);
+    private final TripAttachmentRestoreService restoreService =
+            mock(TripAttachmentRestoreService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
             service,
             listService,
@@ -71,7 +79,8 @@ class TripAttachmentControllerTest {
             bulkDownloadService,
             uploadUrlService,
             mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class),
-            unclassifiedFolderListService
+            unclassifiedFolderListService,
+            restoreService
     );
 
     @Test
@@ -451,7 +460,17 @@ class TripAttachmentControllerTest {
         TripAttachmentDeletionService realDeletionService =
                 new TripAttachmentDeletionService(repository, stats);
         TripAttachmentController realController = new TripAttachmentController(
-                service, listService, detailService, realDeletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class), mock(com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService.class));
+                service,
+                listService,
+                detailService,
+                realDeletionService,
+                downloadService,
+                bulkDownloadService,
+                uploadUrlService,
+                mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class),
+                mock(com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService.class),
+                restoreService
+        );
         String ids = LongStream.rangeClosed(1, 201)
                 .mapToObj(Long::toString).collect(Collectors.joining(","));
 
@@ -469,6 +488,119 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.data").isEmpty());
 
         verifyNoInteractions(repository, stats);
+    }
+
+    @Test
+    void 복구_입력_오류를_구분한다() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        for (String body : List.of("{}", "{\"tripPlaceId\":null}")) {
+            mvc.perform(post("/attachments/11/restore")
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("RESTORE_PLACE_FOLDER_REQUIRED"));
+        }
+        for (String body : List.of("", "{", "{\"tripPlaceId\":0}", "{\"tripPlaceId\":-1}")) {
+            mvc.perform(post("/attachments/11/restore")
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        }
+        mvc.perform(post("/attachments/0/restore")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("RESTORE_PLACE_FOLDER_REQUIRED"));
+        mvc.perform(post("/attachments/-1/restore")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"tripPlaceId\":3}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        mvc.perform(post("/attachments/0/restore")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"tripPlaceId\":3}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void 일괄_복구_입력과_목적지_필수_우선순위를_검증한다() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        for (String body : List.of("", "{", "{}", "{\"items\":[]}", "{\"items\":[null]}",
+                "{\"items\":[{\"tripAttachmentId\":null,\"tripPlaceId\":3}]}",
+                "{\"items\":[{\"tripAttachmentId\":0,\"tripPlaceId\":3}]}")) {
+            mvc.perform(post("/attachments/bulk-restore")
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        }
+        mvc.perform(post("/attachments/bulk-restore")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"tripAttachmentId\":0}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("RESTORE_PLACE_FOLDER_REQUIRED"));
+    }
+
+    @Test
+    void 복구_성공_응답과_일괄_순서를_유지한다() throws Exception {
+        when(restoreService.restoreOne(eq(1L), eq(11L), any()))
+                .thenReturn(new AttachmentRestoreResponse(
+                        11L, 3L, "CLASSIFIED"));
+        when(restoreService.restoreBulk(eq(1L), any()))
+                .thenReturn(new BulkAttachmentRestoreResponse(
+                        List.of(12L, 11L), List.of(3L, 3L)));
+        var mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        mvc.perform(post("/attachments/11/restore")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"tripPlaceId\":3}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("ATTACHMENT_RESTORE_SUCCESS"))
+                .andExpect(jsonPath("$.data.tripAttachmentId").value(11))
+                .andExpect(jsonPath("$.data.tripPlaceId").value(3))
+                .andExpect(jsonPath("$.data.classificationType").value("CLASSIFIED"));
+        mvc.perform(post("/attachments/bulk-restore")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"tripAttachmentId\":12,\"tripPlaceId\":3},{\"tripAttachmentId\":11,\"tripPlaceId\":3}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("BULK_ATTACHMENT_RESTORE_SUCCESS"))
+                .andExpect(jsonPath("$.data.restoredTripAttachmentIds[0]").value(12))
+                .andExpect(jsonPath("$.data.restoredTripAttachmentIds[1]").value(11))
+                .andExpect(jsonPath("$.data.tripPlaceIds[0]").value(3))
+                .andExpect(jsonPath("$.data.tripPlaceIds[1]").value(3));
+        verify(restoreService).restoreOne(1L, 11L,
+                new AttachmentRestoreRequest(3L));
+        verify(restoreService).restoreBulk(1L,
+                new BulkAttachmentRestoreRequest(List.of(
+                        new BulkAttachmentRestoreRequest.Item(12L, 3L),
+                        new BulkAttachmentRestoreRequest.Item(11L, 3L))));
+    }
+
+    @Test
+    void 일괄_복구_201개와_중복을_거부한다() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        String items = LongStream.rangeClosed(1, 201)
+                .mapToObj(id -> "{\"tripAttachmentId\":" + id + ",\"tripPlaceId\":3}")
+                .collect(Collectors.joining(","));
+        mvc.perform(post("/attachments/bulk-restore")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"items\":[" + items + "]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        verifyNoInteractions(restoreService);
+        when(restoreService.restoreBulk(eq(1L), any()))
+                .thenThrow(new InvalidRestoreRequestException());
+        mvc.perform(post("/attachments/bulk-restore")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"tripAttachmentId\":11,\"tripPlaceId\":3},{\"tripAttachmentId\":11,\"tripPlaceId\":3}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.data").isEmpty());
     }
 
     private HandlerMethodArgumentResolver authenticationPrincipalResolver() {

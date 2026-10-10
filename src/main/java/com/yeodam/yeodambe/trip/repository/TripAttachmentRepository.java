@@ -15,6 +15,45 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface TripAttachmentRepository extends JpaRepository<TripAttachment, Long> {
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update TripAttachment attachment
+            set attachment.tripPlaceId = :targetTripPlaceId,
+                attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE,
+                attachment.issue = com.yeodam.yeodambe.trip.entity.AttachmentIssue.NONE,
+                attachment.updatedAt = :updatedAt
+            where attachment.id = :attachmentId
+              and attachment.tripId = :tripId
+              and (attachment.tripPlaceId = :expectedTripPlaceId
+                   or (attachment.tripPlaceId is null and :expectedTripPlaceId is null))
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.UNCLASSIFIED
+              and attachment.issue in (
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.UNCLEAR_LOCATION,
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.BLURRY,
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.DUPLICATED
+              )
+              and attachment.deletedAt is null
+              and exists (
+                  select file.id from StoredFile file
+                  where file.id = attachment.fileId and file.deletedAt is null
+              )
+              and exists (
+                  select trip.id from Trip trip
+                  where trip.id = attachment.tripId
+                    and trip.userId = :userId
+                    and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
+                    and trip.deletedAt is null
+              )
+            """)
+    int restoreIfUnclassified(
+            @Param("attachmentId") Long attachmentId,
+            @Param("tripId") Long tripId,
+            @Param("userId") Long userId,
+            @Param("expectedTripPlaceId") Long expectedTripPlaceId,
+            @Param("targetTripPlaceId") Long targetTripPlaceId,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
     @Query("""
             select attachment.id
             from TripAttachment attachment

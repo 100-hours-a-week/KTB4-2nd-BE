@@ -3,6 +3,12 @@ package com.yeodam.yeodambe.common.exception;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 
+import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
+import org.springframework.validation.Errors;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.method.ParameterErrors;
+
 import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -28,6 +34,54 @@ import org.springframework.web.servlet.HandlerMapping;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(InvalidRestoreRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidRestoreRequest(InvalidRestoreRequestException exception) {
+        return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
+    }
+
+    @ExceptionHandler(RestorePlaceFolderRequiredException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleRestorePlaceFolderRequired(RestorePlaceFolderRequiredException exception) {
+        return new ApiResponse<>(ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED, null);
+    }
+
+    @ExceptionHandler(RestorePlaceMismatchException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleRestorePlaceMismatch(RestorePlaceMismatchException exception) {
+        return new ApiResponse<>(ErrorMessage.RESTORE_PLACE_MISMATCH, null);
+    }
+
+    @ExceptionHandler(AttachmentRestoreNotAllowedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleAttachmentRestoreNotAllowed(AttachmentRestoreNotAllowedException exception) {
+        return new ApiResponse<>(ErrorMessage.ATTACHMENT_RESTORE_NOT_ALLOWED, null);
+    }
+
+    @ExceptionHandler(BulkRestoreFailedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleBulkRestoreFailed(BulkRestoreFailedException exception) {
+        return new ApiResponse<>(ErrorMessage.BULK_RESTORE_FAILED, null);
+    }
+
+    private ErrorMessage validationError(Errors errors) {
+        Object target = null;
+        if (errors instanceof BindingResult bindingResult) {
+            target = bindingResult.getTarget();
+        } else if (errors instanceof ParameterErrors parameterErrors) {
+            target = parameterErrors.getArgument();
+        }
+        boolean singleRequest = target instanceof AttachmentRestoreRequest;
+        boolean bulkRequest = target instanceof BulkAttachmentRestoreRequest;
+        if (errors.getFieldErrors().stream().anyMatch(error ->
+                "NotNull".equals(error.getCode())
+                        && ((singleRequest && "tripPlaceId".equals(error.getField()))
+                        || (bulkRequest && error.getField().matches("items\\[\\d+]\\.tripPlaceId"))))) {
+            return ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED;
+        }
+        return ErrorMessage.INVALID_REQUEST;
+    }
 
     @ExceptionHandler(InvalidSearchQueryException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -114,7 +168,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BindException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleBindException(BindException e) {
-        return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
+        return new ApiResponse<>(validationError(e.getBindingResult()), null);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -318,7 +372,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HandlerMethodValidationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleMethodValidation(HandlerMethodValidationException e) {
-        return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
+        boolean missingDestination = e.getParameterValidationResults().stream()
+                .filter(ParameterErrors.class::isInstance)
+                .map(ParameterErrors.class::cast)
+                .anyMatch(errors -> validationError(errors) == ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED);
+        return new ApiResponse<>(missingDestination
+                ? ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED : ErrorMessage.INVALID_REQUEST, null);
     }
 
     @ExceptionHandler(StoryAlreadyExistsException.class)

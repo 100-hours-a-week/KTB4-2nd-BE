@@ -16,6 +16,14 @@ import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.common.exception.InvalidAttachmentIssueException;
+import com.yeodam.yeodambe.common.exception.InvalidCursorException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -52,9 +60,136 @@ class TripAttachmentControllerTest {
     private final TripAttachmentDownloadService downloadService = mock(TripAttachmentDownloadService.class);
     private final BulkAttachmentDownloadService bulkDownloadService = mock(BulkAttachmentDownloadService.class);
     private final InitialAttachmentUploadUrlService uploadUrlService = mock(InitialAttachmentUploadUrlService.class);
+    private final UnclassifiedFolderListService unclassifiedFolderListService =
+            mock(UnclassifiedFolderListService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
-            service, listService, detailService, deletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class), mock(com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService.class)
+            service,
+            listService,
+            detailService,
+            deletionService,
+            downloadService,
+            bulkDownloadService,
+            uploadUrlService,
+            mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class),
+            unclassifiedFolderListService
     );
+
+    @Test
+    void 소유자의_미분류_사진_목록을_명세대로_반환한다() throws Exception {
+        when(unclassifiedFolderListService.findAttachments(1L, 7L, "BLURRY", "cursor"))
+                .thenReturn(new UnclassifiedAttachmentListResponse(
+                        AttachmentIssue.BLURRY,
+                        "흐릿한 첨부",
+                        1L,
+                        List.of(new UnclassifiedAttachmentListResponse.Item(
+                                502L,
+                                "https://example.test/preview",
+                                AttachmentIssue.BLURRY,
+                                31L
+                        )),
+                        false,
+                        null
+                ));
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(get("/trips/7/unclassified-folders/BLURRY/attachments")
+                        .param("cursor", "cursor"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("UNCLASSIFIED_ATTACHMENT_DETAIL_FOUND"))
+                .andExpect(jsonPath("$.data.issue").value("BLURRY"))
+                .andExpect(jsonPath("$.data.name").value("흐릿한 첨부"))
+                .andExpect(jsonPath("$.data.attachmentCount").value(1))
+                .andExpect(jsonPath("$.data.items[0].tripAttachmentId").value(502))
+                .andExpect(jsonPath("$.data.items[0].thumbnailUrl").value("https://example.test/preview"))
+                .andExpect(jsonPath("$.data.items[0].issue").value("BLURRY"))
+                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(31))
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+
+        verify(unclassifiedFolderListService).findAttachments(1L, 7L, "BLURRY", "cursor");
+    }
+
+    @Test
+    void 미분류_사진의_복구_장소가_null이어도_다음_페이지를_반환한다() throws Exception {
+        when(unclassifiedFolderListService.findAttachments(1L, 7L, "UNCLEAR_LOCATION", null))
+                .thenReturn(new UnclassifiedAttachmentListResponse(
+                        AttachmentIssue.UNCLEAR_LOCATION,
+                        "장소가 명확하지 않은 첨부",
+                        19L,
+                        List.of(new UnclassifiedAttachmentListResponse.Item(
+                                502L,
+                                "https://example.test/preview",
+                                AttachmentIssue.UNCLEAR_LOCATION,
+                                null
+                        )),
+                        true,
+                        "next-cursor"
+                ));
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(get("/trips/7/unclassified-folders/UNCLEAR_LOCATION/attachments"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.hasNext").value(true))
+                .andExpect(jsonPath("$.data.nextCursor").value("next-cursor"));
+    }
+
+    @Test
+    void 빈_미분류_사진_목록은_200으로_반환한다() throws Exception {
+        when(unclassifiedFolderListService.findAttachments(1L, 7L, "DUPLICATED", null))
+                .thenReturn(new UnclassifiedAttachmentListResponse(
+                        AttachmentIssue.DUPLICATED,
+                        "비슷한 첨부",
+                        0L,
+                        List.of(),
+                        false,
+                        null
+                ));
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(get("/trips/7/unclassified-folders/DUPLICATED/attachments"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("UNCLASSIFIED_ATTACHMENT_DETAIL_FOUND"))
+                .andExpect(jsonPath("$.data.attachmentCount").value(0))
+                .andExpect(jsonPath("$.data.items").isEmpty())
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "INVALID_ATTACHMENT_ISSUE, 400",
+            "INVALID_CURSOR, 400",
+            "TRIP_NOT_FOUND, 404",
+            "INTERNAL_SERVER_ERROR, 500"
+    })
+    void 미분류_사진_조회_오류는_고정_메시지와_null_data를_반환한다(
+            String message, int statusCode
+    ) throws Exception {
+        RuntimeException exception = switch (message) {
+            case "INVALID_ATTACHMENT_ISSUE" -> new InvalidAttachmentIssueException();
+            case "INVALID_CURSOR" -> new InvalidCursorException();
+            case "TRIP_NOT_FOUND" -> new TripNotFoundException();
+            default -> new IllegalStateException("preview URL creation failed");
+        };
+        when(unclassifiedFolderListService.findAttachments(1L, 7L, "BLURRY", null))
+                .thenThrow(exception);
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(get("/trips/7/unclassified-folders/BLURRY/attachments"))
+                .andExpect(status().is(statusCode))
+                .andExpect(jsonPath("$.message").value(message))
+                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+    }
 
     @Test
     void 장소_폴더의_첨부_목록을_조회한다() throws Exception {

@@ -69,6 +69,8 @@ class GlobalExceptionHandlerTest {
             "place-folder-not-found, 404, PLACE_FOLDER_NOT_FOUND",
             "attachment-not-found, 404, ATTACHMENT_NOT_FOUND",
             "invalid-cursor, 400, INVALID_CURSOR",
+            "invalid-trip-list-filter, 400, INVALID_TRIP_LIST_FILTER",
+            "invalid-attachment-issue, 400, INVALID_ATTACHMENT_ISSUE",
             "invalid-place-folder-cursor, 400, INVALID_PLACE_FOLDER_CURSOR",
             "invalid-attachment-ids, 400, INVALID_ATTACHMENT_IDS",
             "write-permission-required, 403, WRITE_PERMISSION_REQUIRED",
@@ -282,6 +284,11 @@ class GlobalExceptionHandlerTest {
 
     @RestController
     static class TestController {
+        @GetMapping("/test/invalid-trip-list-filter")
+        void invalidTripListFilter() {
+            throw new InvalidTripListFilterException();
+        }
+
         @GetMapping("/test/story-generation-forbidden")
         void storyGenerationForbidden() {
             throw new com.yeodam.yeodambe.common.exception.StoryGenerationForbiddenException();
@@ -355,6 +362,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/attachment-not-found")
         void attachmentNotFound() {
             throw new AttachmentNotFoundException();
+        }
+
+        @GetMapping("/test/invalid-attachment-issue")
+        void invalidAttachmentIssue() {
+            throw new InvalidAttachmentIssueException();
         }
 
         @GetMapping("/test/invalid-cursor")

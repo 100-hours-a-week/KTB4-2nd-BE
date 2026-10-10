@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.mock;
 
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.RegionOrigin;
 import com.yeodam.yeodambe.trip.entity.Trip;
@@ -109,9 +110,22 @@ public class LocalTripMapMockService {
                 List.of("서울숲", "해운대", "동성로"),
                 false
         ));
+        createIfMissing(userId, new MockTrip(
+                "목업미분류",
+                LocalDate.of(2026, 9, 1),
+                LocalDate.of(2026, 9, 3),
+                List.of("11000"),
+                "seoul.png",
+                List.of("경복궁"),
+                false
+        ), true);
     }
 
     private void createIfMissing(Long userId, MockTrip mockTrip) {
+        createIfMissing(userId, mockTrip, false);
+    }
+
+    private void createIfMissing(Long userId, MockTrip mockTrip, boolean includeUnclassified) {
         if (tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNull(
                 userId,
                 mockTrip.tripName()
@@ -142,7 +156,12 @@ public class LocalTripMapMockService {
                 .toList();
 
         tripRegionRepository.saveAll(regions);
-        createPlaceFolders(userId, trip, regions, assetKey, mockTrip.placeNames());
+        List<TripDetailPlace> places =
+                createPlaceFolders(userId, trip, regions, assetKey, mockTrip.placeNames());
+
+        if (includeUnclassified) {
+            createUnclassifiedAttachments(userId, trip, assetKey, places.getFirst().getId());
+        }
 
         tripRepository.finishInitialUpload(
                 trip.getId(),
@@ -152,7 +171,7 @@ public class LocalTripMapMockService {
         );
     }
 
-    private void createPlaceFolders(
+    private List<TripDetailPlace> createPlaceFolders(
             Long userId,
             Trip trip,
             List<TripRegion> regions,
@@ -160,6 +179,7 @@ public class LocalTripMapMockService {
             List<String> placeNames
     ) {
         List<TripAttachment> attachments = new ArrayList<>();
+        List<TripDetailPlace> places = new ArrayList<>();
         TripRegion region = regions.getFirst();
 
         for (int index = 1; index <= placeNames.size(); index++) {
@@ -195,6 +215,57 @@ public class LocalTripMapMockService {
                     100
             );
             attachments.add(attachment);
+            places.add(place);
+        }
+
+        tripAttachmentRepository.saveAll(attachments);
+        return places;
+    }
+
+    private void createUnclassifiedAttachments(
+            Long userId,
+            Trip trip,
+            String assetKey,
+            Long restoreTripPlaceId
+    ) {
+        List<TripAttachment> attachments = new ArrayList<>();
+
+        for (AttachmentIssue issue : List.of(
+                AttachmentIssue.UNCLEAR_LOCATION,
+                AttachmentIssue.BLURRY,
+                AttachmentIssue.DUPLICATED
+        )) {
+            int count = switch (issue) {
+                case UNCLEAR_LOCATION -> 19;
+                case BLURRY -> 3;
+                case DUPLICATED -> 2;
+                case NONE -> throw new IllegalArgumentException();
+            };
+
+            for (int index = 1; index <= count; index++) {
+                StoredFile file = storedFileRepository.save(StoredFile.uploaded(
+                        userId,
+                        "unclassified-mock-" + trip.getId() + "-" + issue + "-" + index + ".png",
+                        assetKey,
+                        "image/png"
+                ));
+                TripAttachment attachment = TripAttachment.initial(
+                        trip.getId(),
+                        file.getId(),
+                        assetKey,
+                        assetKey
+                );
+                attachment.unclassify(
+                        issue == AttachmentIssue.UNCLEAR_LOCATION ? null : restoreTripPlaceId,
+                        issue,
+                        RegionOrigin.UNKNOWN,
+                        trip.getStartDate().atTime(10, 0).plusMinutes(index),
+                        null,
+                        null,
+                        30
+                );
+                attachments.add(attachment);
+            }
         }
 
         tripAttachmentRepository.saveAll(attachments);

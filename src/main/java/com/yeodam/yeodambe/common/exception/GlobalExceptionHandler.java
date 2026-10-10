@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.common.exception;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.trip.exception.TripCreationMetadataMissingException;
 
 import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
@@ -97,6 +98,12 @@ public class GlobalExceptionHandler {
             return new ApiResponse<>(ErrorMessage.INVALID_TRIP_REQUEST, null);
         }
         return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
+    }
+
+    @ExceptionHandler(TripCreationMetadataMissingException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleTripCreationMetadataMissing(TripCreationMetadataMissingException e) {
+        return new ApiResponse<>(ErrorMessage.ALL_PHOTOS_METADATA_MISSING, null);
     }
 
     @ExceptionHandler(InvalidTripRequestException.class)

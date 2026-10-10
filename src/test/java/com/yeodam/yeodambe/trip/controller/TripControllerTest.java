@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
 import com.yeodam.yeodambe.trip.controller.TripController;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripService;
@@ -21,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,7 +43,9 @@ class TripControllerTest {
             tripService, processingStatusService, cancellationService, placeFolderListService,
             deletionService, objectMapper);
     private final TripCreateRequest request = new TripCreateRequest(
-            "여행", LocalDate.now(), LocalDate.now(), List.of("50110"));
+            "여행", LocalDate.now(), LocalDate.now(), List.of("50110"),
+            List.of(new TripAttachmentMetadataRequest(
+                    OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)));
 
     @Test
     void 인증된_사용자의_여행을_생성하면_처리중으로_응답한다() {

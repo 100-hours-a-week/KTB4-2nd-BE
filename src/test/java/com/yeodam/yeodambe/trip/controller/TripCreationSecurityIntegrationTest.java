@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.controller;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.exception.TripCreationMetadataMissingException;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
@@ -18,6 +19,7 @@ import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripCreationValidationResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
@@ -35,6 +37,8 @@ import com.yeodam.yeodambe.user.security.jwt.JwtConfig;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -45,11 +49,13 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -147,7 +153,10 @@ class TripCreationSecurityIntegrationTest {
                                   "tripName": "제주 여행",
                                   "startDate": "2026-09-01",
                                   "endDate": "2026-09-02",
-                                  "regionCodes": ["50110"]
+                                  "regionCodes": ["50110"],
+                                  "attachmentMetadata": [
+                                    {"takenAt": "2026-10-11T10:30:00+09:00", "latitude": null, "longitude": null}
+                                  ]
                                 }
                                 """))
                 .andExpect(status().isCreated())
@@ -615,13 +624,131 @@ class TripCreationSecurityIntegrationTest {
         then(tripService).should(never()).removeFavorite(any(), any());
     }
 
+    @Test
+    void 사전검사에서_정보가_없는_사진도_정상_판정으로_반환한다() throws Exception {
+        given(tripService.validateCreation(any())).willReturn(
+                new TripCreationValidationResponse(false, "ALL_PHOTOS_METADATA_MISSING"));
+
+        authenticatedMetadataRequest("/trips/creation-validation", metadataBody(null))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_CREATION_VALIDATED"))
+                .andExpect(jsonPath("$.data.canCreate").value(false))
+                .andExpect(jsonPath("$.data.reasonCode").value("ALL_PHOTOS_METADATA_MISSING"));
+    }
+
+    @Test
+    void 사전검사_통과시_사유키를_null로_반환한다() throws Exception {
+        given(tripService.validateCreation(any())).willReturn(
+                new TripCreationValidationResponse(true, null));
+
+        var result = authenticatedMetadataRequest("/trips/creation-validation",
+                metadataBody("2026-10-11T10:30:00+09:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.canCreate").value(true))
+                .andReturn();
+        var data = objectMapper.readTree(result.getResponse().getContentAsString()).get("data");
+        assertThat(data.has("reasonCode")).isTrue();
+        assertThat(data.get("reasonCode").isNull()).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "", "{", "{}", "{\"attachmentMetadata\":null}",
+            "{\"attachmentMetadata\":[]}", "{\"attachmentMetadata\":[null]}",
+            "{\"attachmentMetadata\":[{}]}",
+            "{\"attachmentMetadata\":[{\"takenAt\":null,\"latitude\":\"0\",\"longitude\":0}]}",
+            "{\"attachmentMetadata\":[{\"takenAt\":null,\"latitude\":90.000000000000001,\"longitude\":0}]}",
+            "{\"attachmentMetadata\":[{\"takenAt\":\"2026-10-11T10:30:00\",\"latitude\":null,\"longitude\":null}]}",
+            "{\"attachmentMetadata\":[{\"takenAt\":\"2026-10-11T10:30:00Z\",\"latitude\":null,\"longitude\":null},{\"takenAt\":null,\"latitude\":91,\"longitude\":0}]}",
+            "{\"attachmentMetadata\":[{\"takenAt\":\"2026-10-11T10:30:00Z\",\"latitude\":null,\"longitude\":null},{\"takenAt\":null,\"latitude\":1,\"longitude\":null}]}"
+    })
+    void 두_API의_입력오류는_판정_전에_400으로_거절한다(String body) throws Exception {
+        authenticatedMetadataRequest("/trips/creation-validation", body)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        String creationBody = body.startsWith("{")
+                ? "{\"tripName\":\"여행\",\"startDate\":\"2026-10-01\","
+                    + "\"endDate\":\"2026-10-02\",\"regionCodes\":[\"50110\"]," + body.substring(1)
+                : body;
+        authenticatedMetadataRequest("/trips", creationBody)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        then(tripService).should(never()).validateCreation(any());
+        then(tripService).should(never()).createTrip(any(), any());
+    }
+
+    @Test
+    void 사전검사에도_쿠키인증과_CSRF를_요구한다() throws Exception {
+        given(csrfTokenStore.find("metadata-browser")).willReturn("csrf-token");
+        for (String token : new String[]{"", "invalid-jwt"}) {
+            mockMvc.perform(post("/trips/creation-validation")
+                            .cookie(new Cookie("accessToken", token),
+                                    new Cookie("CSRF_CONTEXT", "metadata-browser"))
+                            .header("X-CSRF-TOKEN", "csrf-token")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(metadataBody(null)))
+                    .andExpect(status().isUnauthorized());
+        }
+        for (String csrf : new String[]{"", "wrong-token"}) {
+            mockMvc.perform(post("/trips/creation-validation")
+                            .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")),
+                                    new Cookie("CSRF_CONTEXT", "metadata-browser"))
+                            .header("X-CSRF-TOKEN", csrf)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(metadataBody(null)))
+                    .andExpect(status().isForbidden());
+        }
+        then(tripService).should(never()).validateCreation(any());
+    }
+
+    @Test
+    void 실제_생성은_메타데이터_배열_누락을_거절한다() throws Exception {
+        authenticatedMetadataRequest("/trips", """
+                {"tripName":"여행","startDate":"2026-10-01","endDate":"2026-10-02",
+                 "regionCodes":["50110"]}
+                """)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        then(tripService).should(never()).createTrip(any(), any());
+    }
+
+    @Test
+    void 직접_생성에서_정보없음_예외를_400으로_매핑한다() throws Exception {
+        given(tripService.createTrip(any(), any())).willThrow(new TripCreationMetadataMissingException());
+
+        authenticatedMetadataRequest("/trips", validRequest())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("ALL_PHOTOS_METADATA_MISSING"));
+    }
+
+    private ResultActions authenticatedMetadataRequest(
+            String path, String body
+    ) throws Exception {
+        given(csrfTokenStore.find("metadata-browser")).willReturn("csrf-token");
+        return mockMvc.perform(post(path)
+                .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")),
+                        new Cookie("CSRF_CONTEXT", "metadata-browser"))
+                .header("X-CSRF-TOKEN", "csrf-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
+    }
+
+    private String metadataBody(String timestamp) {
+        String takenAt = timestamp == null ? "null" : "\"" + timestamp + "\"";
+        return "{\"attachmentMetadata\":[{\"takenAt\":" + takenAt
+                + ",\"latitude\":null,\"longitude\":null}]}";
+    }
+
     private String validRequest() {
         return """
                 {
                   "tripName": "제주 여행",
                   "startDate": "2026-09-01",
                   "endDate": "2026-09-02",
-                  "regionCodes": ["50110"]
+                  "regionCodes": ["50110"],
+                  "attachmentMetadata": [
+                    {"takenAt": "2026-10-11T10:30:00+09:00", "latitude": null, "longitude": null}
+                  ]
                 }
                 """;
     }

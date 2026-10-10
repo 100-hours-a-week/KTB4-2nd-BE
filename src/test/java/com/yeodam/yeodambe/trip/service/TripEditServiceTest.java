@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripUpdateNotAllowedException;
@@ -35,7 +36,7 @@ class TripEditServiceTest {
     private final TripAccessService access = mock(TripAccessService.class);
     private final ObjectMapper mapper = new ObjectMapper();
     private final TripService service = new TripService(
-            trips, regions, mock(RegionCatalog.class), attachments, storage, access, mapper);
+            trips, regions, mock(RegionCatalog.class), attachments, storage, access, mapper, mock(StoryRepository.class));
     private final LocalDateTime createdAt = LocalDateTime.of(2026, 10, 1, 12, 0);
     private Trip trip;
 

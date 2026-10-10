@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.story.repository.StoryRepository;
+import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
@@ -7,6 +9,8 @@ import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,6 +30,7 @@ class TripDetailServiceTest {
     private TripAccessService tripAccessService;
     private TripRegionRepository tripRegionRepository;
     private TripAttachmentRepository tripAttachmentRepository;
+    private StoryRepository storyRepository;
     private TripService tripService;
 
     @BeforeEach
@@ -32,6 +38,7 @@ class TripDetailServiceTest {
         tripAccessService = mock(TripAccessService.class);
         tripRegionRepository = mock(TripRegionRepository.class);
         tripAttachmentRepository = mock(TripAttachmentRepository.class);
+        storyRepository = mock(StoryRepository.class);
         tripService = new TripService(
                 mock(TripRepository.class),
                 tripRegionRepository,
@@ -39,7 +46,8 @@ class TripDetailServiceTest {
                 tripAttachmentRepository,
                 mock(TripAttachmentStorageClient.class),
                 tripAccessService,
-                new tools.jackson.databind.ObjectMapper()
+                new tools.jackson.databind.ObjectMapper(),
+                storyRepository
         );
     }
 
@@ -52,6 +60,11 @@ class TripDetailServiceTest {
         when(tripRegionRepository.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L))
                 .thenReturn(List.of(first, second));
         when(tripAttachmentRepository.countActiveByTripId(7L)).thenReturn(3L);
+        when(tripAttachmentRepository.countUnclassifiedByIssue(7L)).thenReturn(List.of(
+                new UnclassifiedFolderAttachmentCount(AttachmentIssue.UNCLEAR_LOCATION, 1L),
+                new UnclassifiedFolderAttachmentCount(AttachmentIssue.BLURRY, 2L),
+                new UnclassifiedFolderAttachmentCount(AttachmentIssue.DUPLICATED, 3L)
+        ));
 
         var response = tripService.findTripDetail(7L, 1L);
 
@@ -67,6 +80,7 @@ class TripDetailServiceTest {
         assertThat(response.regions()).extracting(region -> region.regionName())
                 .containsExactly("제주특별자치도 제주시", "제주특별자치도 서귀포시");
         assertThat(response.attachmentCount()).isEqualTo(3L);
+        assertThat(response.unclassifiedAttachmentCount()).isEqualTo(6L);
         assertThat(response.hasStory()).isFalse();
         assertThat(response.isFavorite()).isTrue();
     }
@@ -79,7 +93,7 @@ class TripDetailServiceTest {
 
         assertThrows(TripDetailNotAvailableException.class,
                 () -> tripService.findTripDetail(7L, 1L));
-        verifyNoInteractions(tripRegionRepository, tripAttachmentRepository);
+        verifyNoInteractions(tripRegionRepository, tripAttachmentRepository, storyRepository);
     }
 
     @Test
@@ -90,7 +104,46 @@ class TripDetailServiceTest {
 
         assertThrows(TripNotFoundException.class,
                 () -> tripService.findTripDetail(7L, 1L));
-        verifyNoInteractions(tripRegionRepository, tripAttachmentRepository);
+        verifyNoInteractions(tripRegionRepository, tripAttachmentRepository, storyRepository);
+    }
+
+    @Test
+    void 미분류_사진과_현재_스토리가_없으면_0과_false를_반환한다() {
+        Trip trip = trip(ProcessingStatus.COMPLETED);
+        when(tripAccessService.requireReadableTrip(7L, 1L)).thenReturn(trip);
+        when(tripAttachmentRepository.countUnclassifiedByIssue(7L)).thenReturn(List.of());
+        when(storyRepository.findCurrentCompletedByTripId(7L)).thenReturn(Optional.empty());
+
+        var response = tripService.findTripDetail(7L, 1L);
+
+        assertThat(response.unclassifiedAttachmentCount()).isZero();
+        assertThat(response.hasStory()).isFalse();
+        verify(storyRepository).findCurrentCompletedByTripId(7L);
+    }
+
+    @Test
+    void 현재_완료_스토리가_있으면_hasStory는_true다() {
+        Trip trip = trip(ProcessingStatus.COMPLETED);
+        when(tripAccessService.requireReadableTrip(7L, 1L)).thenReturn(trip);
+        Story story = mock(Story.class);
+        when(storyRepository.findCurrentCompletedByTripId(7L))
+                .thenReturn(Optional.of(story));
+
+        var response = tripService.findTripDetail(7L, 1L);
+
+        assertThat(response.hasStory()).isTrue();
+        verify(storyRepository).findCurrentCompletedByTripId(7L);
+    }
+
+    @Test
+    void 접근할_수_없는_여행은_상세_집계를_실행하지_않는다() {
+        when(tripAccessService.requireReadableTrip(7L, 1L))
+                .thenThrow(new TripNotFoundException());
+
+        assertThrows(TripNotFoundException.class,
+                () -> tripService.findTripDetail(7L, 1L));
+
+        verifyNoInteractions(tripRegionRepository, tripAttachmentRepository, storyRepository);
     }
 
     private Trip trip(ProcessingStatus status) {

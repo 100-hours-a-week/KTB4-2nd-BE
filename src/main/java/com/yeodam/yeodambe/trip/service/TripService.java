@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.story.repository.StoryRepository;
+import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
 import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
@@ -41,6 +43,7 @@ import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import tools.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
+
 import java.util.Collection;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -68,6 +71,7 @@ public class TripService {
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
     private final TripAccessService tripAccessService;
     private final ObjectMapper objectMapper;
+    private final StoryRepository storyRepository;
 
     @Transactional(readOnly = true)
     public List<Long> findSearchCandidateIds(Long userId, TripSearchCondition condition) {
@@ -336,6 +340,11 @@ public class TripService {
                     .toList();
 
             long attachmentCount = tripAttachmentRepository.countActiveByTripId(tripId);
+            long unclassifiedAttachmentCount = tripAttachmentRepository
+                    .countUnclassifiedByIssue(tripId).stream()
+                    .mapToLong(UnclassifiedFolderAttachmentCount::attachmentCount)
+                    .sum();
+            boolean hasStory = storyRepository.findCurrentCompletedByTripId(tripId).isPresent();
 
             TripDetailResponse response = new TripDetailResponse(
                     trip.getId(),
@@ -345,7 +354,8 @@ public class TripService {
                     ChronoUnit.DAYS.between(trip.getStartDate(), trip.getEndDate()),
                     regions,
                     attachmentCount,
-                    false,
+                    unclassifiedAttachmentCount,
+                    hasStory,
                     trip.getFavorite()
             );
 

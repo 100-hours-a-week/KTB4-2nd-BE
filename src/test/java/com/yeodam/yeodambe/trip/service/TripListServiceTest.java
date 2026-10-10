@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
@@ -44,7 +45,8 @@ class TripListServiceTest {
                 tripAttachmentRepository,
                 storageClient,
                 mock(TripAccessService.class),
-                new tools.jackson.databind.ObjectMapper()
+                new tools.jackson.databind.ObjectMapper(),
+                mock(StoryRepository.class)
         );
     }
 

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
@@ -25,7 +26,7 @@ class TripUpdateServiceTest {
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final TripService service = new TripService(
             trips, regions, catalog, attachments, storage, mock(TripAccessService.class),
-            new tools.jackson.databind.ObjectMapper());
+            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class));
     private Trip trip;
     private TripRegion seoul;
     private final LocalDate start = LocalDate.of(2026, 9, 1);

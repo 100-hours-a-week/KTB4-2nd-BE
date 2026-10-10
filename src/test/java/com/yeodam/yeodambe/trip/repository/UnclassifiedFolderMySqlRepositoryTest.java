@@ -100,7 +100,7 @@ class UnclassifiedFolderMySqlRepositoryTest {
         String key = UUID.randomUUID().toString();
         StoredFile file = files.save(StoredFile.uploaded(owner.getUserId(), "photo.jpg", "original/" + key, "image/jpeg"));
         TripAttachment photo = TripAttachment.initial(trip.getId(), file.getId(), "analyze/" + key, "preview/" + key);
-        photo.unclassify(issue, RegionOrigin.UNKNOWN, null, null, null, null);
+        photo.unclassify(null, issue, RegionOrigin.UNKNOWN, null, null, null, null);
         return attachments.save(photo);
     }
 }

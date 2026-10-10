@@ -20,7 +20,13 @@ import static org.assertj.core.api.Assertions.assertThat;
         "ai.server.instance-id=i-test",
         "place.provider.base-url=http://localhost:9999/regions",
         "place.provider.service-key=test",
-        "place.provider.timeout=1s"
+        "place.provider.timeout=1s",
+        "app.kafka.topics.trip-create-request=test.yeodam.trip-create.request",
+        "app.kafka.topics.trip-create-result=test.yeodam.trip-create.result",
+        "app.kafka.topics.trip-update-request=test.yeodam.trip-update.request",
+        "app.kafka.topics.trip-update-result=test.yeodam.trip-update.result",
+        "app.kafka.topics.story-create-request=test.yeodam.story-create.request",
+        "app.kafka.topics.story-create-result=test.yeodam.story-create.result"
 })
 @ActiveProfiles("local")
 class LocalUserPersistenceTest {

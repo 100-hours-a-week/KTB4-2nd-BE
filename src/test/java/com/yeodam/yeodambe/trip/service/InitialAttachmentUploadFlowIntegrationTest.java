@@ -258,6 +258,56 @@ class InitialAttachmentUploadFlowIntegrationTest {
         assertThat(complete(batch).orElseThrow().status()).isEqualTo(TripProcessingStatusResponse.Status.COMPLETED);
     }
 
+    @Test
+    void 직접_업로드_완료에서도_미분류_장소_PK와_null을_저장한다() {
+        var batch = urls.prepareBatch(trip.getId(), owner.getUserId(),
+                new InitialAttachmentUploadUrlRequest(1, 4, true,
+                        java.util.stream.IntStream.range(0, 4)
+                                .mapToObj(index -> new InitialAttachmentUploadUrlRequest.Attachment(
+                                        "photo-" + index + ".jpg", "image/jpeg", 12L))
+                                .toList()));
+        doAnswer(call -> {
+            assertThat(((BooleanSupplier) call.getArgument(3)).getAsBoolean()).isTrue();
+            TripPhotoAnalysisRequest request = call.getArgument(2);
+            List<TripPhotoAnalysisRequest.Photo> photos = request.attachments();
+            return json.readTree("""
+                    {"places":[{"place_id":"p1","latitude":33.45,"longitude":126.94,
+                    "first_taken_at":null,"last_taken_at":null,"representative_attachment_id":%d,
+                    "attachments":[{"trip_attachment_id":%d,"taken_at":null,"latitude":33.45,
+                    "longitude":126.94,"region_origin":"EXIF","evaluation":91}]}],
+                    "unclassified":[
+                      {"trip_attachment_id":%d,"place_id":"p1","issue":"BLURRY","region_origin":"UNKNOWN"},
+                      {"trip_attachment_id":%d,"issue":"BLURRY","region_origin":"UNKNOWN"},
+                      {"trip_attachment_id":%d,"place_id":null,"issue":"UNCLEAR_LOCATION","region_origin":"UNKNOWN"}
+                    ]}
+                    """.formatted(photos.get(0).tripAttachmentId(), photos.get(0).tripAttachmentId(),
+                    photos.get(1).tripAttachmentId(), photos.get(2).tripAttachmentId(), photos.get(3).tripAttachmentId()));
+        }).when(analysis).analyze(anyLong(), anyString(), any(), any());
+        doReturn(Map.of("p1", "성산일출봉")).when(names).resolve(anyLong(), anyString(), any(), any());
+
+        assertThat(complete(batch).orElseThrow().status())
+                .isEqualTo(TripProcessingStatusResponse.Status.COMPLETED);
+
+        List<InitialAttachmentUploadItem> ordered = items.findExecutionItems(batch.getExecutionId());
+        Long savedPlaceId = jdbc.queryForObject(
+                "SELECT trip_place_id FROM trip_attachments WHERE trip_attachment_id = ?",
+                Long.class, ordered.get(0).getTripAttachmentId());
+        assertThat(savedPlaceId).isNotNull();
+        assertThat(jdbc.queryForObject(
+                "SELECT trip_place_id FROM trip_attachments WHERE trip_attachment_id = ?",
+                Long.class, ordered.get(1).getTripAttachmentId())).isEqualTo(savedPlaceId);
+        assertThat(jdbc.queryForObject(
+                "SELECT classification_status FROM trip_attachments WHERE trip_attachment_id = ?",
+                String.class, ordered.get(1).getTripAttachmentId())).isEqualTo("UNCLASSIFIED");
+        assertThat(jdbc.queryForObject(
+                "SELECT trip_place_id FROM trip_attachments WHERE trip_attachment_id = ?",
+                Long.class, ordered.get(2).getTripAttachmentId())).isNull();
+        assertThat(jdbc.queryForObject(
+                "SELECT trip_place_id FROM trip_attachments WHERE trip_attachment_id = ?",
+                Long.class, ordered.get(3).getTripAttachmentId())).isNull();
+        assertThat(latestStatus()).isEqualTo("COMPLETED");
+    }
+
     private InitialAttachmentUploadBatch prepare(int number, int count, boolean last) {
         return urls.prepareBatch(trip.getId(), owner.getUserId(), new InitialAttachmentUploadUrlRequest(number, count, last,
                 List.of(new InitialAttachmentUploadUrlRequest.Attachment("photo.jpg", "image/jpeg", 12L))));

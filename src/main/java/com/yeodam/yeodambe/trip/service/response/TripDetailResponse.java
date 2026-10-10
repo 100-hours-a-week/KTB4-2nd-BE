@@ -11,6 +11,7 @@ public record TripDetailResponse(
         long nightCount,
         List<Region> regions,
         long attachmentCount,
+        long unclassifiedAttachmentCount,
         boolean hasStory,
         boolean isFavorite
 ) {

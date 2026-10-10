@@ -7,6 +7,7 @@ public enum TripInternalErrorMessage {
     UNSUPPORTED_DERIVATIVE_FILE_FORMAT("지원하지 않는 파생 파일 형식입니다."),
     CURRENT_EXECUTION_AI_RESULT_MISMATCH("현재 실행과 AI 결과가 일치하지 않습니다."),
     AI_RESULT_FORMAT_INVALID("AI 결과 형식이 올바르지 않습니다."),
+    AI_UNCLASSIFIED_PLACE_REFERENCE_INVALID("미분류 사진의 장소 참조가 올바르지 않습니다."),
     AI_PLACE_RESULT_INVALID("AI 장소 결과가 올바르지 않습니다."),
     AI_RESULT_DUPLICATE_ATTACHMENT("AI 결과에 중복된 사진이 있습니다."),
     AI_RESULT_ATTACHMENT_LIST_MISMATCH("AI 결과의 사진 목록이 다릅니다."),

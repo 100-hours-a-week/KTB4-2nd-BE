@@ -1,6 +1,26 @@
 spring:
   application:
     name: yeodam-be
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    security:
+      protocol: PLAINTEXT
+    admin:
+      auto-create: false
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        "[enable.idempotence]": true
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: false
+      properties:
+        "[allow.auto.create.topics]": false
+    listener:
+      ack-mode: record
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -19,7 +39,7 @@ spring:
   profiles:
     default: local
   config:
-    import: optional:file:.env[.properties]
+    import: optional:file:${DOTENV_PATH:.env}[.properties]
 
 server:
   servlet:
@@ -60,6 +80,14 @@ auth:
 
 app:
   public-api-prefix: /api
+  kafka:
+    topics:
+      trip-create-request: ${KAFKA_TRIP_CREATE_REQUEST_TOPIC:}
+      trip-create-result: ${KAFKA_TRIP_CREATE_RESULT_TOPIC:}
+      trip-update-request: ${KAFKA_TRIP_UPDATE_REQUEST_TOPIC:}
+      trip-update-result: ${KAFKA_TRIP_UPDATE_RESULT_TOPIC:}
+      story-create-request: ${KAFKA_STORY_CREATE_REQUEST_TOPIC:}
+      story-create-result: ${KAFKA_STORY_CREATE_RESULT_TOPIC:}
 
 aws:
   region: ${AWS_REGION:ap-northeast-2}
@@ -263,3 +291,11 @@ auth:
 app:
   cors:
     allowed-origin: https://app.yeodam.test
+  kafka:
+    topics:
+      trip-create-request: test.yeodam.trip-create.request
+      trip-create-result: test.yeodam.trip-create.result
+      trip-update-request: test.yeodam.trip-update.request
+      trip-update-result: test.yeodam.trip-update.result
+      story-create-request: test.yeodam.story-create.request
+      story-create-result: test.yeodam.story-create.result

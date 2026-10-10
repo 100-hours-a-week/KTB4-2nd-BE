@@ -321,10 +321,22 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
     }
 
+    @ExceptionHandler(StoryAlreadyExistsException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleStoryAlreadyExists(StoryAlreadyExistsException e) {
+        return new ApiResponse<>(ErrorMessage.STORY_ALREADY_EXISTS, null);
+    }
+
     @ExceptionHandler(InvalidStoryRequestException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleInvalidStoryRequest(InvalidStoryRequestException e) {
         return new ApiResponse<>(ErrorMessage.INVALID_STORY_REQUEST, null);
+    }
+
+    @ExceptionHandler(StoryGenerationInProgressException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleStoryGenerationInProgress(StoryGenerationInProgressException e) {
+        return new ApiResponse<>(ErrorMessage.STORY_GENERATION_IN_PROGRESS, null);
     }
 
     @ExceptionHandler(StoryGenerationForbiddenException.class)

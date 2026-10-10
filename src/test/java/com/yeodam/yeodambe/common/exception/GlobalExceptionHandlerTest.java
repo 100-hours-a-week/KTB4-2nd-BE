@@ -57,6 +57,8 @@ class GlobalExceptionHandlerTest {
 
     @ParameterizedTest
     @CsvSource({
+            "story-already-exists, 409, STORY_ALREADY_EXISTS",
+            "story-generation-in-progress, 409, STORY_GENERATION_IN_PROGRESS",
             "invalid-story-request, 400, INVALID_STORY_REQUEST",
             "story-generation-forbidden, 403, STORY_GENERATION_FORBIDDEN",
             "invalid-attachment, 400, INVALID_ATTACHMENT_UPLOAD",
@@ -284,6 +286,16 @@ class GlobalExceptionHandlerTest {
 
     @RestController
     static class TestController {
+        @GetMapping("/test/story-generation-in-progress")
+        void storyGenerationInProgress() {
+            throw new StoryGenerationInProgressException();
+        }
+
+        @GetMapping("/test/story-already-exists")
+        void storyAlreadyExists() {
+            throw new StoryAlreadyExistsException();
+        }
+
         @GetMapping("/test/invalid-trip-list-filter")
         void invalidTripListFilter() {
             throw new InvalidTripListFilterException();

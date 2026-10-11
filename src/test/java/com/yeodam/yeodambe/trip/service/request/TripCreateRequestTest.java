@@ -8,6 +8,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,10 +24,10 @@ class TripCreateRequestTest {
 
     @Test
     void 필수_필드가_없으면_거부한다() {
-        var violations = validator.validate(new TripCreateRequest(null, null, null, null));
+        var violations = validator.validate(new TripCreateRequest(null, null, null, null, null));
 
         assertThat(violations).extracting(v -> v.getPropertyPath().toString())
-                .contains("tripName", "startDate", "endDate", "regionCodes");
+                .contains("tripName", "startDate", "endDate", "regionCodes", "attachmentMetadata");
     }
 
     @Test
@@ -51,6 +52,8 @@ class TripCreateRequestTest {
     }
 
     private TripCreateRequest request(String name, List<String> codes) {
-        return new TripCreateRequest(name, LocalDate.now(), LocalDate.now(), codes);
+        return new TripCreateRequest(name, LocalDate.now(), LocalDate.now(), codes,
+                List.of(new TripAttachmentMetadataRequest(
+                        OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)));
     }
 }

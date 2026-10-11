@@ -13,6 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class TripAccessService {
     private final TripRepository tripRepository;
 
+    public Trip requireWritableTrip(Long tripId, Long userId) {
+        return tripRepository.findByIdAndUserIdAndDeletedAtIsNull(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
+    }
+
     public Trip requireReadableTrip(Long tripId, Long userId) {
         return tripRepository.findByIdAndUserIdAndDeletedAtIsNull(tripId, userId)
                 .orElseThrow(TripNotFoundException::new);

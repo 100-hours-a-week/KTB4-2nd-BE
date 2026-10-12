@@ -14,6 +14,19 @@ class StoryGenerationMessageTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
+    void readsStoredPayloadPreservingReferencesAndCaptureInstant() {
+        var original = message(Story.Mood.EMOTIONAL, 74);
+        String payload = objectMapper.writeValueAsString(original);
+
+        var restored = objectMapper.readValue(payload, StoryGenerationMessage.class);
+
+        assertThat(restored).usingRecursiveComparison()
+                .withComparatorForType(java.util.Comparator.comparing(OffsetDateTime::toInstant),
+                        OffsetDateTime.class)
+                .isEqualTo(original);
+    }
+
+    @Test
     void serializesStoryContractWithSnakeCaseAndKstOffset() {
         var message = message(Story.Mood.EMOTIONAL, 74);
 

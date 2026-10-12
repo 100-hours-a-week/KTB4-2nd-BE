@@ -60,11 +60,12 @@ class StoryValidatorTest {
     }
 
     @Test
-    void 전체_블록은_삭제필터_전_최대_10개다() {
+    void 전체_블록은_삭제필터_전_최대_30개다() {
         validator.validateBlockCount(List.of());
-        validator.validateBlockCount(Collections.nCopies(10, row(1, 7, "날", null)));
-        assertThatThrownBy(() -> validator.validateBlockCount(Collections.nCopies(11, row(1, 7, "날", null))))
-                .isInstanceOf(StoryDataIntegrityException.class);
+        validator.validateBlockCount(Collections.nCopies(30, row(1, 7, "날", null)));
+        assertThatThrownBy(() -> validator.validateBlockCount(Collections.nCopies(31, row(1, 7, "날", null))))
+                .isInstanceOf(StoryDataIntegrityException.class)
+                .hasMessage("블록 개수: 최대 30개를 초과했습니다.");
     }
 
     @Test

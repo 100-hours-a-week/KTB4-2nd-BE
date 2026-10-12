@@ -6,7 +6,6 @@ import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
@@ -56,7 +55,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -90,9 +88,6 @@ class TripAttachmentSecurityIntegrationTest {
 
     @Autowired
     private JwtProperties jwtProperties;
-
-    @MockitoBean
-    private TripAttachmentService tripAttachmentService;
 
     @MockitoBean
     private TripAttachmentListService tripAttachmentListService;
@@ -361,15 +356,12 @@ class TripAttachmentSecurityIntegrationTest {
     void 유효한_쿠키_Jwt와_CSRF로_첨부_서비스를_호출한다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("attachment-browser")).willReturn("csrf-token");
-        given(tripAttachmentService.uploadInitialAttachments(
-                eq(7L), eq(42L), anyList(), eq(1), eq(1), eq(true)))
+        given(uploadCompletion.complete(eq(7L), eq(42L), any()))
                 .willReturn(Optional.of(completed()));
 
-                mockMvc.perform(multipart("/trips/7/initial-attachments")
-                        .file("attachments[]", jpeg())
-                        .param("batchNo", "1")
-                        .param("totalAttachmentCount", "1")
-                        .param("complete", "true")
+                mockMvc.perform(post("/trips/7/initial-attachments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}")
                         .cookie(
                                 new Cookie("accessToken", accessToken),
                                 new Cookie("CSRF_CONTEXT", "attachment-browser")
@@ -379,8 +371,8 @@ class TripAttachmentSecurityIntegrationTest {
                 .andExpect(jsonPath("$.message").value("TRIP_PROCESSING_STATUS_FOUND"))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
 
-        then(tripAttachmentService).should()
-                .uploadInitialAttachments(eq(7L), eq(42L), anyList(), eq(1), eq(1), eq(true));
+        then(uploadCompletion).should()
+                .complete(eq(7L), eq(42L), any());
     }
 
     @Test
@@ -388,11 +380,9 @@ class TripAttachmentSecurityIntegrationTest {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("invalid-attachment-browser")).willReturn("csrf-token");
 
-                mockMvc.perform(multipart("/trips/7/initial-attachments")
-                        .file("attachments[]", jpeg())
-                        .param("batchNo", "1")
-                        .param("totalAttachmentCount", "1")
-                        .param("complete", "true")
+                mockMvc.perform(post("/trips/7/initial-attachments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}")
                         .cookie(
                                 new Cookie("accessToken", accessToken),
                                 new Cookie("CSRF_CONTEXT", "invalid-attachment-browser")
@@ -401,26 +391,24 @@ class TripAttachmentSecurityIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
 
-        then(tripAttachmentService).should(never())
-                .uploadInitialAttachments(any(), any(), anyList(), anyInt(), anyInt(), anyBoolean());
+        then(uploadCompletion).should(never())
+                .complete(any(), any(), any());
     }
 
     @Test
     void 인증_쿠키가_없으면_401이고_첨부_서비스를_호출하지_않는다() throws Exception {
         given(csrfTokenStore.find("unauthorized-attachment-browser")).willReturn("csrf-token");
 
-                mockMvc.perform(multipart("/trips/7/initial-attachments")
-                        .file("attachments[]", jpeg())
-                        .param("batchNo", "1")
-                        .param("totalAttachmentCount", "1")
-                        .param("complete", "true")
+                mockMvc.perform(post("/trips/7/initial-attachments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}")
                         .cookie(new Cookie("CSRF_CONTEXT", "unauthorized-attachment-browser"))
                         .header("X-CSRF-TOKEN", "csrf-token"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
 
-        then(tripAttachmentService).should(never())
-                .uploadInitialAttachments(any(), any(), anyList(), anyInt(), anyInt(), anyBoolean());
+        then(uploadCompletion).should(never())
+                .complete(any(), any(), any());
     }
 
     @Test
@@ -513,9 +501,7 @@ class TripAttachmentSecurityIntegrationTest {
         then(restoreService).should().restoreBulk(eq(42L), any());
     }
 
-    private byte[] jpeg() {
-        return new byte[]{(byte) 0xff, (byte) 0xd8, (byte) 0xff, (byte) 0xd9};
-    }
+
 
     private TripProcessingStatusResponse completed() {
         return new TripProcessingStatusResponse(

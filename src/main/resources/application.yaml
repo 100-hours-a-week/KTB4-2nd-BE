@@ -31,11 +31,6 @@ spring:
       timeout: ${REDIS_TIMEOUT:2s}
       ssl:
         enabled: ${REDIS_SSL_ENABLED:false}
-  servlet:
-    multipart:
-      max-file-size: 15MB
-      max-request-size: 150MB
-      file-size-threshold: 0B
   profiles:
     default: local
   config:
@@ -44,8 +39,6 @@ spring:
 server:
   servlet:
     context-path: /api
-  tomcat:
-    max-part-count: 13
 
 place:
   catalog:

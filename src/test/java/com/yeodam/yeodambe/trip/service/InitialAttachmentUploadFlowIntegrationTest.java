@@ -43,7 +43,6 @@ class InitialAttachmentUploadFlowIntegrationTest {
     @Autowired private InitialAttachmentUploadTransactionService transactions;
     @Autowired private TripProcessingCancellationService cancellation;
     @Autowired private TripProcessingStatusService statuses;
-    @Autowired private TripAttachmentTransactionService legacy;
     @Autowired private TripAnalysisResultService results;
     @Autowired private InitialAttachmentUploadBatchRepository batches;
     @Autowired private InitialAttachmentUploadItemRepository items;
@@ -235,27 +234,6 @@ class InitialAttachmentUploadFlowIntegrationTest {
                 .isInstanceOf(TripNotFoundException.class);
         verifyNoInteractions(storage, derivatives, analysis);
         assertThat(latestStatus()).isEqualTo("PENDING");
-    }
-
-    @Test
-    void 늦게_온_멀티파트_업로드는_새_직접_업로드_배치를_덮어쓸_수_없다() {
-        var reservation = legacy.reserveBatch(trip.getId(), owner.getUserId(), 1, 1);
-        var batch = prepare(1, 1, true);
-        var upload = new org.springframework.mock.web.MockMultipartFile("attachments[]", "photo.jpg", "image/jpeg", new byte[]{1});
-        assertThatThrownBy(() -> legacy.saveFilesAndAttachments(trip.getId(), owner.getUserId(),
-                reservation.executionId(), List.of(upload), List.of("old-original"), List.of("image/jpeg"),
-                List.of(new DerivedPhotoKeys("old-original", "old-analyze", "old-preview"))))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        assertThatThrownBy(() -> legacy.failAndDeleteReference(trip.getId(), owner.getUserId(),
-                reservation.executionId(), List.of(), List.of()))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        assertThatThrownBy(() -> results.saveCompleted(trip.getId(), owner.getUserId(),
-                reservation.executionId(), List.of(), json.readTree("{\"places\":[],\"unclassified\":[]}"), Map.of()))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        assertThat(latestStatus()).isEqualTo("PENDING");
-        assertThat(trips.findById(trip.getId()).orElseThrow().getProcessingStatus()).isEqualTo(ProcessingStatus.PROCESSING);
-        assertPhotoCount(0);
-        assertThat(complete(batch).orElseThrow().status()).isEqualTo(TripProcessingStatusResponse.Status.COMPLETED);
     }
 
     @Test

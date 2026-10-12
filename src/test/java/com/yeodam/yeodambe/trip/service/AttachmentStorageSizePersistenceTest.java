@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
@@ -12,7 +14,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.LocalDate;
@@ -28,8 +29,9 @@ class AttachmentStorageSizePersistenceTest {
     @Autowired private TripRepository trips;
     @Autowired private StoredFileRepository files;
     @Autowired private TripAttachmentRepository attachments;
-    @Autowired private InitialUploadExecutionRegistry executions;
-    @Autowired private TripAttachmentTransactionService transactions;
+    @Autowired private InitialAttachmentUploadUrlService uploads;
+    @Autowired private InitialAttachmentUploadTransactionService transactions;
+    @Autowired private InitialAttachmentUploadItemRepository uploadItems;
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
@@ -37,18 +39,21 @@ class AttachmentStorageSizePersistenceTest {
         String suffix = hasDisplay ? "heic" : "jpeg";
         User user = users.saveAndFlush(new User("size-" + suffix + "@yeodam.test", "용량검증"));
         Trip trip = trips.saveAndFlush(new Trip(user.getUserId(), "용량검증", LocalDate.now(), LocalDate.now()));
-        String execution = executions.reserve(trip.getId());
         String mime = hasDisplay ? "image/heic" : "image/jpeg";
-        var upload = new MockMultipartFile("attachments[]", "photo." + suffix, mime, new byte[]{1, 2, 3, 4});
-        var photo = new DerivedPhotoKeys("original/" + suffix, "analyze/" + suffix,
+        var batch = uploads.prepareBatch(trip.getId(), user.getUserId(),
+                new InitialAttachmentUploadUrlRequest(
+                        1, 1, true, List.of(new InitialAttachmentUploadUrlRequest.Attachment(
+                                "photo." + suffix, mime, 4L))));
+        String originalKey = uploadItems.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()).getFirst().getObjectKey();
+        transactions.startProcessing(trip.getId(), user.getUserId(), batch.getUploadId());
+        var photo = new DerivedPhotoKeys(originalKey, "analyze/" + suffix,
                 "preview/" + suffix, hasDisplay ? "display/" + suffix : null,
                 null, null, null, null, 4L, 100L, 50L, hasDisplay ? 200L : null);
 
-        var saved = transactions.saveFilesAndAttachments(trip.getId(), user.getUserId(), execution,
-                List.of(upload), List.of(photo.originalKey()), List.of(mime), List.of(photo));
+        var saved = transactions.saveAttachments(trip.getId(), user.getUserId(), batch.getUploadId(), List.of(photo));
 
-        var original = files.findById(saved.originals().getFirst().getId()).orElseThrow();
-        var attachment = attachments.findById(saved.attachments().getFirst().getId()).orElseThrow();
+        var original = files.findById(saved.getFirst().getFileId()).orElseThrow();
+        var attachment = attachments.findById(saved.getFirst().getId()).orElseThrow();
         assertThat(original.getOriginalSizeBytes()).isEqualTo(4L);
         assertThat(attachment.getAnalyzeSizeBytes()).isEqualTo(100L);
         assertThat(attachment.getPreviewSizeBytes()).isEqualTo(50L);

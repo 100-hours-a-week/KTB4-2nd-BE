@@ -83,6 +83,7 @@ app:
   story:
     status-polling-enabled: ${STORY_STATUS_POLLING_ENABLED:true}
     result-listener-enabled: ${STORY_RESULT_LISTENER_ENABLED:true}
+    result-dead-letter-topic: ${KAFKA_STORY_RESULT_DLT_TOPIC:yeodam-story-results-dlt}
     result-consumer-group: ${KAFKA_STORY_RESULT_CONSUMER_GROUP:yeodam-story-results}
   kafka:
     topics:

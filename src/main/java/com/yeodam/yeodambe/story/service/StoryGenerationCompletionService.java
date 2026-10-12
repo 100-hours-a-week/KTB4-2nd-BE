@@ -14,6 +14,7 @@ import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.entity.StorySelectedPlace;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -38,7 +39,7 @@ public class StoryGenerationCompletionService {
     ) {
         if (response == null
                 || response.status() != StoryGenerationAiResponse.Status.COMPLETED) {
-            throw new IllegalArgumentException(
+            throw new InvalidStoryResultException(
                     StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
             );
         }
@@ -50,12 +51,12 @@ public class StoryGenerationCompletionService {
 
         if (!job.getTripId().equals(response.tripId())
                 || !job.getExecutionId().equals(response.executionId())) {
-            throw new IllegalArgumentException(
+            throw new InvalidStoryResultException(
                     StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH.message()
             );
         }
 
-        if (job.isFinished()) {
+        if (job.isFinished() || job.failIfTimedOut(java.time.LocalDateTime.now())) {
             return;
         }
 

@@ -41,6 +41,13 @@ import com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse;
 import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
 import jakarta.validation.constraints.Positive;
 
+import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
+import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.response.AttachmentRestoreResponse;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
+import jakarta.validation.Valid;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -56,6 +63,32 @@ public class TripAttachmentController {
     private final InitialAttachmentUploadUrlService uploadUrlService;
     private final InitialAttachmentUploadCompletionService uploadCompletion;
     private final UnclassifiedFolderListService unclassifiedFolderListService;
+    private final TripAttachmentRestoreService tripAttachmentRestoreService;
+
+    @PostMapping("/attachments/{tripAttachmentId}/restore")
+    public ResponseEntity<ApiResponse<AttachmentRestoreResponse>> restoreAttachment(
+            @PathVariable @Positive Long tripAttachmentId,
+            @Valid @RequestBody AttachmentRestoreRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+        AttachmentRestoreResponse result = tripAttachmentRestoreService.restoreOne(userId, tripAttachmentId, request);
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.ATTACHMENT_RESTORE_SUCCESS, result)
+        );
+    }
+
+    @PostMapping("/attachments/bulk-restore")
+    public ResponseEntity<ApiResponse<BulkAttachmentRestoreResponse>> restoreAttachments(
+            @Valid @RequestBody BulkAttachmentRestoreRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+        BulkAttachmentRestoreResponse result = tripAttachmentRestoreService.restoreBulk(userId, request);
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.BULK_ATTACHMENT_RESTORE_SUCCESS, result)
+        );
+    }
 
     @GetMapping("/trips/{tripId}/unclassified-folders/{issue}/attachments")
     public ResponseEntity<ApiResponse<UnclassifiedAttachmentListResponse>> findUnclassifiedAttachments(

@@ -55,11 +55,31 @@ class GlobalExceptionHandlerTest {
         logAppender.stop();
     }
 
+    @Test
+    void 다른_DTO의_같은_필드_NotNull은_기존_입력_오류를_유지한다() {
+        var errors = new org.springframework.validation.BeanPropertyBindingResult(
+                new OtherRequest(null), "request");
+        errors.rejectValue("tripPlaceId", "NotNull");
+        var response = new GlobalExceptionHandler().handleBindException(
+                new org.springframework.validation.BindException(errors));
+        org.assertj.core.api.Assertions.assertThat(response.message()).isEqualTo("INVALID_REQUEST");
+    }
+
+    record OtherRequest(
+            Long tripPlaceId
+    ) {
+    }
+
     @ParameterizedTest
     @CsvSource({
             "story-already-exists, 409, STORY_ALREADY_EXISTS",
             "story-generation-in-progress, 409, STORY_GENERATION_IN_PROGRESS",
             "invalid-story-request, 400, INVALID_STORY_REQUEST",
+            "restore-invalid, 400, INVALID_REQUEST",
+            "restore-required, 400, RESTORE_PLACE_FOLDER_REQUIRED",
+            "restore-mismatch, 409, RESTORE_PLACE_MISMATCH",
+            "restore-not-allowed, 409, ATTACHMENT_RESTORE_NOT_ALLOWED",
+            "restore-bulk-failed, 409, BULK_RESTORE_FAILED",
             "story-generation-forbidden, 403, STORY_GENERATION_FORBIDDEN",
             "invalid-attachment, 400, INVALID_ATTACHMENT_UPLOAD",
             "trip-not-found, 404, TRIP_NOT_FOUND",
@@ -299,6 +319,31 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/invalid-trip-list-filter")
         void invalidTripListFilter() {
             throw new InvalidTripListFilterException();
+        }
+
+        @GetMapping("/test/restore-invalid")
+        void invalidRestoreRequest() {
+            throw new InvalidRestoreRequestException();
+        }
+
+        @GetMapping("/test/restore-required")
+        void restorePlaceFolderRequired() {
+            throw new RestorePlaceFolderRequiredException();
+        }
+
+        @GetMapping("/test/restore-mismatch")
+        void restorePlaceMismatch() {
+            throw new RestorePlaceMismatchException();
+        }
+
+        @GetMapping("/test/restore-not-allowed")
+        void attachmentRestoreNotAllowed() {
+            throw new AttachmentRestoreNotAllowedException();
+        }
+
+        @GetMapping("/test/restore-bulk-failed")
+        void bulkRestoreFailed() {
+            throw new BulkRestoreFailedException();
         }
 
         @GetMapping("/test/story-generation-forbidden")

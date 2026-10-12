@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
@@ -74,6 +75,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         RedisCsrfTokenRepository.class
 })
 class TripAttachmentSecurityIntegrationTest {
+
+    @MockitoBean
+    private TripAttachmentRestoreService restoreService;
 
     @Autowired
     private MockMvc mockMvc;
@@ -465,6 +469,48 @@ class TripAttachmentSecurityIntegrationTest {
 
         then(bulkAttachmentDownloadService).should()
                 .issueDownloadUrl(42L, java.util.List.of(11L, 12L));
+    }
+
+    @Test
+    void 복구_경로에_인증과_CSRF를_적용한다() throws Exception {
+        given(csrfTokenStore.find("restore-browser")).willReturn("csrf-token");
+        given(csrfTokenGenerator.generate()).willReturn("generated-token");
+        for (String path : List.of("/attachments/11/restore", "/attachments/bulk-restore")) {
+            String body = path.endsWith("bulk-restore")
+                    ? "{\"items\":[{\"tripAttachmentId\":11,\"tripPlaceId\":3}]}"
+                    : "{\"tripPlaceId\":3}";
+            mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(body)
+                            .cookie(new Cookie("CSRF_CONTEXT", "restore-browser"))
+                            .header("X-CSRF-TOKEN", "csrf-token"))
+                    .andExpect(status().isUnauthorized());
+            mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(body)
+                            .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42"))))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(body)
+                            .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")),
+                                    new Cookie("CSRF_CONTEXT", "restore-browser"))
+                            .header("X-CSRF-TOKEN", "wrong-token"))
+                    .andExpect(status().isForbidden());
+        }
+        then(restoreService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void 복구_서비스에_인증_사용자를_전달한다() throws Exception {
+        given(csrfTokenStore.find("restore-browser")).willReturn("csrf-token");
+        given(csrfTokenGenerator.generate()).willReturn("generated-token");
+        for (String path : List.of("/attachments/11/restore", "/attachments/bulk-restore")) {
+            String body = path.endsWith("bulk-restore")
+                    ? "{\"items\":[{\"tripAttachmentId\":11,\"tripPlaceId\":3}]}"
+                    : "{\"tripPlaceId\":3}";
+            mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(body)
+                            .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")),
+                                    new Cookie("CSRF_CONTEXT", "restore-browser"))
+                            .header("X-CSRF-TOKEN", "csrf-token"))
+                    .andExpect(status().isOk());
+        }
+        then(restoreService).should().restoreOne(eq(42L), eq(11L), any());
+        then(restoreService).should().restoreBulk(eq(42L), any());
     }
 
     private byte[] jpeg() {

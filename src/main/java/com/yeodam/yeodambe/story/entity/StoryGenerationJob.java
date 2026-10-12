@@ -66,6 +66,11 @@ public class StoryGenerationJob {
         this.mood = mood;
     }
 
+    public void fail(String errorCode) {
+        this.status = Status.FAILED;
+        this.errorCode = errorCode;
+    }
+
     public enum Status {
         QUEUED,
         PROCESSING,

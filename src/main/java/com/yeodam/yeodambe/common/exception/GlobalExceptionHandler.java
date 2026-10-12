@@ -151,6 +151,10 @@ public class GlobalExceptionHandler {
                 && "/trips/{tripId}".equals(matchedPath)) {
             return new ApiResponse<>(ErrorMessage.INVALID_TRIP_REQUEST, null);
         }
+        if ("POST".equals(request.getMethod())
+                && "/trips/{tripId}/story-generations".equals(matchedPath)) {
+            return new ApiResponse<>(ErrorMessage.INVALID_STORY_REQUEST, null);
+        }
         return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
     }
 

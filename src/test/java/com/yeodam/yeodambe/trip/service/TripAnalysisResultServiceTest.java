@@ -13,6 +13,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -52,6 +53,29 @@ class TripAnalysisResultServiceTest {
         verify(trips).finishInitialUpload(7L, 1L, ProcessingStatus.PROCESSING,
                 ProcessingStatus.COMPLETED);
         verify(userStats).refreshFromActiveTrips(1L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"2026-10-11T15:30:00Z", "2026-10-12T00:30:00+09:00"})
+    void 보정된_촬영_시각과_장소_시각을_같은_순간의_KST로_저장한다(String takenAt) {
+        String executionId = executions.reserve(7L);
+        TripAttachment classified = photo(30L);
+        TripAttachment unclassified = photo(31L);
+        stubCompletion();
+        JsonNode result = json.readTree(resultWithUnclassifiedPlace("\"p1\"").toString()
+                .replace("\"taken_at\":null", "\"taken_at\":\"" + takenAt + "\"")
+                .replace("\"first_taken_at\":null", "\"first_taken_at\":\"" + takenAt + "\"")
+                .replace("\"last_taken_at\":null", "\"last_taken_at\":\"" + takenAt + "\""));
+
+        service.saveCompleted(7L, 1L, executionId, List.of(classified, unclassified),
+                result, Map.of("p1", "성산일출봉"));
+
+        assertThat(classified.getTakenAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 0, 30));
+        assertThat(unclassified.getTakenAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 0, 30));
+        ArgumentCaptor<TripDetailPlace> saved = ArgumentCaptor.forClass(TripDetailPlace.class);
+        verify(places).save(saved.capture());
+        assertThat(saved.getValue().getStartedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 0, 30));
+        assertThat(saved.getValue().getEndedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 0, 30));
     }
 
     @Test

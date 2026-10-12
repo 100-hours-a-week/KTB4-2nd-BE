@@ -10,8 +10,8 @@ import java.util.List;
 public class StoryValidator {
 
     public void validateBlockCount(List<BlockDetail> blocks) {
-        if (blocks.size() > 10) {
-            throw new StoryDataIntegrityException("블록 개수: 최대 10개를 초과했습니다.");
+        if (blocks.size() > 30) {
+            throw new StoryDataIntegrityException("블록 개수: 최대 30개를 초과했습니다.");
         }
     }
 

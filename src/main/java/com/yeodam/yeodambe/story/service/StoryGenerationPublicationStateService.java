@@ -42,7 +42,7 @@ public class StoryGenerationPublicationStateService {
                 .orElseThrow();
 
         var job = jobRepository
-                .findById(outbox.getGenerationId())
+                .findByIdForUpdate(outbox.getGenerationId())
                 .orElseThrow();
 
         outbox.publicationFailed(error);

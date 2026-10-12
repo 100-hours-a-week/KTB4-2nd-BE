@@ -78,6 +78,10 @@ public class Story {
         this.storySummary = storySummary;
     }
 
+    public void complete() {
+        this.processingStatus = Status.COMPLETED;
+    }
+
     static void validateText(String text) {
         if (text == null || text.isBlank() || text.length() > 40) {
             throw new IllegalArgumentException("스토리 문구는 필수이며 최대 40자입니다.");

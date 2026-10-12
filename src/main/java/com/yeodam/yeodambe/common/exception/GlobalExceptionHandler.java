@@ -423,6 +423,18 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.STORY_NOT_FOUND, null);
     }
 
+    @ExceptionHandler(StoryGenerationNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleStoryGenerationNotFound(StoryGenerationNotFoundException e) {
+        return new ApiResponse<>(ErrorMessage.STORY_GENERATION_NOT_FOUND, null);
+    }
+
+    @ExceptionHandler(StoryGenerationCannotBeCanceledException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleStoryGenerationCannotBeCanceled(StoryGenerationCannotBeCanceledException e) {
+        return new ApiResponse<>(ErrorMessage.STORY_GENERATION_CANNOT_BE_CANCELED, null);
+    }
+
     @ExceptionHandler(StoryDataIntegrityException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleStoryDataIntegrity(StoryDataIntegrityException e) {

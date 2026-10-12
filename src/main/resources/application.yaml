@@ -80,6 +80,10 @@ auth:
 
 app:
   public-api-prefix: /api
+  story:
+    status-polling-enabled: ${STORY_STATUS_POLLING_ENABLED:true}
+    result-listener-enabled: ${STORY_RESULT_LISTENER_ENABLED:true}
+    result-consumer-group: ${KAFKA_STORY_RESULT_CONSUMER_GROUP:yeodam-story-results}
   kafka:
     topics:
       trip-create-request: ${KAFKA_TRIP_CREATE_REQUEST_TOPIC:}
@@ -113,6 +117,8 @@ ai:
     analysis_timeout: ${AI_ANALYSIS_READ_TIMEOUT:30m}
     query-connection-timeout: ${AI_QUERY_CONNECTION_TIMEOUT:5s}
     query-read-timeout: ${AI_QUERY_READ_TIMEOUT:30s}
+    story-connection-timeout: ${AI_STORY_CONNECTION_TIMEOUT:5s}
+    story-read-timeout: ${AI_STORY_READ_TIMEOUT:5s}
     health-connection-timeout: ${AI_HEALTH_CONNECTION_TIMEOUT:5s}
     health_read_timeout: ${AI_HEALTH_READ_TIMEOUT:5s}
 
@@ -291,6 +297,9 @@ auth:
 app:
   cors:
     allowed-origin: https://app.yeodam.test
+  story:
+    status-polling-enabled: false
+    result-listener-enabled: false
   kafka:
     topics:
       trip-create-request: test.yeodam.trip-create.request

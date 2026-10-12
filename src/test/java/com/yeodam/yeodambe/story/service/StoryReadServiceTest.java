@@ -101,9 +101,25 @@ class StoryReadServiceTest {
     void 삭제사진_제외전에_개수와_참조를_검증한다() {
         var deleted = row(1, 7, "날", null);
         deleted.file().softDelete(LocalDateTime.now());
-        found(Collections.nCopies(11, deleted));
+        found(Collections.nCopies(31, deleted));
         assertThatThrownBy(() -> service.findStory(42L, 7L)).isInstanceOf(StoryDataIntegrityException.class);
         verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 생성_계약의_최대_30개_블록을_상세_응답으로_반환한다() {
+        var rows = java.util.stream.IntStream.rangeClosed(1, 30)
+                .<BlockDetail>mapToObj(index -> row(index, 7, "날", null))
+                .toList();
+        found(rows);
+        when(storage.createReadUrl(anyString())).thenAnswer(call -> "https://image.test/" + call.getArgument(0));
+
+        var response = service.findStory(42L, 7L);
+
+        assertThat(response.days()).hasSize(1);
+        assertThat(response.days().getFirst().blocks()).hasSize(30);
+        assertThat(response.days().getFirst().blocks().getLast().orderNumber()).isEqualTo(30);
+        verify(storage, times(30)).createReadUrl(anyString());
     }
 
     @Test

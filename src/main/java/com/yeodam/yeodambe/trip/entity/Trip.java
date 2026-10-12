@@ -103,6 +103,10 @@ public class Trip {
         this.thumbnailKey = thumbnailKey;
     }
 
+    public void changeCurrentStory(Long storyId) {
+        this.currentStoryId = storyId;
+    }
+
     public void softDelete(LocalDateTime deletedAt) {
         if (this.deletedAt == null) this.deletedAt = deletedAt;
     }

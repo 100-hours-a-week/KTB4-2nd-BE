@@ -74,6 +74,8 @@ class GlobalExceptionHandlerTest {
     @CsvSource({
             "story-already-exists, 409, STORY_ALREADY_EXISTS",
             "story-generation-in-progress, 409, STORY_GENERATION_IN_PROGRESS",
+            "story-generation-not-found, 404, STORY_GENERATION_NOT_FOUND",
+            "story-generation-cannot-be-canceled, 409, STORY_GENERATION_CANNOT_BE_CANCELED",
             "invalid-story-request, 400, INVALID_STORY_REQUEST",
             "restore-invalid, 400, INVALID_REQUEST",
             "restore-required, 400, RESTORE_PLACE_FOLDER_REQUIRED",
@@ -306,6 +308,16 @@ class GlobalExceptionHandlerTest {
 
     @RestController
     static class TestController {
+        @GetMapping("/test/story-generation-cannot-be-canceled")
+        void storyGenerationCannotBeCanceled() {
+            throw new StoryGenerationCannotBeCanceledException();
+        }
+
+        @GetMapping("/test/story-generation-not-found")
+        void storyGenerationNotFound() {
+            throw new StoryGenerationNotFoundException();
+        }
+
         @GetMapping("/test/story-generation-in-progress")
         void storyGenerationInProgress() {
             throw new StoryGenerationInProgressException();

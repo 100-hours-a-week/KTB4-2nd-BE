@@ -6,6 +6,13 @@ import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.service.StoryGenerationAcceptanceService;
 import com.yeodam.yeodambe.story.service.StoryGenerationPublicationService;
+import com.yeodam.yeodambe.story.service.StoryGenerationStatusService;
+import com.yeodam.yeodambe.story.service.StoryGenerationCancelService;
+import com.yeodam.yeodambe.story.client.StoryGenerationAiClient;
+import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
+import com.yeodam.yeodambe.story.exception.StoryGenerationAiRequestException;
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.story.service.request.StoryGenerationRequest;
 import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.csrf.*;
@@ -15,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -27,6 +35,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,12 +47,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @Import({SecurityConfig.class, JwtConfig.class, AccessTokenIssuer.class,
         CookieAccessTokenResolver.class, ApiAuthenticationEntryPoint.class,
-        CsrfAccessDeniedHandler.class, RedisCsrfTokenRepository.class, RequestIdFilter.class})
+        CsrfAccessDeniedHandler.class, RedisCsrfTokenRepository.class, RequestIdFilter.class,
+        StoryGenerationStatusService.class, StoryGenerationCancelService.class})
 class StoryGenerationControllerTest {
     @Autowired private MockMvc mvc;
     @Autowired private AccessTokenIssuer issuer;
     @MockitoBean private StoryGenerationAcceptanceService acceptance;
     @MockitoBean private StoryGenerationPublicationService publication;
+    @MockitoBean private StoryGenerationJobRepository jobs;
+    @MockitoBean private StoryGenerationAiClient ai;
     @MockitoBean private ActiveLoginSessionValidator sessionValidator;
     @MockitoBean private CsrfTokenStore csrfStore;
     @MockitoBean private CsrfTokenGenerator csrfGenerator;
@@ -144,6 +156,164 @@ class StoryGenerationControllerTest {
         mvc.perform(authenticated().header("X-Request-ID", "request-original"))
                 .andExpect(status().is(code)).andExpect(jsonPath("$.message").value(message));
         verifyNoInteractions(publication);
+    }
+
+    @ParameterizedTest
+    @EnumSource(StoryGenerationJob.Status.class)
+    void statusReadUsesJwtOwnerAndReturnsStoredStateWithoutCsrf(StoryGenerationJob.Status state) throws Exception {
+        var saved = mock(StoryGenerationJob.class);
+        when(saved.getId()).thenReturn(7L);
+        when(saved.getUserId()).thenReturn(42L);
+        when(saved.getStatus()).thenReturn(state);
+        when(saved.getProgress()).thenReturn(state == StoryGenerationJob.Status.COMPLETED ? 100 : 35);
+        when(saved.getStoryId()).thenReturn(state == StoryGenerationJob.Status.COMPLETED ? 99L : null);
+        when(jobs.findById(7L)).thenReturn(Optional.of(saved));
+
+        var result = mvc.perform(statusRequest().cookie(new Cookie("accessToken", issuer.issue(42L, "session"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("STORY_GENERATION_STATUS_FOUND"))
+                .andExpect(jsonPath("$.data.generationId").value(7))
+                .andExpect(jsonPath("$.data.status").value(state.name()))
+                .andExpect(jsonPath("$.data.progress").value(state == StoryGenerationJob.Status.COMPLETED ? 100 : 35));
+        if (state == StoryGenerationJob.Status.FAILED) {
+            result.andExpect(jsonPath("$.data.error.code").value("STORY_GENERATION_FAILED"))
+                    .andExpect(jsonPath("$.data.error.message").value("스토리 생성에 실패했습니다."));
+        } else {
+            result.andExpect(jsonPath("$.data.error").isEmpty());
+        }
+        if (state == StoryGenerationJob.Status.COMPLETED) {
+            result.andExpect(jsonPath("$.data.storyId").value(99));
+        } else {
+            result.andExpect(jsonPath("$.data.storyId").isEmpty());
+        }
+        verify(jobs).findById(7L);
+        verifyNoInteractions(acceptance, publication);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void missingAndOtherOwnerJobsReturnSameNotFoundResponse(boolean missing) throws Exception {
+        var saved = mock(StoryGenerationJob.class);
+        if (missing) {
+            when(jobs.findById(7L)).thenReturn(Optional.empty());
+        } else {
+            when(saved.getUserId()).thenReturn(999L);
+            when(jobs.findById(7L)).thenReturn(Optional.of(saved));
+        }
+
+        mvc.perform(statusRequest().cookie(new Cookie("accessToken", issuer.issue(42L, "session"))))
+                .andExpect(status().isNotFound())
+                .andExpect(content().json("{\"message\":\"STORY_GENERATION_NOT_FOUND\",\"data\":null}"));
+        verifyNoInteractions(acceptance, publication);
+    }
+
+    @Test
+    void unauthenticatedStatusReadStopsBeforeRepositoryLookup() throws Exception {
+        mvc.perform(statusRequest()).andExpect(status().isUnauthorized());
+        verifyNoInteractions(jobs, acceptance, publication);
+    }
+
+    private MockHttpServletRequestBuilder statusRequest() {
+        return get("/api/story-generation/7").contextPath("/api")
+                .servletPath("/story-generation/7");
+    }
+
+    @Test
+    void cancellationReturnsNoContentButWaitsForKafkaToFinishJob() throws Exception {
+        var saved = prepareCancellationJob(42L);
+        when(ai.cancel(100L)).thenReturn(new StoryGenerationAiResponse(100L, "execution-cancel",
+                StoryGenerationAiResponse.Status.CANCELED, null, null, null, null));
+
+        mvc.perform(authenticatedCancellation()).andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verify(ai).cancel(100L);
+        verifyNoInteractions(acceptance, publication);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = StoryGenerationJob.Status.class, names = {"COMPLETED", "FAILED", "CANCELED"})
+    void finishedCancellationReturnsConflictBeforeCallingAi(StoryGenerationJob.Status state) throws Exception {
+        var saved = prepareCancellationJob(42L);
+        switch (state) {
+            case COMPLETED -> saved.complete(99L);
+            case FAILED -> saved.fail("WORKER_DEAD");
+            case CANCELED -> saved.cancel();
+            default -> throw new AssertionError(state);
+        }
+
+        mvc.perform(authenticatedCancellation()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("STORY_GENERATION_CANNOT_BE_CANCELED"));
+        verifyNoInteractions(ai);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void missingOrOtherOwnerCancellationReturnsNotFound(boolean missing) throws Exception {
+        if (missing) {
+            when(jobs.findById(7L)).thenReturn(Optional.empty());
+        } else {
+            prepareCancellationJob(999L);
+        }
+
+        mvc.perform(authenticatedCancellation()).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("STORY_GENERATION_NOT_FOUND"));
+        verifyNoInteractions(ai);
+    }
+
+    @Test
+    void aiCancellationConflictPreservesContractError() throws Exception {
+        prepareCancellationJob(42L);
+        when(ai.cancel(100L)).thenThrow(new StoryGenerationAiRequestException(
+                StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 409, "TASK_NOT_CANCELABLE"));
+
+        mvc.perform(authenticatedCancellation()).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("STORY_GENERATION_CANNOT_BE_CANCELED"));
+    }
+
+    @Test
+    void aiCancellationFailureReturnsInternalErrorInsteadOfNoContent() throws Exception {
+        prepareCancellationJob(42L);
+        when(ai.cancel(100L)).thenThrow(new StoryGenerationAiRequestException(
+                StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, null, null));
+
+        mvc.perform(authenticatedCancellation()).andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message").value("INTERNAL_SERVER_ERROR"));
+    }
+
+    @Test
+    void unauthenticatedCancellationStopsBeforeLookupAndAiCall() throws Exception {
+        mvc.perform(cancellationRequest().cookie(new Cookie("CSRF_CONTEXT", "browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(jobs, ai);
+    }
+
+    @Test
+    void cancellationWithoutCsrfStopsBeforeLookupAndAiCall() throws Exception {
+        mvc.perform(cancellationRequest().cookie(new Cookie("accessToken", issuer.issue(42L, "session")),
+                        new Cookie("CSRF_CONTEXT", "browser")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+        verifyNoInteractions(jobs, ai);
+    }
+
+    private StoryGenerationJob prepareCancellationJob(Long ownerId) {
+        var saved = new StoryGenerationJob("execution-cancel", 100L, ownerId, Story.Mood.EMOTIONAL);
+        when(jobs.findById(7L)).thenReturn(Optional.of(saved));
+        return saved;
+    }
+
+    private MockHttpServletRequestBuilder authenticatedCancellation() {
+        return cancellationRequest().cookie(new Cookie("accessToken", issuer.issue(42L, "session")),
+                        new Cookie("CSRF_CONTEXT", "browser"))
+                .header("X-CSRF-TOKEN", "csrf-token");
+    }
+
+    private MockHttpServletRequestBuilder cancellationRequest() {
+        return delete("/api/story-generations/7").contextPath("/api")
+                .servletPath("/story-generations/7");
     }
 
     private void prepareJob(String requestId) {

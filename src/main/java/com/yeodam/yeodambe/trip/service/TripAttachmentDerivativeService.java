@@ -249,7 +249,7 @@ public class TripAttachmentDerivativeService {
             Path original, String mimeType, JsonNode metadata, Path analyze, Path preview, Path display
     ) {
         List<String> command = new ArrayList<>();
-        command.add("convert");
+        command.add("magick");
         command.add("-respect-parentheses");
         command.add(original + "[0]");
 
@@ -305,10 +305,7 @@ public class TripAttachmentDerivativeService {
     private void run(String... command) {
         Process process = null;
         try {
-            process = new ProcessBuilder(command)
-                    .redirectErrorStream(true)
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                    .start();
+            process = startProcess(command);
 
             if (!process.waitFor(120, TimeUnit.SECONDS)) {
                 throw new IllegalStateException(TripInternalErrorMessage.COMMAND_TIMEOUT.message().formatted(command[0]));
@@ -322,6 +319,27 @@ public class TripAttachmentDerivativeService {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(TripInternalErrorMessage.COMMAND_INTERRUPTED.message().formatted(command[0]), e);
         } finally { stopProcess(process); }
+    }
+
+    private Process startProcess(String... command) throws IOException {
+        ProcessBuilder builder = new ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        try {
+            return builder.start();
+        } catch (IOException failure) {
+            if (!"magick".equals(command[0])) {
+                throw failure;
+            }
+            // ImageMagick 7이 없는 기존 CI·운영 환경에서는 ImageMagick 6을 사용한다.
+            command[0] = "convert";
+            try {
+                return builder.command(command).start();
+            } catch (IOException fallbackFailure) {
+                fallbackFailure.addSuppressed(failure);
+                throw fallbackFailure;
+            }
+        }
     }
 
     private void stopProcess(Process process) {

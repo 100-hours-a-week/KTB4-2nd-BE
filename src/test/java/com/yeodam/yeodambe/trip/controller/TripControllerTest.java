@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
 import com.yeodam.yeodambe.trip.controller.TripController;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripService;
@@ -14,13 +15,18 @@ import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
+import com.yeodam.yeodambe.trip.service.request.TripListCursor;
+import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class TripControllerTest {
@@ -32,11 +38,14 @@ class TripControllerTest {
     private final TripPlaceFolderListService placeFolderListService =
             mock(TripPlaceFolderListService.class);
     private final TripDeletionService deletionService = mock(TripDeletionService.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final TripController controller = new TripController(
             tripService, processingStatusService, cancellationService, placeFolderListService,
-            deletionService);
+            deletionService, objectMapper);
     private final TripCreateRequest request = new TripCreateRequest(
-            "여행", LocalDate.now(), LocalDate.now(), List.of("50110"));
+            "여행", LocalDate.now(), LocalDate.now(), List.of("50110"),
+            List.of(new TripAttachmentMetadataRequest(
+                    OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)));
 
     @Test
     void 인증된_사용자의_여행을_생성하면_처리중으로_응답한다() {
@@ -113,6 +122,26 @@ class TripControllerTest {
                 7L, new com.yeodam.yeodambe.trip.service.request.TripUpdateRequest(
                         null, null, null, null), binding, jwt()))
                 .isInstanceOf(com.yeodam.yeodambe.common.exception.InvalidTripRequestException.class);
+        verifyNoInteractions(tripService);
+    }
+
+    @Test
+    void JSON_커서를_해석해_조회_서비스에_전달한다() {
+        TripListCursor cursor = new TripListCursor(
+                TripSort.LATEST, false, true, LocalDate.of(2026, 9, 22), 17L
+        );
+        when(tripService.findTrips(eq(1L), any(TripListRequest.class)))
+                .thenReturn(new TripListResponse(List.of(), false, null));
+
+        controller.findTrips(cursor.encode(objectMapper), "LATEST", "false", jwt());
+
+        verify(tripService).findTrips(eq(1L), argThat(request -> cursor.equals(request.cursor())));
+    }
+
+    @Test
+    void 잘못된_커서는_조회_서비스를_호출하기_전에_거절한다() {
+        assertThatThrownBy(() -> controller.findTrips("not-base64!", null, null, jwt()))
+                .isInstanceOf(InvalidTripListFilterException.class);
         verifyNoInteractions(tripService);
     }
 

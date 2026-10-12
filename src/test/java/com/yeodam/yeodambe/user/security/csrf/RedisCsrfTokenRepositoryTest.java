@@ -29,7 +29,7 @@ class RedisCsrfTokenRepositoryTest {
     private RedisCsrfTokenRepository csrfTokenRepository;
 
     @Test
-    void loadsTokenForBrowserContextCookie() {
+    void 브라우저_컨텍스트_쿠키에_해당하는_CSRF_토큰을_불러온다() {
         csrfTokenStore.save("browser-1", "issued-token");
 
         MockHttpServletRequest request = new MockHttpServletRequest();
@@ -43,7 +43,7 @@ class RedisCsrfTokenRepositoryTest {
     }
 
     @Test
-    void savesAndDeletesTokenForBrowserContextCookie() {
+    void 브라우저_컨텍스트_쿠키에_해당하는_CSRF_토큰을_저장하고_삭제한다() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setCookies(new Cookie("CSRF_CONTEXT", "browser-save-delete"));
         MockHttpServletResponse response = new MockHttpServletResponse();

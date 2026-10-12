@@ -4,7 +4,7 @@ import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.user.entity.OAuthAccount;
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
-import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.LoginTicketInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;

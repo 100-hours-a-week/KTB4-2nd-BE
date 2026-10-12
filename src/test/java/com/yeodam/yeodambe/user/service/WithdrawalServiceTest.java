@@ -5,7 +5,7 @@ import com.yeodam.yeodambe.user.entity.Consent;
 import com.yeodam.yeodambe.user.entity.OAuthAccount;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
-import com.yeodam.yeodambe.user.exception.WithdrawalFailedException;
+import com.yeodam.yeodambe.common.exception.WithdrawalFailedException;
 import com.yeodam.yeodambe.user.repository.ConsentRepository;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
@@ -54,7 +54,7 @@ class WithdrawalServiceTest {
     private WithdrawalService service;
 
     @Test
-    void withdrawsMemberDataTripsAndAllLoginSessions() {
+    void 회원_데이터와_여행과_모든_로그인_세션을_탈퇴_처리한다() {
         User user = org.mockito.Mockito.mock(User.class);
         OAuthAccount oauthAccount = org.mockito.Mockito.mock(OAuthAccount.class);
         Consent consent = org.mockito.Mockito.mock(Consent.class);
@@ -82,7 +82,7 @@ class WithdrawalServiceTest {
     }
 
     @Test
-    void failsBeforeDeletingTripsWhenActiveConsentIsMissing() {
+    void 활성_동의가_없으면_여행을_삭제하기_전에_실패한다() {
         User user = org.mockito.Mockito.mock(User.class);
         OAuthAccount oauthAccount = org.mockito.Mockito.mock(OAuthAccount.class);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));

@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/root/.gradle \
     && test -n "${artifact}" \
     && cp "${artifact}" /workspace/app.jar
 
-FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy AS runtime
+FROM eclipse-temurin:${JAVA_VERSION}-jre-noble AS runtime
 WORKDIR /app
 
 ENV SERVER_PORT=8080
@@ -26,6 +26,7 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         curl \
         imagemagick \
+        libheif-plugin-libde265 \
         libimage-exiftool-perl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1001 spring \

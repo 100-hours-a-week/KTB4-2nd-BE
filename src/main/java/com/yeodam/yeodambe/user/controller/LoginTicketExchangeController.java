@@ -4,7 +4,7 @@ import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
-import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.LoginTicketInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.service.LoginExchangeDecision;
 import com.yeodam.yeodambe.user.service.LoginTicketExchangeService;
 import com.yeodam.yeodambe.user.service.request.LoginTicketExchangeRequest;

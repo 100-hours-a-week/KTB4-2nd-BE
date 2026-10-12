@@ -2,8 +2,14 @@ package com.yeodam.yeodambe.common.exception;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.trip.exception.TripCreationMetadataMissingException;
 
-import com.yeodam.yeodambe.user.exception.*;
+import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
+import org.springframework.validation.Errors;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.method.ParameterErrors;
+
 import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -14,6 +20,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -28,6 +35,69 @@ import org.springframework.web.servlet.HandlerMapping;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(InvalidRestoreRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidRestoreRequest(InvalidRestoreRequestException exception) {
+        return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
+    }
+
+    @ExceptionHandler(RestorePlaceFolderRequiredException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleRestorePlaceFolderRequired(RestorePlaceFolderRequiredException exception) {
+        return new ApiResponse<>(ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED, null);
+    }
+
+    @ExceptionHandler(RestorePlaceMismatchException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleRestorePlaceMismatch(RestorePlaceMismatchException exception) {
+        return new ApiResponse<>(ErrorMessage.RESTORE_PLACE_MISMATCH, null);
+    }
+
+    @ExceptionHandler(AttachmentRestoreNotAllowedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleAttachmentRestoreNotAllowed(AttachmentRestoreNotAllowedException exception) {
+        return new ApiResponse<>(ErrorMessage.ATTACHMENT_RESTORE_NOT_ALLOWED, null);
+    }
+
+    @ExceptionHandler(BulkRestoreFailedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleBulkRestoreFailed(BulkRestoreFailedException exception) {
+        return new ApiResponse<>(ErrorMessage.BULK_RESTORE_FAILED, null);
+    }
+
+    private ErrorMessage validationError(Errors errors) {
+        Object target = null;
+        if (errors instanceof BindingResult bindingResult) {
+            target = bindingResult.getTarget();
+        } else if (errors instanceof ParameterErrors parameterErrors) {
+            target = parameterErrors.getArgument();
+        }
+        boolean singleRequest = target instanceof AttachmentRestoreRequest;
+        boolean bulkRequest = target instanceof BulkAttachmentRestoreRequest;
+        if (errors.getFieldErrors().stream().anyMatch(error ->
+                "NotNull".equals(error.getCode())
+                        && ((singleRequest && "tripPlaceId".equals(error.getField()))
+                        || (bulkRequest && error.getField().matches("items\\[\\d+]\\.tripPlaceId"))))) {
+            return ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED;
+        }
+        return ErrorMessage.INVALID_REQUEST;
+    }
+
+    @ExceptionHandler(InvalidSearchQueryException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidSearchQuery(InvalidSearchQueryException e) {
+        return new ApiResponse<>(ErrorMessage.INVALID_SEARCH_QUERY, null);
+    }
+
+    @ExceptionHandler(AiQueryUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handleAiQueryUnavailable(AiQueryUnavailableException e) {
+        logFailure(log.atWarn(), ErrorMessage.SEARCH_SERVICE_UNAVAILABLE,
+                "AI 검색 서비스를 사용할 수 없습니다.", e);
+        return new ApiResponse<>(ErrorMessage.SEARCH_SERVICE_UNAVAILABLE, null);
+    }
+
 
     @ExceptionHandler(AiStatusUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
@@ -81,7 +151,17 @@ public class GlobalExceptionHandler {
                 && "/trips/{tripId}".equals(matchedPath)) {
             return new ApiResponse<>(ErrorMessage.INVALID_TRIP_REQUEST, null);
         }
+        if ("POST".equals(request.getMethod())
+                && "/trips/{tripId}/story-generations".equals(matchedPath)) {
+            return new ApiResponse<>(ErrorMessage.INVALID_STORY_REQUEST, null);
+        }
         return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
+    }
+
+    @ExceptionHandler(TripCreationMetadataMissingException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleTripCreationMetadataMissing(TripCreationMetadataMissingException e) {
+        return new ApiResponse<>(ErrorMessage.ALL_PHOTOS_METADATA_MISSING, null);
     }
 
     @ExceptionHandler(InvalidTripRequestException.class)
@@ -99,7 +179,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BindException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleBindException(BindException e) {
-        return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
+        return new ApiResponse<>(validationError(e.getBindingResult()), null);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -311,6 +391,69 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
     }
 
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleMethodValidation(HandlerMethodValidationException e) {
+        boolean missingDestination = e.getParameterValidationResults().stream()
+                .filter(ParameterErrors.class::isInstance)
+                .map(ParameterErrors.class::cast)
+                .anyMatch(errors -> validationError(errors) == ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED);
+        return new ApiResponse<>(missingDestination
+                ? ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED : ErrorMessage.INVALID_REQUEST, null);
+    }
+
+    @ExceptionHandler(StoryAlreadyExistsException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleStoryAlreadyExists(StoryAlreadyExistsException e) {
+        return new ApiResponse<>(ErrorMessage.STORY_ALREADY_EXISTS, null);
+    }
+
+    @ExceptionHandler(InvalidStoryRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidStoryRequest(InvalidStoryRequestException e) {
+        return new ApiResponse<>(ErrorMessage.INVALID_STORY_REQUEST, null);
+    }
+
+    @ExceptionHandler(StoryGenerationInProgressException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleStoryGenerationInProgress(StoryGenerationInProgressException e) {
+        return new ApiResponse<>(ErrorMessage.STORY_GENERATION_IN_PROGRESS, null);
+    }
+
+    @ExceptionHandler(StoryGenerationForbiddenException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    ApiResponse<Void> handleStoryGenerationForbidden(
+            StoryGenerationForbiddenException e
+    ) {
+        return new ApiResponse<>(ErrorMessage.STORY_GENERATION_FORBIDDEN, null);
+    }
+
+    @ExceptionHandler(StoryNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleStoryNotFound(StoryNotFoundException e) {
+        return new ApiResponse<>(ErrorMessage.STORY_NOT_FOUND, null);
+    }
+
+    @ExceptionHandler(StoryGenerationNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleStoryGenerationNotFound(StoryGenerationNotFoundException e) {
+        return new ApiResponse<>(ErrorMessage.STORY_GENERATION_NOT_FOUND, null);
+    }
+
+    @ExceptionHandler(StoryGenerationCannotBeCanceledException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleStoryGenerationCannotBeCanceled(StoryGenerationCannotBeCanceledException e) {
+        return new ApiResponse<>(ErrorMessage.STORY_GENERATION_CANNOT_BE_CANCELED, null);
+    }
+
+    @ExceptionHandler(StoryDataIntegrityException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    ApiResponse<Void> handleStoryDataIntegrity(StoryDataIntegrityException e) {
+        logFailure(log.atError(), ErrorMessage.INTERNAL_SERVER_ERROR,
+                "스토리 조회 데이터의 정합성 검증에 실패했습니다.", e);
+        return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
+    }
+
     @ExceptionHandler(TripNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     ApiResponse<Void> handleTripNotFound(TripNotFoundException e) {
@@ -359,6 +502,14 @@ public class GlobalExceptionHandler {
             PlaceFolderNotFoundException exception
     ) {
         return new ApiResponse<>(ErrorMessage.PLACE_FOLDER_NOT_FOUND, null);
+    }
+
+    @ExceptionHandler(InvalidAttachmentIssueException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidAttachmentIssue(
+            InvalidAttachmentIssueException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.INVALID_ATTACHMENT_ISSUE, null);
     }
 
     @ExceptionHandler(InvalidCursorException.class)

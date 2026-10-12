@@ -90,17 +90,32 @@ class TripDeletionServiceTest {
     }
 
     @Test
-    void 다른_활성_첨부가_공유하는_파일은_삭제하지_않는다() {
-        TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
+    void 여러_파일을_참조_조회_없이_한번에_소프트_삭제한다() {
         when(trips.findOwnedActiveForUpdate(7L, 1L))
                 .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
         when(attachments.findAllByTripIdAndDeletedAtIsNull(7L))
-                .thenReturn(List.of(attachment));
-        when(attachments.existsByFileIdAndDeletedAtIsNull(20L)).thenReturn(true);
+                .thenReturn(List.of(
+                        TripAttachment.initial(7L, 20L, "analyze-a", "preview-a"),
+                        TripAttachment.initial(7L, 21L, "analyze-b", "preview-b")));
 
         service.delete(7L, 1L);
 
-        verify(files, never()).softDeleteByIds(any(), any());
+        verify(attachments, never()).existsByFileIdAndDeletedAtIsNull(anyLong());
+        verify(files).softDeleteByIds(eq(List.of(20L, 21L)), any());
+        verify(userStats).refreshFromActiveTrips(1L);
+    }
+
+    @Test
+    void 첨부가_없으면_파일_삭제를_호출하지_않는다() {
+        when(trips.findOwnedActiveForUpdate(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
+        when(attachments.findAllByTripIdAndDeletedAtIsNull(7L)).thenReturn(List.of());
+
+        service.delete(7L, 1L);
+
+        verifyNoInteractions(files);
+        verify(attachments, never()).existsByFileIdAndDeletedAtIsNull(anyLong());
+        verify(userStats).refreshFromActiveTrips(1L);
     }
 
     private Trip trip(ProcessingStatus status) {

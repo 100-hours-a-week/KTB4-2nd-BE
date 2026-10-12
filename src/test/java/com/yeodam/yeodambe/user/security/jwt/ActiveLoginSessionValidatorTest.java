@@ -38,7 +38,7 @@ class ActiveLoginSessionValidatorTest {
     }
 
     @Test
-    void acceptsTokenWhenSessionAndActiveUserMatch() {
+    void 세션과_활성_사용자가_일치하면_토큰을_허용한다() {
         User user = mock(User.class);
         given(loginSessionStore.findBySid("sid-1"))
                 .willReturn(Optional.of(new LoginSession(42L, "refresh-hash")));
@@ -48,14 +48,14 @@ class ActiveLoginSessionValidatorTest {
     }
 
     @Test
-    void rejectsTokenWithoutSidBeforeLookingUpSession() {
+    void 세션_조회_전에_SID가_없는_토큰을_거부한다() {
         assertThat(validator.validate(jwt("42", null)).hasErrors()).isTrue();
 
         verifyNoInteractions(loginSessionStore, userRepository);
     }
 
     @Test
-    void rejectsTokenWhenDatabaseSessionIsMissing() {
+    void DB에_세션이_없으면_토큰을_거부한다() {
         given(loginSessionStore.findBySid("sid-1"))
                 .willReturn(Optional.empty());
 
@@ -65,7 +65,7 @@ class ActiveLoginSessionValidatorTest {
     }
 
     @Test
-    void rejectsTokenWhenSessionBelongsToAnotherUser() {
+    void 세션이_다른_사용자의_것이면_토큰을_거부한다() {
         given(loginSessionStore.findBySid("sid-1"))
                 .willReturn(Optional.of(new LoginSession(99L, "refresh-hash")));
 
@@ -75,7 +75,7 @@ class ActiveLoginSessionValidatorTest {
     }
 
     @Test
-    void rejectsTokenWhenUserIsSoftDeleted() {
+    void 사용자가_소프트_삭제되면_토큰을_거부한다() {
         User user = mock(User.class);
         given(user.getDeletedAt()).willReturn(LocalDateTime.now());
         given(loginSessionStore.findBySid("sid-1"))
@@ -86,7 +86,7 @@ class ActiveLoginSessionValidatorTest {
     }
 
     @Test
-    void reportsAuthenticationStoreFailureWhenDatabaseIsUnavailable() {
+    void DB를_사용할_수_없으면_인증_저장소_오류로_보고한다() {
         DataAccessResourceFailureException databaseFailure =
                 new DataAccessResourceFailureException(
                         "Authentication database unavailable"

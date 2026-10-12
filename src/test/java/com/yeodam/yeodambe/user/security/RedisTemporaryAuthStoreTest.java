@@ -27,7 +27,7 @@ class RedisTemporaryAuthStoreTest {
     @Autowired private TokenHasher hasher;
 
     @Test
-    void csrfLivesInRedisAndLookupDoesNotExtendItsLifetime() {
+    void CSRF를_Redis에_저장하고_조회해도_유효기간을_늘리지_않는다() {
         String context = UUID.randomUUID().toString();
         csrf.save(context, "known-csrf");
         String key = "yeodam:test:auth:csrf:" + hasher.hash(context);
@@ -41,7 +41,7 @@ class RedisTemporaryAuthStoreTest {
     }
 
     @Test
-    void wrongBrowserDoesNotDeleteRedisState() {
+    void 다른_브라우저의_요청은_Redis의_상태를_삭제하지_않는다() {
         String state = UUID.randomUUID().toString();
         states.save(state, "correct-browser");
         String key = "yeodam:test:auth:oauth-state:" + hasher.hash(state);
@@ -53,7 +53,7 @@ class RedisTemporaryAuthStoreTest {
     }
 
     @Test
-    void concurrentCsrfIssuanceReturnsSameStoredToken() throws Exception {
+    void 동시_CSRF_발급은_같은_저장된_토큰을_반환한다() throws Exception {
         String context = UUID.randomUUID().toString();
         var start = new java.util.concurrent.CountDownLatch(1);
         try (var executor = java.util.concurrent.Executors.newFixedThreadPool(2)) {
@@ -67,7 +67,7 @@ class RedisTemporaryAuthStoreTest {
     }
 
     @Test
-    void concurrentStateConsumptionHasOnlyOneWinner() throws Exception {
+    void 동시에_상태를_소비하면_하나의_요청만_성공한다() throws Exception {
         String state = UUID.randomUUID().toString();
         states.save(state, "browser");
         var start = new java.util.concurrent.CountDownLatch(1);

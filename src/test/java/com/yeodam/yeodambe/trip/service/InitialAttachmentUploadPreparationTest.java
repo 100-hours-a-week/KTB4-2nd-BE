@@ -59,7 +59,7 @@ class InitialAttachmentUploadPreparationTest {
     }
 
     @Test
-    void createsFirstBatchAndReusesItsIdAndKeysOnIdenticalRequest() {
+    void 첫_배치를_생성하고_동일한_요청에는_ID와_키를_재사용한다() {
         var request = request(1, 3, false, firstFiles());
         InitialAttachmentUploadBatch first = prepare(request);
         List<String> originalKeys = keys(first);
@@ -79,7 +79,7 @@ class InitialAttachmentUploadPreparationTest {
     }
 
     @Test
-    void rejectsChangedMetadataOrBatchDeclarationOnSameBatchNumber() {
+    void 같은_배치_번호에서_메타데이터나_배치_선언이_달라지면_거부한다() {
         InitialAttachmentUploadBatch first = prepare(request(1, 3, false, firstFiles()));
         List<String> originalKeys = keys(first);
         var firstFile = firstFiles().getFirst();
@@ -103,7 +103,7 @@ class InitialAttachmentUploadPreparationTest {
     }
 
     @Test
-    void acceptsNextBatchOnlyAfterPreviousCompletionAndKeepsExecutionId() {
+    void 이전_배치_완료_후에만_다음_배치를_허용하고_작업_ID를_유지한다() {
         InitialAttachmentUploadBatch first = prepare(request(1, 3, false, firstFiles()));
         var secondRequest = request(2, 3, true, List.of(file("third.jpg", 4096)));
         assertThatThrownBy(() -> prepare(secondRequest))
@@ -126,7 +126,7 @@ class InitialAttachmentUploadPreparationTest {
     }
 
     @Test
-    void rejectsIncorrectFinalCountWithoutCreatingNewBatch() {
+    void 새_배치를_만들지_않고_잘못된_최종_개수를_거부한다() {
         assertThatThrownBy(() -> prepare(request(1, 3, true, firstFiles())))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
         assertThat(batches.findFirstByTripIdAndUserIdOrderByIdDesc(trip.getId(), owner.getUserId())).isEmpty();
@@ -141,7 +141,7 @@ class InitialAttachmentUploadPreparationTest {
     }
 
     @Test
-    void refusesWrongOwnerDeletedTripOrNonProcessingTrip() {
+    void 다른_소유자와_삭제된_여행과_처리_중이_아닌_여행을_거부한다() {
         var request = request(1, 1, true, List.of(file("first.jpg", 1024)));
         User other = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원"));
         assertThatThrownBy(() -> service.prepareBatch(trip.getId(), other.getUserId(), request))
@@ -157,7 +157,7 @@ class InitialAttachmentUploadPreparationTest {
     }
 
     @Test
-    void refusesExistingAttachmentsFirstBatchNumberOtherThanOneAndRequestsAfterFinalBatch() {
+    void 기존_첨부와_1이_아닌_첫_배치_번호와_최종_배치_이후_요청을_거부한다() {
         assertThatThrownBy(() -> prepare(request(2, 1, true, List.of(file("first.jpg", 1024)))))
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
         StoredFile original = files.saveAndFlush(StoredFile.uploaded(owner.getUserId(), "existing.jpg", "existing/key", "image/jpeg"));
@@ -176,7 +176,7 @@ class InitialAttachmentUploadPreparationTest {
     }
 
     @Test
-    void simultaneousIdenticalRequestsCreateOnlyOneBatchAndOneFileList() throws Exception {
+    void 동일한_동시_요청은_배치와_파일_목록을_하나씩만_만든다() throws Exception {
         var request = request(1, 3, false, firstFiles());
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);

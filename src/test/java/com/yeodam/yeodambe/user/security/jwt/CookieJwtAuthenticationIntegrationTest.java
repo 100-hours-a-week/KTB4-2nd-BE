@@ -49,7 +49,7 @@ class CookieJwtAuthenticationIntegrationTest {
     }
 
     @Test
-    void validAccessCookieAuthenticatesProtectedRequest() throws Exception {
+    void 유효한_액세스_쿠키로_보호된_요청을_인증한다() throws Exception {
         String unique = UUID.randomUUID().toString();
         User user = userRegistrationService.register(
                 "auth-" + unique + "@yeodam.test",
@@ -67,7 +67,7 @@ class CookieJwtAuthenticationIntegrationTest {
     }
 
     @Test
-    void missingOrInvalidAccessCookieCannotEnterProtectedRequest() throws Exception {
+    void 액세스_쿠키가_없거나_유효하지_않으면_보호된_요청을_거부한다() throws Exception {
         mockMvc.perform(get("/test/auth-probe"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().json("""

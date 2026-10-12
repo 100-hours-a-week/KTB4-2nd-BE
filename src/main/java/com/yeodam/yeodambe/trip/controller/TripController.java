@@ -13,6 +13,8 @@ import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import com.yeodam.yeodambe.trip.service.request.TripCreationValidationRequest;
+import com.yeodam.yeodambe.trip.service.response.TripCreationValidationResponse;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
@@ -23,6 +25,7 @@ import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
 import jakarta.validation.Valid;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -44,6 +47,15 @@ public class TripController {
     private final TripProcessingCancellationService processingCancellationService;
     private final TripPlaceFolderListService tripPlaceFolderListService;
     private final TripDeletionService tripDeletionService;
+    private final ObjectMapper objectMapper;
+
+    @PostMapping("/trips/creation-validation")
+    public ResponseEntity<ApiResponse<TripCreationValidationResponse>> validateCreation(
+            @Valid @RequestBody TripCreationValidationRequest request
+    ) {
+        TripCreationValidationResponse data = tripService.validateCreation(request.attachmentMetadata());
+        return ResponseEntity.ok(new ApiResponse<>(SuccessMessage.TRIP_CREATION_VALIDATED, data));
+    }
 
     @PostMapping("/trips")
     public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(
@@ -51,7 +63,10 @@ public class TripController {
             @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
+                .body(new ApiResponse<>(
+                        SuccessMessage.TRIP_CREATED,
+                        tripService.createTrip(Long.valueOf(jwt.getSubject()), request)
+                        ));
     }
 
     @PatchMapping("/trips/{tripId}")
@@ -171,7 +186,7 @@ public class TripController {
             @RequestParam(required = false) String favorite,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        TripListRequest request = TripListRequest.from(cursor, sort, favorite);
+        TripListRequest request = TripListRequest.from(cursor, sort, favorite, objectMapper);
         return ResponseEntity.ok(new ApiResponse<>(
                 SuccessMessage.TRIP_LIST_FOUND,
                 tripService.findTrips(Long.valueOf(jwt.getSubject()), request)

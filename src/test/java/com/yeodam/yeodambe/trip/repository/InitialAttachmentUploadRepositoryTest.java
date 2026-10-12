@@ -52,7 +52,7 @@ class InitialAttachmentUploadRepositoryTest {
     }
 
     @Test
-    void savesMigratedBatchesAndReturnsSameNamedFilesInRequestOrder() {
+    void 마이그레이션된_배치를_저장하고_동일한_이름의_파일을_요청순으로_반환한다() {
         String executionId = UUID.randomUUID().toString();
         InitialAttachmentUploadBatch first = batches.save(batch(executionId, 1, false));
         InitialAttachmentUploadBatch last = batches.save(batch(executionId, 2, true));
@@ -87,7 +87,7 @@ class InitialAttachmentUploadRepositoryTest {
     }
 
     @Test
-    void lockedLookupRequiresMatchingUploadIdTripAndOwner() {
+    void 잠금_조회에는_일치하는_업로드_ID와_여행과_소유자가_필요하다() {
         InitialAttachmentUploadBatch saved = batches.saveAndFlush(batch(UUID.randomUUID().toString(), 1, false));
         User otherUser = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원"));
         Trip otherTrip = trips.save(new Trip(owner.getUserId(), "다른여행", LocalDate.now(), LocalDate.now()));
@@ -101,7 +101,7 @@ class InitialAttachmentUploadRepositoryTest {
     }
 
     @Test
-    void rejectsDuplicatePublicUploadId() {
+    void 중복된_공개_업로드_ID를_거부한다() {
         InitialAttachmentUploadBatch first = batches.saveAndFlush(batch(UUID.randomUUID().toString(), 1, false));
         InitialAttachmentUploadBatch duplicate = new InitialAttachmentUploadBatch(
                 first.getUploadId(), UUID.randomUUID().toString(), trip.getId(), owner.getUserId(), 1, 2, false);
@@ -111,7 +111,7 @@ class InitialAttachmentUploadRepositoryTest {
     }
 
     @Test
-    void rejectsDuplicateBatchNumberWithinSameExecution() {
+    void 같은_작업의_중복_배치_번호를_거부한다() {
         String executionId = UUID.randomUUID().toString();
         batches.saveAndFlush(batch(executionId, 1, false));
 
@@ -120,7 +120,7 @@ class InitialAttachmentUploadRepositoryTest {
     }
 
     @Test
-    void rejectsDuplicateFileOrderWithinSameBatch() {
+    void 같은_배치의_중복_파일_순서를_거부한다() {
         InitialAttachmentUploadBatch saved = batches.saveAndFlush(batch(UUID.randomUUID().toString(), 1, false));
         items.saveAndFlush(item(saved, 1, "original/first"));
 
@@ -129,7 +129,7 @@ class InitialAttachmentUploadRepositoryTest {
     }
 
     @Test
-    void deletingAttachmentClearsOnlyItemReference() {
+    void 첨부를_삭제하면_항목의_참조만_제거한다() {
         InitialAttachmentUploadBatch saved = batches.saveAndFlush(batch(UUID.randomUUID().toString(), 1, false));
         InitialAttachmentUploadItem savedItem = items.saveAndFlush(item(saved, 1, "original/first"));
         StoredFile original = files.saveAndFlush(StoredFile.uploaded(owner.getUserId(), "same.jpg", "original/first", "image/jpeg"));

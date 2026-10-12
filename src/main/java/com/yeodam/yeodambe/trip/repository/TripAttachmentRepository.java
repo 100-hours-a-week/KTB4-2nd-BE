@@ -1,7 +1,9 @@
 package com.yeodam.yeodambe.trip.repository;
 
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Modifying;
@@ -14,6 +16,113 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface TripAttachmentRepository extends JpaRepository<TripAttachment, Long> {
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update TripAttachment attachment
+            set attachment.tripPlaceId = :targetTripPlaceId,
+                attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE,
+                attachment.issue = com.yeodam.yeodambe.trip.entity.AttachmentIssue.NONE,
+                attachment.updatedAt = :updatedAt
+            where attachment.id = :attachmentId
+              and attachment.tripId = :tripId
+              and (attachment.tripPlaceId = :expectedTripPlaceId
+                   or (attachment.tripPlaceId is null and :expectedTripPlaceId is null))
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.UNCLASSIFIED
+              and attachment.issue in (
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.UNCLEAR_LOCATION,
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.BLURRY,
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.DUPLICATED
+              )
+              and attachment.deletedAt is null
+              and exists (
+                  select file.id from StoredFile file
+                  where file.id = attachment.fileId and file.deletedAt is null
+              )
+              and exists (
+                  select trip.id from Trip trip
+                  where trip.id = attachment.tripId
+                    and trip.userId = :userId
+                    and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
+                    and trip.deletedAt is null
+              )
+            """)
+    int restoreIfUnclassified(
+            @Param("attachmentId") Long attachmentId,
+            @Param("tripId") Long tripId,
+            @Param("userId") Long userId,
+            @Param("expectedTripPlaceId") Long expectedTripPlaceId,
+            @Param("targetTripPlaceId") Long targetTripPlaceId,
+            @Param("updatedAt") LocalDateTime updatedAt
+    );
+
+    @Query("""
+            select new com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse(
+                    attachment.id, attachment.analyzeStorageKey, attachment.takenAt,
+                    place.placeName, trip.tripName
+            )
+            from TripAttachment attachment
+            join attachment.trip trip
+            join attachment.file file
+            left join attachment.tripPlace place
+            where trip.userId = :userId
+              and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
+              and trip.deletedAt is null
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and (attachment.tripPlaceId is null or (place.deletedAt is null and place.tripId = trip.id))
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+              and (:takenFrom is null or attachment.takenAt >= :takenFrom)
+              and (:takenBefore is null or attachment.takenAt < :takenBefore)
+              and (:filterRegions = false or exists (
+                  select region.id from TripRegion region
+                  where region.trip.id = trip.id
+                    and region.deletedAt is null
+                    and region.regionName in :regionNames
+              ))
+            order by attachment.id
+            """)
+    List<TripSearchCandidateResponse> findSearchCandidates(
+            @Param("userId") Long userId,
+            @Param("takenFrom") LocalDateTime takenFrom,
+            @Param("takenBefore") LocalDateTime takenBefore,
+            @Param("filterRegions") boolean filterRegions,
+            @Param("regionNames") Collection<String> regionNames
+    );
+
+    @Query("""
+            select attachment
+            from TripAttachment attachment
+            join fetch attachment.trip trip
+            join fetch attachment.file file
+            left join fetch attachment.tripPlace place
+            where attachment.id in :attachmentIds
+              and trip.userId = :userId
+              and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
+              and trip.deletedAt is null
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and (attachment.tripPlaceId is null or (place.deletedAt is null and place.tripId = trip.id))
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+            """)
+    List<TripAttachment> findSearchResults(
+            @Param("userId") Long userId,
+            @Param("attachmentIds") Collection<Long> attachmentIds
+    );
+
+    @Query("""
+            select new com.yeodam.yeodambe.trip.repository.TripAttachmentCount(
+                attachment.tripId, count(attachment)
+            )
+            from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripId in :tripIds
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+            group by attachment.tripId
+            """)
+    List<TripAttachmentCount> countActiveByTripIds(@Param("tripIds") Collection<Long> tripIds);
+
     @Query("""
             select new com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount(
                     attachment.tripPlaceId,
@@ -21,13 +130,40 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             )
             from TripAttachment attachment
             join attachment.file file
+            join attachment.tripPlace place
             where attachment.tripPlaceId in :tripPlaceIds
+              and attachment.tripId = place.tripId
+              and place.deletedAt is null
               and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
               and attachment.deletedAt is null
               and file.deletedAt is null
             group by attachment.tripPlaceId
             """)
     List<PlaceFolderAttachmentCount> countActiveByTripPlaceIds(
+            @Param("tripPlaceIds") Collection<Long> tripPlaceIds
+    );
+
+    @Query("""
+            select attachment
+            from TripAttachment attachment
+            join attachment.trip trip
+            join attachment.tripPlace place
+            join attachment.file file
+            where attachment.tripId = :tripId
+              and place.tripId = :tripId
+              and attachment.tripPlaceId in :tripPlaceIds
+              and trip.deletedAt is null
+              and place.deletedAt is null
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+              and attachment.takenAt is not null
+            order by attachment.tripPlaceId asc,
+                     attachment.takenAt asc,
+                     attachment.id asc
+            """)
+    List<TripAttachment> findForStoryGeneration(
+            @Param("tripId") Long tripId,
             @Param("tripPlaceIds") Collection<Long> tripPlaceIds
     );
 
@@ -282,5 +418,71 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     List<TripAttachment> findAllActiveByTripId(
             @Param("tripId") Long tripId,
             @Param("classificationStatus") ClassificationStatus classificationStatus
+    );
+
+    @Query("""
+            select new com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount(
+                    attachment.issue,
+                    count(attachment)
+            )
+            from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripId = :tripId
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.UNCLASSIFIED
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and attachment.issue in (
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.UNCLEAR_LOCATION,
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.BLURRY,
+                  com.yeodam.yeodambe.trip.entity.AttachmentIssue.DUPLICATED
+              )
+            group by attachment.issue
+            """)
+    List<UnclassifiedFolderAttachmentCount> countUnclassifiedByIssue(
+            @Param("tripId") Long tripId
+    );
+
+    @Query("""
+            select attachment
+            from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripId = :tripId
+              and attachment.issue = :issue
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.UNCLASSIFIED
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+            order by attachment.createdAt desc, attachment.id desc
+            """)
+    List<TripAttachment> findUnclassifiedRepresentatives(
+            @Param("tripId") Long tripId,
+            @Param("issue") AttachmentIssue issue,
+            Pageable pageable
+    );
+
+    @Query("""
+            select attachment
+            from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripId = :tripId
+              and attachment.issue = :issue
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.UNCLASSIFIED
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and (
+                  :cursorCreatedAt is null
+                  or attachment.createdAt < :cursorCreatedAt
+                  or (
+                      attachment.createdAt = :cursorCreatedAt
+                      and attachment.id < :cursorId
+                  )
+              )
+            order by attachment.createdAt desc, attachment.id desc
+            """)
+    List<TripAttachment> findUnclassifiedByIssueWithCursor(
+            @Param("tripId") Long tripId,
+            @Param("issue") AttachmentIssue issue,
+            @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable
     );
 }

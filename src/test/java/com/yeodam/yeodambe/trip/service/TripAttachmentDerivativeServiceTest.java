@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 import javax.imageio.ImageIO;
@@ -34,9 +35,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Answers.RETURNS_SELF;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.withSettings;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -59,6 +63,53 @@ class TripAttachmentDerivativeServiceTest {
     @AfterEach
     void tearDown() {
         scheduler.stop();
+    }
+
+    @Test
+    void ImageMagick_7을_사용할_수_있으면_convert로_대체하지_않는다() throws Exception {
+        Process process = mock(Process.class);
+        try (var builders = mockConstruction(ProcessBuilder.class,
+                withSettings().defaultAnswer(RETURNS_SELF),
+                (builder, context) -> when(builder.start()).thenReturn(process))) {
+            Process result = ReflectionTestUtils.invokeMethod(service, "startProcess",
+                    (Object) new String[]{"magick", "input.heic", "output.jpg"});
+
+            assertEquals(process, result);
+            verify(builders.constructed().getFirst(), never()).command(any(String[].class));
+        }
+    }
+
+    @Test
+    void magick을_시작할_수_없으면_같은_인자로_convert를_사용한다() throws Exception {
+        Process process = mock(Process.class);
+        try (var builders = mockConstruction(ProcessBuilder.class,
+                withSettings().defaultAnswer(RETURNS_SELF),
+                (builder, context) -> when(builder.start())
+                        .thenThrow(new IOException("magick unavailable"))
+                        .thenReturn(process))) {
+            Process result = ReflectionTestUtils.invokeMethod(service, "startProcess",
+                    (Object) new String[]{"magick", "input.heic", "output.jpg"});
+
+            assertEquals(process, result);
+            verify(builders.constructed().getFirst())
+                    .command(new String[]{"convert", "input.heic", "output.jpg"});
+        }
+    }
+
+    @Test
+    void magick_변환에_실패하면_convert로_재시도하지_않는다() throws Exception {
+        Process process = mock(Process.class);
+        when(process.waitFor(120, TimeUnit.SECONDS)).thenReturn(true);
+        when(process.exitValue()).thenReturn(1);
+        try (var builders = mockConstruction(ProcessBuilder.class,
+                withSettings().defaultAnswer(RETURNS_SELF),
+                (builder, context) -> when(builder.start()).thenReturn(process))) {
+            assertThrows(IllegalStateException.class,
+                    () -> ReflectionTestUtils.invokeMethod(service, "run",
+                            (Object) new String[]{"magick", "input.heic", "output.jpg"}));
+
+            verify(builders.constructed().getFirst(), never()).command(any(String[].class));
+        }
     }
 
     @Test

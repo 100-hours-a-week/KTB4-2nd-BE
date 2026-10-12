@@ -44,7 +44,7 @@ class OAuthTokenClaimTest {
     private final KakaoUserIdentity identity = new KakaoUserIdentity("provider", "claim@example.com");
 
     @Test
-    void ticketClaimPreservesBrowserBindingAndOnlyOwnerCanReleaseOrComplete() {
+    void 티켓_선점은_브라우저_연결을_유지하고_선점자만_해제하거나_완료할_수_있다() {
         String token = UUID.randomUUID().toString();
         tickets.save(token, identity, "browser");
         assertThat(tickets.claim(token, "wrong", "intruder")).isEmpty();
@@ -59,7 +59,7 @@ class OAuthTokenClaimTest {
     }
 
     @Test
-    void claimAndReleaseKeepOriginalExpirationAndDoNotRecreateDeletedKey() {
+    void 선점과_해제는_기존_유효기간을_유지하고_삭제된_키를_다시_만들지_않는다() {
         String token = UUID.randomUUID().toString();
         profiles.save(token, identity);
         String key = "yeodam:test:auth:profile-token:" + hasher.hash(token);
@@ -78,7 +78,7 @@ class OAuthTokenClaimTest {
     }
 
     @Test
-    void concurrentProfileClaimsHaveOnlyOneWinner() throws Exception {
+    void 동시_프로필_선점은_하나의_요청만_성공한다() throws Exception {
         String token = UUID.randomUUID().toString();
         profiles.save(token, identity);
         CountDownLatch start = new CountDownLatch(1);
@@ -92,7 +92,7 @@ class OAuthTokenClaimTest {
     }
 
     @Test
-    void issuanceCollisionAndForeignCompensationPreserveExistingToken() {
+    void 발급_충돌과_다른_작업의_보상_처리는_기존_토큰을_유지한다() {
         String token = UUID.randomUUID().toString();
         profiles.save(token, identity, "first-issuance");
         assertThatThrownBy(() -> profiles.save(token, identity, "colliding-issuance"))
@@ -104,7 +104,7 @@ class OAuthTokenClaimTest {
     }
 
     @Test
-    void corruptTokenFailsClosed() {
+    void 손상된_토큰은_사용을_거부한다() {
         String token = UUID.randomUUID().toString();
         String key = "yeodam:test:auth:profile-token:" + hasher.hash(token);
         redis.opsForValue().set(key, "corrupted-private-value", Duration.ofMinutes(1));
@@ -114,7 +114,7 @@ class OAuthTokenClaimTest {
     }
 
     @Test
-    void missingOrMalformedTicketBrowserBindingIsStorageFailure() {
+    void 티켓의_브라우저_연결이_없거나_잘못되면_저장소_오류로_처리한다() {
         for (String replacement : List.of("null", "\"invalid\"")) {
             String token = UUID.randomUUID().toString();
             tickets.save(token, identity, "browser");
@@ -128,7 +128,7 @@ class OAuthTokenClaimTest {
     }
 
     @Test
-    void temporaryStoresWorkWithLuaDisabled() {
+    void Lua가_비활성화되어도_임시_저장소가_동작한다() {
         String username = "oauth-test-" + UUID.randomUUID();
         String password = UUID.randomUUID().toString();
         acl("SETUSER", username, "on", ">" + password, "~yeodam:test:auth:*",

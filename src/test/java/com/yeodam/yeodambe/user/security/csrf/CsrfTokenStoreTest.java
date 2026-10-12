@@ -28,7 +28,7 @@ class CsrfTokenStoreTest {
     private TokenHasher tokenHasher;
 
     @Test
-    void tokenIsBoundToBrowserContext() {
+    void CSRF_토큰은_브라우저_컨텍스트에_연결된다() {
         csrfTokenStore.save(
                 "browser-1",
                 "csrf-token"
@@ -46,7 +46,7 @@ class CsrfTokenStoreTest {
     }
 
     @Test
-    void newTokenReplacesPreviousToken() {
+    void 새_CSRF_토큰이_기존_토큰을_대체한다() {
         csrfTokenStore.save(
                 "browser-rotation",
                 "old-token"
@@ -71,7 +71,7 @@ class CsrfTokenStoreTest {
     }
 
     @Test
-    void storesBrowserHashAndSevenDayExpiration() {
+    void 브라우저_해시와_7일_유효기간을_저장한다() {
 
         csrfTokenStore.save(
                 "browser-ttl",
@@ -85,7 +85,7 @@ class CsrfTokenStoreTest {
     }
 
     @Test
-    void expiredTokenCannotBeFoundAndIsDeleted() throws Exception {
+    void 만료된_토큰은_조회할_수_없고_삭제된다() throws Exception {
         String browserContext = "browser-expired";
 
         csrfTokenStore.save(browserContext, "expired-token");

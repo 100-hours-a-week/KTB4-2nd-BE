@@ -4,7 +4,7 @@ import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
-import com.yeodam.yeodambe.user.exception.CsrfStoreUnavailableException;
+import com.yeodam.yeodambe.common.exception.CsrfStoreUnavailableException;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.oauth.LoginTicketStore;
 import com.yeodam.yeodambe.user.security.oauth.ProfileTokenStore;
@@ -49,7 +49,7 @@ class PostCommitCsrfFailureIntegrationTest {
     @MockitoSpyBean private CsrfTokenStore csrf;
 
     @Test
-    void signupCsrfCleanupFailureReturns503WithoutCookiesButKeepsCommittedMemberAndSession() throws Exception {
+    void 가입_후_CSRF_정리가_실패하면_쿠키_없이_503을_반환하고_커밋된_회원과_세션을_유지한다() throws Exception {
         String token = UUID.randomUUID().toString();
         String email = token + "@yeodam.test";
         profiles.save(token, new KakaoUserIdentity(token, email));
@@ -68,7 +68,7 @@ class PostCommitCsrfFailureIntegrationTest {
     }
 
     @Test
-    void loginCsrfCleanupFailureKeepsCommittedSessionWithoutDeliveringCookies() throws Exception {
+    void 로그인_후_CSRF_정리가_실패하면_쿠키를_전달하지_않고_커밋된_세션을_유지한다() throws Exception {
         String token = UUID.randomUUID().toString();
         String email = token + "@yeodam.test";
         var member = registration.register(email, "여행자", OAuthProvider.KAKAO, token);
@@ -87,7 +87,7 @@ class PostCommitCsrfFailureIntegrationTest {
     }
 
     @Test
-    void logoutCsrfCleanupFailureDoesNotRestoreDeletedSession() throws Exception {
+    void 로그아웃_후_CSRF_정리가_실패해도_삭제한_세션을_복원하지_않는다() throws Exception {
         String unique = UUID.randomUUID().toString();
         var member = registration.register(unique + "@yeodam.test", "여행자", OAuthProvider.KAKAO, unique);
         var session = issuer.issue(member.getUserId());

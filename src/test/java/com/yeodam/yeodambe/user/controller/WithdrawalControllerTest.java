@@ -1,6 +1,6 @@
 package com.yeodam.yeodambe.user.controller;
 
-import com.yeodam.yeodambe.user.exception.WithdrawalFailedException;
+import com.yeodam.yeodambe.common.exception.WithdrawalFailedException;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.service.WithdrawalService;
 import org.junit.jupiter.api.Test;
@@ -23,7 +23,7 @@ class WithdrawalControllerTest {
     private WithdrawalService service;
 
     @Test
-    void expiresSecureAuthenticationCookiesAfterSuccessfulWithdrawal() {
+    void 탈퇴에_성공하면_Secure_인증_쿠키를_만료시킨다() {
         var controller = new WithdrawalController(service, new CookiePathResolver("/api"), true);
         Jwt jwt = mock(Jwt.class);
         given(jwt.getSubject()).willReturn("42");
@@ -42,7 +42,7 @@ class WithdrawalControllerTest {
     }
 
     @Test
-    void propagatesWithdrawalFailureInsteadOfReturningSuccessfulResponse() {
+    void 탈퇴_실패를_성공_응답으로_반환하지_않고_전파한다() {
         var controller = new WithdrawalController(service, new CookiePathResolver("/api"), false);
         Jwt jwt = mock(Jwt.class);
         given(jwt.getSubject()).willReturn("42");

@@ -34,7 +34,7 @@ class AuthRepositoryTest {
     private EntityManager entityManager;
 
     @Test
-    void findsAuthenticationDataThroughItsLookupKey() {
+    void 조회_키로_인증_데이터를_찾는다() {
         LocalDateTime expiresAt = LocalDateTime.now().plusDays(7);
         User user = userRepository.save(
                 new User("auth-repository@yeodam.test", "저장소회원")
@@ -94,7 +94,7 @@ class AuthRepositoryTest {
     }
 
     @Test
-    void deletesOnlyExpiredAuthenticationData() {
+    void 만료된_인증_데이터만_삭제한다() {
         LocalDateTime now = LocalDateTime.now();
 
         oauthStateRepository.save(new OAuthStateEntity(

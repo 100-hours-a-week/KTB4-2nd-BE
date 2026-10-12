@@ -13,7 +13,8 @@ public enum IntegrationInternalErrorMessage {
     AI_PHOTO_ANALYSIS_STATUS_INVALID("AI 사진 분석 상태가 올바르지 않습니다."),
     AI_SERVER_HEALTH_CHECK_FAILED("AI 서버 상태 확인에 실패했습니다."),
     AI_SERVER_READY_WAIT_INTERRUPTED("AI 서버 준비 대기가 중단됐습니다"),
-    AI_SERVER_READY_WAIT_TIMEOUT("AI 서버 준비 시간이 초과됐습니다.");
+    AI_SERVER_READY_WAIT_TIMEOUT("AI 서버 준비 시간이 초과됐습니다."),
+    MSK_BOOTSTRAP_SERVERS_BLANK("MSK 프로필에서는 KAFKA_BOOTSTRAP_SERVERS가 비어 있을 수 없습니다.");
 
     private final String message;
 

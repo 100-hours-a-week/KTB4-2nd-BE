@@ -4,17 +4,17 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.yeodam.yeodambe.user.exception.DuplicateEmailException;
-import com.yeodam.yeodambe.user.exception.InvalidEmailException;
-import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
-import com.yeodam.yeodambe.user.exception.DuplicateOAuthAccountException;
-import com.yeodam.yeodambe.user.exception.KakaoAuthenticationFailedException;
-import com.yeodam.yeodambe.user.exception.LoginTicketInvalidOrExpiredException;
-import com.yeodam.yeodambe.user.exception.LoginTicketIssueFailedException;
-import com.yeodam.yeodambe.user.exception.OAuthProviderUnavailableException;
-import com.yeodam.yeodambe.user.exception.OAuthStateCreateFailedException;
-import com.yeodam.yeodambe.user.exception.OAuthStateInvalidOrExpiredException;
-import com.yeodam.yeodambe.user.exception.UserNotFoundException;
+import com.yeodam.yeodambe.common.exception.DuplicateEmailException;
+import com.yeodam.yeodambe.common.exception.InvalidEmailException;
+import com.yeodam.yeodambe.common.exception.InvalidNicknameException;
+import com.yeodam.yeodambe.common.exception.DuplicateOAuthAccountException;
+import com.yeodam.yeodambe.common.exception.KakaoAuthenticationFailedException;
+import com.yeodam.yeodambe.common.exception.LoginTicketInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.LoginTicketIssueFailedException;
+import com.yeodam.yeodambe.common.exception.OAuthProviderUnavailableException;
+import com.yeodam.yeodambe.common.exception.OAuthStateCreateFailedException;
+import com.yeodam.yeodambe.common.exception.OAuthStateInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.UserNotFoundException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,8 +55,34 @@ class GlobalExceptionHandlerTest {
         logAppender.stop();
     }
 
+    @Test
+    void 다른_DTO의_같은_필드_NotNull은_기존_입력_오류를_유지한다() {
+        var errors = new org.springframework.validation.BeanPropertyBindingResult(
+                new OtherRequest(null), "request");
+        errors.rejectValue("tripPlaceId", "NotNull");
+        var response = new GlobalExceptionHandler().handleBindException(
+                new org.springframework.validation.BindException(errors));
+        org.assertj.core.api.Assertions.assertThat(response.message()).isEqualTo("INVALID_REQUEST");
+    }
+
+    record OtherRequest(
+            Long tripPlaceId
+    ) {
+    }
+
     @ParameterizedTest
     @CsvSource({
+            "story-already-exists, 409, STORY_ALREADY_EXISTS",
+            "story-generation-in-progress, 409, STORY_GENERATION_IN_PROGRESS",
+            "story-generation-not-found, 404, STORY_GENERATION_NOT_FOUND",
+            "story-generation-cannot-be-canceled, 409, STORY_GENERATION_CANNOT_BE_CANCELED",
+            "invalid-story-request, 400, INVALID_STORY_REQUEST",
+            "restore-invalid, 400, INVALID_REQUEST",
+            "restore-required, 400, RESTORE_PLACE_FOLDER_REQUIRED",
+            "restore-mismatch, 409, RESTORE_PLACE_MISMATCH",
+            "restore-not-allowed, 409, ATTACHMENT_RESTORE_NOT_ALLOWED",
+            "restore-bulk-failed, 409, BULK_RESTORE_FAILED",
+            "story-generation-forbidden, 403, STORY_GENERATION_FORBIDDEN",
             "invalid-attachment, 400, INVALID_ATTACHMENT_UPLOAD",
             "trip-not-found, 404, TRIP_NOT_FOUND",
             "trip-deletion-not-allowed, 409, TRIP_DELETION_NOT_ALLOWED",
@@ -68,6 +94,8 @@ class GlobalExceptionHandlerTest {
             "place-folder-not-found, 404, PLACE_FOLDER_NOT_FOUND",
             "attachment-not-found, 404, ATTACHMENT_NOT_FOUND",
             "invalid-cursor, 400, INVALID_CURSOR",
+            "invalid-trip-list-filter, 400, INVALID_TRIP_LIST_FILTER",
+            "invalid-attachment-issue, 400, INVALID_ATTACHMENT_ISSUE",
             "invalid-place-folder-cursor, 400, INVALID_PLACE_FOLDER_CURSOR",
             "invalid-attachment-ids, 400, INVALID_ATTACHMENT_IDS",
             "write-permission-required, 403, WRITE_PERMISSION_REQUIRED",
@@ -81,7 +109,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsConflictWhenEmailAlreadyInUse() throws Exception {
+    void 이미_사용_중인_이메일이면_409를_반환한다() throws Exception {
         mockMvc.perform(get("/test/duplicate-email"))
                 .andExpect(status().isConflict())
                 .andExpect(content().json("""
@@ -93,7 +121,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsBadRequestWhenNicknameIsInvalid() throws Exception {
+    void 닉네임이_유효하지_않으면_400을_반환한다() throws Exception {
         mockMvc.perform(get("/test/invalid-nickname"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().json("""
@@ -112,7 +140,7 @@ class GlobalExceptionHandlerTest {
             "illegal-argument, 500, INTERNAL_SERVER_ERROR",
             "illegal-state, 500, INTERNAL_SERVER_ERROR"
     })
-    void distinguishesInvalidInputFromInternalRuntimeErrors(String path, int statusCode, String message)
+    void 잘못된_입력과_내부_런타임_오류를_구분한다(String path, int statusCode, String message)
             throws Exception {
         mockMvc.perform(get("/test/" + path))
                 .andExpect(status().is(statusCode))
@@ -120,7 +148,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsConflictWhenOAuthAccountAlreadyRegistered() throws Exception {
+    void 이미_등록된_OAuth_계정이면_409를_반환한다() throws Exception {
         mockMvc.perform(get("/test/duplicate-oauth-account"))
                 .andExpect(status().isConflict())
                 .andExpect(content().json("""
@@ -132,7 +160,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsBadRequestWhenOAuthStateIsInvalidOrExpired() throws Exception {
+    void OAuth_상태가_유효하지_않거나_만료되면_400을_반환한다() throws Exception {
         mockMvc.perform(get("/test/oauth-state-invalid"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().json("""
@@ -144,7 +172,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsUnauthorizedWhenKakaoAuthenticationFails() throws Exception {
+    void 카카오_인증이_실패하면_401을_반환한다() throws Exception {
         mockMvc.perform(get("/test/kakao-authentication-failed"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().json("""
@@ -156,7 +184,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsUnauthorizedWhenLoginTicketIsInvalidOrExpired() throws Exception {
+    void 로그인_티켓이_유효하지_않거나_만료되면_401을_반환한다() throws Exception {
         mockMvc.perform(get("/test/login-ticket-invalid"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().json("""
@@ -168,7 +196,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsServiceUnavailableWhenOAuthProviderFails() throws Exception {
+    void OAuth_제공자가_실패하면_503을_반환한다() throws Exception {
         mockMvc.perform(get("/test/oauth-provider-unavailable"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(content().json("""
@@ -180,7 +208,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsServiceUnavailableWhenAuthenticationDatabaseFails() throws Exception {
+    void 인증_DB가_실패하면_503을_반환한다() throws Exception {
         mockMvc.perform(get("/test/auth-database-unavailable"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(content().json("""
@@ -192,7 +220,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsNotFoundWhenActiveUserDoesNotExist() throws Exception {
+    void 활성_회원이_없으면_404를_반환한다() throws Exception {
         mockMvc.perform(get("/test/user-not-found"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().json("""
@@ -216,7 +244,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsInternalServerErrorWhenOAuthStateCreationFails() throws Exception {
+    void OAuth_상태_생성이_실패하면_500을_반환한다() throws Exception {
         mockMvc.perform(get("/test/oauth-state-create-failed"))
                 .andExpect(status().isInternalServerError())
                 .andExpect(content().json("""
@@ -228,7 +256,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsInternalServerErrorWhenLoginTicketIssueFails() throws Exception {
+    void 로그인_티켓_발급이_실패하면_500을_반환한다() throws Exception {
         mockMvc.perform(get("/test/login-ticket-issue-failed"))
                 .andExpect(status().isInternalServerError())
                 .andExpect(content().json("""
@@ -255,7 +283,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void returnsUnauthorizedWhenAuthenticationIsMissing() throws Exception {
+    void 인증이_없으면_401을_반환한다() throws Exception {
         mockMvc.perform(get("/test/authentication-missing"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().json("{\"message\":\"UNAUTHORIZED\",\"data\":null}"));
@@ -281,6 +309,66 @@ class GlobalExceptionHandlerTest {
 
     @RestController
     static class TestController {
+        @GetMapping("/test/story-generation-cannot-be-canceled")
+        void storyGenerationCannotBeCanceled() {
+            throw new StoryGenerationCannotBeCanceledException();
+        }
+
+        @GetMapping("/test/story-generation-not-found")
+        void storyGenerationNotFound() {
+            throw new StoryGenerationNotFoundException();
+        }
+
+        @GetMapping("/test/story-generation-in-progress")
+        void storyGenerationInProgress() {
+            throw new StoryGenerationInProgressException();
+        }
+
+        @GetMapping("/test/story-already-exists")
+        void storyAlreadyExists() {
+            throw new StoryAlreadyExistsException();
+        }
+
+        @GetMapping("/test/invalid-trip-list-filter")
+        void invalidTripListFilter() {
+            throw new InvalidTripListFilterException();
+        }
+
+        @GetMapping("/test/restore-invalid")
+        void invalidRestoreRequest() {
+            throw new InvalidRestoreRequestException();
+        }
+
+        @GetMapping("/test/restore-required")
+        void restorePlaceFolderRequired() {
+            throw new RestorePlaceFolderRequiredException();
+        }
+
+        @GetMapping("/test/restore-mismatch")
+        void restorePlaceMismatch() {
+            throw new RestorePlaceMismatchException();
+        }
+
+        @GetMapping("/test/restore-not-allowed")
+        void attachmentRestoreNotAllowed() {
+            throw new AttachmentRestoreNotAllowedException();
+        }
+
+        @GetMapping("/test/restore-bulk-failed")
+        void bulkRestoreFailed() {
+            throw new BulkRestoreFailedException();
+        }
+
+        @GetMapping("/test/story-generation-forbidden")
+        void storyGenerationForbidden() {
+            throw new com.yeodam.yeodambe.common.exception.StoryGenerationForbiddenException();
+        }
+
+        @GetMapping("/test/invalid-story-request")
+        void invalidStoryRequest() {
+            throw new com.yeodam.yeodambe.common.exception.InvalidStoryRequestException();
+        }
+
         @org.springframework.web.bind.annotation.RequestMapping(
                 path = {"/trips/{tripId}", "/test/unreadable"},
                 method = {org.springframework.web.bind.annotation.RequestMethod.PATCH,
@@ -349,6 +437,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/attachment-not-found")
         void attachmentNotFound() {
             throw new AttachmentNotFoundException();
+        }
+
+        @GetMapping("/test/invalid-attachment-issue")
+        void invalidAttachmentIssue() {
+            throw new InvalidAttachmentIssueException();
         }
 
         @GetMapping("/test/invalid-cursor")

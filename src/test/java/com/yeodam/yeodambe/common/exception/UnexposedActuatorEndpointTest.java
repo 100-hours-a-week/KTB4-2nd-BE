@@ -24,7 +24,7 @@ class UnexposedActuatorEndpointTest {
     private MockMvc mockMvc;
 
     @Test
-    void unexposedPrometheusEndpointReturnsNotFound() throws Exception {
+    void 노출하지_않은_프로메테우스_엔드포인트는_404를_반환한다() throws Exception {
         MvcResult result = mockMvc.perform(get("/actuator/prometheus"))
                 .andExpect(content().json("""
                         {"message":"RESOURCE_NOT_FOUND","data":null}

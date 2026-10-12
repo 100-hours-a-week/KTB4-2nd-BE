@@ -30,7 +30,7 @@ class LoginTicketStoreTest {
     private TokenHasher tokenHasher;
 
     @Test
-    void ticketCanBeConsumedOnlyOnce() {
+    void 로그인_티켓은_한_번만_소비할_수_있다() {
         String ticket = "login-ticket-once";
 
         KakaoUserIdentity identity =
@@ -54,7 +54,7 @@ class LoginTicketStoreTest {
     }
 
     @Test
-    void storesHashesAndOneMinuteExpiration() {
+    void 해시와_1분_유효기간을_저장한다() {
         String ticket = "login-ticket-hash";
         String browserContext = "browser-hash";
 
@@ -72,7 +72,7 @@ class LoginTicketStoreTest {
     }
 
     @Test
-    void differentBrowserCannotConsumeTicket() {
+    void 다른_브라우저는_로그인_티켓을_소비할_수_없다() {
         String ticket = "login-ticket-browser";
 
         KakaoUserIdentity identity =
@@ -97,7 +97,7 @@ class LoginTicketStoreTest {
     }
 
     @Test
-    void expiredTicketCannotBeConsumedAndIsDeleted() throws Exception {
+    void 만료된_티켓은_소비할_수_없고_삭제된다() throws Exception {
         String ticket = "login-ticket-expired";
 
         loginTicketStore.save(ticket, new KakaoUserIdentity("provider", "expire@example.com"), "browser-1");

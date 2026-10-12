@@ -39,7 +39,7 @@ class LoginSessionIssuerTest {
     }
 
     @Test
-    void issuesSessionAndStoresOnlyRefreshTokenHash() {
+    void 세션을_발급하고_리프레시_토큰은_해시만_저장한다() {
         given(sessionIdGenerator.generate()).willReturn("sid-1");
         given(refreshTokenGenerator.generate()).willReturn("raw-refresh-token");
         given(tokenHasher.hash("raw-refresh-token"))

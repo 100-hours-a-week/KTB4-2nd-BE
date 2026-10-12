@@ -37,7 +37,7 @@ class AccessTokenRefreshControllerTest {
     }
 
     @Test
-    void refreshesAccessAndRefreshTokenCookies() throws Exception {
+    void 액세스_토큰과_리프레시_토큰_쿠키를_재발급한다() throws Exception {
         given(service.refresh("old-refresh-token"))
                 .willReturn(new AccessTokenRefreshService.Result(
                         "new-access-token",

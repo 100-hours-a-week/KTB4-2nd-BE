@@ -1,10 +1,17 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.story.repository.StoryRepository;
+import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
 import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
 import com.yeodam.yeodambe.common.exception.TripUpdateNotAllowedException;
+import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
+import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
+import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -14,6 +21,9 @@ import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionName;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
+import com.yeodam.yeodambe.trip.exception.TripCreationMetadataMissingException;
+import com.yeodam.yeodambe.trip.service.response.TripCreationValidationResponse;
 import com.yeodam.yeodambe.trip.service.request.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
@@ -39,6 +49,8 @@ import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import tools.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
+
+import java.util.Collection;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.time.LocalDate;
@@ -48,6 +60,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -66,9 +79,98 @@ public class TripService {
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
     private final TripAccessService tripAccessService;
     private final ObjectMapper objectMapper;
+    private final StoryRepository storyRepository;
+
+    @Transactional(readOnly = true)
+    public List<TripSearchCandidateResponse> findSearchCandidates(Long userId, TripSearchCondition condition) {
+        List<String> regionNames = condition.regionNames() == null
+                ? List.of() : condition.regionNames();
+        boolean filterRegions = !regionNames.isEmpty();
+        LocalDateTime takenFrom = condition.dateFrom() == null
+                ? null : condition.dateFrom().atStartOfDay();
+        LocalDateTime takenBefore = condition.dateTo() == null
+                ? null : condition.dateTo().plusDays(1).atStartOfDay();
+
+        return tripAttachmentRepository.findSearchCandidates(
+                userId, takenFrom, takenBefore, filterRegions,
+                filterRegions ? regionNames : List.of("")
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public TripSearchResultResponse findSearchResults(Long userId, Collection<Long> attachmentIds) {
+        if (attachmentIds.isEmpty()) {
+            return new TripSearchResultResponse(List.of(), List.of());
+        }
+
+        List<TripAttachment> attachments = tripAttachmentRepository.findSearchResults(userId, attachmentIds);
+        if (attachments.isEmpty()) {
+            return new TripSearchResultResponse(List.of(), List.of());
+        }
+
+        List<TripSearchResultResponse.Attachment> photos = attachments.stream()
+                .map(attachment -> new TripSearchResultResponse.Attachment(
+                        attachment.getId(), attachment.getTripId(), attachment.getTripPlaceId(),
+                        tripAttachmentStorageClient.createReadUrl(attachment.getPreviewStorageKey())))
+                .toList();
+
+        List<TripSearchResultResponse.Folder> folders = buildSearchFolders(attachments);
+
+        return new TripSearchResultResponse(photos, folders);
+    }
+
+    private List<TripSearchResultResponse.Folder> buildSearchFolders(List<TripAttachment> attachments) {
+        Map<Long, TripDetailPlace> places = attachments.stream()
+                .map(TripAttachment::getTripPlace)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(TripDetailPlace::getId, place -> place,
+                        (first, duplicate) -> first, LinkedHashMap::new));
+        if (places.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Long> counts = tripAttachmentRepository.countActiveByTripPlaceIds(places.keySet()).stream()
+                .collect(Collectors.toMap(PlaceFolderAttachmentCount::tripPlaceId,
+                        PlaceFolderAttachmentCount::attachmentCount));
+        Map<Long, String> tripNames = attachments.stream()
+                .collect(Collectors.toMap(TripAttachment::getTripId,
+                        attachment -> attachment.getTrip().getTripName(), (first, duplicate) -> first));
+
+        return places.values().stream()
+                .map(place -> new TripSearchResultResponse.Folder(
+                        place.getTripId(), place.getId(), tripNames.get(place.getTripId()), place.getPlaceName(),
+                        place.getThumbnailKey() == null ? null
+                                : tripAttachmentStorageClient.createReadUrl(place.getThumbnailKey()),
+                        counts.getOrDefault(place.getId(), 0L)))
+                .toList();
+    }
+
+    public TripCreationValidationResponse validateCreation(List<TripAttachmentMetadataRequest> metadata) {
+        boolean canCreate = !allAttachmentsLackMetadata(metadata);
+        return new TripCreationValidationResponse(canCreate,
+                canCreate ? null : ErrorMessage.ALL_PHOTOS_METADATA_MISSING.name());
+    }
+
+    private boolean allAttachmentsLackMetadata(List<TripAttachmentMetadataRequest> metadata) {
+        return metadata.stream()
+                .allMatch(
+                        photo -> photo.takenAt() == null
+                                && photo.latitude() == null && photo.longitude() == null
+                );
+    }
+
+    private void validateCreationMetadata(List<TripAttachmentMetadataRequest> metadata) {
+        if (allAttachmentsLackMetadata(metadata)) {
+            log.atInfo()
+                    .addKeyValue("errorCode", ErrorMessage.ALL_PHOTOS_METADATA_MISSING)
+                    .log("사진 메타데이터가 없어 여행 생성을 거절했습니다.");
+            throw new TripCreationMetadataMissingException();
+        }
+    }
 
     @Transactional
     public TripCreateResponse createTrip(Long userId, TripCreateRequest request) {
+        validateCreationMetadata(request.attachmentMetadata());
         validateTrip(
                 request.startDate(),
                 request.endDate(),
@@ -284,6 +386,11 @@ public class TripService {
                     .toList();
 
             long attachmentCount = tripAttachmentRepository.countActiveByTripId(tripId);
+            long unclassifiedAttachmentCount = tripAttachmentRepository
+                    .countUnclassifiedByIssue(tripId).stream()
+                    .mapToLong(UnclassifiedFolderAttachmentCount::attachmentCount)
+                    .sum();
+            boolean hasStory = storyRepository.findCurrentCompletedByTripId(tripId).isPresent();
 
             TripDetailResponse response = new TripDetailResponse(
                     trip.getId(),
@@ -293,7 +400,8 @@ public class TripService {
                     ChronoUnit.DAYS.between(trip.getStartDate(), trip.getEndDate()),
                     regions,
                     attachmentCount,
-                    false,
+                    unclassifiedAttachmentCount,
+                    hasStory,
                     trip.getFavorite()
             );
 
@@ -464,7 +572,7 @@ public class TripService {
                     last.getFavorite(),
                     last.getStartDate(),
                     last.getId()
-            ).encode();
+            ).encode(objectMapper);
         }
         return new TripListResponse(items, hasNext, nextCursor);
     }

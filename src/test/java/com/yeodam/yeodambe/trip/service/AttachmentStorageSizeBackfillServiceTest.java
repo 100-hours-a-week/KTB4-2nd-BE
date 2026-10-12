@@ -46,7 +46,7 @@ class AttachmentStorageSizeBackfillServiceTest {
     @MockitoBean private TripAttachmentStorageClient storage;
 
     @Test
-    void fillsMissingSizesAndDoesNotReadS3AgainOnRetry() {
+    void 누락된_크기를_채우고_재시도할_때_S3를_다시_읽지_않는다() {
         var fixture = create(true);
         when(storage.size(fixture.originalKey())).thenReturn(100L);
         when(storage.size(fixture.analyzeKey())).thenReturn(40L);
@@ -73,7 +73,7 @@ class AttachmentStorageSizeBackfillServiceTest {
     }
 
     @Test
-    void preservesKnownSizeAndLeavesAbsentDisplaySizeNull() {
+    void 알려진_크기를_유지하고_없는_표시용_크기는_null로_둔다() {
         var fixture = create(false);
         jdbc.update("update files set original_size_bytes = 100 where file_id = ?", fixture.fileId());
         when(storage.size(fixture.analyzeKey())).thenReturn(40L);
@@ -90,7 +90,7 @@ class AttachmentStorageSizeBackfillServiceTest {
     }
 
     @Test
-    void keepsAllSizesMissingWhenS3ReadFails() {
+    void S3_읽기가_실패하면_모든_크기를_누락된_상태로_유지한다() {
         var fixture = create(false);
         when(storage.size(fixture.originalKey())).thenReturn(100L);
         when(storage.size(fixture.analyzeKey())).thenThrow(new IllegalStateException("S3 unavailable"));
@@ -106,7 +106,7 @@ class AttachmentStorageSizeBackfillServiceTest {
     }
 
     @Test
-    void doesNotBackfillTripThatIsStillProcessing() {
+    void 처리_중인_여행의_크기는_보충하지_않는다() {
         var fixture = create(false);
         jdbc.update("update trips set processing_status = 'PROCESSING' where trip_id = ?", fixture.tripId());
 
@@ -118,7 +118,7 @@ class AttachmentStorageSizeBackfillServiceTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"attachment", "file", "trip"})
-    void doesNotBackfillDeletedData(String target) {
+    void 삭제된_데이터의_크기는_보충하지_않는다(String target) {
         var fixture = create(false);
         switch (target) {
             case "attachment" -> jdbc.update("update trip_attachments set deleted_at = current_timestamp where trip_attachment_id = ?", fixture.attachmentId());
@@ -136,7 +136,7 @@ class AttachmentStorageSizeBackfillServiceTest {
     }
 
     @Test
-    void selectsMissingRowsInIdOrderAndExcludesDeletedAndFullyFilledRows() {
+    void ID순으로_크기_누락_행을_조회하고_삭제되거나_크기가_모두_있는_행은_제외한다() {
         var first = create(false);
         var second = create(true);
         var filled = create(false);

@@ -37,7 +37,7 @@ class CsrfStoreFailureIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
 
     @Test
-    void csrfFilterDoesNotInterceptBusinessDatabaseFailure() {
+    void CSRF_필터는_비즈니스_DB_오류를_가로채지_않는다() {
         var failure = new DataAccessResourceFailureException("Business DB failure");
         var filter = new CsrfStoreFailureFilter(objectMapper);
         Assertions.assertThatThrownBy(() -> filter.doFilter(
@@ -48,7 +48,7 @@ class CsrfStoreFailureIntegrationTest {
     }
 
     @Test
-    void corruptedRedisTypeReturns503DuringCsrfFilterAndIssuance() throws Exception {
+    void Redis_자료형이_손상되면_CSRF_필터와_발급에서_503을_반환한다() throws Exception {
         String context = UUID.randomUUID().toString();
         String key = "yeodam:test:auth:csrf:" + hasher.hash(context);
         redis.opsForHash().put(key, "corrupt", "private-value");

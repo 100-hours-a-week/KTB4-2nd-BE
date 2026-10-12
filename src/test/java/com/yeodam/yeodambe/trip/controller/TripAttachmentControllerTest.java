@@ -1,5 +1,11 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
+import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.response.AttachmentRestoreResponse;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
+import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
 import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
 import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
@@ -17,6 +23,14 @@ import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.common.exception.InvalidAttachmentIssueException;
+import com.yeodam.yeodambe.common.exception.InvalidCursorException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -54,9 +68,140 @@ class TripAttachmentControllerTest {
     private final BulkAttachmentDownloadService bulkDownloadService = mock(BulkAttachmentDownloadService.class);
     private final InitialAttachmentUploadUrlService uploadUrlService = mock(InitialAttachmentUploadUrlService.class);
     private final AdditionalAttachmentUploadUrlService additionalUploadUrlService = mock(AdditionalAttachmentUploadUrlService.class);
+    private final UnclassifiedFolderListService unclassifiedFolderListService =
+            mock(UnclassifiedFolderListService.class);
+    private final TripAttachmentRestoreService restoreService =
+            mock(TripAttachmentRestoreService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
-            service, listService, detailService, deletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class), additionalUploadUrlService
+            service,
+            listService,
+            detailService,
+            deletionService,
+            downloadService,
+            bulkDownloadService,
+            uploadUrlService,
+            mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class),
+            additionalUploadUrlService,
+            unclassifiedFolderListService,
+            restoreService
     );
+
+    @Test
+    void 소유자의_미분류_사진_목록을_명세대로_반환한다() throws Exception {
+        when(unclassifiedFolderListService.findAttachments(1L, 7L, "BLURRY", "cursor"))
+                .thenReturn(new UnclassifiedAttachmentListResponse(
+                        AttachmentIssue.BLURRY,
+                        "흐릿한 첨부",
+                        1L,
+                        List.of(new UnclassifiedAttachmentListResponse.Item(
+                                502L,
+                                "https://example.test/preview",
+                                AttachmentIssue.BLURRY,
+                                31L
+                        )),
+                        false,
+                        null
+                ));
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(get("/trips/7/unclassified-folders/BLURRY/attachments")
+                        .param("cursor", "cursor"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("UNCLASSIFIED_ATTACHMENT_DETAIL_FOUND"))
+                .andExpect(jsonPath("$.data.issue").value("BLURRY"))
+                .andExpect(jsonPath("$.data.name").value("흐릿한 첨부"))
+                .andExpect(jsonPath("$.data.attachmentCount").value(1))
+                .andExpect(jsonPath("$.data.items[0].tripAttachmentId").value(502))
+                .andExpect(jsonPath("$.data.items[0].thumbnailUrl").value("https://example.test/preview"))
+                .andExpect(jsonPath("$.data.items[0].issue").value("BLURRY"))
+                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(31))
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+
+        verify(unclassifiedFolderListService).findAttachments(1L, 7L, "BLURRY", "cursor");
+    }
+
+    @Test
+    void 미분류_사진의_복구_장소가_null이어도_다음_페이지를_반환한다() throws Exception {
+        when(unclassifiedFolderListService.findAttachments(1L, 7L, "UNCLEAR_LOCATION", null))
+                .thenReturn(new UnclassifiedAttachmentListResponse(
+                        AttachmentIssue.UNCLEAR_LOCATION,
+                        "장소가 명확하지 않은 첨부",
+                        19L,
+                        List.of(new UnclassifiedAttachmentListResponse.Item(
+                                502L,
+                                "https://example.test/preview",
+                                AttachmentIssue.UNCLEAR_LOCATION,
+                                null
+                        )),
+                        true,
+                        "next-cursor"
+                ));
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(get("/trips/7/unclassified-folders/UNCLEAR_LOCATION/attachments"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.hasNext").value(true))
+                .andExpect(jsonPath("$.data.nextCursor").value("next-cursor"));
+    }
+
+    @Test
+    void 빈_미분류_사진_목록은_200으로_반환한다() throws Exception {
+        when(unclassifiedFolderListService.findAttachments(1L, 7L, "DUPLICATED", null))
+                .thenReturn(new UnclassifiedAttachmentListResponse(
+                        AttachmentIssue.DUPLICATED,
+                        "비슷한 첨부",
+                        0L,
+                        List.of(),
+                        false,
+                        null
+                ));
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(get("/trips/7/unclassified-folders/DUPLICATED/attachments"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("UNCLASSIFIED_ATTACHMENT_DETAIL_FOUND"))
+                .andExpect(jsonPath("$.data.attachmentCount").value(0))
+                .andExpect(jsonPath("$.data.items").isEmpty())
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "INVALID_ATTACHMENT_ISSUE, 400",
+            "INVALID_CURSOR, 400",
+            "TRIP_NOT_FOUND, 404",
+            "INTERNAL_SERVER_ERROR, 500"
+    })
+    void 미분류_사진_조회_오류는_고정_메시지와_null_data를_반환한다(
+            String message, int statusCode
+    ) throws Exception {
+        RuntimeException exception = switch (message) {
+            case "INVALID_ATTACHMENT_ISSUE" -> new InvalidAttachmentIssueException();
+            case "INVALID_CURSOR" -> new InvalidCursorException();
+            case "TRIP_NOT_FOUND" -> new TripNotFoundException();
+            default -> new IllegalStateException("preview URL creation failed");
+        };
+        when(unclassifiedFolderListService.findAttachments(1L, 7L, "BLURRY", null))
+                .thenThrow(exception);
+
+        MockMvcBuilders.standaloneSetup(controller)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build()
+                .perform(get("/trips/7/unclassified-folders/BLURRY/attachments"))
+                .andExpect(status().is(statusCode))
+                .andExpect(jsonPath("$.message").value(message))
+                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+    }
 
     @Test
     void 장소_폴더의_첨부_목록을_조회한다() throws Exception {
@@ -318,7 +463,18 @@ class TripAttachmentControllerTest {
         TripAttachmentDeletionService realDeletionService =
                 new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), repository, stats);
         TripAttachmentController realController = new TripAttachmentController(
-                service, listService, detailService, realDeletionService, downloadService, bulkDownloadService, uploadUrlService, mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class), additionalUploadUrlService);
+                service,
+                listService,
+                detailService,
+                realDeletionService,
+                downloadService,
+                bulkDownloadService,
+                uploadUrlService,
+                mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class),
+                additionalUploadUrlService,
+                mock(com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService.class),
+                restoreService
+        );
         String ids = LongStream.rangeClosed(1, 201)
                 .mapToObj(Long::toString).collect(Collectors.joining(","));
 
@@ -336,6 +492,119 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.data").isEmpty());
 
         verifyNoInteractions(repository, stats);
+    }
+
+    @Test
+    void 복구_입력_오류를_구분한다() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        for (String body : List.of("{}", "{\"tripPlaceId\":null}")) {
+            mvc.perform(post("/attachments/11/restore")
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("RESTORE_PLACE_FOLDER_REQUIRED"));
+        }
+        for (String body : List.of("", "{", "{\"tripPlaceId\":0}", "{\"tripPlaceId\":-1}")) {
+            mvc.perform(post("/attachments/11/restore")
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        }
+        mvc.perform(post("/attachments/0/restore")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("RESTORE_PLACE_FOLDER_REQUIRED"));
+        mvc.perform(post("/attachments/-1/restore")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"tripPlaceId\":3}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        mvc.perform(post("/attachments/0/restore")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"tripPlaceId\":3}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void 일괄_복구_입력과_목적지_필수_우선순위를_검증한다() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        for (String body : List.of("", "{", "{}", "{\"items\":[]}", "{\"items\":[null]}",
+                "{\"items\":[{\"tripAttachmentId\":null,\"tripPlaceId\":3}]}",
+                "{\"items\":[{\"tripAttachmentId\":0,\"tripPlaceId\":3}]}")) {
+            mvc.perform(post("/attachments/bulk-restore")
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        }
+        mvc.perform(post("/attachments/bulk-restore")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"tripAttachmentId\":0}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("RESTORE_PLACE_FOLDER_REQUIRED"));
+    }
+
+    @Test
+    void 복구_성공_응답과_일괄_순서를_유지한다() throws Exception {
+        when(restoreService.restoreOne(eq(1L), eq(11L), any()))
+                .thenReturn(new AttachmentRestoreResponse(
+                        11L, 3L, "CLASSIFIED"));
+        when(restoreService.restoreBulk(eq(1L), any()))
+                .thenReturn(new BulkAttachmentRestoreResponse(
+                        List.of(12L, 11L), List.of(3L, 3L)));
+        var mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        mvc.perform(post("/attachments/11/restore")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"tripPlaceId\":3}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("ATTACHMENT_RESTORE_SUCCESS"))
+                .andExpect(jsonPath("$.data.tripAttachmentId").value(11))
+                .andExpect(jsonPath("$.data.tripPlaceId").value(3))
+                .andExpect(jsonPath("$.data.classificationType").value("CLASSIFIED"));
+        mvc.perform(post("/attachments/bulk-restore")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"tripAttachmentId\":12,\"tripPlaceId\":3},{\"tripAttachmentId\":11,\"tripPlaceId\":3}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("BULK_ATTACHMENT_RESTORE_SUCCESS"))
+                .andExpect(jsonPath("$.data.restoredTripAttachmentIds[0]").value(12))
+                .andExpect(jsonPath("$.data.restoredTripAttachmentIds[1]").value(11))
+                .andExpect(jsonPath("$.data.tripPlaceIds[0]").value(3))
+                .andExpect(jsonPath("$.data.tripPlaceIds[1]").value(3));
+        verify(restoreService).restoreOne(1L, 11L,
+                new AttachmentRestoreRequest(3L));
+        verify(restoreService).restoreBulk(1L,
+                new BulkAttachmentRestoreRequest(List.of(
+                        new BulkAttachmentRestoreRequest.Item(12L, 3L),
+                        new BulkAttachmentRestoreRequest.Item(11L, 3L))));
+    }
+
+    @Test
+    void 일괄_복구_201개와_중복을_거부한다() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        String items = LongStream.rangeClosed(1, 201)
+                .mapToObj(id -> "{\"tripAttachmentId\":" + id + ",\"tripPlaceId\":3}")
+                .collect(Collectors.joining(","));
+        mvc.perform(post("/attachments/bulk-restore")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"items\":[" + items + "]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        verifyNoInteractions(restoreService);
+        when(restoreService.restoreBulk(eq(1L), any()))
+                .thenThrow(new InvalidRestoreRequestException());
+        mvc.perform(post("/attachments/bulk-restore")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"tripAttachmentId\":11,\"tripPlaceId\":3},{\"tripAttachmentId\":11,\"tripPlaceId\":3}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.data").isEmpty());
     }
 
     private HandlerMethodArgumentResolver authenticationPrincipalResolver() {

@@ -38,7 +38,7 @@ class ProfileRegistrationIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void registrationCreatesMemberDataAndReturnsLoginCookies() throws Exception {
+    void 회원_가입으로_회원_데이터를_저장하고_로그인_쿠키를_반환한다() throws Exception {
         String unique = UUID.randomUUID().toString();
         String email = "onboarding-" + unique + "@yeodam.test";
         String profileToken = "profile-" + unique;

@@ -46,7 +46,7 @@ abstract class MetricsSecuritySupport {
     }
 
     @Test
-    void healthRemainsPublic() throws Exception {
+    void 헬스_체크는_인증_없이_조회할_수_있다() throws Exception {
         mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
     }
 
@@ -62,7 +62,7 @@ abstract class MetricsSecuritySupport {
 @ActiveProfiles({"local", "test"})
 class LocalMetricsSecurityTest extends MetricsSecuritySupport {
     @Test
-    void localMetricsAllowAnonymousRequests() throws Exception {
+    void 로컬_메트릭은_익명_요청을_허용한다() throws Exception {
         mockMvc.perform(get("/actuator/prometheus")).andExpect(status().isOk());
     }
 }
@@ -70,12 +70,12 @@ class LocalMetricsSecurityTest extends MetricsSecuritySupport {
 @ActiveProfiles({"prod", "test"})
 class ProductionMetricsSecurityTest extends MetricsSecuritySupport {
     @Test
-    void productionMetricsRejectAnonymousRequests() throws Exception {
+    void 운영_메트릭은_익명_요청을_거부한다() throws Exception {
         mockMvc.perform(get("/actuator/prometheus")).andExpect(status().isUnauthorized());
     }
 
     @Test
-    void productionMetricsRejectAuthenticatedMembers() throws Exception {
+    void 운영_메트릭은_인증된_회원의_요청도_거부한다() throws Exception {
         mockMvc.perform(get("/actuator/prometheus").with(jwt()))
                 .andExpect(status().isForbidden());
     }
@@ -84,7 +84,7 @@ class ProductionMetricsSecurityTest extends MetricsSecuritySupport {
 @ActiveProfiles({"local", "prod", "test"})
 class MixedProfilesMetricsSecurityTest extends MetricsSecuritySupport {
     @Test
-    void productionTakesPriorityOverLocal() throws Exception {
+    void 운영_프로필이_로컬_프로필보다_우선한다() throws Exception {
         mockMvc.perform(get("/actuator/prometheus").with(jwt()))
                 .andExpect(status().isForbidden());
     }

@@ -24,7 +24,7 @@ class CorsIntegrationTest {
     private MockMvc mockMvc;
 
     @Test
-    void allowsConfiguredFrontendOriginWithCredentials() throws Exception {
+    void 설정된_프론트엔드_출처의_인증정보_포함_요청을_허용한다() throws Exception {
         mockMvc.perform(options("/auth/csrf")
                         .header(HttpHeaders.ORIGIN, "https://app.yeodam.test")
                         .header(
@@ -43,7 +43,7 @@ class CorsIntegrationTest {
     }
 
     @Test
-    void rejectsUnconfiguredFrontendOrigin() throws Exception {
+    void 설정하지_않은_프론트엔드_출처를_거부한다() throws Exception {
         mockMvc.perform(options("/auth/csrf")
                         .header(HttpHeaders.ORIGIN, "https://evil.example")
                         .header(

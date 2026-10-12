@@ -1,6 +1,6 @@
 package com.yeodam.yeodambe.user.security.csrf;
 
-import com.yeodam.yeodambe.user.exception.CsrfStoreUnavailableException;
+import com.yeodam.yeodambe.common.exception.CsrfStoreUnavailableException;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;

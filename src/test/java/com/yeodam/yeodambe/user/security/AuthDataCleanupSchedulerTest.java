@@ -46,7 +46,7 @@ class AuthDataCleanupSchedulerTest {
     private EntityManager entityManager;
 
     @Test
-    void deletesExpiredAuthenticationDataAndKeepsActiveData() {
+    void 만료된_인증_데이터를_삭제하고_활성_데이터는_유지한다() {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime expiredAt = now.minusMinutes(1);
         LocalDateTime activeUntil = now.plusDays(1);

@@ -138,7 +138,7 @@ class AdditionalAttachmentUploadSchemaTest {
     @Test
     void migratesTablesAndStoresBatchWithUnlinkedFiles() {
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '12' AND success = 1",
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '16' AND success = 1",
                 Integer.class)).isEqualTo(1);
         String additionId = UUID.randomUUID().toString();
         Long first = insertBatch(UUID.randomUUID().toString(), additionId, 1);

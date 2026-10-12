@@ -39,6 +39,17 @@ import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse;
+import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
+import jakarta.validation.constraints.Positive;
+
+import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
+import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.response.AttachmentRestoreResponse;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
+import jakarta.validation.Valid;
 
 import java.util.List;
 import java.util.Optional;
@@ -55,6 +66,61 @@ public class TripAttachmentController {
     private final InitialAttachmentUploadUrlService uploadUrlService;
     private final InitialAttachmentUploadCompletionService uploadCompletion;
     private final AdditionalAttachmentUploadUrlService additionalAttachmentUploadUrlService;
+    private final UnclassifiedFolderListService unclassifiedFolderListService;
+    private final TripAttachmentRestoreService tripAttachmentRestoreService;
+
+    @PostMapping("/attachments/{tripAttachmentId}/restore")
+    public ResponseEntity<ApiResponse<AttachmentRestoreResponse>> restoreAttachment(
+            @PathVariable @Positive Long tripAttachmentId,
+            @Valid @RequestBody AttachmentRestoreRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+        AttachmentRestoreResponse result = tripAttachmentRestoreService.restoreOne(userId, tripAttachmentId, request);
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.ATTACHMENT_RESTORE_SUCCESS, result)
+        );
+    }
+
+    @PostMapping("/attachments/bulk-restore")
+    public ResponseEntity<ApiResponse<BulkAttachmentRestoreResponse>> restoreAttachments(
+            @Valid @RequestBody BulkAttachmentRestoreRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+        BulkAttachmentRestoreResponse result = tripAttachmentRestoreService.restoreBulk(userId, request);
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.BULK_ATTACHMENT_RESTORE_SUCCESS, result)
+        );
+    }
+
+    @GetMapping("/trips/{tripId}/unclassified-folders/{issue}/attachments")
+    public ResponseEntity<ApiResponse<UnclassifiedAttachmentListResponse>> findUnclassifiedAttachments(
+            @PathVariable @Positive Long tripId,
+            @PathVariable String issue,
+            @RequestParam(required = false) String cursor,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+        UnclassifiedAttachmentListResponse result =
+                unclassifiedFolderListService.findAttachments(userId, tripId, issue, cursor);
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.UNCLASSIFIED_ATTACHMENT_DETAIL_FOUND, result)
+        );
+    }
+
+    @GetMapping("/trips/{tripId}/unclassified-folders")
+    public ResponseEntity<ApiResponse<UnclassifiedFolderListResponse>> findUnclassifiedFolders(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+        UnclassifiedFolderListResponse result =
+                unclassifiedFolderListService.findFolders(userId, tripId);
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.UNCLASSIFIED_FOLDER_LIST_FOUND, result)
+        );
+    }
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> completeInitialAttachmentUpload(

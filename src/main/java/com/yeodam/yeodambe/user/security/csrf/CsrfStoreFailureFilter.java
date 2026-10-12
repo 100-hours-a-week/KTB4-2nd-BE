@@ -2,7 +2,7 @@ package com.yeodam.yeodambe.user.security.csrf;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
-import com.yeodam.yeodambe.user.exception.CsrfStoreUnavailableException;
+import com.yeodam.yeodambe.common.exception.CsrfStoreUnavailableException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

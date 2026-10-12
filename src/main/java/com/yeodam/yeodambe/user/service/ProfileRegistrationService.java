@@ -2,7 +2,7 @@ package com.yeodam.yeodambe.user.service;
 
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
-import com.yeodam.yeodambe.user.exception.OnboardingTokenInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.OnboardingTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.oauth.OAuthTokenClaim;
 import com.yeodam.yeodambe.user.security.oauth.ProfileTokenStore;

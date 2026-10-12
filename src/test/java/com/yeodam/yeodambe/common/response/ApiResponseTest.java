@@ -10,7 +10,7 @@ class ApiResponseTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void serializesSuccessMessageAsExistingStringContract() {
+    void 성공_메시지를_기존_문자열_계약으로_직렬화한다() {
         ApiResponse<String> response = new ApiResponse<>(SuccessMessage.TRIP_CREATED, "data");
 
         assertThat(objectMapper.writeValueAsString(response))
@@ -18,7 +18,7 @@ class ApiResponseTest {
     }
 
     @Test
-    void serializesErrorMessageAsExistingStringContract() {
+    void 오류_메시지를_기존_문자열_계약으로_직렬화한다() {
         ApiResponse<Void> response = new ApiResponse<>(ErrorMessage.TRIP_NOT_FOUND, null);
 
         assertThat(objectMapper.writeValueAsString(response))

@@ -63,7 +63,7 @@ class LogoutIntegrationTest {
     }
 
     @Test
-    void logoutInvalidatesCurrentAccessTokenSession() throws Exception {
+    void 로그아웃하면_현재_액세스_토큰의_세션이_무효화된다() throws Exception {
         String unique = UUID.randomUUID().toString();
         User user = userRegistrationService.register(
                 "logout-" + unique + "@yeodam.test",

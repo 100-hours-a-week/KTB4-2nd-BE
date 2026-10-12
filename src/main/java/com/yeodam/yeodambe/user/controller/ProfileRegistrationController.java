@@ -4,7 +4,7 @@ import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
-import com.yeodam.yeodambe.user.exception.OnboardingTokenRequiredException;
+import com.yeodam.yeodambe.common.exception.OnboardingTokenRequiredException;
 import com.yeodam.yeodambe.user.service.ProfileRegistrationService;
 import com.yeodam.yeodambe.user.service.request.ProfileRegistrationRequest;
 import com.yeodam.yeodambe.user.service.response.ProfileRegistrationResponse;

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
@@ -25,6 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -126,7 +128,9 @@ class TripUpdateIntegrationTest {
     void 타인_여행이나_삭제된_여행이면_404를_반환한다() throws Exception {
         Long other = registration.register("other-" + UUID.randomUUID() + "@yeodam.test", "다른회원",
                 OAuthProvider.KAKAO, UUID.randomUUID().toString()).getUserId();
-        Long otherTrip = service.createTrip(other, new TripCreateRequest("타인 여행", LocalDate.of(2026,9,1), LocalDate.of(2026,9,3), List.of("11000"))).tripId();
+        Long otherTrip = service.createTrip(other, new TripCreateRequest("타인 여행", LocalDate.of(2026,9,1), LocalDate.of(2026,9,3), List.of("11000"),
+                List.of(new TripAttachmentMetadataRequest(
+                        OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)))).tripId();
         mvc.perform(request("{\"tripName\":\"변경 여행\"}").with(r -> { r.setRequestURI("/api/trips/" + otherTrip); return r; }))
                 .andExpect(status().isNotFound());
         jdbc.update("UPDATE trips SET deleted_at = CURRENT_TIMESTAMP WHERE trip_id = ?", tripId);
@@ -162,7 +166,9 @@ class TripUpdateIntegrationTest {
     }
 
     private Long create(String name, List<String> codes) {
-        return service.createTrip(userId, new TripCreateRequest(name, LocalDate.of(2026,9,1), LocalDate.of(2026,9,3), codes)).tripId();
+        return service.createTrip(userId, new TripCreateRequest(name, LocalDate.of(2026,9,1), LocalDate.of(2026,9,3), codes,
+                List.of(new TripAttachmentMetadataRequest(
+                        OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)))).tripId();
     }
 
     private String name() {

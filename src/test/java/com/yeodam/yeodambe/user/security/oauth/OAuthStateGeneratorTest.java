@@ -10,7 +10,7 @@ class OAuthStateGeneratorTest {
             new OAuthStateGenerator();
 
     @Test
-    void generatesUrlSafeRandomState() {
+    void URL에_안전한_무작위_OAuth_상태를_생성한다() {
         String firstState = generator.generate();
         String secondState = generator.generate();
 

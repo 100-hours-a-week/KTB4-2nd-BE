@@ -22,7 +22,7 @@ class AuthSchemaMigrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void createsAllAuthenticationTables() {
+    void 모든_인증_테이블을_생성한다() {
         Long tableCount = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
@@ -43,7 +43,7 @@ class AuthSchemaMigrationTest {
     }
 
     @Test
-    void addsProfileImageUrlColumnsForTheLoginFlow() {
+    void 로그인_흐름에_필요한_프로필_이미지_URL_컬럼을_추가한다() {
         Long columnCount = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
@@ -59,7 +59,7 @@ class AuthSchemaMigrationTest {
     }
 
     @Test
-    void oauthStateHashCannotBeDuplicated() {
+    void OAuth_상태_해시는_중복될_수_없다() {
         String stateHash = "a".repeat(64);
 
         jdbcTemplate.update(
@@ -88,7 +88,7 @@ class AuthSchemaMigrationTest {
     }
 
     @Test
-    void csrfTokenAllowsOnlyOneRowPerBrowserContext() {
+    void CSRF_토큰은_브라우저_컨텍스트별로_행을_하나만_허용한다() {
         String browserContextHash = "d".repeat(64);
 
         jdbcTemplate.update(
@@ -117,7 +117,7 @@ class AuthSchemaMigrationTest {
     }
 
     @Test
-    void loginSessionRequiresExistingUserAndUniqueRefreshTokenHash() {
+    void 로그인_세션에는_기존_사용자와_고유한_리프레시_토큰_해시가_필요하다() {
         jdbcTemplate.update(
                 "INSERT INTO users (email, nickname) VALUES (?, ?)",
                 "auth-session@yeodam.test",

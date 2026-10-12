@@ -117,6 +117,15 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
             """)
     Optional<Trip> findOwnedActiveForUpdate(Long tripId, Long userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select trip from Trip trip
+            where trip.userId = :userId
+              and trip.deletedAt is null
+            order by trip.id
+            """)
+    List<Trip> findAllOwnedActiveForUpdate(Long userId);
+
     long countByUserIdAndProcessingStatusAndDeletedAtIsNull(
             Long userId, ProcessingStatus processingStatus);
 

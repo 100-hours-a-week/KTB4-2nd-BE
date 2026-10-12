@@ -23,6 +23,7 @@ public class TripWithdrawalService {
 
     @Transactional
     public void withdrawAll(Long userId, LocalDateTime withdrawnAt) {
+        tripRepository.findAllOwnedActiveForUpdate(userId);
         tripRegionRepository.softDeleteByUserId(userId, withdrawnAt);
         tripDetailPlaceRepository.softDeleteByUserId(userId, withdrawnAt);
         tripAttachmentRepository.softDeleteByUserId(userId, withdrawnAt);

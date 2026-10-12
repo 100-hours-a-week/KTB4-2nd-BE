@@ -1,0 +1,9 @@
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    security:
+      protocol: SASL_SSL
+    properties:
+      "[sasl.mechanism]": AWS_MSK_IAM
+      "[sasl.jaas.config]": software.amazon.msk.auth.iam.IAMLoginModule required;
+      "[sasl.client.callback.handler.class]": software.amazon.msk.auth.iam.IAMClientCallbackHandler

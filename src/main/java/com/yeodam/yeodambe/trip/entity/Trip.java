@@ -41,6 +41,9 @@ public class Trip {
     @Column(name = "is_favorite", nullable = false)
     private Boolean favorite;
 
+    @Column(name = "current_story_id")
+    private Long currentStoryId;
+
     @Column(name = "thumbnail_key", length = 500)
     private String thumbnailKey;
 
@@ -98,6 +101,10 @@ public class Trip {
 
     public void changeThumbnailKey(String thumbnailKey) {
         this.thumbnailKey = thumbnailKey;
+    }
+
+    public void changeCurrentStory(Long storyId) {
+        this.currentStoryId = storyId;
     }
 
     public void softDelete(LocalDateTime deletedAt) {

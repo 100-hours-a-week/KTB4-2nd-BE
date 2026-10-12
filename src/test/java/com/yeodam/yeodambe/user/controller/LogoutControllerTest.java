@@ -35,7 +35,7 @@ class LogoutControllerTest {
     }
 
     @Test
-    void deletesCurrentSessionAndExpiresAuthenticationCookies() {
+    void 현재_세션을_삭제하고_인증_쿠키를_만료시킨다() {
         Jwt jwt = mock(Jwt.class);
         given(jwt.getClaimAsString("sid"))
                 .willReturn("current-session-id");

@@ -2,6 +2,8 @@ package com.yeodam.yeodambe.trip.service.request;
 
 import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -32,6 +34,35 @@ class AttachmentCursorTest {
     @Test
     void 생략한_커서는_첫_페이지로_처리한다() {
         assertThat(AttachmentCursor.decode(null, objectMapper)).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0L, -1L})
+    void 첨부_커서의_비양수_ID를_거절한다(long tripAttachmentId) {
+        assertThatThrownBy(() -> new AttachmentCursor(
+                LocalDateTime.of(2026, 10, 9, 12, 0),
+                tripAttachmentId
+        )).isInstanceOf(InvalidCursorException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0L, -1L})
+    void 첨부_커서의_비양수_ID_디코딩을_거절한다(long tripAttachmentId) {
+        assertInvalid(encodedJson("""
+                {"createdAt":"2026-10-09T12:00:00","tripAttachmentId":%d}
+                """.formatted(tripAttachmentId)));
+    }
+
+    @Test
+    void 잘못된_날짜_문자열의_커서를_거절한다() {
+        assertInvalid(encodedJson("""
+                {"createdAt":"not-a-date","tripAttachmentId":18}
+                """));
+    }
+
+    @Test
+    void JSON_null이_담긴_커서를_거절한다() {
+        assertInvalid("bnVsbA");
     }
 
     @Test

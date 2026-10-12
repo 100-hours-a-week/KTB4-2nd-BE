@@ -20,7 +20,7 @@ class MemberSchemaMigrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void systemAdminIsSeeded() {
+    void 시스템_관리자를_초기_데이터로_저장한다() {
         Long userId = jdbcTemplate.queryForObject(
                 "SELECT user_id FROM users WHERE email = ?",
                 Long.class,
@@ -38,7 +38,7 @@ class MemberSchemaMigrationTest {
     }
 
     @Test
-    void activeEmailCannotBeDuplicated() {
+    void 활성_회원의_이메일은_중복될_수_없다() {
         String email = "SameEmail@yeodam.test";
         jdbcTemplate.update(
                 "INSERT INTO users (email, nickname) VALUES (?, ?)",
@@ -54,7 +54,7 @@ class MemberSchemaMigrationTest {
     }
 
     @Test
-    void deletedEmailCanBeReused() {
+    void 삭제된_회원의_이메일은_다시_사용할_수_있다() {
         String email = "rejoin@yeodam.test";
 
         jdbcTemplate.update(
@@ -99,7 +99,7 @@ class MemberSchemaMigrationTest {
     }
 
     @Test
-    void emailIsCaseSensitive() {
+    void 이메일은_대소문자를_구분한다() {
         String uppercaseEmail = "Case@yeodam.test";
         String lowercaseEmail = "case@yeodam.test";
 
@@ -126,7 +126,7 @@ class MemberSchemaMigrationTest {
     }
 
     @Test
-    void deletedOauthAccountCanBeReused() {
+    void 삭제된_OAuth_계정은_다시_사용할_수_있다() {
         String providerUserId = "kakao-user-100";
 
         jdbcTemplate.update(
@@ -207,7 +207,7 @@ class MemberSchemaMigrationTest {
     }
 
     @Test
-    void userCanHaveOnlyOneStatsRow() {
+    void 사용자는_통계_행을_하나만_가질_수_있다() {
         String email = "stats@yeodam.test";
 
         jdbcTemplate.update(
@@ -242,7 +242,7 @@ class MemberSchemaMigrationTest {
     }
 
     @Test
-    void consentsTableHasRequiredColumns() {
+    void 동의_테이블에_필수_컬럼이_있다() {
         Long columnCount = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
@@ -266,7 +266,7 @@ class MemberSchemaMigrationTest {
     }
 
     @Test
-    void userCanHaveOnlyOneConsentRow() {
+    void 사용자는_동의_행을_하나만_가질_수_있다() {
         String email = "consent@yeodam.test";
 
         jdbcTemplate.update(
@@ -299,7 +299,7 @@ class MemberSchemaMigrationTest {
     }
 
     @Test
-    void consentRequiresAgreementAndAgreedAt() {
+    void 동의에는_동의_여부와_동의_시각이_필요하다() {
         jdbcTemplate.update(
                 "INSERT INTO users (email, nickname) VALUES (?, ?)",
                 "required-consent@yeodam.test",
@@ -330,7 +330,7 @@ class MemberSchemaMigrationTest {
     }
 
     @Test
-    void consentRequiresExistingUser() {
+    void 동의에는_존재하는_사용자가_필요하다() {
         assertThatThrownBy(() -> jdbcTemplate.update(
                 """
                 INSERT INTO consents (user_id, is_agreed, agreed_at)

@@ -23,13 +23,13 @@ class AttachmentStorageSizeBackfillRunnerTest {
     private final AttachmentStorageSizeBackfillService backfill = mock(AttachmentStorageSizeBackfillService.class);
 
     @Test
-    void registersRunnerWithoutActivationProperty() {
+    void 활성화_속성_없이도_러너를_등록한다() {
         context().run(application -> assertThat(application)
                 .hasSingleBean(AttachmentStorageSizeBackfillRunner.class));
     }
 
     @Test
-    void exitsWithoutBackfillWhenNoSizesAreMissing() {
+    void 누락된_크기가_없으면_보충_작업_없이_종료한다() {
         var page = PageRequest.of(0, 100);
         when(attachments.findMissingStorageSizes(0L, page)).thenReturn(List.of());
 
@@ -41,7 +41,7 @@ class AttachmentStorageSizeBackfillRunnerTest {
     }
 
     @Test
-    void processesEachRowAndContinuesAfterLastIdUntilNoRowsRemain() {
+    void 각_행을_처리하고_남은_행이_없을_때까지_마지막_ID_이후를_조회한다() {
         var first = attachment(10L);
         var second = attachment(20L);
         var third = attachment(30L);
@@ -64,7 +64,7 @@ class AttachmentStorageSizeBackfillRunnerTest {
     }
 
     @Test
-    void stopsAndPropagatesFailureWithoutProcessingLaterRows() {
+    void 실패하면_후속_행을_처리하지_않고_중단하며_예외를_전파한다() {
         var page = PageRequest.of(0, 100);
         var first = attachment(10L);
         var second = attachment(20L);

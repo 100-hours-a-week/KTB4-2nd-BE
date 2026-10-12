@@ -29,7 +29,7 @@ class OAuthStateStoreTest {
     private TokenHasher tokenHasher;
 
     @Test
-    void stateCanBeConsumedOnlyOnce() {
+    void OAuth_상태는_한_번만_소비할_수_있다() {
         String state = "oauth-state-1";
         String browserContext = "browser-1";
 
@@ -42,7 +42,7 @@ class OAuthStateStoreTest {
     }
 
     @Test
-    void differentBrowserCannotConsumeState() {
+    void 다른_브라우저는_OAuth_상태를_소비할_수_없다() {
         String state = "oauth-state-2";
 
         oauthStateStore.save(state, "browser-1");
@@ -54,7 +54,7 @@ class OAuthStateStoreTest {
     }
 
     @Test
-    void storesHashesAndFiveMinuteExpiration() {
+    void 해시와_5분_유효기간을_저장한다() {
         String state = "oauth-state-hash";
         String browserContext = "browser-hash";
 
@@ -66,7 +66,7 @@ class OAuthStateStoreTest {
     }
 
     @Test
-    void expiredStateCannotBeConsumedAndIsDeleted() throws Exception {
+    void 만료된_OAuth_상태는_소비할_수_없고_삭제된다() throws Exception {
         String state = "oauth-state-expired";
 
         oauthStateStore.save(state, "browser-1");

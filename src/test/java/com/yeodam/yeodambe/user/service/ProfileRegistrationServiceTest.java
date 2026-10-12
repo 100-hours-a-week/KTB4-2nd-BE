@@ -5,8 +5,8 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
-import com.yeodam.yeodambe.user.exception.InvalidNicknameException;
-import com.yeodam.yeodambe.user.exception.OnboardingTokenInvalidOrExpiredException;
+import com.yeodam.yeodambe.common.exception.InvalidNicknameException;
+import com.yeodam.yeodambe.common.exception.OnboardingTokenInvalidOrExpiredException;
 import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
 import com.yeodam.yeodambe.user.security.oauth.ProfileTokenStore;
 import com.yeodam.yeodambe.user.security.session.IssuedLoginSession;
@@ -76,7 +76,7 @@ class ProfileRegistrationServiceTest {
     }
 
     @Test
-    void registersMemberAndDeletesProfileTokenAfterIssuingSession() {
+    void 회원_가입과_세션_발급을_완료한_후_가입_토큰을_삭제한다() {
         KakaoUserIdentity identity =
                 new KakaoUserIdentity(
                         "kakao-1",
@@ -130,7 +130,7 @@ class ProfileRegistrationServiceTest {
     }
 
     @Test
-    void rejectsExpiredTokenBeforeCreatingMemberOrSession() {
+    void 회원이나_세션을_만들기_전에_만료된_토큰을_거부한다() {
         given(profileTokenStore.claim(eq("expired"), anyString()))
                 .willReturn(Optional.empty());
 
@@ -143,7 +143,7 @@ class ProfileRegistrationServiceTest {
     }
 
     @Test
-    void keepsProfileTokenWhenRegistrationFails() {
+    void 회원_가입이_실패하면_가입_토큰을_유지한다() {
         KakaoUserIdentity identity =
                 new KakaoUserIdentity("kakao-1", "member@example.com");
         given(profileTokenStore.claim(eq("profile-1"), anyString()))

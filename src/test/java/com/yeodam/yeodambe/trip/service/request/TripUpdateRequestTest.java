@@ -22,14 +22,14 @@ class TripUpdateRequestTest {
     }
 
     @Test
-    void rejectsRequestWithoutAnyUpdatedValue() {
+    void 변경할_값이_없는_요청을_거부한다() {
         assertThat(validator.validate(new TripUpdateRequest(null, null, null, null)))
                 .extracting(violation -> violation.getPropertyPath().toString())
                 .contains("anyFieldPresent");
     }
 
     @Test
-    void acceptsUpdatingEachFieldIndependently() {
+    void 각_필드의_독립적인_변경을_허용한다() {
         var date = LocalDate.of(2026, 10, 1);
         for (var request : List.of(
                 new TripUpdateRequest("여행", null, null, null),
@@ -41,7 +41,7 @@ class TripUpdateRequestTest {
     }
 
     @Test
-    void validatesProvidedNameUsingCodePoints() {
+    void 입력한_이름을_코드_포인트_기준으로_검증한다() {
         for (String invalid : List.of("", "   ", "12345678901")) {
             assertThat(validator.validate(new TripUpdateRequest(invalid, null, null, null)))
                     .isNotEmpty();
@@ -53,7 +53,7 @@ class TripUpdateRequestTest {
     }
 
     @Test
-    void validatesProvidedRegionCountAndCodeFormat() {
+    void 입력한_지역_개수와_코드_형식을_검증한다() {
         List<List<String>> invalidLists = List.of(
                 List.<String>of(),
                 List.of("5011"),

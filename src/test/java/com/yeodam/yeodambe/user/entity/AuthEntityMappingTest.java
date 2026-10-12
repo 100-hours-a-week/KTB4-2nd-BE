@@ -17,7 +17,7 @@ class AuthEntityMappingTest {
     private EntityManager entityManager;
 
     @Test
-    void mapsAuthenticationEntitiesToLocalDatabase() {
+    void 인증_엔티티를_로컬_DB에_매핑한다() {
         LocalDateTime now = LocalDateTime.now();
         User user = new User("auth-entity@yeodam.test", "인증회원");
         entityManager.persist(user);

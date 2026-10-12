@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 @Slf4j
 @Component
@@ -24,6 +25,7 @@ public class StoryGenerationStatusScheduler {
     private final StoryGenerationJobRepository jobRepository;
     private final StoryGenerationOutboxRepository outboxRepository;
     private final StoryGenerationStatusSyncService syncService;
+    private final StoryGenerationTimeoutService timeoutService;
 
     @Scheduled(fixedDelay = 2_000)
     public void synchronizePendingJobs() {
@@ -38,6 +40,9 @@ public class StoryGenerationStatusScheduler {
             String previousRequestId = MDC.get("request_id");
 
             try {
+                if (timeoutService.expire(job.getId(), LocalDateTime.now())) {
+                    continue;
+                }
                 var outbox = outboxRepository.findByGenerationId(job.getId())
                         .orElseThrow(() -> new IllegalStateException(
                                 StoryGenerationInternalErrorMessage.OUTBOX_NOT_FOUND.message()

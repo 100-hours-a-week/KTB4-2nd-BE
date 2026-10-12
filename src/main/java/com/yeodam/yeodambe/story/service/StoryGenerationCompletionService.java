@@ -56,7 +56,7 @@ public class StoryGenerationCompletionService {
             );
         }
 
-        if (job.isFinished()) {
+        if (job.isFinished() || job.failIfTimedOut(java.time.LocalDateTime.now())) {
             return;
         }
 

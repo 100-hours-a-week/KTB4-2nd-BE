@@ -77,6 +77,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     private static final String DLT = TOPIC + "-story-dlt";
     private static final String GROUP = "test-story-consumer-" + UUID.randomUUID();
     @Autowired private StoryGenerationAcceptanceService acceptance;
+    @Autowired private StoryGenerationTimeoutService timeout;
     @Autowired private StoryGenerationStatusSyncService statusSync;
     @Autowired private StoryGenerationJobRepository jobs;
     @Autowired private UserRepository users;
@@ -316,6 +317,20 @@ class StoryGenerationKafkaResultIntegrationTest {
             }
             throw new AssertionError("Original failed message was not preserved in DLT");
         }
+    }
+
+    @Test
+    void kafkaLateCompletionForTimedOutJobIsConsumedWithoutSavingStory() throws Exception {
+        jdbc.update("UPDATE story_generation_jobs SET created_at = ? WHERE generation_id = ?",
+                LocalDateTime.now().minusHours(2), job.getId());
+        timeout.expire(job.getId(), LocalDateTime.now());
+
+        awaitCommitted(send(completionEvent(job.getExecutionId())));
+
+        assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(count("stories")).isZero();
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
     }
 
     private StoryCreateResultEvent completionEvent(String executionId) {

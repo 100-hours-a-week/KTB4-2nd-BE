@@ -18,6 +18,7 @@ import tools.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.StreamSupport;
 
@@ -243,9 +244,13 @@ public class TripAnalysisResultService {
     }
 
     private LocalDateTime time(JsonNode value) {
-        if (value.isNull() || value.isMissingNode()) return null;
+        if (value.isNull() || value.isMissingNode()) {
+            return null;
+        }
         try {
-            return OffsetDateTime.parse(value.asString()).toLocalDateTime();
+            return OffsetDateTime.parse(value.asString())
+                    .atZoneSameInstant(ZoneId.of("Asia/Seoul"))
+                    .toLocalDateTime();
         } catch (RuntimeException e) {
             throw new IllegalStateException(TripInternalErrorMessage.AI_CAPTURED_AT_INVALID.message(), e);
         }

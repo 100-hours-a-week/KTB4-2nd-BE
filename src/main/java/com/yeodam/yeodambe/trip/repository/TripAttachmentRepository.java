@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.repository;
 import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Modifying;
@@ -55,15 +56,20 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     );
 
     @Query("""
-            select attachment.id
+            select new com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse(
+                    attachment.id, attachment.analyzeStorageKey, attachment.takenAt,
+                    place.placeName, trip.tripName
+            )
             from TripAttachment attachment
             join attachment.trip trip
             join attachment.file file
+            left join attachment.tripPlace place
             where trip.userId = :userId
               and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
               and trip.deletedAt is null
               and attachment.deletedAt is null
               and file.deletedAt is null
+              and (attachment.tripPlaceId is null or (place.deletedAt is null and place.tripId = trip.id))
               and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
               and (:takenFrom is null or attachment.takenAt >= :takenFrom)
               and (:takenBefore is null or attachment.takenAt < :takenBefore)
@@ -75,7 +81,7 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
               ))
             order by attachment.id
             """)
-    List<Long> findSearchCandidateIds(
+    List<TripSearchCandidateResponse> findSearchCandidates(
             @Param("userId") Long userId,
             @Param("takenFrom") LocalDateTime takenFrom,
             @Param("takenBefore") LocalDateTime takenBefore,
@@ -88,12 +94,14 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             from TripAttachment attachment
             join fetch attachment.trip trip
             join fetch attachment.file file
+            left join fetch attachment.tripPlace place
             where attachment.id in :attachmentIds
               and trip.userId = :userId
               and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
               and trip.deletedAt is null
               and attachment.deletedAt is null
               and file.deletedAt is null
+              and (attachment.tripPlaceId is null or (place.deletedAt is null and place.tripId = trip.id))
               and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
             """)
     List<TripAttachment> findSearchResults(
@@ -122,7 +130,10 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             )
             from TripAttachment attachment
             join attachment.file file
+            join attachment.tripPlace place
             where attachment.tripPlaceId in :tripPlaceIds
+              and attachment.tripId = place.tripId
+              and place.deletedAt is null
               and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
               and attachment.deletedAt is null
               and file.deletedAt is null

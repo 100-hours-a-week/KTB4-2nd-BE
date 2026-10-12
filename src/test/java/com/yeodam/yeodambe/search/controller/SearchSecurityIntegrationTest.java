@@ -80,6 +80,22 @@ class SearchSecurityIntegrationTest {
         verify(service).search(42L, "제주 바다");
     }
 
+    @Test
+    void 장소_폴더_응답에_장소_ID와_이름을_반환한다() throws Exception {
+        when(service.search(42L, "바다 사진")).thenReturn(new SearchResponse(
+                "바다 사진", null, null,
+                List.of(new SearchResponse.Folder(1L, 11L, "여행", "해변", "place-url", 12L, .8)),
+                List.of(new SearchResponse.Attachment(7L, 1L, 11L, "photo-url", .8))));
+
+        mvc.perform(get("/search").param("query", "바다 사진").cookie(cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.folders[0].tripPlaceId").value(11))
+                .andExpect(jsonPath("$.data.folders[0].placeName").value("해변"))
+                .andExpect(jsonPath("$.data.folders[0].attachmentCount").value(12))
+                .andExpect(jsonPath("$.data.folders[0].startDate").doesNotExist())
+                .andExpect(jsonPath("$.data.folders[0].regionNames").doesNotExist());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"", " ", "가", "바다!", "제주\t사진", "바다\n사진", "ㄱㄴ", "éé"})
     void 유효하지_않은_검색어에_검색_전용_오류를_반환한다(String query) throws Exception {

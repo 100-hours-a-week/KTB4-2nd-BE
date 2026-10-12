@@ -4,11 +4,17 @@ import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
@@ -29,35 +35,42 @@ class TripSearchServiceTest {
 
     @Test
     void 종료일_다음날을_제외하고_지역_목록이_비어있으면_지역_필터를_생략한다() {
-        when(attachments.findSearchCandidateIds(1L, LocalDate.of(2024, 2, 29).atStartOfDay(),
-                LocalDate.of(2024, 3, 1).atStartOfDay(), false, List.of(""))).thenReturn(List.of(7L));
-        assertThat(service.findSearchCandidateIds(1L, new TripSearchCondition(
+        TripSearchCandidateResponse candidate = new TripSearchCandidateResponse(
+                7L, "analyze", null, null, "여행");
+        when(attachments.findSearchCandidates(1L, LocalDate.of(2024, 2, 29).atStartOfDay(),
+                LocalDate.of(2024, 3, 1).atStartOfDay(), false, List.of(""))).thenReturn(List.of(candidate));
+        assertThat(service.findSearchCandidates(1L, new TripSearchCondition(
                 LocalDate.of(2024, 2, 29), LocalDate.of(2024, 2, 29), List.of())))
+                .extracting(TripSearchCandidateResponse::tripAttachmentId)
                 .containsExactly(7L);
     }
 
     @Test
-    void 결과에_저장된_썸네일과_여행_전체의_활성_사진_개수를_사용한다() {
+    void 결과에_장소_썸네일과_장소_전체의_활성_사진_개수를_사용한다() {
         Trip trip = Trip.localMock(1L, "제주 여행", LocalDate.of(2024, 2, 29),
                 LocalDate.of(2024, 3, 1), "trip-thumbnail");
-        org.springframework.test.util.ReflectionTestUtils.setField(trip, "id", 9L);
+        ReflectionTestUtils.setField(trip, "id", 9L);
         TripAttachment photo = mock(TripAttachment.class);
         when(photo.getId()).thenReturn(7L);
         when(photo.getTripId()).thenReturn(9L);
         when(photo.getTrip()).thenReturn(trip);
         when(photo.getTripPlaceId()).thenReturn(11L);
+        TripDetailPlace place = TripDetailPlace.fromAnalysis(9L, 1, "해변", null, null,
+                null, null, "place-thumbnail");
+        ReflectionTestUtils.setField(place, "id", 11L);
+        when(photo.getTripPlace()).thenReturn(place);
         when(photo.getPreviewStorageKey()).thenReturn("photo-preview");
         when(attachments.findSearchResults(1L, List.of(7L))).thenReturn(List.of(photo));
-        when(attachments.countActiveByTripIds(List.of(9L)))
-                .thenReturn(List.of(new TripAttachmentCount(9L, 50L)));
-        when(regions.findNamesByTripIds(List.of(9L))).thenReturn(List.of(
-                new TripRegionName(9L, "제주"), new TripRegionName(9L, "부산")));
-        when(storage.createReadUrl("trip-thumbnail")).thenReturn("trip-url");
+        when(attachments.countActiveByTripPlaceIds(Set.of(11L)))
+                .thenReturn(List.of(new PlaceFolderAttachmentCount(11L, 50L)));
+        when(storage.createReadUrl("place-thumbnail")).thenReturn("place-url");
         when(storage.createReadUrl("photo-preview")).thenReturn("photo-url");
         var result = service.findSearchResults(1L, List.of(7L));
         assertThat(result.attachments().getFirst().thumbnailUrl()).isEqualTo("photo-url");
         assertThat(result.folders().getFirst().attachmentCount()).isEqualTo(50L);
-        assertThat(result.folders().getFirst().thumbnailUrl()).isEqualTo("trip-url");
-        assertThat(result.folders().getFirst().regionNames()).containsExactly("제주", "부산");
+        assertThat(result.folders().getFirst().thumbnailUrl()).isEqualTo("place-url");
+        assertThat(result.folders().getFirst().tripPlaceId()).isEqualTo(11L);
+        assertThat(result.folders().getFirst().placeName()).isEqualTo("해변");
+        verifyNoInteractions(regions);
     }
 }

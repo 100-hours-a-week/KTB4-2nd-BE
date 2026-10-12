@@ -1,6 +1,5 @@
 package com.yeodam.yeodambe.trip.service.response;
 
-import java.time.LocalDate;
 import java.util.List;
 
 public record TripSearchResultResponse(
@@ -17,12 +16,11 @@ public record TripSearchResultResponse(
 
     public record Folder(
             Long tripId,
+            Long tripPlaceId,
             String tripName,
-            LocalDate startDate,
-            LocalDate endDate,
-            List<String> regionNames,
-            long attachmentCount,
-            String thumbnailUrl
+            String placeName,
+            String thumbnailUrl,
+            long attachmentCount
     ) {
     }
 }

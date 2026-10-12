@@ -9,12 +9,13 @@ import com.yeodam.yeodambe.search.service.response.SearchResponse;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
 import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.ZoneOffset;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,22 +26,28 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SearchService {
     private static final int SEARCH_LIMIT = 30;
+    private static final int FOLDER_LIMIT = 10;
+    private static final ZoneOffset SEARCH_OFFSET = ZoneOffset.ofHours(9);
     private final TripService tripService;
     private final AiQueryService aiQueryService;
 
     public SearchResponse search(Long userId, String query) {
         AiQueryParseResponse parsed = aiQueryService.parse(query);
 
-        List<Long> candidates = tripService.findSearchCandidateIds(userId, new TripSearchCondition(
-                parsed.dateFrom(), parsed.dateTo(), parsed.regionNames()
-        ));
+        TripSearchCondition condition = parsed.parsed()
+                ? new TripSearchCondition(parsed.dateFrom(), parsed.dateTo(), parsed.regionNames())
+                : new TripSearchCondition(null, null, null);
+        List<TripSearchCandidateResponse> candidates = tripService.findSearchCandidates(userId, condition);
 
         if (candidates.isEmpty()) {
             return new SearchResponse(query, null, null, List.of(), List.of());
         }
 
         AiQuerySearchResponse searched = aiQueryService.search(new AiQuerySearchRequest(
-                parsed.intent(), parsed.visualQuery(), candidates, SEARCH_LIMIT
+                query,
+                parsed.parsed() ? parsed.intent() : AiQueryParseResponse.Intent.SEARCH,
+                parsed.parsed() ? parsed.visualQuery() : query,
+                candidates.stream().map(this::toAiCandidate).toList(), SEARCH_LIMIT
         ));
 
         validateCandidateMembership(candidates, searched.attachments());
@@ -58,10 +65,19 @@ public class SearchService {
                 buildFolders(current, scores), buildAttachments(current, scores));
     }
 
+    private AiQuerySearchRequest.Candidate toAiCandidate(TripSearchCandidateResponse candidate) {
+        return new AiQuerySearchRequest.Candidate(
+                candidate.tripAttachmentId(), candidate.analyzeStorageKey(),
+                candidate.takenAt() == null ? null : candidate.takenAt().atOffset(SEARCH_OFFSET),
+                candidate.placeName(), candidate.tripName());
+    }
+
     private void validateCandidateMembership(
-            List<Long> candidates, List<AiQuerySearchResponse.Attachment> attachments
+            List<TripSearchCandidateResponse> candidates, List<AiQuerySearchResponse.Attachment> attachments
     ) {
-        Set<Long> candidateIds = new HashSet<>(candidates);
+        Set<Long> candidateIds = candidates.stream()
+                .map(TripSearchCandidateResponse::tripAttachmentId)
+                .collect(Collectors.toSet());
         boolean invalid = attachments.stream()
                 .anyMatch(attachment -> !candidateIds.contains(attachment.tripAttachmentId()));
         if (invalid) {
@@ -98,18 +114,18 @@ public class SearchService {
             TripSearchResultResponse current, Map<Long, Double> scores
     ) {
         Map<Long, Double> folderScores = current.attachments().stream()
-                .collect(Collectors.toMap(TripSearchResultResponse.Attachment::tripId,
+                .filter(attachment -> attachment.tripPlaceId() != null)
+                .collect(Collectors.toMap(TripSearchResultResponse.Attachment::tripPlaceId,
                         attachment -> scores.get(attachment.tripAttachmentId()), Math::max));
 
         return current.folders().stream()
-                .filter(folder -> folderScores.containsKey(folder.tripId()))
+                .filter(folder -> folderScores.containsKey(folder.tripPlaceId()))
                 .map(folder -> new SearchResponse.Folder(
-                        folder.tripId(), folder.tripName(), folder.startDate(), folder.endDate(),
-                        folder.regionNames(), folder.attachmentCount(), folder.thumbnailUrl(),
-                        folderScores.get(folder.tripId())))
+                        folder.tripId(), folder.tripPlaceId(), folder.tripName(), folder.placeName(),
+                        folder.thumbnailUrl(), folder.attachmentCount(), folderScores.get(folder.tripPlaceId())))
                 .sorted(Comparator.comparingDouble(SearchResponse.Folder::score).reversed()
-                        .thenComparing(SearchResponse.Folder::tripId))
-                .limit(SEARCH_LIMIT)
+                        .thenComparing(SearchResponse.Folder::tripPlaceId))
+                .limit(FOLDER_LIMIT)
                 .toList();
     }
 }

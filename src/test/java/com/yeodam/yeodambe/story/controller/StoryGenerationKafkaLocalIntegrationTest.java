@@ -151,7 +151,7 @@ class StoryGenerationKafkaLocalIntegrationTest {
                 for (var record : consumer.poll(Duration.ofSeconds(1))) {
                     if (mapper.readTree(record.value()).path("execution_id").asString().equals(job.getExecutionId())) {
                         received = record.value();
-                        assertThat(record.key()).isNull();
+                        assertThat(record.key()).isEqualTo(trip.getId().toString());
                         break;
                     }
                 }

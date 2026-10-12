@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.story.client;
 import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
@@ -21,40 +22,40 @@ class StoryGenerationPublisherTest {
     private final KafkaTopicProperties topics = new KafkaTopicProperties(
             Arrays.stream(EventType.values()).collect(Collectors.toMap(type -> type,
                     type -> type == EventType.STORY_CREATE_REQUEST ? "ai-jobs" : "unused." + type.name())));
-    private final StoryGenerationPublisher publisher = new StoryGenerationPublisher(kafkaTemplate, topics);
-    private final String payload = "{\"type\":\"story\",\"execution_id\":\"saved-execution\"}";
+    private final StoryGenerationPublisher publisher = new StoryGenerationPublisher(kafkaTemplate, topics, new ObjectMapper());
+    private final String payload = "{\"type\":\"story\",\"trip_id\":77,\"execution_id\":\"saved-execution\"}";
 
     @Test
-    void sendsStoredJsonToConfiguredTopicAndReturnsPendingFuture() {
+    void sendsUnchangedStoredJsonWithTripIdKeyAndReturnsPendingFuture() {
         var pending = new CompletableFuture<SendResult<String, String>>();
-        when(kafkaTemplate.send("ai-jobs", payload)).thenReturn(pending);
+        when(kafkaTemplate.send("ai-jobs", "77", payload)).thenReturn(pending);
 
         var result = publisher.publish(payload);
 
         assertThat(result).isSameAs(pending);
         assertThat(result.isDone()).isFalse();
-        verify(kafkaTemplate).send("ai-jobs", payload);
+        verify(kafkaTemplate).send("ai-jobs", "77", payload);
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
     @Test
     void brokerFailureRemainsVisibleToCallerWithoutApplicationRepublish() {
         var pending = new CompletableFuture<SendResult<String, String>>();
-        when(kafkaTemplate.send("ai-jobs", payload)).thenReturn(pending);
+        when(kafkaTemplate.send("ai-jobs", "77", payload)).thenReturn(pending);
         var result = publisher.publish(payload);
         var failure = new IllegalStateException("broker unavailable");
 
         pending.completeExceptionally(failure);
 
         assertThatThrownBy(result::join).isInstanceOf(CompletionException.class).hasCause(failure);
-        verify(kafkaTemplate).send("ai-jobs", payload);
+        verify(kafkaTemplate).send("ai-jobs", "77", payload);
         verifyNoMoreInteractions(kafkaTemplate);
     }
 
     @Test
     void successfulCompletionRemainsVisibleToCaller() {
         var pending = new CompletableFuture<SendResult<String, String>>();
-        when(kafkaTemplate.send("ai-jobs", payload)).thenReturn(pending);
+        when(kafkaTemplate.send("ai-jobs", "77", payload)).thenReturn(pending);
         var result = publisher.publish(payload);
         @SuppressWarnings("unchecked")
         SendResult<String, String> acknowledged = mock(SendResult.class);

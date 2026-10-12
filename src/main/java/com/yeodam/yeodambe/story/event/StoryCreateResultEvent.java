@@ -1,15 +1,38 @@
 package com.yeodam.yeodambe.story.event;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.yeodam.yeodambe.common.event.EventPayload;
 import com.yeodam.yeodambe.common.event.EventType;
+import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 
-/**
- * 스토리 생성 AI 결과 이벤트. 메시지 계약 확정 후 필드를 정의한다.
- */
-public class StoryCreateResultEvent implements EventPayload {
+public record StoryCreateResultEvent(
+        String type,
+
+        @JsonProperty("trip_id")
+        Long tripId,
+
+        @JsonProperty("execution_id")
+        String executionId,
+
+        StoryGenerationAiResponse.Status status,
+        StoryGenerationAiResponse.Result result,
+        StoryGenerationAiResponse.Failure error
+) implements EventPayload {
 
     @Override
     public EventType eventType() {
         return EventType.STORY_CREATE_RESULT;
+    }
+
+    public StoryGenerationAiResponse toResponse() {
+        return new StoryGenerationAiResponse(
+                tripId,
+                executionId,
+                status,
+                null,
+                null,
+                result,
+                error
+        );
     }
 }

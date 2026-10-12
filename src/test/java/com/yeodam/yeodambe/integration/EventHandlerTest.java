@@ -8,6 +8,9 @@ import com.yeodam.yeodambe.story.event.StoryCreateRequestEvent;
 import com.yeodam.yeodambe.story.event.StoryCreateResultEvent;
 import com.yeodam.yeodambe.story.event.handler.StoryCreateRequestEventHandler;
 import com.yeodam.yeodambe.story.event.handler.StoryCreateResultEventHandler;
+import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
+import com.yeodam.yeodambe.story.service.StoryGenerationCompletionService;
+import com.yeodam.yeodambe.story.service.StoryGenerationTerminalService;
 import com.yeodam.yeodambe.trip.event.TripCreateRequestEvent;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
 import com.yeodam.yeodambe.trip.event.TripUpdateRequestEvent;
@@ -34,6 +37,9 @@ class EventHandlerTest {
     @Test
     void 도메인_핸들러가_서로_다른_이벤트_타입의_빈으로_등록된다() {
         new ApplicationContextRunner()
+                .withBean(StoryGenerationJobRepository.class, () -> mock(StoryGenerationJobRepository.class))
+                .withBean(StoryGenerationCompletionService.class, () -> mock(StoryGenerationCompletionService.class))
+                .withBean(StoryGenerationTerminalService.class, () -> mock(StoryGenerationTerminalService.class))
                 .withUserConfiguration(
                         TripCreateRequestEventHandler.class,
                         TripCreateResultEventHandler.class,
@@ -57,7 +63,6 @@ class EventHandlerTest {
         assertNotImplemented(new TripUpdateRequestEventHandler(), new TripUpdateRequestEvent());
         assertNotImplemented(new TripUpdateResultEventHandler(), new TripUpdateResultEvent());
         assertNotImplemented(new StoryCreateRequestEventHandler(), new StoryCreateRequestEvent());
-        assertNotImplemented(new StoryCreateResultEventHandler(), new StoryCreateResultEvent());
     }
 
     @Test
@@ -91,7 +96,12 @@ class EventHandlerTest {
         assertDirectInvocation(new TripUpdateRequestEventHandler(), TripUpdateRequestEvent.class);
         assertDirectInvocation(new TripUpdateResultEventHandler(), TripUpdateResultEvent.class);
         assertDirectInvocation(new StoryCreateRequestEventHandler(), StoryCreateRequestEvent.class);
-        assertDirectInvocation(new StoryCreateResultEventHandler(), StoryCreateResultEvent.class);
+        assertDirectInvocation(storyResultHandler(), StoryCreateResultEvent.class);
+    }
+
+    private StoryCreateResultEventHandler storyResultHandler() {
+        return new StoryCreateResultEventHandler(mock(StoryGenerationJobRepository.class),
+                mock(StoryGenerationCompletionService.class), mock(StoryGenerationTerminalService.class));
     }
 
     private <T extends EventPayload> void assertDirectInvocation(EventHandler<T> handler, Class<T> eventClass) {

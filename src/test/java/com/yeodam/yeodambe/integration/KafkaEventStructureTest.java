@@ -94,7 +94,7 @@ class KafkaEventStructureTest {
                 new TripUpdateRequestEvent(),
                 new TripUpdateResultEvent(),
                 new StoryCreateRequestEvent(),
-                new StoryCreateResultEvent()
+                new StoryCreateResultEvent("story_result", 77L, "execution-1", null, null, null)
         );
 
         assertThat(events).extracting(EventPayload::eventType)

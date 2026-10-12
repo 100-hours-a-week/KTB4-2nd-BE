@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,7 +21,7 @@ public class StoryGenerationTerminalService {
         if (response == null
                 || (response.status() != StoryGenerationAiResponse.Status.FAILED
                 && response.status() != StoryGenerationAiResponse.Status.CANCELED)) {
-            throw new IllegalArgumentException(
+            throw new InvalidStoryResultException(
                     StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
             );
         }
@@ -32,7 +33,7 @@ public class StoryGenerationTerminalService {
 
         if (!job.getTripId().equals(response.tripId())
                 || !job.getExecutionId().equals(response.executionId())) {
-            throw new IllegalArgumentException(
+            throw new InvalidStoryResultException(
                     StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH.message()
             );
         }
@@ -52,7 +53,7 @@ public class StoryGenerationTerminalService {
                 || error.code() == null
                 || error.code().isBlank()
                 || error.code().length() > 100) {
-            throw new IllegalArgumentException(
+            throw new InvalidStoryResultException(
                     StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
             );
         }

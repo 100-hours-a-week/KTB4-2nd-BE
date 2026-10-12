@@ -9,6 +9,8 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 
 @Component
 @RequiredArgsConstructor
@@ -28,33 +30,20 @@ public class StoryGenerationResultListener {
             containerFactory = "storyResultKafkaListenerContainerFactory"
     )
     public void receive(String message) {
-        Assert.hasText(
-                message,
-                EventInternalErrorMessage.EVENT_JSON_BLANK.message()
-        );
-
-        var root = objectMapper.readTree(message);
-
-        Assert.notNull(
-                root,
-                EventInternalErrorMessage.EVENT_JSON_NULL_PAYLOAD.message()
-        );
-
-        String type = root.path("type").asString();
-
-        Assert.hasText(
-                type,
-                EventInternalErrorMessage.EVENT_TYPE_MISSING.message()
-        );
-
-        if (!"story_result".equals(type)) {
-            return;
+        StoryCreateResultEvent event;
+        try {
+            Assert.hasText(message, EventInternalErrorMessage.EVENT_JSON_BLANK.message());
+            var root = objectMapper.readTree(message);
+            Assert.notNull(root, EventInternalErrorMessage.EVENT_JSON_NULL_PAYLOAD.message());
+            String type = root.path("type").asString();
+            Assert.hasText(type, EventInternalErrorMessage.EVENT_TYPE_MISSING.message());
+            if (!"story_result".equals(type)) {
+                return;
+            }
+            event = eventJsonCodec.deserialize(message, StoryCreateResultEvent.class);
+        } catch (JacksonException | IllegalArgumentException failure) {
+            throw new InvalidStoryResultException("스토리 결과 메시지를 읽을 수 없습니다.", failure);
         }
-
-        var event = eventJsonCodec.deserialize(
-                message,
-                StoryCreateResultEvent.class
-        );
 
         resultHandler.handle(event);
     }

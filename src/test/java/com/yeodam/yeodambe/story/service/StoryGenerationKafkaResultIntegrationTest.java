@@ -74,6 +74,7 @@ import static org.mockito.ArgumentMatchers.any;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class StoryGenerationKafkaResultIntegrationTest {
     private static final String TOPIC = "test-story-results-" + UUID.randomUUID();
+    private static final String DLT = TOPIC + "-story-dlt";
     private static final String GROUP = "test-story-consumer-" + UUID.randomUUID();
     @Autowired private StoryGenerationAcceptanceService acceptance;
     @Autowired private StoryGenerationStatusSyncService statusSync;
@@ -92,18 +93,19 @@ class StoryGenerationKafkaResultIntegrationTest {
     @DynamicPropertySource
     static void configureKafka(DynamicPropertyRegistry registry) throws Exception {
         try (var admin = admin()) {
-            admin.createTopics(List.of(new NewTopic(TOPIC, 1, (short) 1)))
+            admin.createTopics(List.of(new NewTopic(TOPIC, 1, (short) 1), new NewTopic(DLT, 1, (short) 1)))
                     .all().get(15, TimeUnit.SECONDS);
         }
         registry.add("app.kafka.topics.story-create-result", () -> TOPIC);
         registry.add("app.story.result-consumer-group", () -> GROUP);
+        registry.add("app.story.result-dead-letter-topic", () -> DLT);
     }
 
     @AfterAll
     static void removeTestTopic(@Autowired KafkaListenerEndpointRegistry registry) throws Exception {
         registry.stop();
         try (var admin = admin()) {
-            admin.deleteTopics(List.of(TOPIC)).all().get(15, TimeUnit.SECONDS);
+            admin.deleteTopics(List.of(TOPIC, DLT)).all().get(15, TimeUnit.SECONDS);
         }
     }
 
@@ -250,6 +252,70 @@ class StoryGenerationKafkaResultIntegrationTest {
         assertCompletedOnce();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM story_selected_places WHERE trip_place_id = ?",
                 Integer.class, folder.getId())).isEqualTo(1);
+    }
+
+    @Test
+    void malformedJsonIsPreservedAndFollowingValidResultCompletes() throws Exception {
+        String malformed = "{invalid-json";
+        var offset = kafka.send(TOPIC, trip.getId().toString(), malformed)
+                .get(10, TimeUnit.SECONDS).getRecordMetadata().offset();
+        awaitCommitted(offset);
+        assertDeadLetterContains(malformed);
+        assertNoResultSaved();
+
+        awaitCommitted(send(completionEvent(job.getExecutionId())));
+        assertCompletedOnce();
+    }
+
+    @Test
+    void invalidPhotoResultFailsIdentifiedJobAndDoesNotBlockFollowingRecord() throws Exception {
+        var response = completed(job.getExecutionId(), photo.getId() + 100000);
+        var invalid = new StoryCreateResultEvent("story_result", trip.getId(), job.getExecutionId(),
+                StoryGenerationAiResponse.Status.COMPLETED, response.result(), null);
+        String json = mapper.writeValueAsString(invalid);
+        awaitCommitted(send(invalid));
+        assertDeadLetterContains(json);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(count("stories")).isZero();
+        awaitCommitted(send(completionEvent("unknown-" + UUID.randomUUID())));
+    }
+
+    @Test
+    void persistentStorageFailureRetriesThreeTimesThenPreservesResult() throws Exception {
+        var attempts = new AtomicInteger();
+        doAnswer(invocation -> {
+            attempts.incrementAndGet();
+            throw new DataIntegrityViolationException("injected persistent storage failure");
+        }).when(selectedPlaces).saveAll(any());
+        var event = completionEvent(job.getExecutionId());
+        awaitCommitted(send(event));
+        assertDeadLetterContains(mapper.writeValueAsString(event));
+        assertThat(attempts.get()).isEqualTo(4);
+        assertThat(count("stories")).isZero();
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        awaitCommitted(send(completionEvent("unknown-" + UUID.randomUUID())));
+    }
+
+    private void assertDeadLetterContains(String expected) throws Exception {
+        var properties = Map.<String, Object>of(
+                "bootstrap.servers", "localhost:9092",
+                "group.id", "dlt-check-" + UUID.randomUUID(),
+                "key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer",
+                "value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        try (var consumer = new org.apache.kafka.clients.consumer.KafkaConsumer<String, String>(properties)) {
+            consumer.assign(List.of(new TopicPartition(DLT, 0)));
+            consumer.seekToBeginning(List.of(new TopicPartition(DLT, 0)));
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (System.nanoTime() < deadline) {
+                for (var record : consumer.poll(java.time.Duration.ofMillis(200))) {
+                    if (expected.equals(record.value())) {
+                        assertThat(record.headers().lastHeader("kafka_dlt-original-topic")).isNotNull();
+                        return;
+                    }
+                }
+            }
+            throw new AssertionError("Original failed message was not preserved in DLT");
+        }
     }
 
     private StoryCreateResultEvent completionEvent(String executionId) {

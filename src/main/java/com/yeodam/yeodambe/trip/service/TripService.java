@@ -9,6 +9,9 @@ import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
 import com.yeodam.yeodambe.common.exception.TripUpdateNotAllowedException;
 import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
 import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
+import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -57,6 +60,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -77,7 +81,7 @@ public class TripService {
     private final StoryRepository storyRepository;
 
     @Transactional(readOnly = true)
-    public List<Long> findSearchCandidateIds(Long userId, TripSearchCondition condition) {
+    public List<TripSearchCandidateResponse> findSearchCandidates(Long userId, TripSearchCondition condition) {
         List<String> regionNames = condition.regionNames() == null
                 ? List.of() : condition.regionNames();
         boolean filterRegions = !regionNames.isEmpty();
@@ -86,7 +90,7 @@ public class TripService {
         LocalDateTime takenBefore = condition.dateTo() == null
                 ? null : condition.dateTo().plusDays(1).atStartOfDay();
 
-        return tripAttachmentRepository.findSearchCandidateIds(
+        return tripAttachmentRepository.findSearchCandidates(
                 userId, takenFrom, takenBefore, filterRegions,
                 filterRegions ? regionNames : List.of("")
         );
@@ -103,33 +107,41 @@ public class TripService {
             return new TripSearchResultResponse(List.of(), List.of());
         }
 
-        Map<Long, Trip> trips = attachments.stream()
-                .collect(Collectors.toMap(TripAttachment::getTripId, TripAttachment::getTrip,
-                        (first, duplicate) -> first, LinkedHashMap::new));
-
-        List<Long> tripIds = List.copyOf(trips.keySet());
-
-        Map<Long, List<String>> regionNames = tripRegionRepository.findNamesByTripIds(tripIds).stream()
-                .collect(Collectors.groupingBy(TripRegionName::tripId,
-                        Collectors.mapping(TripRegionName::regionName, Collectors.toList())));
-
-        Map<Long, Long> counts = tripAttachmentRepository.countActiveByTripIds(tripIds).stream()
-                .collect(Collectors.toMap(TripAttachmentCount::tripId, TripAttachmentCount::attachmentCount));
-
         List<TripSearchResultResponse.Attachment> photos = attachments.stream()
                 .map(attachment -> new TripSearchResultResponse.Attachment(
                         attachment.getId(), attachment.getTripId(), attachment.getTripPlaceId(),
                         tripAttachmentStorageClient.createReadUrl(attachment.getPreviewStorageKey())))
                 .toList();
 
-        List<TripSearchResultResponse.Folder> folders = trips.values().stream()
-                .map(trip -> new TripSearchResultResponse.Folder(
-                        trip.getId(), trip.getTripName(), trip.getStartDate(), trip.getEndDate(),
-                        regionNames.getOrDefault(trip.getId(), List.of()).stream().limit(3).toList(),
-                        counts.getOrDefault(trip.getId(), 0L), createThumbnailUrl(trip)))
-                .toList();
+        List<TripSearchResultResponse.Folder> folders = buildSearchFolders(attachments);
 
         return new TripSearchResultResponse(photos, folders);
+    }
+
+    private List<TripSearchResultResponse.Folder> buildSearchFolders(List<TripAttachment> attachments) {
+        Map<Long, TripDetailPlace> places = attachments.stream()
+                .map(TripAttachment::getTripPlace)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(TripDetailPlace::getId, place -> place,
+                        (first, duplicate) -> first, LinkedHashMap::new));
+        if (places.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Long> counts = tripAttachmentRepository.countActiveByTripPlaceIds(places.keySet()).stream()
+                .collect(Collectors.toMap(PlaceFolderAttachmentCount::tripPlaceId,
+                        PlaceFolderAttachmentCount::attachmentCount));
+        Map<Long, String> tripNames = attachments.stream()
+                .collect(Collectors.toMap(TripAttachment::getTripId,
+                        attachment -> attachment.getTrip().getTripName(), (first, duplicate) -> first));
+
+        return places.values().stream()
+                .map(place -> new TripSearchResultResponse.Folder(
+                        place.getTripId(), place.getId(), tripNames.get(place.getTripId()), place.getPlaceName(),
+                        place.getThumbnailKey() == null ? null
+                                : tripAttachmentStorageClient.createReadUrl(place.getThumbnailKey()),
+                        counts.getOrDefault(place.getId(), 0L)))
+                .toList();
     }
 
     public TripCreationValidationResponse validateCreation(List<TripAttachmentMetadataRequest> metadata) {

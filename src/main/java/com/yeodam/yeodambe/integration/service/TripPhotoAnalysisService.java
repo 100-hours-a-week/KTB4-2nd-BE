@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.integration.service;
 import com.yeodam.yeodambe.common.exception.AiProcessingFailedException;
 import com.yeodam.yeodambe.common.exception.AiStatusUnavailableException;
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.integration.client.AiEc2Starter;
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.integration.service.request.TripPhotoAnalysisRequest;
@@ -109,7 +110,7 @@ public class TripPhotoAnalysisService {
                     .addKeyValue("job_id", executionId)
                     .addKeyValue("duration_ms", elapsedMillis(workerReadyStartedAt))
                     .addKeyValue("failure_stage", workerFailureStage)
-                    .addKeyValue("error_code", "INTERNAL_SERVER_ERROR")
+                    .addKeyValue("error_code", ErrorMessage.INTERNAL_SERVER_ERROR.name())
                     .log("AI Worker 준비에 실패했습니다.", failure);
             throw failure;
         }
@@ -143,7 +144,7 @@ public class TripPhotoAnalysisService {
                     .addKeyValue("job_id", executionId)
                     .addKeyValue("duration_ms", elapsedMillis(aiJobStartedAt))
                     .addKeyValue("failure_stage", "ai_request")
-                    .addKeyValue("error_code", "INTERNAL_SERVER_ERROR")
+                    .addKeyValue("error_code", ErrorMessage.INTERNAL_SERVER_ERROR.name())
                     .log("AI 사진 분석 요청에 실패했습니다.", failure);
             throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PHOTO_ANALYSIS_REQUEST_FAILED.message(), failure);
         }
@@ -179,7 +180,7 @@ public class TripPhotoAnalysisService {
                     .addKeyValue("job_id", executionId)
                     .addKeyValue("duration_ms", elapsedMillis(aiJobStartedAt))
                     .addKeyValue("failure_stage", "result_validation")
-                    .addKeyValue("error_code", "INTERNAL_SERVER_ERROR")
+                    .addKeyValue("error_code", ErrorMessage.INTERNAL_SERVER_ERROR.name())
                     .log("AI 사진 분석 응답 검증에 실패했습니다.", failure);
             throw failure;
         }
@@ -238,7 +239,7 @@ public class TripPhotoAnalysisService {
         if (response == null || !response.path("trip_id").isIntegralNumber()
                 || response.path("trip_id").asLong() != tripId
                 || !executionId.equals(response.path("execution_id").asString())) {
-            throw new IllegalStateException("AI 진행률의 실행이 다릅니다.");
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PROGRESS_EXECUTION_MISMATCH.message());
         }
 
         var status = TripPhotoAnalysisStatusResponse.Status.valueOf(response.path("status").asString());
@@ -249,7 +250,7 @@ public class TripPhotoAnalysisService {
                 || !progress.path("done").canConvertToInt() || !progress.path("total").canConvertToInt()
                 || progress.path("done").asInt(-1) < 0
                 || progress.path("total").asInt(-1) < progress.path("done").asInt()) {
-            throw new IllegalStateException("AI 진행률이 잘못됐습니다.");
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PROGRESS_INVALID.message());
         }
 
         JsonNode step = response.path("current_step");
@@ -257,7 +258,7 @@ public class TripPhotoAnalysisService {
         if (!step.isNull() && (!step.isString()
                 || !Set.of("DOWNLOADING", "EMBEDDING", "CLOCK", "LOCATING",
                         "CLUSTERING", "FILTERING", "FINALIZING").contains(step.asString()))) {
-            throw new IllegalStateException("AI 처리 단계가 잘못됐습니다.");
+            throw new IllegalStateException(IntegrationInternalErrorMessage.AI_PROCESS_STEP_INVALID.message());
         }
 
         return new TripPhotoAnalysisStatusResponse(tripId, status, new TripPhotoAnalysisStatusResponse.Progress(progress.path("done").asInt(), progress.path("total").asInt()),

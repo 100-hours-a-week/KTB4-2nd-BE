@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -38,7 +39,7 @@ public class TripAnalysisResultWorker {
             String reason = permanent && failure instanceof IllegalStateException
                     ? failure.getMessage() : failure.getClass().getSimpleName();
             if (reason == null || reason.length() > 255) {
-                reason = "AI_RESULT_APPLICATION_FAILED";
+                reason = ErrorMessage.AI_RESULT_APPLICATION_FAILED.name();
             }
             results.failResult(claim, permanent, reason);
         }

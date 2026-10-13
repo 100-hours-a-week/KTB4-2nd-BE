@@ -264,7 +264,7 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
             String mimeType
     ) {
         if (!Set.of("image/jpeg", "image/webp").contains(mimeType)) {
-            throw new IllegalArgumentException("지원하지 않는 파생본 형식입니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.UNSUPPORTED_DERIVED_ATTACHMENT_FORMAT.message());
         }
         try {
             s3.putObject(request -> request.bucket(bucket).key(objectKey).contentType(mimeType)

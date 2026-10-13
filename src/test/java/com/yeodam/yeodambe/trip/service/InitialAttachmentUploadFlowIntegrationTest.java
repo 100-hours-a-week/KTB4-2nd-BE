@@ -251,6 +251,18 @@ class InitialAttachmentUploadFlowIntegrationTest {
         assertThat(results.startResultAttempt(current)).isFalse();
     }
 
+    @Test
+    void 탈퇴는_진행중_원본_예약과_정리_의도를_남기고_실행을_종료한다() {
+        var batch = prepare(1, 1, true);
+        accept(batch);
+        var claim = transactions.claimBatch().orElseThrow();
+        withdrawal.withdrawAll(owner.getUserId(), LocalDateTime.now());
+        assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.CANCELED);
+        assertThat(execution().isReservationReleased()).isTrue();
+        assertThat(transactions.renewLease(claim)).isFalse();
+        assertThat(jdbc.queryForObject("SELECT cleanup_started_at IS NOT NULL FROM initial_attachment_upload_items WHERE upload_item_id = ?",
+                Boolean.class, batch.photos().getFirst().itemId())).isTrue();
+    }
 
     private TripKafkaDeliveryClaim publishSingleBatch() {
         var batch = prepare(1, 1, true);

@@ -434,73 +434,27 @@ public class TripService {
 
     @Transactional(readOnly = true)
     public TripMapResponse findMap(Long userId) {
-        List<TripRegion> regions = tripRegionRepository.findAllForMap(
-                userId,
-                ProcessingStatus.COMPLETED
-        );
-
-        if (regions.isEmpty()) {
+        var representatives = tripAttachmentRepository.findMapRepresentatives(userId);
+        if (representatives.isEmpty()) {
             return new TripMapResponse(List.of());
         }
 
-        List<Long> tripIds = regions.stream()
-                .map(region -> region.getTrip().getId())
-                .distinct()
+        List<Long> tripIds = representatives.stream()
+                .map(representative -> representative.tripId())
                 .toList();
+        Map<Long, Long> attachmentCounts = tripAttachmentRepository.countNotDeletedByTripIds(tripIds)
+                .stream().collect(Collectors.toMap(TripAttachmentCount::tripId, TripAttachmentCount::attachmentCount));
 
-        List<TripAttachmentCount> attachmentCountResults =
-                tripAttachmentRepository.countNotDeletedByTripIds(tripIds);
-
-        Map<Long, Long> attachmentCounts = new HashMap<>();
-
-        for (TripAttachmentCount result : attachmentCountResults) {
-            attachmentCounts.put(
-                    result.tripId(),
-                    result.attachmentCount()
-            );
-        }
-
-        Map<String, List<TripRegion>> regionsByCode = new LinkedHashMap<>();
-
-        for (TripRegion region : regions) {
-            String regionCode = region.getRegionCode();
-
-            if (!regionsByCode.containsKey(regionCode)) {
-                regionsByCode.put(regionCode, new ArrayList<>());
-            }
-
-            List<TripRegion> groupedRegions = regionsByCode.get(regionCode);
-            groupedRegions.add(region);
-        }
-
-        List<TripMapResponse.Marker> markers = new ArrayList<>();
-
-        for (List<TripRegion> groupedRegions : regionsByCode.values()) {
-            TripRegion representativeRegion = groupedRegions.getFirst();
-
-            List<TripMapResponse.TripSummary> trips = new ArrayList<>();
-
-            for (TripRegion region : groupedRegions) {
-                Trip trip = region.getTrip();
-
-                trips.add(new TripMapResponse.TripSummary(
-                        trip.getId(),
-                        trip.getTripName(),
-                        createThumbnailUrl(trip),
-                        attachmentCounts.getOrDefault(trip.getId(), 0L)
-                ));
-            }
-
-            markers.add(new TripMapResponse.Marker(
-                    representativeRegion.getRegionCode(),
-                    representativeRegion.getRegionName(),
-                    representativeRegion.getLatitude(),
-                    representativeRegion.getLongitude(),
-                    trips.size(),
-                    trips
-            ));
-        }
-
+        List<TripMapResponse.Marker> markers = representatives.stream()
+                .map(representative -> new TripMapResponse.Marker(
+                        representative.tripId(),
+                        representative.tripName(),
+                        representative.latitude(),
+                        representative.longitude(),
+                        tripAttachmentStorageClient.createReadUrl(representative.previewStorageKey()),
+                        attachmentCounts.getOrDefault(representative.tripId(), 0L)
+                ))
+                .toList();
         return new TripMapResponse(markers);
     }
 

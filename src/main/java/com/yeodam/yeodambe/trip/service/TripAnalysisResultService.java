@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
@@ -411,7 +412,7 @@ public class TripAnalysisResultService {
             case COMPLETED -> {
                 // 원문을 먼저 커밋하고 검증·외부 조회·최종 저장은 별도 작업에서 수행한다.
             }
-            case FAILED -> uploadTransactions.failExecution(event.executionId(), "AI_PROCESSING_FAILED");
+            case FAILED -> uploadTransactions.failExecution(event.executionId(), ErrorMessage.AI_PROCESSING_FAILED.name());
             case CANCELED -> {
                 uploadTransactions.cancelExecution(trip.getId(), trip.getUserId());
                 execution.cancellationDelivered();
@@ -434,7 +435,7 @@ public class TripAnalysisResultService {
                 continue;
             }
             if (execution.getResultAttempts() >= 3) {
-                uploadTransactions.failExecution(execution.getExecutionId(), "RESULT_APPLY_RETRY_EXHAUSTED");
+                uploadTransactions.failExecution(execution.getExecutionId(), ErrorMessage.RESULT_APPLY_RETRY_EXHAUSTED.name());
                 continue;
             }
             execution.claimResult(UUID.randomUUID().toString(), now.plusMinutes(5));
@@ -490,11 +491,11 @@ public class TripAnalysisResultService {
             Map<String, String> placeNames
     ) {
         if (!renewResultLease(claim)) {
-            throw new CancellationException("만료되거나 취소된 결과 반영입니다.");
+            throw new CancellationException(TripInternalErrorMessage.RESULT_APPLICATION_CANCELED.message());
         }
         var execution = creationExecutions.findById(claim.executionId()).orElseThrow();
         if (!Objects.equals(execution.getResultRawPayload(), claim.rawPayload())) {
-            throw new IllegalStateException("채택한 결과 원문이 다릅니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.ADOPTED_RESULT_PAYLOAD_MISMATCH.message());
         }
         long originalBytes = uploadItems.findExecutionItems(claim.executionId()).stream()
                 .mapToLong(InitialAttachmentUploadItem::getSizeBytes)
@@ -518,7 +519,11 @@ public class TripAnalysisResultService {
         var execution = creationExecutions.findById(claim.executionId()).orElseThrow();
         execution.recordResultFailure(failureReason, uploadTransactions.databaseTime());
         if (permanent || execution.getResultAttempts() >= 3) {
-            uploadTransactions.failExecution(claim.executionId(), permanent ? "AI_RESULT_INTEGRITY_FAILED" : "RESULT_APPLY_RETRY_EXHAUSTED");
+            uploadTransactions.failExecution(
+                    claim.executionId(),
+                    permanent ? ErrorMessage.AI_RESULT_INTEGRITY_FAILED.name()
+                            : ErrorMessage.RESULT_APPLY_RETRY_EXHAUSTED.name()
+            );
         } else {
             execution.retryResult(uploadTransactions.databaseTime().plusSeconds(10));
         }
@@ -535,11 +540,11 @@ public class TripAnalysisResultService {
         List<Long> ids = uploadItems.findExecutionItems(executionId).stream()
                 .map(InitialAttachmentUploadItem::getTripAttachmentId).toList();
         if (ids.isEmpty() || ids.stream().anyMatch(Objects::isNull)) {
-            throw new IllegalStateException("실행의 사진 목록이 없습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.EXECUTION_ATTACHMENT_LIST_MISSING.message());
         }
         List<TripAttachment> photos = attachmentRepository.findAllById(ids);
         if (photos.size() != ids.size() || photos.stream().anyMatch(photo -> photo.getDeletedAt() != null)) {
-            throw new IllegalStateException("실행의 사진 목록이 일치하지 않습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.EXECUTION_ATTACHMENT_LIST_MISMATCH.message());
         }
         return photos;
     }
@@ -550,7 +555,7 @@ public class TripAnalysisResultService {
     ) {
         if (result == null || !result.path("places").isArray() || !result.path("unclassified").isArray()
                 || !result.path("failed").isArray() || !result.path("failed").isEmpty()) {
-            throw new IllegalStateException("사진 정리 결과 형식이 잘못됐습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.TRIP_RESULT_FORMAT_INVALID.message());
         }
         Set<Long> expected = new HashSet<>(attachments.stream().map(TripAttachment::getId).toList());
         Set<Long> actual = new HashSet<>();
@@ -559,18 +564,18 @@ public class TripAnalysisResultService {
             String placeId = place.path("place_id").asString();
             if (!place.path("place_id").isString() || placeId.isBlank() || !placeIds.add(placeId)
                     || !place.path("attachments").isArray() || place.path("attachments").isEmpty()) {
-                throw new IllegalStateException("장소 목록이 잘못됐습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.TRIP_RESULT_PLACE_LIST_INVALID.message());
             }
             validateResultPlace(place, actual);
         }
         for (JsonNode photo : result.path("unclassified")) {
             validateResultPhoto(photo, actual);
             if (AttachmentIssue.valueOf(photo.path("issue").asString()) == AttachmentIssue.NONE) {
-                throw new IllegalStateException("미분류 사진의 사유가 없습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.UNCLASSIFIED_ATTACHMENT_REASON_MISSING.message());
             }
         }
         if (!expected.equals(actual)) {
-            throw new IllegalStateException("결과의 사진 집합이 실행과 다릅니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.RESULT_ATTACHMENT_SET_MISMATCH.message());
         }
         validateUnclassifiedPlaceReferences(result.path("unclassified"), placeIds);
         return placeIds;
@@ -587,7 +592,7 @@ public class TripAnalysisResultService {
         if (!isNullableTime(place.path("first_taken_at")) || !isNullableTime(place.path("last_taken_at"))
                 || (first == null) != (last == null) || first != null && last.isBefore(first)
                 || !place.path("representative_attachment_id").isIntegralNumber()) {
-            throw new IllegalStateException("장소의 촬영 기간 또는 대표 사진이 잘못됐습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.RESULT_PLACE_PERIOD_OR_REPRESENTATIVE_INVALID.message());
         }
         long representative = place.path("representative_attachment_id").asLong(-1);
         boolean present = false;
@@ -596,12 +601,12 @@ public class TripAnalysisResultService {
             validateCoordinate(photo, "latitude", false);
             validateCoordinate(photo, "longitude", false);
             if (origin(photo) == RegionOrigin.UNKNOWN || !photo.path("evaluation").isIntegralNumber()) {
-                throw new IllegalStateException("장소 사진의 위치 출처 또는 평가가 잘못됐습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.RESULT_PLACE_ATTACHMENT_ORIGIN_OR_SCORE_INVALID.message());
             }
             present |= photo.path("trip_attachment_id").asLong() == representative;
         }
         if (!present) {
-            throw new IllegalStateException("대표 사진이 장소에 없습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.REPRESENTATIVE_ATTACHMENT_NOT_IN_PLACE.message());
         }
     }
 
@@ -610,20 +615,20 @@ public class TripAnalysisResultService {
             Set<Long> ids
     ) {
         if (!photo.path("trip_attachment_id").isIntegralNumber() || !ids.add(photo.path("trip_attachment_id").asLong())) {
-            throw new IllegalStateException("결과의 사진 ID가 잘못됐거나 중복됐습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.RESULT_ATTACHMENT_ID_INVALID_OR_DUPLICATE.message());
         }
         if (!photo.path("region_origin").isString()) {
-            throw new IllegalStateException("사진의 위치 출처가 잘못됐습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.RESULT_ATTACHMENT_REGION_ORIGIN_INVALID.message());
         }
         origin(photo);
         JsonNode score = photo.path("evaluation");
         if (!score.isMissingNode() && !score.isNull() && (!score.isIntegralNumber() || !score.canConvertToInt())) {
-            throw new IllegalStateException("사진 평가가 정수가 아닙니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.RESULT_ATTACHMENT_SCORE_NOT_INTEGER.message());
         }
         evaluation(photo);
         JsonNode takenAt = photo.path("taken_at");
         if (!takenAt.isMissingNode() && !takenAt.isNull() && !takenAt.isString()) {
-            throw new IllegalStateException("사진 촬영 시각이 잘못됐습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.RESULT_ATTACHMENT_CAPTURED_AT_INVALID.message());
         }
         time(takenAt);
         validateCoordinate(photo, "latitude", true);
@@ -644,7 +649,7 @@ public class TripAnalysisResultService {
         }
         BigDecimal maximum = BigDecimal.valueOf("latitude".equals(field) ? 90 : 180);
         if (!value.isNumber() || value.asDecimal().abs().compareTo(maximum) > 0) {
-            throw new IllegalStateException("사진 정리 결과 좌표가 범위를 벗어났습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.RESULT_COORDINATE_OUT_OF_RANGE.message());
         }
     }
 }

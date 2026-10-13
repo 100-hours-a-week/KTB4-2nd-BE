@@ -87,16 +87,22 @@ app:
   story:
     status-polling-enabled: ${STORY_STATUS_POLLING_ENABLED:true}
     result-listener-enabled: ${STORY_RESULT_LISTENER_ENABLED:true}
-    result-dead-letter-topic: ${KAFKA_STORY_RESULT_DLT_TOPIC:yeodam-story-results-dlt}
     result-consumer-group: ${KAFKA_STORY_RESULT_CONSUMER_GROUP:yeodam-story-results}
   kafka:
     topics:
-      trip-create-request: ${KAFKA_TRIP_CREATE_REQUEST_TOPIC:ai-jobs}
-      trip-create-result: ${KAFKA_TRIP_CREATE_RESULT_TOPIC:ai-results}
-      trip-update-request: ${KAFKA_TRIP_UPDATE_REQUEST_TOPIC:}
-      trip-update-result: ${KAFKA_TRIP_UPDATE_RESULT_TOPIC:}
-      story-create-request: ${KAFKA_STORY_CREATE_REQUEST_TOPIC:}
-      story-create-result: ${KAFKA_STORY_CREATE_RESULT_TOPIC:}
+      trip-create-request: ${KAFKA_TRIP_CREATE_REQUEST_TOPIC:local.yeodam.trip-create.request}
+      trip-create-result: ${KAFKA_TRIP_CREATE_RESULT_TOPIC:local.yeodam.trip-create.result}
+      trip-update-request: ${KAFKA_TRIP_UPDATE_REQUEST_TOPIC:local.yeodam.trip-update.request}
+      trip-update-result: ${KAFKA_TRIP_UPDATE_RESULT_TOPIC:local.yeodam.trip-update.result}
+      story-create-request: ${KAFKA_STORY_CREATE_REQUEST_TOPIC:local.yeodam.story-create.request}
+      story-create-result: ${KAFKA_STORY_CREATE_RESULT_TOPIC:local.yeodam.story-create.result}
+    dead-letter-topics:
+      trip-create-request: ${KAFKA_TRIP_CREATE_REQUEST_DLT_TOPIC:${app.kafka.topics.trip-create-request}-dlt}
+      trip-create-result: ${KAFKA_TRIP_CREATE_RESULT_DLT_TOPIC:${app.kafka.topics.trip-create-result}-dlt}
+      trip-update-request: ${KAFKA_TRIP_UPDATE_REQUEST_DLT_TOPIC:${app.kafka.topics.trip-update-request}-dlt}
+      trip-update-result: ${KAFKA_TRIP_UPDATE_RESULT_DLT_TOPIC:${app.kafka.topics.trip-update-result}-dlt}
+      story-create-request: ${KAFKA_STORY_CREATE_REQUEST_DLT_TOPIC:${app.kafka.topics.story-create-request}-dlt}
+      story-create-result: ${KAFKA_STORY_CREATE_RESULT_DLT_TOPIC:${app.kafka.topics.story-create-result}-dlt}
 
 aws:
   region: ${AWS_REGION:ap-northeast-2}

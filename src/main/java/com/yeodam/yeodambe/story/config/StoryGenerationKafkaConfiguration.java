@@ -31,7 +31,7 @@ public class StoryGenerationKafkaConfiguration {
             ConsumerFactory<Object, Object> consumerFactory,
             KafkaTemplate<String, String> kafkaTemplate,
             StoryGenerationResultRecoveryService recoveryService,
-            @Value("${app.story.result-dead-letter-topic}") String deadLetterTopic
+            @Value("${app.kafka.dead-letter-topics.story-create-result}") String deadLetterTopic
     ) {
         var factory =
                 new ConcurrentKafkaListenerContainerFactory<Object, Object>();

@@ -1,6 +1,5 @@
 package com.yeodam.yeodambe.trip.controller;
 
-import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
@@ -28,7 +27,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -45,16 +43,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class TripEditIntegrationTest {
-    @Autowired private MockMvc mvc;
-    @Autowired private JdbcTemplate jdbc;
-    @Autowired private TripService service;
-    @Autowired private UserRegistrationService registration;
-    @Autowired private LoginSessionIssuer sessions;
-    @Autowired private AccessTokenIssuer tokens;
-    @Autowired private TripAttachmentRepository attachments;
-    @Autowired private StoredFileRepository files;
-    @Autowired private ObjectMapper mapper;
-    @MockitoBean private TripAttachmentStorageClient storage;
+    @Autowired
+    private MockMvc mvc;
+    @Autowired
+    private JdbcTemplate jdbc;
+    @Autowired
+    private TripService service;
+    @Autowired
+    private UserRegistrationService registration;
+    @Autowired
+    private LoginSessionIssuer sessions;
+    @Autowired
+    private AccessTokenIssuer tokens;
+    @Autowired
+    private TripAttachmentRepository attachments;
+    @Autowired
+    private StoredFileRepository files;
+    @Autowired
+    private ObjectMapper mapper;
+    @MockitoBean
+    private TripAttachmentStorageClient storage;
     private Long userId;
     private Long tripId;
     private String accessToken;
@@ -88,7 +96,9 @@ class TripEditIntegrationTest {
     @Test
     void 같은_시각의_19장은_ID_내림차순으로_중복이나_누락없이_두_페이지로_조회한다() throws Exception {
         List<Long> ids = new ArrayList<>();
-        for (int i = 0; i < 19; i++) ids.add(photo(tripId).getId());
+        for (int i = 0; i < 19; i++) {
+            ids.add(photo(tripId).getId());
+        }
         jdbc.update("UPDATE trip_attachments SET created_at = '2026-09-01 12:00:00' WHERE trip_id = ?", tripId);
         Collections.reverse(ids);
         String body = mvc.perform(request(tripId))
@@ -113,7 +123,9 @@ class TripEditIntegrationTest {
 
     @Test
     void 정확히_18장이면_마지막_페이지다() throws Exception {
-        for (int i = 0; i < 18; i++) photo(tripId);
+        for (int i = 0; i < 18; i++) {
+            photo(tripId);
+        }
         mvc.perform(request(tripId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.attachments.items.length()").value(18))
@@ -178,10 +190,12 @@ class TripEditIntegrationTest {
 
     private Long create(Long owner) {
         String name = createdTripCount++ == 0 ? "수정 여행" : "수정 여행" + createdTripCount;
-        Long id = service.createTrip(owner, new TripCreateRequest(name,
-                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 3), List.of("11000"),
-                List.of(new TripAttachmentMetadataRequest(
-                        OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)))).tripId();
+        Long id = service.createTrip(owner, new TripCreateRequest(
+                name,
+                LocalDate.of(2026, 9, 1),
+                LocalDate.of(2026, 9, 3),
+                List.of("11000")
+        )).tripId();
         jdbc.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", id);
         return id;
     }

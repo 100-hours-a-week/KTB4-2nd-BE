@@ -1,8 +1,6 @@
 package com.yeodam.yeodambe.trip.controller;
 
-import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
-import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
@@ -26,7 +24,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,13 +38,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class TripUpdateIntegrationTest {
-    @Autowired private MockMvc mvc;
-    @Autowired private JdbcTemplate jdbc;
-    @Autowired private TripService service;
-    @Autowired private UserRegistrationService registration;
-    @Autowired private LoginSessionIssuer sessions;
-    @Autowired private AccessTokenIssuer tokens;
-    @Autowired private CsrfTokenStore csrf;
+    @Autowired
+    private MockMvc mvc;
+    @Autowired
+    private JdbcTemplate jdbc;
+    @Autowired
+    private TripService service;
+    @Autowired
+    private UserRegistrationService registration;
+    @Autowired
+    private LoginSessionIssuer sessions;
+    @Autowired
+    private AccessTokenIssuer tokens;
+    @Autowired
+    private CsrfTokenStore csrf;
     @MockitoSpyBean private TripRegionRepository regions;
     private Long userId;
     private Long tripId;
@@ -128,10 +132,16 @@ class TripUpdateIntegrationTest {
     void 타인_여행이나_삭제된_여행이면_404를_반환한다() throws Exception {
         Long other = registration.register("other-" + UUID.randomUUID() + "@yeodam.test", "다른회원",
                 OAuthProvider.KAKAO, UUID.randomUUID().toString()).getUserId();
-        Long otherTrip = service.createTrip(other, new TripCreateRequest("타인 여행", LocalDate.of(2026,9,1), LocalDate.of(2026,9,3), List.of("11000"),
-                List.of(new TripAttachmentMetadataRequest(
-                        OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)))).tripId();
-        mvc.perform(request("{\"tripName\":\"변경 여행\"}").with(r -> { r.setRequestURI("/api/trips/" + otherTrip); return r; }))
+        Long otherTrip = service.createTrip(other, new TripCreateRequest(
+                "타인 여행",
+                LocalDate.of(2026, 9, 1),
+                LocalDate.of(2026, 9, 3),
+                List.of("11000")
+        )).tripId();
+        mvc.perform(request("{\"tripName\":\"변경 여행\"}").with(request -> {
+                    request.setRequestURI("/api/trips/" + otherTrip);
+                    return request;
+                }))
                 .andExpect(status().isNotFound());
         jdbc.update("UPDATE trips SET deleted_at = CURRENT_TIMESTAMP WHERE trip_id = ?", tripId);
         mvc.perform(request("{\"tripName\":\"변경 여행\"}"))
@@ -165,10 +175,16 @@ class TripUpdateIntegrationTest {
                 .andExpect(jsonPath("$.message").value("INVALID_TRIP_REQUEST"));
     }
 
-    private Long create(String name, List<String> codes) {
-        return service.createTrip(userId, new TripCreateRequest(name, LocalDate.of(2026,9,1), LocalDate.of(2026,9,3), codes,
-                List.of(new TripAttachmentMetadataRequest(
-                        OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)))).tripId();
+    private Long create(
+            String name,
+            List<String> codes
+    ) {
+        return service.createTrip(userId, new TripCreateRequest(
+                name,
+                LocalDate.of(2026, 9, 1),
+                LocalDate.of(2026, 9, 3),
+                codes
+        )).tripId();
     }
 
     private String name() {
@@ -179,7 +195,10 @@ class TripUpdateIntegrationTest {
         return request(body, "csrf-token");
     }
 
-    private MockHttpServletRequestBuilder request(String body, String csrfToken) {
+    private MockHttpServletRequestBuilder request(
+            String body,
+            String csrfToken
+    ) {
         return patch("/api/trips/" + tripId).contextPath("/api")
                 .cookie(new Cookie("accessToken", accessToken), new Cookie("CSRF_CONTEXT", browser))
                 .header("X-CSRF-TOKEN", csrfToken)

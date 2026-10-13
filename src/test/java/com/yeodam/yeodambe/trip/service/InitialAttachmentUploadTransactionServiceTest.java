@@ -1,34 +1,36 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
-import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
-import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
-import com.yeodam.yeodambe.common.exception.TripNotFoundException;
-import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadBatch;
-import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
-import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadItem;
-import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
-import com.yeodam.yeodambe.trip.entity.Trip;
-import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
-import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
+import com.yeodam.yeodambe.file.entity.StoredFile;
+import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.trip.entity.*;
+import com.yeodam.yeodambe.trip.repository.*;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.user.entity.User;
+import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserRepository;
+import com.yeodam.yeodambe.user.repository.UserStatsRepository;
+import com.yeodam.yeodambe.user.service.UserStatsService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -36,406 +38,264 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest
+@SpringBootTest(properties = "spring.application.name=initial-upload-transaction-test")
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class InitialAttachmentUploadTransactionServiceTest {
-    @Autowired private InitialAttachmentUploadTransactionService service;
-    @Autowired private InitialAttachmentUploadBatchRepository batches;
-    @Autowired private InitialAttachmentUploadItemRepository items;
-    @Autowired private TripRepository trips;
-    @Autowired private UserRepository users;
-    @Autowired private JdbcTemplate jdbcTemplate;
-    @Autowired private PlatformTransactionManager transactionManager;
-
+    @Autowired
+    private InitialAttachmentUploadTransactionService transactions;
+    @Autowired
+    private TripRepository trips;
+    @Autowired
+    private UserRepository users;
+    @Autowired
+    private UserStatsRepository stats;
+    @Autowired
+    private InitialAttachmentUploadItemRepository items;
+    @Autowired
+    private TripCreationExecutionRepository executions;
+    @Autowired
+    private JdbcTemplate jdbc;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+    @Autowired
+    private StoredFileRepository files;
+    @Autowired
+    private TripAttachmentRepository attachments;
+    @MockitoSpyBean
+    private UserStatsService userStatsService;
     private User owner;
     private Trip trip;
-    private InitialAttachmentUploadBatch batch;
 
     @BeforeEach
-    void setUp() {
-        owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "완료회원"));
-        trip = trips.save(new Trip(owner.getUserId(), "완료여행", LocalDate.now(), LocalDate.now()));
-        batch = batches.save(new InitialAttachmentUploadBatch(
-                UUID.randomUUID().toString(), UUID.randomUUID().toString(),
-                trip.getId(), owner.getUserId(), 1, 12, false));
+    void prepareUser() {
+        owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "접수회원"));
+        stats.save(new UserStats(owner));
+        trip = trips.save(new Trip(owner.getUserId(), "접수 여행", LocalDate.now(), LocalDate.now()));
+    }
+
+    @AfterEach
+    void finishTestExecution() {
+        executions.findByTripId(trip.getId()).ifPresent(execution ->
+                transactions.failExecution(execution.getExecutionId(), "TEST_FINISHED"));
     }
 
     @Test
-    void 호출자에게_반환하기_전에_처리_중_상태를_커밋한다() {
-        var result = start();
-
-        assertThat(result.getId()).isEqualTo(batch.getId());
-        assertThat(result.getStatus()).isEqualTo(InitialAttachmentUploadStatus.PROCESSING);
-        assertThat(storedStatus()).isEqualTo("PROCESSING");
+    void 재발급은_같은_키와_예약을_재사용한다() {
+        var first = prepare(false);
+        var repeated = prepare(false);
+        assertThat(repeated.uploadId()).isEqualTo(first.uploadId());
+        assertThat(repeated.photos()).isEqualTo(first.photos());
+        assertThat(reserved()).isEqualTo(12L);
+        transactions.startProcessing(trip.getId(), owner.getUserId(), first.uploadId());
+        var next = transactions.prepareBatch(trip.getId(), owner.getUserId(), request(2, 2, true));
+        assertThat(next.batchNo()).isEqualTo(2);
+        assertThat(reserved()).isEqualTo(24L);
     }
 
     @Test
-    void 처리_중인_배치는_거부하고_정리된_실패_배치의_재시작은_허용한다() {
-        start();
-        assertThatThrownBy(this::start)
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        assertThat(storedStatus()).isEqualTo("PROCESSING");
-
-        setStatus("FAILED");
-        start();
-        assertThat(storedStatus()).isEqualTo("PROCESSING");
+    void 접수_중복은_작업과_예약을_늘리지_않는다() {
+        var batch = prepare(true);
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+        assertThat(reserved()).isEqualTo(12L);
+        assertThat(execution(batch).isInputClosed()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM files WHERE user_id = ?", Integer.class, owner.getUserId())).isZero();
     }
 
     @Test
-    void 여행이_완료되어도_완료된_배치는_재시작_없이_반환한다() {
-        setStatus("COMPLETED");
-        jdbcTemplate.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", trip.getId());
-
-        var result = start();
-
-        assertThat(result.getId()).isEqualTo(batch.getId());
-        assertThat(result.getStatus()).isEqualTo(InitialAttachmentUploadStatus.COMPLETED);
-        assertThat(storedStatus()).isEqualTo("COMPLETED");
+    void 이전_선점_token으로_사진_성공을_저장할_수_없다() {
+        var batch = prepare(true);
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+        var old = transactions.claimBatch().orElseThrow();
+        jdbc.update("UPDATE initial_attachment_upload_batches SET lease_until = CURRENT_TIMESTAMP(6) - INTERVAL 1 SECOND WHERE upload_batch_id = ?", batch.batchId());
+        var current = transactions.claimBatch().orElseThrow();
+        assertThat(current.claimToken()).isNotEqualTo(old.claimToken());
+        assertThatThrownBy(() -> transactions.savePhotoSuccess(old, old.photos().getFirst().itemId(), derived(old.photos().getFirst().objectKey())))
+                .isInstanceOf(CancellationException.class);
+        transactions.releaseSaturatedBatch(current);
     }
 
     @Test
-    void 누락되거나_알_수_없거나_일치하지_않는_식별자를_거부한다() {
-        assertThatThrownBy(() -> service.startProcessing(trip.getId(), owner.getUserId(), null))
-                .isInstanceOf(InvalidAttachmentUploadException.class);
-        assertThatThrownBy(() -> service.startProcessing(trip.getId(), owner.getUserId(), " "))
-                .isInstanceOf(InvalidAttachmentUploadException.class);
-        assertThatThrownBy(() -> service.startProcessing(trip.getId(), owner.getUserId(), UUID.randomUUID().toString()))
-                .isInstanceOf(InvalidAttachmentUploadException.class);
-
-        var other = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원"));
-        assertThatThrownBy(() -> service.startProcessing(trip.getId(), other.getUserId(), batch.getUploadId()))
-                .isInstanceOf(TripNotFoundException.class);
-        var otherTrip = trips.save(new Trip(owner.getUserId(), "다른여행", LocalDate.now(), LocalDate.now()));
-        assertThatThrownBy(() -> service.startProcessing(otherTrip.getId(), owner.getUserId(), batch.getUploadId()))
-                .isInstanceOf(InvalidAttachmentUploadException.class);
-        assertThat(storedStatus()).isEqualTo("PENDING");
+    void 포화로_배치를_재예약해도_사진_시도는_소비하지_않는다() {
+        var batch = prepare(true);
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+        var claim = transactions.claimBatch().orElseThrow();
+        transactions.releaseSaturatedBatch(claim);
+        assertThat(items.findById(claim.photos().getFirst().itemId()).orElseThrow().getConversionAttempts()).isZero();
+        transactions.failExecution(batch.executionId(), "TEST_FINISH");
     }
 
     @Test
-    void 처리_중이_아니거나_삭제된_여행을_거부하고_대기_배치를_유지한다() {
-        jdbcTemplate.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", trip.getId());
-        assertThatThrownBy(this::start)
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        jdbcTemplate.update("UPDATE trips SET deleted_at = CURRENT_TIMESTAMP(6) WHERE trip_id = ?", trip.getId());
-        assertThatThrownBy(this::start).isInstanceOf(TripNotFoundException.class);
-        assertThat(storedStatus()).isEqualTo("PENDING");
+    void 실패시_예약은_한번만_반환하고_정리시각을_영속_보존한다() {
+        var batch = prepare(true);
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+        transactions.failExecution(batch.executionId(), "TEST_FAILURE");
+        var ended = execution(batch).getEndedAt();
+        transactions.failExecution(batch.executionId(), "AGAIN");
+        assertThat(execution(batch).getEndedAt()).isEqualTo(ended);
+        assertThat(reserved()).isZero();
+        assertThat(items.findById(batch.photos().getFirst().itemId()).orElseThrow().getCleanupStartedAt()).isEqualTo(ended);
     }
 
     @Test
-    void 두_동시_요청_중_하나만_처리를_시작한다() throws Exception {
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch go = new CountDownLatch(1);
-        try (var executor = Executors.newFixedThreadPool(2)) {
-            Callable<Boolean> action = () -> {
-                ready.countDown();
-                if (!go.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timeout");
-                try {
-                    start();
-                    return true;
-                } catch (TripInitialAttachmentUploadNotAllowedException expected) {
-                    return false;
-                }
-            };
-            var first = executor.submit(action);
-            var second = executor.submit(action);
-            try {
-                assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
-            } finally {
-                go.countDown();
-            }
-
-            assertThat(new Boolean[]{first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS)})
-                    .containsExactlyInAnyOrder(true, false);
-            assertThat(storedStatus()).isEqualTo("PROCESSING");
+    void 일시_변환_실패는_사진별_세번까지만_시도한다() {
+        var batch = prepare(true);
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            var claim = transactions.claimBatch().orElseThrow();
+            Long itemId = claim.photos().getFirst().itemId();
+            transactions.startPhotoAttempt(claim, itemId);
+            transactions.retryBatch(claim, itemId, false);
+            assertThat(items.findById(itemId).orElseThrow().getConversionAttempts()).isEqualTo(attempt);
+            jdbc.update("UPDATE initial_attachment_upload_batches SET next_attempt_at = NULL WHERE upload_batch_id = ?", batch.batchId());
+            jdbc.update("UPDATE initial_attachment_upload_items SET conversion_next_attempt_at = NULL WHERE upload_item_id = ?", itemId);
         }
+        assertThat(execution(batch).getStatus()).isEqualTo(TripCreationExecution.Status.FAILED);
+        assertThat(reserved()).isZero();
+        assertThat(transactions.claimBatch()).isEmpty();
     }
 
     @Test
-    void 파일순으로_원본과_첨부와_메타데이터와_항목_연결을_저장한다() {
-        addItems();
-        start();
-        var takenAt = OffsetDateTime.parse("2026-10-01T10:00:00+09:00");
-        var results = List.of(
-                new DerivedPhotoKeys("key-one", "analyze-one", "preview-one", null, takenAt,
-                        new BigDecimal("35.1"), new BigDecimal("129.1"), "camera", 1024L, 512L, 128L, null),
-                new DerivedPhotoKeys("key-two", "analyze-two", "preview-two", "display-two",
-                        null, null, null, null, 2048L, 1024L, 256L, 2048L));
-
-        var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), results);
-
-        assertThat(saved).hasSize(2);
-        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
-                .extracting(InitialAttachmentUploadItem::getTripAttachmentId)
-                .containsExactly(saved.get(0).getId(), saved.get(1).getId());
-        var original = jdbcTemplate.queryForMap(
-                "SELECT user_id, original_file_name, object_key, mime_type, upload_status, original_size_bytes FROM files WHERE file_id = ?",
-                saved.get(0).getFileId());
-        assertThat(original).containsEntry("user_id", owner.getUserId())
-                .containsEntry("original_file_name", "same.jpg")
-                .containsEntry("object_key", "key-one")
-                .containsEntry("mime_type", "image/jpeg")
-                .containsEntry("upload_status", "READY")
-                .containsEntry("original_size_bytes", 1024L);
-        var attachment = jdbcTemplate.queryForMap(
-                "SELECT analyze_storage_key, preview_storage_key, latitude, longitude, device_model, taken_at, analyze_size_bytes, preview_size_bytes FROM trip_attachments WHERE trip_attachment_id = ?",
-                saved.get(0).getId());
-        assertThat(attachment).containsEntry("analyze_storage_key", "analyze-one")
-                .containsEntry("preview_storage_key", "preview-one")
-                .containsEntry("device_model", "camera")
-                .containsEntry("analyze_size_bytes", 512L)
-                .containsEntry("preview_size_bytes", 128L);
-        assertThat((BigDecimal) attachment.get("latitude")).isEqualByComparingTo("35.1");
-        assertThat((BigDecimal) attachment.get("longitude")).isEqualByComparingTo("129.1");
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT taken_at FROM trip_attachments WHERE trip_attachment_id = ?",
-                java.sql.Timestamp.class, saved.get(0).getId()).toLocalDateTime())
-                .isEqualTo(takenAt.toLocalDateTime());
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT display_storage_key FROM trip_attachments WHERE trip_attachment_id = ?",
-                String.class, saved.get(1).getId())).isEqualTo("display-two");
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT display_size_bytes FROM trip_attachments WHERE trip_attachment_id = ?",
-                Long.class, saved.get(1).getId())).isEqualTo(2048L);
-        assertThat(storedStatus()).isEqualTo("PROCESSING");
+    void 전체_접수_전만_십분_무활동으로_만료한다() {
+        var batch = prepare(false);
+        jdbc.update("UPDATE trip_creation_executions SET last_upload_activity_at = CURRENT_TIMESTAMP(6) - INTERVAL 599 SECOND WHERE execution_id = ?", batch.executionId());
+        transactions.failExpiredExecution(batch.executionId(), false);
+        assertThat(execution(batch).isTerminal()).isFalse();
+        jdbc.update("UPDATE trip_creation_executions SET last_upload_activity_at = CURRENT_TIMESTAMP(6) - INTERVAL 10 MINUTE WHERE execution_id = ?", batch.executionId());
+        transactions.failExpiredExecution(batch.executionId(), false);
+        assertThat(execution(batch).getErrorCode()).isEqualTo("UPLOAD_TIMEOUT");
+        assertThat(reserved()).isZero();
     }
 
     @Test
-    void 추가_행을_만들지_않고_반복_저장을_거부한다() {
-        addItems();
-        start();
-        service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
-
-        assertThatThrownBy(() -> service.saveAttachments(
-                trip.getId(), owner.getUserId(), batch.getUploadId(), validResults()))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-
-        assertRowCounts(2);
-        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
-                .allSatisfy(item -> assertThat(item.getTripAttachmentId()).isNotNull());
+    void 전체_접수_후에는_업로드_만료를_적용하지_않는다() {
+        var batch = prepare(true);
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+        jdbc.update("UPDATE trip_creation_executions SET last_upload_activity_at = CURRENT_TIMESTAMP(6) - INTERVAL 1 HOUR WHERE execution_id = ?", batch.executionId());
+        transactions.failExpiredExecution(batch.executionId(), false);
+        assertThat(execution(batch).isTerminal()).isFalse();
+        assertThat(reserved()).isEqualTo(12L);
     }
 
     @Test
-    void 두_번째_원본이_일치하지_않으면_첫_사진과_그_연결을_롤백한다() {
-        addItems();
-        start();
-        var invalid = List.of(validResults().getFirst(),
-                new DerivedPhotoKeys("wrong-key", "analyze-two", "preview-two"));
-
-        assertThatThrownBy(() -> service.saveAttachments(
-                trip.getId(), owner.getUserId(), batch.getUploadId(), invalid))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("원본과 파생 사진의 순서가 다릅니다.");
-
-        assertRowCounts(0);
-        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
-                .allSatisfy(item -> assertThat(item.getTripAttachmentId()).isNull());
-        assertThat(storedStatus()).isEqualTo("PROCESSING");
-    }
-
-    @Test
-    void 저장하기_전에_잘못된_상태와_소유자와_결과_개수를_거부한다() {
-        addItems();
-        assertThatThrownBy(() -> service.saveAttachments(
-                trip.getId(), owner.getUserId(), batch.getUploadId(), validResults()))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        start();
-        assertThatThrownBy(() -> service.saveAttachments(
-                trip.getId(), owner.getUserId(), batch.getUploadId(), List.of()))
-                .isInstanceOf(IllegalArgumentException.class);
-        var other = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원"));
-        assertThatThrownBy(() -> service.saveAttachments(
-                trip.getId(), other.getUserId(), batch.getUploadId(), validResults()))
-                .isInstanceOf(TripNotFoundException.class);
-        jdbcTemplate.update("UPDATE trips SET processing_status = 'FAILED' WHERE trip_id = ?", trip.getId());
-        assertThatThrownBy(() -> service.saveAttachments(
-                trip.getId(), owner.getUserId(), batch.getUploadId(), validResults()))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        assertRowCounts(0);
-    }
-
-    @Test
-    void 모든_항목_연결_후_배치_완료를_커밋하고_여행은_처리_중으로_유지한다() {
-        addItems();
-        start();
-        service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
-
-        service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId());
-
-        assertThat(storedStatus()).isEqualTo("COMPLETED");
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT processing_status FROM trips WHERE trip_id = ?", String.class, trip.getId()))
-                .isEqualTo("PROCESSING");
-        assertRowCounts(2);
-    }
-
-    @Test
-    void 비어있거나_연결되지_않거나_일부만_연결된_배치를_거부한다() {
-        start();
-        assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        addItems();
-        assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
-        jdbcTemplate.update("UPDATE initial_attachment_upload_items SET trip_attachment_id = NULL WHERE upload_batch_id = ? AND file_order = 2",
-                batch.getId());
-
-        assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        assertThat(storedStatus()).isEqualTo("PROCESSING");
-        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
-                .extracting(InitialAttachmentUploadItem::getTripAttachmentId)
-                .containsExactly(saved.getFirst().getId(), null);
-    }
-
-    @Test
-    void 잘못된_소유자와_여행과_배치_상태의_완료_요청을_거부한다() {
-        addItems();
-        start();
-        service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
-        var other = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원"));
-        assertThatThrownBy(() -> service.completeBatch(trip.getId(), other.getUserId(), batch.getUploadId()))
-                .isInstanceOf(TripNotFoundException.class);
-        assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), "unknown"))
-                .isInstanceOf(InvalidAttachmentUploadException.class);
-        for (String status : List.of("PENDING", "FAILED", "COMPLETED")) {
-            setStatus(status);
-            assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
-                    .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-            assertThat(storedStatus()).isEqualTo(status);
+    void 동시_동일_선언은_하나의_실행과_예약을_공유한다() throws Exception {
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = executor.submit(() -> prepare(true));
+            var second = executor.submit(() -> prepare(true));
+            assertThat(first.get(10, TimeUnit.SECONDS).uploadId())
+                    .isEqualTo(second.get(10, TimeUnit.SECONDS).uploadId());
         }
-        setStatus("PROCESSING");
-        jdbcTemplate.update("UPDATE trips SET processing_status = 'FAILED' WHERE trip_id = ?", trip.getId());
-        assertThatThrownBy(() -> service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        assertThat(storedStatus()).isEqualTo("PROCESSING");
+        assertThat(reserved()).isEqualTo(12L);
     }
 
     @Test
-    void 실패한_배치의_참조만_제거하고_업로드_메타데이터와_완료된_배치를_유지한다() {
-        addItems();
-        start();
-        var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
-        service.completeBatch(trip.getId(), owner.getUserId(), batch.getUploadId());
-        var next = batches.save(new InitialAttachmentUploadBatch(UUID.randomUUID().toString(),
-                batch.getExecutionId(), trip.getId(), owner.getUserId(), 2, 12, false));
-        items.save(new InitialAttachmentUploadItem(next, 1, "next.jpg", "image/jpeg", 1024L, "next-key"));
-        service.startProcessing(trip.getId(), owner.getUserId(), next.getUploadId());
-        service.saveAttachments(trip.getId(), owner.getUserId(), next.getUploadId(),
-                List.of(new DerivedPhotoKeys("next-key", "next-analyze", "next-preview", null,
-                        null, null, null, null, 1024L, 512L, 128L, null)));
-
-        service.failBatch(trip.getId(), owner.getUserId(), next.getUploadId());
-
-        assertRowCounts(2);
-        assertThat(storedStatus()).isEqualTo("COMPLETED");
-        assertThat(batches.findById(next.getId()).orElseThrow().getStatus())
-                .isEqualTo(InitialAttachmentUploadStatus.FAILED);
-        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
-                .extracting(InitialAttachmentUploadItem::getTripAttachmentId)
-                .containsExactly(saved.get(0).getId(), saved.get(1).getId());
-        var remaining = items.findAllByBatch_IdOrderByFileOrderAsc(next.getId());
-        assertThat(remaining).hasSize(1);
-        assertThat(remaining.getFirst().getTripAttachmentId()).isNull();
-        assertThat(remaining.getFirst().getObjectKey()).isEqualTo("next-key");
-        assertThat(remaining.getFirst().getSizeBytes()).isEqualTo(1024L);
-        assertThat(jdbcTemplate.queryForObject("SELECT processing_status FROM trips WHERE trip_id = ?",
-                String.class, trip.getId())).isEqualTo("PROCESSING");
+    void 성공_기록_후_오류는_파생본을_정리하지_않고_재사용한다() {
+        var batch = prepare(true);
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+        var claim = transactions.claimBatch().orElseThrow();
+        var photo = claim.photos().getFirst();
+        var keys = transactions.startPhotoAttempt(claim, photo.itemId());
+        transactions.savePhotoSuccess(claim, photo.itemId(), new DerivedPhotoKeys(
+                photo.objectKey(), keys.get(0), keys.get(1), null, null, null, null, null, 12L, 8L, 4L, null));
+        transactions.retryBatch(claim, photo.itemId(), true);
+        var item = items.findById(photo.itemId()).orElseThrow();
+        assertThat(item.getDerivedJson()).isNotNull();
+        assertThat(item.getTripAttachmentId()).isNotNull();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM files WHERE user_id = ?", Integer.class, owner.getUserId()))
+                .isEqualTo(1);
+        assertThat(transactions.cleanupObjects(item)).allMatch(object -> object.startedAt() == null);
+        assertThat(execution(batch).isTerminal()).isFalse();
     }
 
     @Test
-    void 첨부를_저장하기_전에도_실패를_기록한다() {
-        addItems();
-        start();
-
-        service.failBatch(trip.getId(), owner.getUserId(), batch.getUploadId());
-
-        assertThat(storedStatus()).isEqualTo("FAILED");
-        assertRowCounts(0);
-        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId())).hasSize(2)
-                .allSatisfy(item -> assertThat(item.getTripAttachmentId()).isNull());
+    void 먼저_읽은_접수_후보가_있어도_잠금_뒤_접수_상태를_갱신한다() {
+        var batch = prepare(true);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            transactions.loadAcceptanceCandidate(trip.getId(), owner.getUserId(), batch.uploadId());
+            jdbc.update("UPDATE initial_attachment_upload_batches SET accepted_at = CURRENT_TIMESTAMP(6), status = 'ACCEPTED' WHERE upload_batch_id = ?", batch.batchId());
+            jdbc.update("UPDATE trip_creation_executions SET input_closed = TRUE, status = 'IMAGE_PROCESSING' WHERE execution_id = ?", batch.executionId());
+            assertThat(transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId()).status())
+                    .isEqualTo(TripProcessingStatusResponse.Status.PROCESSING);
+        });
     }
 
     @Test
-    void 잘못된_소유자와_상태와_삭제된_여행의_실패_정리를_행_삭제_없이_거부한다() {
-        addItems();
-        start();
-        var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
-        var other = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원"));
-        assertThatThrownBy(() -> service.failBatch(trip.getId(), other.getUserId(), batch.getUploadId()))
-                .isInstanceOf(TripNotFoundException.class);
-        for (String status : List.of("PENDING", "COMPLETED", "FAILED")) {
-            setStatus(status);
-            assertThatThrownBy(() -> service.failBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
-                    .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-            assertThat(storedStatus()).isEqualTo(status);
+    void 먼저_읽은_사용자_통계가_있어도_최신_다른_예약을_보존한다() {
+        var batch = prepare(true);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getStorageReservedBytes()).isEqualTo(12L);
+            jdbc.update("UPDATE user_stats SET storage_reserved_bytes = 24 WHERE user_id = ?", owner.getUserId());
+            transactions.failExecution(batch.executionId(), "TEST_FAILED");
+        });
+        assertThat(reserved()).isEqualTo(12L);
+    }
+
+    @Test
+    void 다른_여행_완료를_기다린_예약도_최신_원본_사용량으로_한도를_검사한다() throws Exception {
+        Trip completed = trips.save(new Trip(owner.getUserId(), "다른 여행", LocalDate.now(), LocalDate.now()));
+        var file = StoredFile.uploaded(owner.getUserId(), "photo.jpg", "quota-" + UUID.randomUUID(), "image/jpeg");
+        file.storageSize(12L);
+        file = files.save(file);
+        attachments.save(TripAttachment.initial(completed.getId(), file.getId(), "analyze", "preview"));
+        jdbc.update("UPDATE user_stats SET storage_maximum_bytes = 13 WHERE user_id = ?", owner.getUserId());
+        var locked = new CountDownLatch(1);
+        var reserving = new CountDownLatch(1);
+        Mockito.doAnswer(invocation -> {
+            reserving.countDown();
+            return invocation.callRealMethod();
+        }).when(userStatsService).reserveInitialUpload(owner.getUserId(), 12L);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var completion = executor.submit(() -> {
+                new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                    jdbc.queryForObject("SELECT storage_reserved_bytes FROM user_stats WHERE user_id = ? FOR UPDATE", Long.class, owner.getUserId());
+                    locked.countDown();
+                    try {
+                        if (!reserving.await(10, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("예약 시작 대기 실패");
+                        }
+                    } catch (InterruptedException failure) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(failure);
+                    }
+                    jdbc.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", completed.getId());
+                    jdbc.update("UPDATE user_stats SET storage_used_bytes = 12 WHERE user_id = ?", owner.getUserId());
+                });
+            });
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+            var reservation = executor.submit(() -> prepare(true));
+            completion.get(10, TimeUnit.SECONDS);
+            assertThatThrownBy(() -> reservation.get(10, TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(AttachmentUploadLimitExceededException.class);
         }
-        setStatus("PROCESSING");
-        jdbcTemplate.update("UPDATE trips SET processing_status = 'CANCELED' WHERE trip_id = ?", trip.getId());
-        assertThatThrownBy(() -> service.failBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
-                .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        jdbcTemplate.update("UPDATE trips SET deleted_at = CURRENT_TIMESTAMP(6) WHERE trip_id = ?", trip.getId());
-        assertThatThrownBy(() -> service.failBatch(trip.getId(), owner.getUserId(), batch.getUploadId()))
-                .isInstanceOf(TripNotFoundException.class);
-        assertRowCounts(2);
-        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
-                .extracting(InitialAttachmentUploadItem::getTripAttachmentId)
-                .containsExactly(saved.get(0).getId(), saved.get(1).getId());
+        assertThat(reserved()).isZero();
+        assertThat(jdbc.queryForObject("SELECT storage_used_bytes FROM user_stats WHERE user_id = ?", Long.class, owner.getUserId()))
+                .isEqualTo(12L);
     }
 
-    @Test
-    void 외부_트랜잭션이_실패하면_삭제와_연결과_실패_상태를_롤백한다() {
-        addItems();
-        start();
-        var saved = service.saveAttachments(trip.getId(), owner.getUserId(), batch.getUploadId(), validResults());
-        var transaction = new TransactionTemplate(transactionManager);
-
-        assertThatThrownBy(() -> transaction.executeWithoutResult(status -> {
-            service.failBatch(trip.getId(), owner.getUserId(), batch.getUploadId());
-            throw new IllegalStateException("force rollback");
-        })).isInstanceOf(IllegalStateException.class).hasMessage("force rollback");
-
-        assertRowCounts(2);
-        assertThat(storedStatus()).isEqualTo("PROCESSING");
-        assertThat(items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()))
-                .extracting(InitialAttachmentUploadItem::getTripAttachmentId)
-                .containsExactly(saved.get(0).getId(), saved.get(1).getId());
+    private InitialAttachmentUploadBatchSnapshot prepare(boolean last) {
+        return transactions.prepareBatch(trip.getId(), owner.getUserId(), request(1, last ? 1 : 2, last));
     }
 
-    private void addItems() {
-        items.saveAll(List.of(
-                new InitialAttachmentUploadItem(batch, 2, "same.jpg", "image/jpeg", 2048L, "key-two"),
-                new InitialAttachmentUploadItem(batch, 1, "same.jpg", "image/jpeg", 1024L, "key-one")));
+    private InitialAttachmentUploadUrlRequest request(
+            int number,
+            int count,
+            boolean last
+    ) {
+        return new InitialAttachmentUploadUrlRequest(number, count, last,
+                List.of(new InitialAttachmentUploadUrlRequest.Attachment("photo.jpg", "image/jpeg", 12L)));
     }
 
-    private List<DerivedPhotoKeys> validResults() {
-        return List.of(new DerivedPhotoKeys("key-one", "analyze-one", "preview-one", null,
-                        null, null, null, null, 1024L, 512L, 128L, null),
-                new DerivedPhotoKeys("key-two", "analyze-two", "preview-two", null,
-                        null, null, null, null, 2048L, 1024L, 256L, null));
+    private TripCreationExecution execution(InitialAttachmentUploadBatchSnapshot batch) {
+        return executions.findById(batch.executionId()).orElseThrow();
     }
 
-    private void assertRowCounts(int expected) {
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM files WHERE user_id = ?",
-                Integer.class, owner.getUserId())).isEqualTo(expected);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trip_attachments WHERE trip_id = ?",
-                Integer.class, trip.getId())).isEqualTo(expected);
+    private long reserved() {
+        return jdbc.queryForObject("SELECT storage_reserved_bytes FROM user_stats WHERE user_id = ?", Long.class, owner.getUserId());
     }
 
-    private InitialAttachmentUploadBatch start() {
-        return service.startProcessing(trip.getId(), owner.getUserId(), batch.getUploadId());
-    }
-
-    private String storedStatus() {
-        return jdbcTemplate.queryForObject(
-                "SELECT status FROM initial_attachment_upload_batches WHERE upload_batch_id = ?",
-                String.class, batch.getId());
-    }
-
-    private void setStatus(String status) {
-        jdbcTemplate.update(
-                "UPDATE initial_attachment_upload_batches SET status = ? WHERE upload_batch_id = ?",
-                status, batch.getId());
+    private DerivedPhotoKeys derived(String key) {
+        return new DerivedPhotoKeys(key, key + "-analyze", key + "-preview", null,
+                null, null, null, null, 12L, 8L, 4L, null);
     }
 }

@@ -8,7 +8,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,10 +23,10 @@ class TripCreateRequestTest {
 
     @Test
     void 필수_필드가_없으면_거부한다() {
-        var violations = validator.validate(new TripCreateRequest(null, null, null, null, null));
+        var violations = validator.validate(new TripCreateRequest(null, null, null, null));
 
         assertThat(violations).extracting(v -> v.getPropertyPath().toString())
-                .contains("tripName", "startDate", "endDate", "regionCodes", "attachmentMetadata");
+                .contains("tripName", "startDate", "endDate", "regionCodes");
     }
 
     @Test
@@ -51,9 +50,20 @@ class TripCreateRequestTest {
                 "11215", "11230", "11260", "11290", "11305")))).isNotEmpty();
     }
 
-    private TripCreateRequest request(String name, List<String> codes) {
-        return new TripCreateRequest(name, LocalDate.now(), LocalDate.now(), codes,
-                List.of(new TripAttachmentMetadataRequest(
-                        OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)));
+    @Test
+    void 메타데이터_없이_열개_code_point_이모지_여행명을_허용한다() {
+        assertThat(validator.validate(request("😀".repeat(10), List.of("50110")))).isEmpty();
+    }
+
+    private TripCreateRequest request(
+            String name,
+            List<String> codes
+    ) {
+        return new TripCreateRequest(
+                name,
+                LocalDate.now(),
+                LocalDate.now(),
+                codes
+        );
     }
 }

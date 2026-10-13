@@ -3,6 +3,8 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
+import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadCompleteRequest;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.Trip;
@@ -63,6 +65,52 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
         additionId = UUID.randomUUID().toString();
         when(storage.createUploadUrl(anyString(), anyString(), eq(Duration.ofMinutes(10))))
                 .thenAnswer(call -> "https://example.test/" + call.getArgument(0));
+    }
+
+    @Test
+    void includesExistingPhotosInTwoHundredPhotoLimitBeforeIssuingUrls() {
+        String key = "existing/" + UUID.randomUUID();
+        jdbcTemplate.update("INSERT INTO files (user_id, original_file_name, object_key, mime_type) "
+                + "VALUES (?, 'old.jpg', ?, 'image/jpeg')", userId, key);
+        Long fileId = jdbcTemplate.queryForObject("SELECT file_id FROM files WHERE object_key = ?", Long.class, key);
+        jdbcTemplate.update("INSERT INTO trip_attachments (trip_id, file_id, region_origin, issue, "
+                + "analyze_storage_key, preview_storage_key) VALUES (?, ?, 'UNKNOWN', 'NONE', ?, ?)",
+                tripId, fileId, key + "-analyze", key + "-preview");
+        var declared = request();
+        var overLimit = new AdditionalAttachmentUploadUrlRequest(additionId, 1, 200, false, declared.attachments());
+        assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, overLimit))
+                .isInstanceOf(AttachmentUploadLimitExceededException.class);
+        assertThat(batchCount()).isZero();
+        assertThat(itemCount()).isZero();
+        verifyNoInteractions(storage);
+
+        var exactLimit = new AdditionalAttachmentUploadUrlRequest(additionId, 1, 199, false, declared.attachments());
+        assertThat(service.issueUploadUrls(tripId, userId, exactLimit).attachments()).hasSize(2);
+        assertThat(batchCount()).isEqualTo(1);
+        assertThat(tripAttachmentCount()).isEqualTo(1);
+    }
+
+    @Test
+    void refusesOtherOwnerAndDeletedTripBeforeSavingBatchOrIssuingUrls() {
+        Long otherUserId = userRepository.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원")).getUserId();
+        assertThatThrownBy(() -> service.issueUploadUrls(tripId, otherUserId, request()))
+                .isInstanceOf(TripNotFoundException.class);
+        jdbcTemplate.update("UPDATE trips SET deleted_at = CURRENT_TIMESTAMP(6) WHERE trip_id = ?", tripId);
+        assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, request()))
+                .isInstanceOf(TripNotFoundException.class);
+        assertThat(batchCount()).isZero();
+        assertThat(itemCount()).isZero();
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void refusesTripThatHasNotCompletedBeforeSavingBatchOrIssuingUrls() {
+        jdbcTemplate.update("UPDATE trips SET processing_status = 'PROCESSING' WHERE trip_id = ?", tripId);
+        assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, request()))
+                .isInstanceOf(TripAttachmentAddNotAllowedException.class);
+        assertThat(batchCount()).isZero();
+        assertThat(itemCount()).isZero();
+        verifyNoInteractions(storage);
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.event;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.yeodam.yeodambe.common.event.EventPayload;
 import com.yeodam.yeodambe.common.event.EventType;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import tools.jackson.databind.JsonNode;
 
 public record TripCreateResultEvent(
@@ -26,7 +27,7 @@ public record TripCreateResultEvent(
                 || completed != (result != null && !result.isNull())
                 || failed != (error != null && !error.isNull())
                 || (completed && !result.isObject()) || (failed && !error.isObject())) {
-            throw new IllegalArgumentException("사진 정리 종료 결과의 구조가 잘못됐습니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.TRIP_RESULT_EVENT_STRUCTURE_INVALID.message());
         }
     }
 

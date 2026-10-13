@@ -65,6 +65,27 @@ public class AdditionalAttachmentUploadOutbox {
         this.requestId = requestId;
     }
 
+    @Column(name = "claim_token", length = 36)
+    private String claimToken;
+    @Column(name = "lease_until")
+    private LocalDateTime leaseUntil;
+    @Column(name = "next_attempt_at")
+    private LocalDateTime nextAttemptAt;
+
+    public void claim(String token, LocalDateTime until) {
+        beginPublishing();
+        claimToken = token;
+        leaseUntil = until;
+        nextAttemptAt = null;
+    }
+
+    public void finishClaim(boolean success, LocalDateTime now, String error) {
+        if (success) publicationSucceeded(now);
+        else { publicationFailed(error); nextAttemptAt = now.plusSeconds(10); }
+        claimToken = null;
+        leaseUntil = null;
+    }
+
     public void beginPublishing() {
         this.status = Status.PUBLISHING;
         this.attemptCount++;

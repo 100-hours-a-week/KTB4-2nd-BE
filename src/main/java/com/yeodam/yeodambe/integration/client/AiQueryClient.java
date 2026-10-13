@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.integration.client;
 
 import com.yeodam.yeodambe.common.exception.AiQueryUnavailableException;
+import com.yeodam.yeodambe.common.exception.AiQueryTimeoutException;
 import com.yeodam.yeodambe.integration.service.request.AiQueryParseRequest;
 import com.yeodam.yeodambe.integration.service.request.AiQuerySearchRequest;
 import com.yeodam.yeodambe.integration.service.response.AiQueryParseResponse;
@@ -14,9 +15,13 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
+import java.net.SocketTimeoutException;
 import java.net.http.HttpClient;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.util.concurrent.TimeoutException;
 
 @Slf4j
 @Component
@@ -79,7 +84,24 @@ public class AiQueryClient {
                     .addKeyValue("request_id", MDC.get("request_id"))
                     .log("AI 검색 HTTP 요청에 실패했습니다.");
             // 외부 예외의 URL·본문·인증키가 공통 로그로 전달되지 않도록 cause를 제거합니다.
+            if (isTimeout(failure)) {
+                throw new AiQueryTimeoutException();
+            }
             throw new AiQueryUnavailableException();
         }
+    }
+
+    private boolean isTimeout(Throwable failure) {
+        if (failure instanceof RestClientResponseException responseFailure) {
+            return responseFailure.getStatusCode().value() == 504;
+        }
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof HttpTimeoutException
+                    || cause instanceof SocketTimeoutException
+                    || cause instanceof TimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 }

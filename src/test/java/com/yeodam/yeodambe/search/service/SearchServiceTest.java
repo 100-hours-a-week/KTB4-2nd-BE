@@ -11,6 +11,8 @@ import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDate;
@@ -145,6 +147,19 @@ class SearchServiceTest {
         var result = service.search(1L, "바다 사진");
         assertThat(result.attachments()).hasSize(1);
         assertThat(result.folders()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"VLM_UNAVAILABLE", "TIMEOUT", "NO_EVIDENCE"})
+    void 답변_생성만_실패하면_사진과_폴더와_답변_오류를_유지한다(String answerError) {
+        prepare(List.of(hit(1, .8)), List.of(photo(1, 1)), List.of(folder(1)), null, answerError);
+
+        var result = service.search(1L, "바다 사진");
+
+        assertThat(result.answer()).isNull();
+        assertThat(result.answerError()).isEqualTo(answerError);
+        assertThat(result.attachments()).extracting(item -> item.tripAttachmentId()).containsExactly(1L);
+        assertThat(result.folders()).extracting(item -> item.tripPlaceId()).containsExactly(1L);
     }
 
     private TripSearchCandidateResponse candidate(long id) {

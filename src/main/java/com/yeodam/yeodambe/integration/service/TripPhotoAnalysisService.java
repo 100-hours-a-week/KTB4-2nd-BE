@@ -1,13 +1,16 @@
 package com.yeodam.yeodambe.integration.service;
 
-import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
-import com.yeodam.yeodambe.common.exception.AiStatusUnavailableException;
 import com.yeodam.yeodambe.common.exception.AiProcessingFailedException;
+import com.yeodam.yeodambe.common.exception.AiStatusUnavailableException;
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
+import com.yeodam.yeodambe.integration.client.AiEc2Starter;
+import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.integration.service.request.TripPhotoAnalysisRequest;
 import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusResponse;
-import com.yeodam.yeodambe.integration.client.AiEc2Starter;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -17,16 +20,12 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
-import org.slf4j.MDC;
-import org.springframework.http.HttpHeaders;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
-
-
-import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
@@ -207,6 +206,64 @@ public class TripPhotoAnalysisService {
         }
     }
 
+    public TripPhotoAnalysisStatusResponse findStatus(
+            Long tripId,
+            String executionId
+    ) {
+        try {
+            JsonNode response = restClient.get()
+                    .uri("/trips/{tripId}/process", tripId)
+                    .headers(this::setAiHeaders)
+                    .retrieve()
+                    .body(JsonNode.class);
+            return validateStatusResponse(tripId, executionId, response);
+        } catch (RestClientResponseException failure) {
+
+            if (failure.getStatusCode().value() == 404) {
+                return new TripPhotoAnalysisStatusResponse(tripId, TripPhotoAnalysisStatusResponse.Status.QUEUED,
+                        null, null, null, null);
+            }
+            throw new AiStatusUnavailableException(failure);
+
+        } catch (RestClientException failure) {
+            throw new AiStatusUnavailableException(failure);
+        }
+    }
+
+    static TripPhotoAnalysisStatusResponse validateStatusResponse(
+            Long tripId,
+            String executionId,
+            JsonNode response
+    ) {
+        if (response == null || !response.path("trip_id").isIntegralNumber()
+                || response.path("trip_id").asLong() != tripId
+                || !executionId.equals(response.path("execution_id").asString())) {
+            throw new IllegalStateException("AI 진행률의 실행이 다릅니다.");
+        }
+
+        var status = TripPhotoAnalysisStatusResponse.Status.valueOf(response.path("status").asString());
+        var progress = response.path("progress");
+
+        if (!progress.isObject() || !progress.path("done").isIntegralNumber()
+                || !progress.path("total").isIntegralNumber()
+                || !progress.path("done").canConvertToInt() || !progress.path("total").canConvertToInt()
+                || progress.path("done").asInt(-1) < 0
+                || progress.path("total").asInt(-1) < progress.path("done").asInt()) {
+            throw new IllegalStateException("AI 진행률이 잘못됐습니다.");
+        }
+
+        JsonNode step = response.path("current_step");
+
+        if (!step.isNull() && (!step.isString()
+                || !Set.of("DOWNLOADING", "EMBEDDING", "CLOCK", "LOCATING",
+                        "CLUSTERING", "FILTERING", "FINALIZING").contains(step.asString()))) {
+            throw new IllegalStateException("AI 처리 단계가 잘못됐습니다.");
+        }
+
+        return new TripPhotoAnalysisStatusResponse(tripId, status, new TripPhotoAnalysisStatusResponse.Progress(progress.path("done").asInt(), progress.path("total").asInt()),
+                step.isNull() ? null : step.asString(), null, null);
+    }
+
     public void cancel(Long tripId) {
         JsonNode response;
         try {
@@ -256,7 +313,10 @@ public class TripPhotoAnalysisService {
         return response.path("result");
     }
 
-    private static AiProcessingFailedException failedResponse(Long tripId, JsonNode response) {
+    private static AiProcessingFailedException failedResponse(
+            Long tripId,
+            JsonNode response
+    ) {
         JsonNode progress = response.path("progress");
         JsonNode done = progress.path("done");
         JsonNode total = progress.path("total");

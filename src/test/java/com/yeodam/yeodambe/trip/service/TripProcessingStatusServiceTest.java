@@ -6,7 +6,10 @@ import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusR
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status;
@@ -16,6 +19,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +32,7 @@ class TripProcessingStatusServiceTest {
     private TripAttachmentRepository attachments;
     private TripPhotoAnalysisService analysis;
     private InitialUploadExecutionRegistry executions;
+    private TripCreationExecutionRepository creationExecutions;
     private TripProcessingStatusService service;
 
     @BeforeEach
@@ -37,7 +42,44 @@ class TripProcessingStatusServiceTest {
         attachments = mock(TripAttachmentRepository.class);
         analysis = mock(TripPhotoAnalysisService.class);
         executions = mock(InitialUploadExecutionRegistry.class);
-        service = new TripProcessingStatusService(trips, places, attachments, analysis, executions, mock(com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository.class));
+        creationExecutions = mock(TripCreationExecutionRepository.class);
+        service = new TripProcessingStatusService(trips, places, attachments, analysis, executions, mock(InitialAttachmentUploadBatchRepository.class),
+                creationExecutions);
+    }
+
+    @Test
+    void V2_진행률의_전체_장수는_실행의_사진_수와_같아야_한다() {
+        var execution = publishedExecution();
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)));
+        when(creationExecutions.findByTripId(7L)).thenReturn(Optional.of(execution));
+        when(analysis.findStatus(7L, "execution")).thenReturn(new TripPhotoAnalysisStatusResponse(
+                7L, TripPhotoAnalysisStatusResponse.Status.PROCESSING,
+                new TripPhotoAnalysisStatusResponse.Progress(1, 99), "EMBEDDING", null, null));
+
+        assertThrows(IllegalStateException.class, () -> service.findStatus(7L, 1L));
+    }
+
+    @Test
+    void V2_AI_GET_후에는_DB를_다시_조회하지_않는다() {
+        var execution = publishedExecution();
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)));
+        when(creationExecutions.findByTripId(7L)).thenReturn(Optional.of(execution));
+        when(analysis.findStatus(7L, "execution")).thenReturn(new TripPhotoAnalysisStatusResponse(
+                7L, TripPhotoAnalysisStatusResponse.Status.COMPLETED,
+                new TripPhotoAnalysisStatusResponse.Progress(2, 2), null, null, null));
+
+        assertThat(service.findStatus(7L, 1L).status()).isEqualTo(Status.FINALIZING);
+        verify(trips, times(1)).findByIdAndUserIdAndDeletedAtIsNull(7L, 1L);
+        verifyNoMoreInteractions(trips);
+    }
+
+    private TripCreationExecution publishedExecution() {
+        var execution = new TripCreationExecution(
+                "execution", 7L, 1L, 2);
+        execution.recordProcessPublished(LocalDateTime.now());
+        return execution;
     }
 
     @Test

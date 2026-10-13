@@ -3,7 +3,6 @@ package com.yeodam.yeodambe.trip.controller;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
-import com.yeodam.yeodambe.trip.service.TripAttachmentService;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -54,7 +53,6 @@ import java.util.Optional;
 @RestController
 @RequiredArgsConstructor
 public class TripAttachmentController {
-    private final TripAttachmentService service;
     private final TripAttachmentListService tripAttachmentListService;
     private final TripAttachmentDetailService tripAttachmentDetailService;
     private final TripAttachmentDeletionService tripAttachmentDeletionService;
@@ -154,35 +152,6 @@ public class TripAttachmentController {
                         data
                 )
         );
-    }
-
-    @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> uploadInitialAttachments(
-            @PathVariable Long tripId,
-            @AuthenticationPrincipal Jwt jwt,
-            @RequestParam(value = "attachments[]", required = false) List<MultipartFile> files,
-            @RequestParam(required = false) Integer batchNo,
-            @RequestParam(required = false) Integer totalAttachmentCount,
-            @RequestParam(required = false) Boolean complete
-    ) {
-        if (files == null || files.isEmpty() || files.stream().anyMatch(file -> file == null || file.isEmpty())
-                || batchNo == null || batchNo < 1
-                || totalAttachmentCount == null || totalAttachmentCount < 1 || totalAttachmentCount > 200
-                || complete == null) {
-            return ResponseEntity.badRequest()
-                    .body(new ApiResponse<>(ErrorMessage.INVALID_ATTACHMENT_UPLOAD, null));
-        }
-        if (files.size() > 10) {
-            return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
-                    .body(new ApiResponse<>(ErrorMessage.ATTACHMENT_UPLOAD_LIMIT_EXCEEDED, null));
-        }
-
-        Optional<TripProcessingStatusResponse> result = service.uploadInitialAttachments(
-                tripId, Long.valueOf(jwt.getSubject()), files, batchNo, totalAttachmentCount, complete);
-        return result
-                .map(status -> ResponseEntity.ok(
-                        new ApiResponse<>(SuccessMessage.TRIP_PROCESSING_STATUS_FOUND, status)))
-                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @GetMapping("/trips/{tripId}/place-folders/{tripPlaceId}/attachments")

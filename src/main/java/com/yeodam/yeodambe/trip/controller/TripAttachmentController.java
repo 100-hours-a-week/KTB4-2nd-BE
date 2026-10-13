@@ -1,60 +1,52 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.response.ApiResponse;
-import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
-import com.yeodam.yeodambe.trip.service.TripAttachmentService;
+import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
+import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
+import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentDeleteRequest;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentDownloadRequest;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.service.response.AttachmentRestoreResponse;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
+import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
-import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
-import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
-import org.springframework.web.bind.annotation.GetMapping;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
-import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
-import com.yeodam.yeodambe.trip.service.request.BulkAttachmentDeleteRequest;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
-import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
-import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
-import com.yeodam.yeodambe.trip.service.request.BulkAttachmentDownloadRequest;
-import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
-import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
-import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
-import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
-import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
-import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
-import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
-import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
-import com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse;
-import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
-import jakarta.validation.constraints.Positive;
-
-import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
-import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
-import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
-import com.yeodam.yeodambe.trip.service.response.AttachmentRestoreResponse;
-import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
-import jakarta.validation.Valid;
-
-import java.util.List;
-import java.util.Optional;
 
 @RestController
 @RequiredArgsConstructor
 public class TripAttachmentController {
-    private final TripAttachmentService service;
     private final TripAttachmentListService tripAttachmentListService;
     private final TripAttachmentDetailService tripAttachmentDetailService;
     private final TripAttachmentDeletionService tripAttachmentDeletionService;
@@ -122,15 +114,17 @@ public class TripAttachmentController {
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> completeInitialAttachmentUpload(
             @PathVariable Long tripId,
             @AuthenticationPrincipal Jwt jwt,
-            @RequestBody InitialAttachmentUploadCompleteRequest request
+            @Valid @RequestBody InitialAttachmentUploadCompleteRequest request
     ) {
         if (request == null || request.uploadId() == null || request.uploadId().isBlank()) {
             throw new InvalidAttachmentUploadException();
         }
-        Optional<TripProcessingStatusResponse> result = uploadCompletion.complete(
+        TripProcessingStatusResponse result = uploadCompletion.complete(
                 tripId, Long.valueOf(jwt.getSubject()), request);
-        if (result.isEmpty()) return ResponseEntity.noContent().build();
-        return ResponseEntity.ok(new ApiResponse<>(SuccessMessage.TRIP_PROCESSING_STATUS_FOUND, result.get()));
+        var status = result.status() == TripProcessingStatusResponse.Status.PROCESSING
+                ? HttpStatus.ACCEPTED : HttpStatus.OK;
+        return ResponseEntity.status(status)
+                .body(new ApiResponse<>(SuccessMessage.TRIP_PROCESSING_STATUS_FOUND, result));
     }
 
     @PostMapping(
@@ -154,35 +148,6 @@ public class TripAttachmentController {
                         data
                 )
         );
-    }
-
-    @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> uploadInitialAttachments(
-            @PathVariable Long tripId,
-            @AuthenticationPrincipal Jwt jwt,
-            @RequestParam(value = "attachments[]", required = false) List<MultipartFile> files,
-            @RequestParam(required = false) Integer batchNo,
-            @RequestParam(required = false) Integer totalAttachmentCount,
-            @RequestParam(required = false) Boolean complete
-    ) {
-        if (files == null || files.isEmpty() || files.stream().anyMatch(file -> file == null || file.isEmpty())
-                || batchNo == null || batchNo < 1
-                || totalAttachmentCount == null || totalAttachmentCount < 1 || totalAttachmentCount > 200
-                || complete == null) {
-            return ResponseEntity.badRequest()
-                    .body(new ApiResponse<>(ErrorMessage.INVALID_ATTACHMENT_UPLOAD, null));
-        }
-        if (files.size() > 10) {
-            return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
-                    .body(new ApiResponse<>(ErrorMessage.ATTACHMENT_UPLOAD_LIMIT_EXCEEDED, null));
-        }
-
-        Optional<TripProcessingStatusResponse> result = service.uploadInitialAttachments(
-                tripId, Long.valueOf(jwt.getSubject()), files, batchNo, totalAttachmentCount, complete);
-        return result
-                .map(status -> ResponseEntity.ok(
-                        new ApiResponse<>(SuccessMessage.TRIP_PROCESSING_STATUS_FOUND, status)))
-                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @GetMapping("/trips/{tripId}/place-folders/{tripPlaceId}/attachments")

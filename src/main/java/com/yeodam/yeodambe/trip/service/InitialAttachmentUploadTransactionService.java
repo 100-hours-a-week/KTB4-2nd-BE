@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededExcepti
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.integration.service.request.TripPhotoAnalysisRequest;
@@ -16,6 +17,7 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.event.TripCreateRequestEvent;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
@@ -306,11 +308,11 @@ public class InitialAttachmentUploadTransactionService {
     private List<TripAttachment> loadConvertedAttachments(List<InitialAttachmentUploadItem> uploadItems) {
         List<Long> ids = uploadItems.stream().map(InitialAttachmentUploadItem::getTripAttachmentId).toList();
         if (ids.stream().anyMatch(Objects::isNull)) {
-            throw new IllegalStateException("사진별 첨부 연결이 완료되지 않았습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.UPLOAD_ITEM_ATTACHMENT_LINK_INCOMPLETE.message());
         }
         List<TripAttachment> photos = attachments.findAllById(ids);
         if (photos.size() != ids.size() || photos.stream().anyMatch(photo -> photo.getDeletedAt() != null)) {
-            throw new IllegalStateException("사진별 첨부 연결이 실행과 다릅니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.UPLOAD_ITEM_ATTACHMENT_EXECUTION_MISMATCH.message());
         }
         Map<Long, TripAttachment> byId = photos.stream().collect(Collectors.toMap(TripAttachment::getId, photo -> photo));
         return ids.stream().map(byId::get).toList();
@@ -432,7 +434,7 @@ public class InitialAttachmentUploadTransactionService {
         requireCurrentClaim(claim);
         InitialAttachmentUploadItem item = requireItem(claim, itemId);
         if (item.getDerivedJson() != null || item.getConversionAttempts() >= 3) {
-            throw new IllegalStateException("사진 변환 시도 상한 또는 완료 상태입니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.ATTACHMENT_CONVERSION_ATTEMPT_NOT_ALLOWED.message());
         }
         scheduleUnreferencedAttempts(item, "CONVERSION_RETRY");
         item.startConversion(now());
@@ -457,7 +459,7 @@ public class InitialAttachmentUploadTransactionService {
         InitialAttachmentUploadItem item = requireItem(claim, itemId);
         if (!item.getObjectKey().equals(photo.originalKey()) || photo.originalSizeBytes() == null
                 || !item.getSizeBytes().equals(photo.originalSizeBytes())) {
-            throw new IllegalStateException("사진 변환 산출물의 원본이 다릅니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_SOURCE_ATTACHMENT_MISMATCH.message());
         }
         String prefix = "trip-uploads/" + claim.executionId() + "/derived/"
                 + itemId + "/" + item.getConversionAttempts() + "/";
@@ -469,7 +471,7 @@ public class InitialAttachmentUploadTransactionService {
                 || (heic && (!Objects.equals(photo.displayKey(), prefix + "display.jpg")
                     || photo.displaySizeBytes() == null || photo.displaySizeBytes() < 1))
                 || (!heic && photo.displayKey() != null)) {
-            throw new IllegalStateException("사진 변환 산출물의 키 또는 크기가 잘못됐습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_OUTPUT_KEY_OR_SIZE_INVALID.message());
         }
         if (item.getDerivedJson() == null) {
             saveAttachment(claim.tripId(), claim.userId(), item, photo);
@@ -493,7 +495,7 @@ public class InitialAttachmentUploadTransactionService {
         }
         scheduleUnreferencedAttempts(item, "CONVERSION_FAILED");
         if (permanent || item.getConversionAttempts() >= 3) {
-            failExecution(claim.executionId(), "IMAGE_CONVERSION_FAILED");
+            failExecution(claim.executionId(), ErrorMessage.IMAGE_CONVERSION_FAILED.name());
             return;
         }
         item.conversionFailed(now().plusSeconds(10));
@@ -513,7 +515,7 @@ public class InitialAttachmentUploadTransactionService {
         InitialAttachmentUploadBatch batch = batches.findById(claim.batchId()).orElseThrow();
         List<InitialAttachmentUploadItem> all = items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId());
         if (all.stream().anyMatch(item -> item.getDerivedJson() == null)) {
-            throw new IllegalStateException("완료되지 않은 사진 변환이 있습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.ATTACHMENT_CONVERSION_INCOMPLETE.message());
         }
         List<TripAttachment> saved = loadConvertedAttachments(all);
         var refs = saved.stream().map(photo -> Map.of(
@@ -592,7 +594,7 @@ public class InitialAttachmentUploadTransactionService {
                     && !execution.getProcessPublishedAt().isAfter(now().minusHours(1))
                 : !execution.isInputClosed() && !execution.getLastUploadActivityAt().isAfter(now().minusMinutes(10));
         if (expired) {
-            failExecution(id, resultTimeout ? "AI_RESULT_TIMEOUT" : "UPLOAD_TIMEOUT");
+            failExecution(id, resultTimeout ? ErrorMessage.AI_RESULT_TIMEOUT.name() : ErrorMessage.UPLOAD_TIMEOUT.name());
         }
     }
 
@@ -708,7 +710,7 @@ public class InitialAttachmentUploadTransactionService {
 
     private void requireCurrentClaim(InitialAttachmentUploadBatchSnapshot claim) {
         if (!isCurrentClaim(claim)) {
-            throw new CancellationException("만료되거나 취소된 사진 변환입니다.");
+            throw new CancellationException(TripInternalErrorMessage.ATTACHMENT_CONVERSION_CANCELED.message());
         }
     }
 
@@ -858,7 +860,7 @@ public class InitialAttachmentUploadTransactionService {
         Trip trip = trips.findById(execution.getTripId()).orElseThrow();
         List<InitialAttachmentUploadItem> originals = items.findExecutionItems(execution.getExecutionId());
         if (originals.size() != execution.getTotalAttachmentCount()) {
-            throw new IllegalStateException("전체 원본 목록이 일치하지 않습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.SOURCE_ATTACHMENT_LIST_MISMATCH.message());
         }
         List<TripPhotoAnalysisRequest.Photo> photos = originals.stream()
                 .map(item -> {
@@ -884,12 +886,12 @@ public class InitialAttachmentUploadTransactionService {
         TripCreationExecution execution = requireExecutionForUpdate(event.executionId());
         requireActive(trip, execution);
         if (!trip.getId().equals(event.tripId())) {
-            throw new IllegalArgumentException("이벤트 여행이 실행과 다릅니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.EVENT_TRIP_EXECUTION_MISMATCH.message());
         }
         if ("process".equals(event.type())) {
             enqueueProcessIfReady(execution);
         } else if (!"photos_ready".equals(event.type())) {
-            throw new IllegalArgumentException("지원하지 않는 사진 요청입니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.UNSUPPORTED_PHOTO_REQUEST.message());
         }
     }
 }

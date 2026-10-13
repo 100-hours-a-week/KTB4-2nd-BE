@@ -4,7 +4,9 @@ import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadItem;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
@@ -16,6 +18,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -26,12 +29,18 @@ class TripObjectCleanupServiceTest {
     private final TripRepository trips = mock(TripRepository.class);
     private final TripDetailPlaceRepository places = mock(TripDetailPlaceRepository.class);
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
+    private final InitialAttachmentUploadTransactionService uploadTransactions = mock(InitialAttachmentUploadTransactionService.class);
+    private final InitialAttachmentUploadItemRepository uploadItems =
+            mock(InitialAttachmentUploadItemRepository.class);
     private final TripObjectCleanupService service = new TripObjectCleanupService(
-            attachments, files, trips, places, storage);
+            attachments, files, trips, places, storage,
+                uploadItems,
+                uploadTransactions);
     private TripAttachment attachment;
 
     @BeforeEach
     void setUp() {
+        when(uploadTransactions.databaseTime()).thenReturn(LocalDateTime.now());
         StoredFile file = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
         attachment = TripAttachment.initial(7L, 20L, "analyze", "preview", "display");
         attachment.softDelete(LocalDateTime.now().minusDays(31));
@@ -75,7 +84,7 @@ class TripObjectCleanupServiceTest {
         verify(storage).delete("analyze");
         verify(storage).delete("preview");
         verify(storage).delete("display");
-        assertThat(attachment.getClassificationStatus()).isEqualTo(ClassificationStatus.DELETED);
+        assertThat(attachment.getClassificationStatus()).isNotEqualTo(ClassificationStatus.DELETED);
     }
 
     @Test
@@ -105,6 +114,45 @@ class TripObjectCleanupServiceTest {
         verify(storage).delete("legacy-preview");
         verify(storage, never()).delete(null);
         verify(attachments, never()).existsByDisplayStorageKeyAndDeletedAtIsNull(null);
+    }
+
+    @Test
+    void 정리_기록은_삼십일_전_보존하고_경계부터_삭제한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 10, 12, 12, 0);
+        when(uploadTransactions.databaseTime()).thenReturn(now);
+        when(attachments.findExpiredPendingCleanup(any(), any())).thenReturn(List.of());
+        var item = mock(InitialAttachmentUploadItem.class);
+        when(item.getId()).thenReturn(41L);
+        when(uploadItems.findPendingCleanup(any(), any())).thenReturn(List.of(item));
+        when(uploadTransactions.cleanupObjects(item)).thenReturn(List.of(
+                new InitialAttachmentUploadTransactionService.CleanupObject("recent", now.minusDays(30).plusSeconds(1), "CANCELED", false),
+                new InitialAttachmentUploadTransactionService.CleanupObject("expired", now.minusDays(30), "CONVERSION_FAILED", false),
+                new InitialAttachmentUploadTransactionService.CleanupObject("active", now.minusDays(31), "FAILED", false)));
+        when(files.existsByObjectKeyAndDeletedAtIsNull("active")).thenReturn(true);
+
+        service.retryPending();
+
+        verify(storage, never()).delete("recent");
+        verify(storage, never()).delete("active");
+        verify(storage).delete("expired");
+        verify(uploadTransactions).recordObjectDeleted(41L, "expired");
+        verify(uploadTransactions, never()).recordObjectDeleted(41L, "active");
+    }
+
+    @Test
+    void 첨부_삭제_시각보다_DB_정리_기록의_삼십일_보존을_우선한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 10, 12, 12, 0);
+        when(uploadTransactions.databaseTime()).thenReturn(now);
+        var item = mock(InitialAttachmentUploadItem.class);
+        when(uploadItems.findByTripAttachmentId(30L)).thenReturn(Optional.of(item));
+        when(uploadTransactions.cleanupObjects(item)).thenReturn(List.of(
+                new InitialAttachmentUploadTransactionService.CleanupObject(
+                        "original", now.minusDays(30).plusSeconds(1), "FAILED", false)));
+
+        service.retryPending();
+
+        verifyNoInteractions(storage);
+        assertThat(attachment.getClassificationStatus()).isNotEqualTo(ClassificationStatus.DELETED);
     }
 
     private enum ActiveReference {

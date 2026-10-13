@@ -234,7 +234,12 @@ public class AdditionalAttachmentUploadTransactionService {
             throw new InvalidAttachmentUploadException();
         }
 
-        return new VerificationBatch(batch.getStatus(), List.copyOf(items), batch.getLastBatch());
+        return new VerificationBatch(
+                batch.getAdditionId(),
+                batch.getStatus(),
+                List.copyOf(items),
+                batch.getLastBatch()
+        );
     }
 
     @Transactional
@@ -293,6 +298,7 @@ public class AdditionalAttachmentUploadTransactionService {
                                   List<DerivedPhotoKeys> saved) {}
 
     public record VerificationBatch(
+            String additionId,
             AdditionalAttachmentUploadStatus status,
             List<AdditionalAttachmentUploadItem> items,
             boolean lastBatch

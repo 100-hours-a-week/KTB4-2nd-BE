@@ -123,19 +123,43 @@ public class AdditionalAttachmentUploadCompletionService {
     }
 
     public PreparedQueueBatch prepareQueueBatch(
-            Long tripId, Long userId, AdditionalAttachmentUploadCompleteRequest request, String executionId
+            Long tripId,
+            Long userId,
+            AdditionalAttachmentUploadCompleteRequest request
     ) {
-        if (executionId == null || executionId.isBlank()) throw new InvalidAttachmentUploadException();
         var analysis = prepareAddition(tripId, userId, request);
-        PhotosReadyMessage ready = analysisPreparationService.photosReady(tripId, userId, request.uploadId(), executionId);
-        return new PreparedQueueBatch(ready, analysis.map(value -> value.processMessage(executionId)));
+
+        var batch = uploadTransactionService.loadForVerification(
+                tripId,
+                userId,
+                request.uploadId()
+        );
+
+        String executionId = batch.additionId();
+
+        PhotosReadyMessage ready = analysisPreparationService.photosReady(
+                tripId,
+                userId,
+                request.uploadId(),
+                executionId
+        );
+
+        return new PreparedQueueBatch(
+                ready,
+                analysis.map(value -> value.processMessage(executionId))
+        );
     }
 
-    public record PreparedQueueBatch(PhotosReadyMessage photosReady, Optional<PhotoProcessMessage> process) {}
+    public record PreparedQueueBatch(
+            PhotosReadyMessage photosReady,
+            Optional<PhotoProcessMessage> process
+    ) {
+    }
 
     private boolean hasCleanupFailure(Throwable failure) {
         return failure.getSuppressed().length > 0
-                || (failure.getCause() != null && hasCleanupFailure(failure.getCause()));
+                || (failure.getCause() != null
+                && hasCleanupFailure(failure.getCause()));
     }
 
     private void retainFiles(List<DerivedPhotoKeys> derived) {

@@ -279,7 +279,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
 
     @Test
     void queueBatchHasOnlyNewKeysAndProcessHasAllPhotosWithSameAttemptId() {
-        var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest(), "queue-attempt");
+        var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
         var ready = prepared.photosReady();
         var process = prepared.process().orElseThrow();
         assertThat(ready.type()).isEqualTo("photos_ready");
@@ -289,13 +289,13 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(ready.attachments()).extracting(photo -> photo.tripAttachmentId()).doesNotContain(oldPhotoId);
         assertThat(process.type()).isEqualTo("process");
         assertThat(process.attachments()).hasSize(2);
-        assertThat(process.executionId()).isEqualTo(ready.executionId()).isEqualTo("queue-attempt");
+        assertThat(process.executionId()).isEqualTo(ready.executionId()).isEqualTo(additionId);
         var readyJson = json.valueToTree(ready).path("attachments").get(0);
         assertThat(readyJson.size()).isEqualTo(2);
         assertThat(readyJson.has("taken_at")).isFalse();
         assertThat(json.valueToTree(process).path("trip_id").asLong()).isEqualTo(tripId);
         clearInvocations(derivatives);
-        var repeated = completion.prepareQueueBatch(tripId, userId, completeRequest(), "queue-attempt");
+        var repeated = completion.prepareQueueBatch(tripId, userId, completeRequest());
         assertThat(repeated).isEqualTo(prepared);
         verifyNoInteractions(derivatives);
     }
@@ -310,7 +310,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         initialItems.saveAndFlush(sourceItem);
         jdbc.update("UPDATE trip_attachments SET region_origin = 'INFERRED', taken_at = '2099-01-01 00:00:00', latitude = 50, longitude = 60 WHERE trip_attachment_id = ?",
                 oldPhotoId);
-        var message = completion.prepareQueueBatch(tripId, userId, completeRequest(), "queue-attempt")
+        var message = completion.prepareQueueBatch(tripId, userId, completeRequest())
                 .process().orElseThrow();
         var old = message.attachments().stream().filter(photo -> photo.tripAttachmentId().equals(oldPhotoId)).findFirst().orElseThrow();
         assertThat(old.takenAt()).isEqualTo(OffsetDateTime.parse("2026-10-01T10:00:00+05:30"));
@@ -325,7 +325,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     @Test
     void missingOriginalTimeStaysNullInsteadOfUsingAiCorrectedTime() {
         jdbc.update("UPDATE trip_attachments SET taken_at = '2099-01-01 00:00:00', region_origin = 'UNKNOWN' WHERE trip_attachment_id = ?", oldPhotoId);
-        var message = completion.prepareQueueBatch(tripId, userId, completeRequest(), "queue-attempt")
+        var message = completion.prepareQueueBatch(tripId, userId, completeRequest())
                 .process().orElseThrow();
         var old = message.attachments().stream().filter(photo -> photo.tripAttachmentId().equals(oldPhotoId)).findFirst().orElseThrow();
         assertThat(old.takenAt()).isNull();

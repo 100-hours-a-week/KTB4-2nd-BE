@@ -22,9 +22,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
@@ -43,7 +43,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         InitialUploadExecutionRegistry.class,
         TripAttachmentTransactionService.class,
         TripAnalysisResultService.class,
-        UserStatsService.class
+        UserStatsService.class,
+        ObjectMapper.class
 })
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripAttachmentTransactionPersistenceTest {
@@ -68,6 +69,9 @@ class TripAttachmentTransactionPersistenceTest {
     private TripDetailPlaceRepository places;
 
     private final ObjectMapper json = new ObjectMapper();
+
+    @MockitoBean
+    private InitialAttachmentUploadTransactionService uploadTransactions;
 
     @MockitoBean
     private TripAttachmentStorageClient storage;

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.entity;
 
+import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -34,6 +35,9 @@ public class UserStats {
 
     @Column(name = "storage_used_bytes", nullable = false)
     private long storageUsedBytes;
+
+    @Column(name = "storage_reserved_bytes", nullable = false)
+    private long storageReservedBytes;
 
     @Column(name = "storage_maximum_bytes", nullable = false)
     private long storageMaximumBytes = 30_000_000_000L;
@@ -70,4 +74,17 @@ public class UserStats {
         this.storageUsedBytes = storageUsedBytes;
     }
 
+    public void reserveStorage(long bytes) {
+        if (bytes < 0 || bytes > storageMaximumBytes - storageUsedBytes - storageReservedBytes) {
+            throw new AttachmentUploadLimitExceededException();
+        }
+        storageReservedBytes = Math.addExact(storageReservedBytes, bytes);
+    }
+
+    public void releaseStorageReservation(long bytes) {
+        if (bytes < 0 || bytes > storageReservedBytes) {
+            throw new IllegalStateException(UserInternalErrorMessage.USER_STATS_NEGATIVE.message());
+        }
+        storageReservedBytes -= bytes;
+    }
 }

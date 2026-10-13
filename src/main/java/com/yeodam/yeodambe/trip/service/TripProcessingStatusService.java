@@ -4,11 +4,13 @@ import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
 import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusResponse;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
-import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
+import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
@@ -25,12 +27,38 @@ public class TripProcessingStatusService {
     private final TripPhotoAnalysisService analysis;
     private final InitialUploadExecutionRegistry executions;
     private final InitialAttachmentUploadBatchRepository uploadBatches;
+    private final TripCreationExecutionRepository creationExecutions;
 
-    public TripProcessingStatusResponse findStatus(Long tripId, Long userId) {
+    public TripProcessingStatusResponse findStatus(
+            Long tripId,
+            Long userId
+    ) {
         Trip trip = findTrip(tripId, userId);
 
         if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING) {
             return fromDatabase(trip);
+        }
+        var execution = creationExecutions.findByTripId(tripId);
+        if (execution.isPresent()) {
+            if (execution.get().getStatus() == TripCreationExecution.Status.RESULT_APPLYING) {
+                return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null, null);
+            }
+            if (execution.get().getProcessPublishedAt() == null) {
+                return processing(tripId);
+            }
+            TripPhotoAnalysisStatusResponse ai = analysis.findStatus(tripId, execution.get().getExecutionId());
+            if (ai.progress() != null && ai.progress().total() != execution.get().getTotalAttachmentCount()) {
+                throw new IllegalStateException("AI 진행률의 전체 사진 수가 실행과 다릅니다.");
+            }
+            if (ai.status() == TripPhotoAnalysisStatusResponse.Status.QUEUED) {
+                return processing(tripId);
+            }
+            if (ai.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED) {
+                return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null, null);
+            }
+            return new TripProcessingStatusResponse(tripId, Status.PROCESSING,
+                    ai.progress() == null ? null : new TripProcessingStatusResponse.Progress(ai.progress().done(), ai.progress().total()),
+                    ai.currentStep(), null, null);
         }
         var latestBatch = uploadBatches.findFirstByTripIdAndUserIdOrderByIdDesc(tripId, userId);
         if (latestBatch.isPresent() && latestBatch.get().getLastBatch()
@@ -67,17 +95,21 @@ public class TripProcessingStatusService {
         return fromDatabase(updated);
     }
 
-    private Trip findTrip(Long tripId, Long userId) {
+    private Trip findTrip(
+            Long tripId,
+            Long userId
+    ) {
         return trips.findByIdAndUserIdAndDeletedAtIsNull(tripId, userId)
                 .orElseThrow(TripNotFoundException::new);
     }
 
     private TripProcessingStatusResponse fromDatabase(Trip trip) {
+        Long tripId = trip.getId();
         return switch (trip.getProcessingStatus()) {
-            case PROCESSING -> processing(trip.getId());
-            case COMPLETED -> completed(trip.getId());
+            case PROCESSING -> processing(tripId);
+            case COMPLETED -> completed(tripId);
             case FAILED -> new TripProcessingStatusResponse(
-                    trip.getId(),
+                    tripId,
                     Status.FAILED,
                     null,
                     null,
@@ -85,7 +117,7 @@ public class TripProcessingStatusService {
                     new TripProcessingStatusResponse.Error("AI_PROCESSING_FAILED", "첨부 처리에 실패했습니다.")
             );
             case CANCELED -> new TripProcessingStatusResponse(
-                    trip.getId(),
+                    tripId,
                     Status.CANCELED,
                     null,
                     null,

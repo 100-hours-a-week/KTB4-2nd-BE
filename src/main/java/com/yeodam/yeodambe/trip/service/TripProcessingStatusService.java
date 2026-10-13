@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
 import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusResponse;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
@@ -8,6 +9,7 @@ import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
@@ -48,7 +50,7 @@ public class TripProcessingStatusService {
             }
             TripPhotoAnalysisStatusResponse ai = analysis.findStatus(tripId, execution.get().getExecutionId());
             if (ai.progress() != null && ai.progress().total() != execution.get().getTotalAttachmentCount()) {
-                throw new IllegalStateException("AI 진행률의 전체 사진 수가 실행과 다릅니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.AI_PROGRESS_TOTAL_EXECUTION_MISMATCH.message());
             }
             if (ai.status() == TripPhotoAnalysisStatusResponse.Status.QUEUED) {
                 return processing(tripId);
@@ -64,7 +66,10 @@ public class TripProcessingStatusService {
         if (latestBatch.isPresent() && latestBatch.get().getLastBatch()
                 && latestBatch.get().getStatus() == InitialAttachmentUploadStatus.FAILED) {
             return new TripProcessingStatusResponse(tripId, Status.FAILED, null, null, null,
-                    new TripProcessingStatusResponse.Error("AI_PROCESSING_FAILED", "첨부 처리에 실패했습니다."));
+                    new TripProcessingStatusResponse.Error(
+                            ErrorMessage.AI_PROCESSING_FAILED.name(),
+                            TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message()
+                    ));
         }
         if (!executions.isAnalysisStarted(tripId)
                 && !uploadBatches.existsByTripIdAndStatus(tripId, InitialAttachmentUploadStatus.ANALYZING)) {
@@ -114,7 +119,10 @@ public class TripProcessingStatusService {
                     null,
                     null,
                     null,
-                    new TripProcessingStatusResponse.Error("AI_PROCESSING_FAILED", "첨부 처리에 실패했습니다.")
+                    new TripProcessingStatusResponse.Error(
+                            ErrorMessage.AI_PROCESSING_FAILED.name(),
+                            TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message()
+                    )
             );
             case CANCELED -> new TripProcessingStatusResponse(
                     tripId,

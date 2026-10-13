@@ -47,6 +47,8 @@ class InitialAttachmentUploadFlowIntegrationTest {
     @Autowired
     private TripAnalysisResultService results;
     @Autowired
+    private TripAnalysisResultWorker worker;
+    @Autowired
     private TripCreationExecutionRepository executions;
     @Autowired
     private InitialAttachmentUploadBatchRepository batches;
@@ -84,7 +86,58 @@ class InitialAttachmentUploadFlowIntegrationTest {
                 transactions.failExecution(execution.getExecutionId(), "TEST_FINISHED"));
     }
 
+    @Test
+    void 배치_접수_변환_발행_결과_원문_최종저장을_분리한다() {
+        var first = prepare(1, 2, false);
+        assertThat(accept(first).status()).isEqualTo(TripProcessingStatusResponse.Status.PROCESSING);
+        convert();
+        assertThat(execution().getProcessPayload()).isNull();
+        var firstSend = transactions.claimDelivery(first.batchId()).orElseThrow();
+        transactions.finishDelivery(firstSend, true);
+        assertThat(execution().getProcessPayload()).isNull();
+        var last = prepare(2, 2, true);
+        accept(last);
+        convert();
+        assertThat(execution().getProcessPayload()).isNull();
+        transactions.finishDelivery(transactions.claimDelivery(last.batchId()).orElseThrow(), true);
+        var process = transactions.claimProcess(first.executionId()).orElseThrow();
+        var wire = json.readTree(process.payload());
+        assertThat(wire.path("type").asString()).isEqualTo("process");
+        assertThat(wire.path("attachments").size()).isEqualTo(2);
+        assertThat(wire.has("eventType")).isFalse();
+        transactions.finishDelivery(process, true);
+        String raw = resultPayload(wire, false);
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.RESULT_APPLYING);
+        assertThat(trips.findById(trip.getId()).orElseThrow().getProcessingStatus()).isEqualTo(ProcessingStatus.PROCESSING);
+        worker.applyPendingResults();
+        assertThat(trips.findById(trip.getId()).orElseThrow().getProcessingStatus()).isEqualTo(ProcessingStatus.COMPLETED);
+        assertThat(accept(last).status()).isEqualTo(TripProcessingStatusResponse.Status.COMPLETED);
+        assertThat(jdbc.queryForObject("SELECT storage_used_bytes FROM user_stats WHERE user_id = ?", Long.class, owner.getUserId())).isEqualTo(24L);
+        assertThat(jdbc.queryForObject("SELECT storage_reserved_bytes FROM user_stats WHERE user_id = ?", Long.class, owner.getUserId())).isZero();
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        assertThat(execution().getResultAttempts()).isEqualTo(1);
+    }
 
+    @Test
+    void 결과_사진이_누락되면_부분저장_없이_실패하고_예약을_한번만_반환한다() {
+        var batch = prepare(1, 1, true);
+        accept(batch);
+        convert();
+        transactions.finishDelivery(transactions.claimDelivery(batch.batchId()).orElseThrow(), true);
+        var process = transactions.claimProcess(batch.executionId()).orElseThrow();
+        transactions.finishDelivery(process, true);
+        String raw = resultPayload(json.readTree(process.payload()), true);
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        worker.applyPendingResults();
+        assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.FAILED);
+        assertThat(execution().getErrorCode()).isEqualTo("AI_RESULT_INTEGRITY_FAILED");
+        assertThat(execution().getResultFailureReason()).isEqualTo("결과의 사진 집합이 실행과 다릅니다.");
+        assertThat(jdbc.queryForObject("SELECT storage_reserved_bytes FROM user_stats WHERE user_id = ?", Long.class, owner.getUserId())).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trip_detail_places WHERE trip_id = ?", Integer.class, trip.getId())).isZero();
+        transactions.failExecution(batch.executionId(), "AGAIN");
+        assertThat(execution().getErrorCode()).isEqualTo("AI_RESULT_INTEGRITY_FAILED");
+    }
 
     @Test
     void Kafka_재시도는_같은_ID와_payload를_유지하고_실패로_바꾸지_않는다() {
@@ -102,9 +155,66 @@ class InitialAttachmentUploadFlowIntegrationTest {
         assertThat(batches.findById(batch.batchId()).orElseThrow().getDeliveryStatus()).isEqualTo(InitialAttachmentDeliveryStatus.PUBLISHING);
     }
 
+    @Test
+    void 결과_반영_일시_실패는_원문을_보존하고_세번_후_종료한다() {
+        var process = publishSingleBatch();
+        String raw = resultPayload(json.readTree(process.payload()), false);
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        when(names.resolve(any(), any(), any(), any()))
+                .thenThrow(new TransientDataAccessResourceException("테스트 DB 일시 장애"));
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            worker.applyPendingResults();
+            assertThat(execution().getResultAttempts()).isEqualTo(attempt);
+            assertThat(execution().getResultRawPayload()).isEqualTo(raw);
+            jdbc.update("UPDATE trip_creation_executions SET result_next_attempt_at = NULL WHERE execution_id = ?", process.executionId());
+        }
+        assertThat(execution().getErrorCode()).isEqualTo("RESULT_APPLY_RETRY_EXHAUSTED");
+        assertThat(execution().isReservationReleased()).isTrue();
+    }
 
+    @Test
+    void 취소_후_늦은_결과와_이전_선점은_최종_저장을_하지_못한다() {
+        var process = publishSingleBatch();
+        String raw = resultPayload(json.readTree(process.payload()), false);
+        var event = json.readValue(raw, TripCreateResultEvent.class);
+        results.receiveKafkaResult(event, raw);
+        var claim = results.claimResult().orElseThrow();
+        var result = results.validateForApplication(claim);
+        transactions.cancelExecution(trip.getId(), owner.getUserId());
+        assertThatThrownBy(() -> results.saveKafkaCompleted(claim, result, Map.of()))
+                .isInstanceOf(CancellationException.class);
+        results.receiveKafkaResult(event, raw);
+        assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.CANCELED);
+        assertThat(execution().isCancelPending()).isTrue();
+        assertThat(execution().isReservationReleased()).isTrue();
+    }
 
+    @Test
+    void 결과_수신_상한은_첫_발행부터_한시간이고_원문_인계_후는_제외한다() {
+        var process = publishSingleBatch();
+        jdbc.update("UPDATE trip_creation_executions SET process_published_at = CURRENT_TIMESTAMP(6) - INTERVAL 3599 SECOND WHERE execution_id = ?", process.executionId());
+        transactions.failExpiredExecution(process.executionId(), true);
+        assertThat(execution().isTerminal()).isFalse();
+        jdbc.update("UPDATE trip_creation_executions SET process_published_at = CURRENT_TIMESTAMP(6) - INTERVAL 1 HOUR WHERE execution_id = ?", process.executionId());
+        String raw = resultPayload(json.readTree(process.payload()), false);
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        transactions.failExpiredExecution(process.executionId(), true);
+        assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.RESULT_APPLYING);
+        worker.applyPendingResults();
+        assertThat(execution().getAccountedBytes()).isEqualTo(12L);
+    }
 
+    @Test
+    void 한시간_미수신_후_늦은_완료는_실패를_되돌리지_않는다() {
+        var process = publishSingleBatch();
+        jdbc.update("UPDATE trip_creation_executions SET process_published_at = CURRENT_TIMESTAMP(6) - INTERVAL 1 HOUR WHERE execution_id = ?", process.executionId());
+        transactions.failExpiredExecution(process.executionId(), true);
+        String raw = resultPayload(json.readTree(process.payload()), false);
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.FAILED);
+        assertThat(execution().getErrorCode()).isEqualTo("AI_RESULT_TIMEOUT");
+        assertThat(execution().getResultRawPayload()).isNull();
+    }
 
     @Test
     void 최대_이백장_process_payload는_기본_Kafka_한메가바이트보다_작다() {
@@ -125,6 +235,21 @@ class InitialAttachmentUploadFlowIntegrationTest {
         assertThat(process.payload().getBytes(StandardCharsets.UTF_8).length).isLessThan(1024 * 1024);
     }
 
+    @Test
+    void 결과_선점은_시도를_늘리지_않고_만료된_token은_시작할_수_없다() {
+        var process = publishSingleBatch();
+        String raw = resultPayload(json.readTree(process.payload()), false);
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        var old = results.claimResult().orElseThrow();
+        assertThat(execution().getResultAttempts()).isZero();
+        jdbc.update("UPDATE trip_creation_executions SET result_lease_until = CURRENT_TIMESTAMP(6) - INTERVAL 1 SECOND WHERE execution_id = ?", process.executionId());
+        var current = results.claimResult().orElseThrow();
+        assertThat(results.startResultAttempt(old)).isFalse();
+        assertThat(results.startResultAttempt(current)).isTrue();
+        assertThat(execution().getResultAttempts()).isEqualTo(1);
+        assertThat(execution().getResultAttemptStartedAt()).isNotNull();
+        assertThat(results.startResultAttempt(current)).isFalse();
+    }
 
 
     private TripKafkaDeliveryClaim publishSingleBatch() {

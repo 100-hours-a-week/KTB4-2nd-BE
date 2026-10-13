@@ -91,7 +91,7 @@ class KafkaEventStructureTest {
     void 각_도메인_이벤트가_자신의_타입을_반환한다() {
         List<EventPayload> events = List.of(
                 new TripCreateRequestEvent("photos_ready", 1L, "execution", 1, null, null, null, null, new ObjectMapper().createArrayNode()),
-                new TripCreateResultEvent(),
+                new TripCreateResultEvent("process_result", 1L, "execution", TripCreateResultEvent.Status.CANCELED, null, null),
                 new TripUpdateRequestEvent(),
                 new TripUpdateResultEvent(),
                 new StoryCreateRequestEvent(),

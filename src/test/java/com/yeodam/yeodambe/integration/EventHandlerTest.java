@@ -45,7 +45,7 @@ class EventHandlerTest {
     @Test
     void 여행_결과의_ID와_상태를_다른_JSON_타입에서_강제_변환하지_않는다() {
         var results = mock(TripAnalysisResultService.class);
-        var handler = new TripCreateResultEventHandler(results, new ObjectMapper(), mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class));
+        var handler = new TripCreateResultEventHandler(results, new ObjectMapper());
         for (String tripId : List.of("7.5", "\"7\"", "9223372036854775808")) {
             String raw = """
                     {"type":"process_result","trip_id":%s,"execution_id":"run",
@@ -97,7 +97,7 @@ class EventHandlerTest {
     @Test
     void 미구현_핸들러는_이벤트를_처리한_것처럼_정상_종료하지_않는다() {
         assertNotImplemented(new TripUpdateRequestEventHandler(), new TripUpdateRequestEvent());
-        assertNotImplemented(new TripUpdateResultEventHandler(), new TripUpdateResultEvent());
+        assertNotImplemented(new TripUpdateResultEventHandler(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class), new ObjectMapper()), new TripUpdateResultEvent());
         assertNotImplemented(new StoryCreateRequestEventHandler(), new StoryCreateRequestEvent());
     }
 
@@ -130,7 +130,7 @@ class EventHandlerTest {
         assertDirectInvocation(requestHandler(), TripCreateRequestEvent.class);
         assertDirectInvocation(resultHandler(), TripCreateResultEvent.class);
         assertDirectInvocation(new TripUpdateRequestEventHandler(), TripUpdateRequestEvent.class);
-        assertDirectInvocation(new TripUpdateResultEventHandler(), TripUpdateResultEvent.class);
+        assertDirectInvocation(new TripUpdateResultEventHandler(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class), new ObjectMapper()), TripUpdateResultEvent.class);
         assertDirectInvocation(new StoryCreateRequestEventHandler(), StoryCreateRequestEvent.class);
         assertDirectInvocation(storyResultHandler(), StoryCreateResultEvent.class);
     }
@@ -142,7 +142,7 @@ class EventHandlerTest {
 
     private TripCreateResultEventHandler resultHandler() {
         return new TripCreateResultEventHandler(mock(TripAnalysisResultService.class),
-                new ObjectMapper(), mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class));
+                new ObjectMapper());
     }
 
     private KafkaTopicProperties topics() {

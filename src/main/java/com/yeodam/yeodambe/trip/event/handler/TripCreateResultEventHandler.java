@@ -1,20 +1,14 @@
 package com.yeodam.yeodambe.trip.event.handler;
 
-import com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService;
-
-
 import com.yeodam.yeodambe.common.event.EventHandler;
 import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventType;
-import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
 import com.yeodam.yeodambe.trip.service.TripAnalysisResultService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
@@ -22,7 +16,6 @@ import tools.jackson.databind.ObjectMapper;
 public class TripCreateResultEventHandler implements EventHandler<TripCreateResultEvent> {
     private final TripAnalysisResultService results;
     private final ObjectMapper json;
-    private final AdditionalAttachmentKafkaResultService additionalResults;
 
     @Override
     public EventType eventType() {
@@ -36,25 +29,8 @@ public class TripCreateResultEventHandler implements EventHandler<TripCreateResu
             containerFactory = "tripResultKafkaListenerContainerFactory"
     )
     public void consume(String rawPayload) {
-        TripCreateResultEvent event;
-        try {
-            var root = json.readTree(rawPayload);
-            if (root == null || !root.isObject()) {
-                throw new IllegalArgumentException(ErrorMessage.TRIP_RESULT_TRANSPORT_INVALID.name());
-            }
-            if ("story_result".equals(root.path("type").asString())) {
-                return;
-            }
-            if (!root.path("trip_id").isIntegralNumber() || !root.path("trip_id").canConvertToLong()
-                    || !root.path("execution_id").isString() || !root.path("status").isString()) {
-                throw new IllegalArgumentException(ErrorMessage.TRIP_RESULT_TRANSPORT_INVALID.name());
-            }
-            event = json.readerFor(TripCreateResultEvent.class)
-                    .with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
-                    .readValue(rawPayload);
-        } catch (JacksonException | IllegalArgumentException failure) {
-            throw new IllegalArgumentException(ErrorMessage.TRIP_RESULT_TRANSPORT_INVALID.name());
-        }
+        var event = TripProcessResultDecoder.decode(json, rawPayload);
+        if (event == null) return;
         handle(event, rawPayload);
     }
 
@@ -71,6 +47,6 @@ public class TripCreateResultEventHandler implements EventHandler<TripCreateResu
             TripCreateResultEvent event,
             String rawPayload
     ) {
-        if (!additionalResults.receive(event, rawPayload)) results.receiveKafkaResult(event, rawPayload);
+        results.receiveKafkaResult(event, rawPayload);
     }
 }

@@ -1,6 +1,10 @@
 package com.yeodam.yeodambe.integration.client;
 
-import com.yeodam.yeodambe.trip.event.handler.TripCreateRequestEventHandler;
+import com.yeodam.yeodambe.common.event.EventType;
+import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.springframework.kafka.core.KafkaTemplate;
+import java.nio.charset.StandardCharsets;
 import com.yeodam.yeodambe.trip.service.AdditionalAttachmentDeliveryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,7 +19,8 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class AdditionalAttachmentOutboxPublisher {
     private final AdditionalAttachmentDeliveryService delivery;
-    private final TripCreateRequestEventHandler requests;
+    private final KafkaTemplate<String, String> kafka;
+    private final KafkaTopicProperties topics;
 
     @Scheduled(initialDelayString = "${app.trip.worker-initial-delay-ms:0}", fixedDelayString = "${app.trip.outbox-delay-ms:5000}")
     public void publishPending() {
@@ -26,7 +31,10 @@ public class AdditionalAttachmentOutboxPublisher {
             var previous = MDC.getCopyOfContextMap();
             try {
                 MDC.put("request_id", claim.requestId());
-                requests.publish(claim.tripId().toString(), claim.payload(), claim.requestId()).get(30, TimeUnit.SECONDS);
+                var record = new ProducerRecord<String, String>(topics.topicFor(EventType.TRIP_UPDATE_REQUEST),
+                        claim.tripId().toString(), claim.payload());
+                record.headers().add("X-Request-ID", claim.requestId().getBytes(StandardCharsets.UTF_8));
+                kafka.send(record).get(30, TimeUnit.SECONDS);
                 delivery.finish(claim, true, null);
             } catch (Exception failure) {
                 if (failure instanceof InterruptedException) Thread.currentThread().interrupt();

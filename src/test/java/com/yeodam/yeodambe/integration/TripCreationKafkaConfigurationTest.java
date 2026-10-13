@@ -8,7 +8,8 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.kafka.autoconfigure.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.kafka.core.ConsumerFactory;
@@ -31,9 +32,10 @@ import static org.mockito.Mockito.when;
 
 class TripCreationKafkaConfigurationTest {
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {"create", "update"})
     @SuppressWarnings("unchecked")
-    void 설정한_DLT로_원래_파티션과_메시지를_유지해_발행한다() {
+    void 설정한_DLT로_원래_파티션과_메시지를_유지해_발행한다(String operation) {
         var kafka = (KafkaTemplate<String, String>) mock(KafkaTemplate.class);
         var consumer = mock(Consumer.class);
         when(consumer.partitionsFor(eq("configured-trip-dlt"), any(Duration.class))).thenReturn(List.of(
@@ -44,12 +46,12 @@ class TripCreationKafkaConfigurationTest {
         var metadata = new RecordMetadata(new TopicPartition("configured-trip-dlt", 1), 0, 0, 0, 1, 7);
         when(kafka.send(any(ProducerRecord.class)))
                 .thenReturn(CompletableFuture.completedFuture(new SendResult<>(published, metadata)));
-        var factory = new TripCreationKafkaConfiguration().tripResultKafkaListenerContainerFactory(
-                mock(ConcurrentKafkaListenerContainerFactoryConfigurer.class),
-                mock(ConsumerFactory.class),
-                kafka,
-                "configured-trip-dlt"
-        );
+        var configuration = new TripCreationKafkaConfiguration();
+        var configurer = mock(ConcurrentKafkaListenerContainerFactoryConfigurer.class);
+        var consumerFactory = mock(ConsumerFactory.class);
+        var factory = "update".equals(operation)
+                ? configuration.tripUpdateResultKafkaListenerContainerFactory(configurer, consumerFactory, kafka, "configured-trip-dlt")
+                : configuration.tripResultKafkaListenerContainerFactory(configurer, consumerFactory, kafka, "configured-trip-dlt");
         var handler = (DefaultErrorHandler) ReflectionTestUtils.getField(factory, "commonErrorHandler");
         var record = new ConsumerRecord<>("trip-result", 1, 10, "7", "{broken");
 

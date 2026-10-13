@@ -17,6 +17,17 @@ import tools.jackson.core.JacksonException;
 public class TripCreationKafkaConfiguration {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<Object, Object>
+    tripUpdateResultKafkaListenerContainerFactory(
+            ConcurrentKafkaListenerContainerFactoryConfigurer configurer,
+            ConsumerFactory<Object, Object> consumerFactory,
+            KafkaTemplate<String, String> kafka,
+            @Value("${app.kafka.dead-letter-topics.trip-update-result}") String deadLetterTopic
+    ) {
+        return tripResultKafkaListenerContainerFactory(configurer, consumerFactory, kafka, deadLetterTopic);
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<Object, Object>
     tripResultKafkaListenerContainerFactory(
             ConcurrentKafkaListenerContainerFactoryConfigurer configurer,
             ConsumerFactory<Object, Object> consumerFactory,

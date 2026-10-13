@@ -25,6 +25,18 @@ import java.util.ArrayList;
 import java.util.List;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import java.util.Optional;
+import java.time.LocalDateTime;
+import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadBatchSnapshot;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Isolation;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.cfg.DateTimeFeature;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 
 
@@ -38,6 +50,10 @@ public class AdditionalAttachmentUploadTransactionService {
     private final StoredFileRepository storedFileRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final UserStatsService userStatsService;
+    private final AdditionalAttachmentExecutionRepository executionRepository;
+    private final EntityManager entityManager;
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
 
     @Transactional
@@ -240,6 +256,82 @@ public class AdditionalAttachmentUploadTransactionService {
                 List.copyOf(items),
                 batch.getLastBatch()
         );
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Optional<AdditionalAttachmentUploadBatchSnapshot> claimBatch() {
+        for (AdditionalAttachmentUploadBatch candidate : uploadBatchRepository.findPendingConversion(
+                databaseTime(), PageRequest.of(0, 20))) {
+            Trip trip = tripRepository.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId())
+                    .orElse(null);
+            if (trip == null || trip.getProcessingStatus() != ProcessingStatus.COMPLETED) continue;
+            AdditionalAttachmentExecution execution = executionRepository.findForUpdate(candidate.getAdditionId())
+                    .orElse(null);
+            if (execution == null) continue;
+            entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
+            AdditionalAttachmentUploadBatch batch = uploadBatchRepository.findForUpdate(
+                    candidate.getUploadId(), candidate.getTripId(), candidate.getUserId()).orElse(null);
+            if (batch == null) continue;
+            entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
+            LocalDateTime now = databaseTime();
+            if (execution.isTerminal()
+                    || !execution.getTripId().equals(batch.getTripId())
+                    || !execution.getUserId().equals(batch.getUserId())
+                    || (batch.getStatus() != AdditionalAttachmentUploadStatus.VERIFIED
+                        && batch.getStatus() != AdditionalAttachmentUploadStatus.CONVERTING)
+                    || (batch.getLeaseExpiresAt() != null && batch.getLeaseExpiresAt().isAfter(now))
+                    || (batch.getNextAttemptAt() != null && batch.getNextAttemptAt().isAfter(now))) continue;
+            if (batch.getStatus() == AdditionalAttachmentUploadStatus.CONVERTING) {
+                batch.releaseConversion(batch.getWorkerToken());
+            }
+            batch.claimConversion(UUID.randomUUID().toString(), now.plusMinutes(10));
+            return Optional.of(snapshot(batch));
+        }
+        return Optional.empty();
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public boolean renewLease(AdditionalAttachmentUploadBatchSnapshot claim) {
+        AdditionalAttachmentUploadBatch batch = currentClaim(claim);
+        if (batch == null) return false;
+        batch.renewConversion(claim.workerToken(), databaseTime().plusMinutes(10));
+        return true;
+    }
+
+    private AdditionalAttachmentUploadBatch currentClaim(AdditionalAttachmentUploadBatchSnapshot claim) {
+        Trip trip = tripRepository.findOwnedActiveForUpdate(claim.tripId(), claim.userId()).orElse(null);
+        if (trip == null || trip.getProcessingStatus() != ProcessingStatus.COMPLETED) return null;
+        AdditionalAttachmentExecution execution = executionRepository.findForUpdate(claim.executionId()).orElse(null);
+        if (execution == null) return null;
+        entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
+        if (execution.isTerminal() || !execution.getTripId().equals(claim.tripId())
+                || !execution.getUserId().equals(claim.userId())) return null;
+        AdditionalAttachmentUploadBatch batch = uploadBatchRepository.findForUpdate(
+                claim.uploadId(), claim.tripId(), claim.userId()).orElse(null);
+        if (batch == null) return null;
+        entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
+        return batch.getAdditionId().equals(claim.executionId())
+                && batch.getId().equals(claim.batchId())
+                && batch.isConversionOwner(claim.workerToken())
+                && batch.getLeaseExpiresAt() != null
+                && batch.getLeaseExpiresAt().isAfter(databaseTime()) ? batch : null;
+    }
+
+    private LocalDateTime databaseTime() {
+        return jdbcTemplate.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+    }
+
+    private AdditionalAttachmentUploadBatchSnapshot snapshot(AdditionalAttachmentUploadBatch batch) {
+        var photos = uploadItemRepository.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()).stream()
+                .map(item -> new AdditionalAttachmentUploadBatchSnapshot.Photo(
+                        item.getId(), item.getOriginalFileName(), item.getContentType(), item.getSizeBytes(),
+                        item.getObjectKey(), item.getConversionAttempts(), item.getConversionNextAttemptAt(),
+                        item.getDerivedJson() == null ? null : objectMapper.readerFor(DerivedPhotoKeys.class)
+                                .without(DateTimeFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE)
+                                .readValue(item.getDerivedJson())))
+                .toList();
+        return new AdditionalAttachmentUploadBatchSnapshot(batch.getId(), batch.getUploadId(), batch.getAdditionId(),
+                batch.getTripId(), batch.getUserId(), batch.getWorkerToken(), photos);
     }
 
     @Transactional

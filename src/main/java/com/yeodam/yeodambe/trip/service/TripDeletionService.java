@@ -11,12 +11,13 @@ import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionOperations;
-
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -30,13 +31,18 @@ public class TripDeletionService {
     private final TripAttachmentRepository attachments;
     private final StoredFileRepository files;
     private final UserStatsService userStats;
-    private final TransactionOperations transactions;
+    private final PlatformTransactionManager transactionManager;
     private final MeterRegistry meterRegistry;
 
-    public void delete(Long tripId, Long userId) {
+    public void delete(
+            Long tripId,
+            Long userId
+    ) {
         Timer.Sample sample = Timer.start(meterRegistry);
         String outcome = "success";
 
+        TransactionTemplate transactions = new TransactionTemplate(transactionManager);
+        transactions.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
         try {
             transactions.executeWithoutResult(status -> deleteInTransaction(tripId, userId));
         } catch (RuntimeException failure) {
@@ -49,7 +55,10 @@ public class TripDeletionService {
         }
     }
 
-    private void deleteInTransaction(Long tripId, Long userId) {
+    private void deleteInTransaction(
+            Long tripId,
+            Long userId
+    ) {
         Trip trip = trips.findOwnedActiveForUpdate(tripId, userId)
                 .orElseThrow(TripNotFoundException::new);
 

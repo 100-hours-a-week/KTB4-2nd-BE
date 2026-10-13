@@ -7,11 +7,13 @@ import com.yeodam.yeodambe.trip.repository.TripStorageObjectKeys;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -20,24 +22,27 @@ public class UserStatsService {
     private final UserStatsRepository userStats;
     private final TripRepository trips;
     private final TripAttachmentRepository attachments;
+    private final EntityManager entityManager;
 
     public void refreshFromActiveTrips(Long userId) {
-        UserStats stats = userStats.findActiveByUserIdForUpdate(userId)
-                .orElseThrow(() -> new IllegalStateException("사용자 통계가 없습니다."));
+        refreshActiveTripUsage(userId, lockStats(userId));
+    }
+
+    private void refreshActiveTripUsage(
+            Long userId,
+            UserStats stats
+    ) {
         List<TripStorageObjectKeys> active = attachments.findAllForStats(
                 userId, ProcessingStatus.COMPLETED);
 
         Map<String, Long> sizesByKey = new HashMap<>();
         for (TripStorageObjectKeys keys : active) {
             addStorageSize(sizesByKey, keys.originalKey(), keys.originalSizeBytes());
-            addStorageSize(sizesByKey, keys.analyzeKey(), keys.analyzeSizeBytes());
-            addStorageSize(sizesByKey, keys.previewKey(), keys.previewSizeBytes());
-            addStorageSize(sizesByKey, keys.displayKey(), keys.displaySizeBytes());
         }
 
         long storageUsedBytes = sizesByKey.values().stream()
                 .mapToLong(Long::longValue)
-                .sum();
+                .reduce(0L, Math::addExact);
 
         stats.replaceActiveTripUsage(
                 trips.countByUserIdAndProcessingStatusAndDeletedAtIsNull(
@@ -46,7 +51,35 @@ public class UserStatsService {
                 storageUsedBytes);
     }
 
-    private void addStorageSize(Map<String, Long> sizesByKey, String objectKey, Long sizeBytes) {
+    public void reserveInitialUpload(
+            Long userId,
+            long bytes
+    ) {
+        UserStats stats = lockStats(userId);
+        refreshActiveTripUsage(userId, stats);
+        stats.reserveStorage(bytes);
+    }
+
+    public void releaseInitialUploadReservation(
+            Long userId,
+            long bytes
+    ) {
+        lockStats(userId).releaseStorageReservation(bytes);
+    }
+
+    private UserStats lockStats(Long userId) {
+        UserStats stats = userStats.findActiveByUserIdForUpdate(userId)
+                .orElseThrow(() -> new IllegalStateException(UserInternalErrorMessage.USER_STATS_MISSING.message()));
+        entityManager.flush();
+        entityManager.refresh(stats, LockModeType.PESSIMISTIC_WRITE);
+        return stats;
+    }
+
+    private void addStorageSize(
+            Map<String, Long> sizesByKey,
+            String objectKey,
+            Long sizeBytes
+    ) {
         if (objectKey == null || objectKey.isBlank()) {
             return;
         }

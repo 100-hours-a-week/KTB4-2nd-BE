@@ -1,6 +1,5 @@
 package com.yeodam.yeodambe.trip.service.request;
 
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 
 import java.time.LocalDate;
@@ -14,9 +13,7 @@ public record TripCreateRequest(
         @NotNull
         LocalDate endDate,
         @NotNull @Size(min = 1, max = 10)
-        List<@NotNull @Pattern(regexp = "\\d{5}") String> regionCodes,
-        @NotNull @Size(min = 1, max = 200)
-        List<@NotNull @Valid TripAttachmentMetadataRequest> attachmentMetadata
+        List<@NotNull @Pattern(regexp = "\\d{5}") String> regionCodes
 ) {
     @AssertTrue
     public boolean isTripNameLengthValid() {

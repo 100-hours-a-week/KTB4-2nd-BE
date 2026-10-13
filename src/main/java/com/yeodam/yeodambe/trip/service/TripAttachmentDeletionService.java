@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -32,8 +33,11 @@ public class TripAttachmentDeletionService {
     private final TripAttachmentRepository tripAttachmentRepository;
     private final UserStatsService userStats;
 
-    @Transactional
-    public void deleteOne(Long userId, Long tripAttachmentId) {
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void deleteOne(
+            Long userId,
+            Long tripAttachmentId
+    ) {
         TripAttachment attachment = tripAttachmentRepository
                 .findAccessibleById(tripAttachmentId, userId)
                 .orElseThrow(AttachmentNotFoundException::new);
@@ -41,8 +45,11 @@ public class TripAttachmentDeletionService {
         softDelete(List.of(attachment), userId);
     }
 
-    @Transactional
-    public void deleteBulk(Long userId, List<Long> tripAttachmentIds) {
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void deleteBulk(
+            Long userId,
+            List<Long> tripAttachmentIds
+    ) {
         validateIds(tripAttachmentIds);
 
         List<TripAttachment> attachments = tripAttachmentRepository
@@ -72,7 +79,10 @@ public class TripAttachmentDeletionService {
         }
     }
 
-    private void softDelete(List<TripAttachment> attachments, Long userId) {
+    private void softDelete(
+            List<TripAttachment> attachments,
+            Long userId
+    ) {
         LocalDateTime deletedAt = LocalDateTime.now();
 
         List<TripDetailPlace> affectedPlaces = attachments.stream()

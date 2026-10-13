@@ -90,6 +90,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.INVALID_SEARCH_QUERY, null);
     }
 
+    @ExceptionHandler(AiQueryTimeoutException.class)
+    @ResponseStatus(HttpStatus.GATEWAY_TIMEOUT)
+    ApiResponse<Void> handleAiQueryTimeout(AiQueryTimeoutException e) {
+        logFailure(log.atWarn(), ErrorMessage.SEARCH_SERVICE_TIMEOUT,
+                "AI 검색 처리 시간이 초과됐습니다.", e);
+        return new ApiResponse<>(ErrorMessage.SEARCH_SERVICE_TIMEOUT, null);
+    }
+
     @ExceptionHandler(AiQueryUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handleAiQueryUnavailable(AiQueryUnavailableException e) {

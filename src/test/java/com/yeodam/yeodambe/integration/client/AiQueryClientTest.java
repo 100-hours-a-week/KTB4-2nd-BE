@@ -5,12 +5,15 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.sun.net.httpserver.HttpServer;
 import com.yeodam.yeodambe.common.exception.AiQueryUnavailableException;
+import com.yeodam.yeodambe.common.exception.AiQueryTimeoutException;
 import com.yeodam.yeodambe.integration.service.request.AiQueryParseRequest;
 import com.yeodam.yeodambe.integration.service.request.AiQuerySearchRequest;
 import com.yeodam.yeodambe.integration.service.response.AiQueryParseResponse.Intent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.web.client.RestClient;
@@ -162,12 +165,64 @@ class AiQueryClientTest {
     }
 
     @Test
-    void 읽기_시간_초과와_연결_거부를_검색_서비스_예외로_변환한다() {
-        delayMillis = 500;
-        assertThatThrownBy(() -> client.parse(new AiQueryParseRequest("바다 사진", null)))
-                .isInstanceOf(AiQueryUnavailableException.class).hasCause(null);
+    void 연결_거부는_검색_서비스_불가_예외로_변환한다() {
         server.stop(0);
         assertThatThrownBy(() -> client.parse(new AiQueryParseRequest("바다 사진", null)))
                 .isInstanceOf(AiQueryUnavailableException.class).hasCause(null);
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parse", "search"})
+    void AI의_504는_민감정보_없이_시간_초과_예외로_구분한다(String stage) {
+        status = 504;
+        response = "secret-key private-query";
+        assertThatThrownBy(() -> request(stage))
+                .hasMessage(null)
+                .hasCause(null)
+                .isExactlyInstanceOf(AiQueryTimeoutException.class);
+        assertSafeFailureLogs(stage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parse", "search"})
+    void 읽기_시간_초과는_민감정보_없이_시간_초과_예외로_구분한다(String stage) {
+        delayMillis = 500;
+        assertThatThrownBy(() -> request(stage))
+                .hasMessage(null)
+                .hasCause(null)
+                .isExactlyInstanceOf(AiQueryTimeoutException.class);
+        assertSafeFailureLogs(stage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parse", "search"})
+    void 모델이나_벡터_DB를_사용할_수_없으면_서비스_불가_예외로_구분한다(String stage) {
+        status = 503;
+        response = "secret-key private-query";
+        assertThatThrownBy(() -> request(stage))
+                .isExactlyInstanceOf(AiQueryUnavailableException.class)
+                .hasMessage(null)
+                .hasCause(null);
+        assertSafeFailureLogs(stage);
+    }
+
+    private void request(String stage) {
+        if ("parse".equals(stage)) {
+            client.parse(new AiQueryParseRequest("private-query", null));
+        } else {
+            client.search(new AiQuerySearchRequest(
+                    "private-query", Intent.QUESTION, "바다", List.of(), 30));
+        }
+    }
+
+    private void assertSafeFailureLogs(String stage) {
+        assertThat(logs.list).isNotEmpty();
+        for (ILoggingEvent event : logs.list) {
+            assertThat(event.getThrowableProxy()).isNull();
+            assertThat(event.getFormattedMessage()).doesNotContain("secret-key", "private-query", baseUrl());
+            assertThat(event.getKeyValuePairs().toString()).contains(stage)
+                    .doesNotContain("secret-key", "private-query", baseUrl());
+        }
+    }
+
 }

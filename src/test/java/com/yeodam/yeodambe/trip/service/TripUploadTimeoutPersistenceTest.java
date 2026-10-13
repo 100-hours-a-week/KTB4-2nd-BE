@@ -2,15 +2,18 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -21,6 +24,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 
@@ -28,12 +32,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest(properties = {"spring.flyway.enabled=false", "spring.jpa.hibernate.ddl-auto=create-drop"})
 class TripUploadTimeoutPersistenceTest {
-    @Autowired private TripRepository trips;
-    @Autowired private TripAttachmentRepository attachments;
-    @Autowired private StoredFileRepository files;
-    @Autowired private UserRepository users;
-    @Autowired private EntityManager entityManager;
-    @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired
+    private TripRepository trips;
+    @Autowired
+    private TripAttachmentRepository attachments;
+    @Autowired
+    private StoredFileRepository files;
+    @Autowired
+    private UserRepository users;
+    @Autowired
+    private EntityManager entityManager;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -49,7 +59,10 @@ class TripUploadTimeoutPersistenceTest {
                 List.of(new InitialUploadExecutionRegistry.StoredPhoto(file, attachment,
                         new DerivedPhotoKeys("original", "analyze", "preview"))), false);
         TripUploadTimeoutService service = new TripUploadTimeoutService(registry, trips,
-                new TransactionTemplate(transactionManager), Clock.fixed(start.plusSeconds(600), ZoneOffset.UTC));
+                new TransactionTemplate(transactionManager), Clock.fixed(start.plusSeconds(600), ZoneOffset.UTC),
+                Mockito.mock(TripCreationExecutionRepository.class),
+                mockUploadTransactions(),
+                Mockito.mock(TripPhotoAnalysisService.class));
 
         service.failExpiredUploads();
         entityManager.clear();
@@ -65,5 +78,10 @@ class TripUploadTimeoutPersistenceTest {
         assertThat(savedAttachment.getAnalyzeStorageKey()).isEqualTo("analyze");
         assertThat(savedAttachment.getPreviewStorageKey()).isEqualTo("preview");
         assertThat(registry.isCurrent(trip.getId(), reservation.executionId())).isFalse();
+    }
+    private InitialAttachmentUploadTransactionService mockUploadTransactions() {
+        var transactions = Mockito.mock(InitialAttachmentUploadTransactionService.class);
+        Mockito.when(transactions.databaseTime()).thenReturn(LocalDateTime.now());
+        return transactions;
     }
 }

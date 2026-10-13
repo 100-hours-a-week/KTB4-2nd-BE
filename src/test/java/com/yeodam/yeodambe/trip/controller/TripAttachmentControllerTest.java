@@ -1,66 +1,60 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
+import com.yeodam.yeodambe.common.exception.InvalidAttachmentIssueException;
+import com.yeodam.yeodambe.common.exception.InvalidCursorException;
+import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
+import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
 import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.response.AttachmentRestoreResponse;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
-import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
-import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
-import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
-import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
-import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
-import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
-import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.user.service.UserStatsService;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
-import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
-import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
-import com.yeodam.yeodambe.common.exception.InvalidAttachmentIssueException;
-import com.yeodam.yeodambe.common.exception.InvalidCursorException;
-import com.yeodam.yeodambe.common.exception.TripNotFoundException;
-import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
-import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
 import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
+import com.yeodam.yeodambe.user.service.UserStatsService;
+import org.hamcrest.Matchers;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class TripAttachmentControllerTest {
-    private final TripAttachmentService service = mock(TripAttachmentService.class);
     private final TripAttachmentListService listService = mock(TripAttachmentListService.class);
     private final TripAttachmentDetailService detailService = mock(TripAttachmentDetailService.class);
     private final TripAttachmentDeletionService deletionService = mock(TripAttachmentDeletionService.class);
@@ -72,15 +66,16 @@ class TripAttachmentControllerTest {
             mock(UnclassifiedFolderListService.class);
     private final TripAttachmentRestoreService restoreService =
             mock(TripAttachmentRestoreService.class);
+    private final InitialAttachmentUploadCompletionService uploadCompletion =
+            mock(InitialAttachmentUploadCompletionService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
-            service,
             listService,
             detailService,
             deletionService,
             downloadService,
             bulkDownloadService,
             uploadUrlService,
-            mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class),
+            uploadCompletion,
             additionalUploadUrlService,
             unclassifiedFolderListService,
             restoreService
@@ -118,7 +113,7 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.data.items[0].issue").value("BLURRY"))
                 .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(31))
                 .andExpect(jsonPath("$.data.hasNext").value(false))
-                .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data.nextCursor").value(Matchers.nullValue()));
 
         verify(unclassifiedFolderListService).findAttachments(1L, 7L, "BLURRY", "cursor");
     }
@@ -145,7 +140,7 @@ class TripAttachmentControllerTest {
                 .build()
                 .perform(get("/trips/7/unclassified-folders/UNCLEAR_LOCATION/attachments"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(Matchers.nullValue()))
                 .andExpect(jsonPath("$.data.hasNext").value(true))
                 .andExpect(jsonPath("$.data.nextCursor").value("next-cursor"));
     }
@@ -171,7 +166,7 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.data.attachmentCount").value(0))
                 .andExpect(jsonPath("$.data.items").isEmpty())
                 .andExpect(jsonPath("$.data.hasNext").value(false))
-                .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data.nextCursor").value(Matchers.nullValue()));
     }
 
     @ParameterizedTest
@@ -200,7 +195,7 @@ class TripAttachmentControllerTest {
                 .perform(get("/trips/7/unclassified-folders/BLURRY/attachments"))
                 .andExpect(status().is(statusCode))
                 .andExpect(jsonPath("$.message").value(message))
-                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data").value(Matchers.nullValue()));
     }
 
     @Test
@@ -276,119 +271,6 @@ class TripAttachmentControllerTest {
     }
 
     @Test
-    void 마지막_배치_필드를_서비스에_전달하고_완료_응답을_반환한다() throws Exception {
-        when(service.uploadInitialAttachments(eq(7L), eq(1L), anyList(), eq(2), eq(11), eq(true)))
-                .thenReturn(Optional.of(completed(11)));
-
-        MockMvcBuilders.standaloneSetup(controller)
-                .setCustomArgumentResolvers(authenticationPrincipalResolver())
-                .build()
-                .perform(multipart("/trips/7/initial-attachments")
-                        .file(photo())
-                        .param("batchNo", "2")
-                        .param("totalAttachmentCount", "11")
-                        .param("complete", "true"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("TRIP_PROCESSING_STATUS_FOUND"))
-                .andExpect(jsonPath("$.data.tripId").value(7))
-                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
-                .andExpect(jsonPath("$.data.progress.done").value(11))
-                .andExpect(jsonPath("$.data.progress.total").value(11))
-                .andExpect(jsonPath("$.data.currentStep").doesNotExist())
-                .andExpect(jsonPath("$.data.result.tripId").value(7))
-                .andExpect(jsonPath("$.data.result.placeFolderCount").value(1))
-                .andExpect(jsonPath("$.data.result.classifiedAttachmentCount").value(11))
-                .andExpect(jsonPath("$.data.result.unclassifiedAttachmentCount").value(0))
-                .andExpect(jsonPath("$.data.error").doesNotExist());
-
-        verify(service).uploadInitialAttachments(eq(7L), eq(1L), argThat(files ->
-                        files.size() == 1 && files.getFirst().getOriginalFilename().equals("photo.jpg")),
-                eq(2), eq(11), eq(true));
-    }
-
-    @Test
-    void 중간_배치가_저장되면_본문_없이_204를_반환한다() throws Exception {
-        when(service.uploadInitialAttachments(eq(7L), eq(1L), anyList(), eq(1), eq(11), eq(false)))
-                .thenReturn(Optional.empty());
-
-        MockMvcBuilders.standaloneSetup(controller)
-                .setCustomArgumentResolvers(authenticationPrincipalResolver())
-                .build()
-                .perform(multipart("/trips/7/initial-attachments")
-                        .file(photo())
-                        .param("batchNo", "1")
-                        .param("totalAttachmentCount", "11")
-                        .param("complete", "false"))
-                .andExpect(status().isNoContent())
-                .andExpect(jsonPath("$").doesNotExist());
-    }
-
-    @Test
-    void 첨부가_누락되거나_비어_있으면_업로드를_시작하지_않는다() {
-        for (List<MultipartFile> files : List.of(Collections.<MultipartFile>emptyList(), List.<MultipartFile>of(emptyPhoto()))) {
-            var response = controller.uploadInitialAttachments(7L, jwt(), files, 1, 1, true);
-
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-            assertThat(response.getBody().message()).isEqualTo("INVALID_ATTACHMENT_UPLOAD");
-        }
-        var missing = controller.uploadInitialAttachments(7L, jwt(), null, 1, 1, true);
-        assertThat(missing.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(missing.getBody().message()).isEqualTo("INVALID_ATTACHMENT_UPLOAD");
-        verifyNoInteractions(service);
-    }
-
-    @Test
-    void 열한_장은_서비스에_전달하지_않는다() {
-        var response = controller.uploadInitialAttachments(
-                7L, jwt(), Collections.nCopies(11, photo()), 1, 11, true);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONTENT_TOO_LARGE);
-        assertThat(response.getBody().message()).isEqualTo("ATTACHMENT_UPLOAD_LIMIT_EXCEEDED");
-        verifyNoInteractions(service);
-    }
-
-    @Test
-    void 배치_필드가_누락되거나_범위를_벗어나면_400을_반환한다() {
-        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), null, 1, true)
-                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), 0, 1, true)
-                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), 1, null, true)
-                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), 1, 0, true)
-                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), 1, 201, true)
-                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(controller.uploadInitialAttachments(7L, jwt(), List.of(photo()), 1, 1, null)
-                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        verifyNoInteractions(service);
-    }
-
-    @Test
-    void AI가_명시적으로_실패하면_200과_FAILED_오류를_반환한다() {
-        var files = List.<MultipartFile>of(photo());
-        when(service.uploadInitialAttachments(7L, 1L, files, 1, 1, true))
-                .thenReturn(Optional.of(new TripProcessingStatusResponse(
-                        7L,
-                        TripProcessingStatusResponse.Status.FAILED,
-                        new TripProcessingStatusResponse.Progress(12, 128),
-                        null,
-                        null,
-                        new TripProcessingStatusResponse.Error(
-                                "AI_PROCESSING_FAILED", "첨부 처리에 실패했습니다.")
-                )));
-
-        var response = controller.uploadInitialAttachments(7L, jwt(), files, 1, 1, true);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");
-        assertThat(response.getBody().data().status()).isEqualTo(TripProcessingStatusResponse.Status.FAILED);
-        assertThat(response.getBody().data().result()).isNull();
-        assertThat(response.getBody().data().error().code()).isEqualTo("AI_PROCESSING_FAILED");
-        assertThat(response.getBody().data().error().message()).isEqualTo("첨부 처리에 실패했습니다.");
-    }
-
-    @Test
     void API_접두사가_있는_JSON_완료_요청에_uploadId가_없으면_400을_반환한다() throws Exception {
         MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(authenticationPrincipalResolver())
@@ -400,7 +282,7 @@ class TripAttachmentControllerTest {
                         .contentType("application/json").content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_ATTACHMENT_UPLOAD"));
-        verifyNoInteractions(service);
+        verifyNoInteractions(uploadCompletion);
     }
 
     @Test
@@ -463,16 +345,15 @@ class TripAttachmentControllerTest {
         TripAttachmentDeletionService realDeletionService =
                 new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), repository, stats);
         TripAttachmentController realController = new TripAttachmentController(
-                service,
-                listService,
+                    listService,
                 detailService,
                 realDeletionService,
                 downloadService,
                 bulkDownloadService,
                 uploadUrlService,
-                mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class),
+                uploadCompletion,
                 additionalUploadUrlService,
-                mock(com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService.class),
+                mock(UnclassifiedFolderListService.class),
                 restoreService
         );
         String ids = LongStream.rangeClosed(1, 201)
@@ -616,32 +497,14 @@ class TripAttachmentControllerTest {
 
             @Override
             public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer container,
-                                          NativeWebRequest request, org.springframework.web.bind.support.WebDataBinderFactory binderFactory) {
+                                          NativeWebRequest request, WebDataBinderFactory binderFactory) {
                 return jwt();
             }
         };
-    }
-
-    private MockMultipartFile photo() {
-        return new MockMultipartFile("attachments[]", "photo.jpg", "image/jpeg", new byte[]{(byte) 0xff, (byte) 0xd8, (byte) 0xff});
     }
 
     private Jwt jwt() {
         return Jwt.withTokenValue("token").header("alg", "HS256").subject("1").build();
     }
 
-    private MockMultipartFile emptyPhoto() {
-        return new MockMultipartFile("attachments[]", "empty.jpg", "image/jpeg", new byte[0]);
-    }
-
-    private TripProcessingStatusResponse completed(int total) {
-        return new TripProcessingStatusResponse(
-                7L,
-                TripProcessingStatusResponse.Status.COMPLETED,
-                new TripProcessingStatusResponse.Progress(total, total),
-                null,
-                new TripProcessingStatusResponse.Result(7L, 1, total, 0),
-                null
-        );
-    }
 }

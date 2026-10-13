@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -29,12 +30,12 @@ class UserStatsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new UserStatsService(userStats, trips, attachments);
+        service = new UserStatsService(userStats, trips, attachments, mock(EntityManager.class));
         when(userStats.findActiveByUserIdForUpdate(1L)).thenReturn(Optional.of(stats));
     }
 
     @Test
-    void DB에_저장된_원본과_파생_용량으로_통계를_교체한다() {
+    void 원본만_사용자_용량으로_집계한다() {
         TripStorageObjectKeys active = keys("original-1", "analyze-1", "preview-1", "display-1");
         TripStorageObjectKeys unclassified = keys("original-2", "analyze-2", "preview-2", null);
         when(trips.countByUserIdAndProcessingStatusAndDeletedAtIsNull(
@@ -46,7 +47,7 @@ class UserStatsServiceTest {
 
         assertThat(stats.getTripCount()).isEqualTo(2L);
         assertThat(stats.getAttachmentCount()).isEqualTo(2L);
-        assertThat(stats.getStorageUsedBytes()).isEqualTo(70L);
+        assertThat(stats.getStorageUsedBytes()).isEqualTo(20L);
     }
 
     @Test
@@ -58,7 +59,7 @@ class UserStatsServiceTest {
 
         service.refreshFromActiveTrips(1L);
 
-        assertThat(stats.getStorageUsedBytes()).isEqualTo(40L);
+        assertThat(stats.getStorageUsedBytes()).isEqualTo(10L);
     }
 
     @Test
@@ -68,7 +69,7 @@ class UserStatsServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {0, 1, 2, 3})
+    @ValueSource(ints = {0})
     void 키가_있는_파일의_용량이_누락되면_기존_통계를_유지하고_실패한다(int missingIndex) {
         Long[] sizes = {10L, 20L, 30L, 40L};
         sizes[missingIndex] = null;
@@ -106,7 +107,7 @@ class UserStatsServiceTest {
 
         service.refreshFromActiveTrips(1L);
 
-        assertThat(stats.getStorageUsedBytes()).isEqualTo(3_000_000_250L);
+        assertThat(stats.getStorageUsedBytes()).isEqualTo(3_000_000_000L);
     }
 
     private TripStorageObjectKeys keys(

@@ -52,6 +52,24 @@ public class InitialAttachmentUploadItem {
     )
     private LocalDateTime createdAt;
 
+    @Column(name = "conversion_attempts", nullable = false)
+    private int conversionAttempts;
+
+    @Column(name = "conversion_started_at")
+    private LocalDateTime conversionStartedAt;
+
+    @Column(name = "conversion_next_attempt_at")
+    private LocalDateTime conversionNextAttemptAt;
+
+    @Column(name = "derived_json", columnDefinition = "LONGTEXT")
+    private String derivedJson;
+
+    @Column(name = "cleanup_json", columnDefinition = "LONGTEXT")
+    private String cleanupJson;
+
+    @Column(name = "cleanup_started_at")
+    private LocalDateTime cleanupStartedAt;
+
     public InitialAttachmentUploadItem(
             InitialAttachmentUploadBatch batch,
             Integer fileOrder,
@@ -74,5 +92,28 @@ public class InitialAttachmentUploadItem {
 
     public void recordTakenAt(OffsetDateTime takenAt) {
         takenAtWithOffset = takenAt == null ? null : takenAt.toString();
+    }
+    public void startConversion(LocalDateTime now) {
+        conversionAttempts++;
+        conversionStartedAt = now;
+    }
+
+    public void conversionCompleted(String derivedJson) {
+        this.derivedJson = derivedJson;
+        conversionStartedAt = null;
+        conversionNextAttemptAt = null;
+    }
+
+    public void conversionFailed(LocalDateTime next) {
+        conversionStartedAt = null;
+        conversionNextAttemptAt = next;
+    }
+
+    public void recordCleanup(
+            String json,
+            LocalDateTime earliest
+    ) {
+        cleanupJson = json;
+        cleanupStartedAt = earliest;
     }
 }

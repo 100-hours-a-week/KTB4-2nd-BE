@@ -1,9 +1,13 @@
 package com.yeodam.yeodambe.trip.service;
 
-import com.yeodam.yeodambe.story.repository.StoryRepository;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
-import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
@@ -15,21 +19,15 @@ import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.RegionCatalog;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
-import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
-import com.yeodam.yeodambe.trip.exception.TripCreationMetadataMissingException;
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -73,52 +71,23 @@ class TripServiceTest {
                 tripAttachmentRepository,
                 tripAttachmentStorageClient,
                 tripAccessService,
-                new tools.jackson.databind.ObjectMapper(),
+                new ObjectMapper(),
                 mock(StoryRepository.class)
         );
     }
 
     @Test
-    void 직접_생성도_정보가_없으면_조회와_저장_전에_거절한다() {
-        var request = new TripCreateRequest(
-                "여행", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 2),
-                List.of("50110"), List.of(new TripAttachmentMetadataRequest(null, null, null))
-        );
+    void 메타데이터_없이_여행과_지역을_저장한다() {
+        givenRegion();
+        givenSavedTrip();
 
-        assertThrows(TripCreationMetadataMissingException.class,
-                () -> tripService.createTrip(1L, request));
-        verifyNoInteractions(tripRepository, tripRegionRepository, regionCatalog,
-                tripAttachmentRepository, tripAttachmentStorageClient);
-    }
+        var response = tripService.createTrip(1L,
+                request(LocalDate.now(), LocalDate.now(), List.of("50110")));
 
-    @Test
-    void 모든_사진에_정보가_없으면_저장소_접근_없이_생성을_거절한다() {
-        var result = tripService.validateCreation(List.of(
-                new TripAttachmentMetadataRequest(null, null, null),
-                new TripAttachmentMetadataRequest(null, null, null)
-        ));
-
-        assertThat(result.canCreate()).isFalse();
-        assertThat(result.reasonCode()).isEqualTo("ALL_PHOTOS_METADATA_MISSING");
-        verifyNoInteractions(tripRepository, tripRegionRepository, regionCatalog,
-                tripAttachmentRepository, tripAttachmentStorageClient, tripAccessService);
-    }
-
-    @Test
-    void 촬영시각이나_GPS가_한장에라도_있으면_저장소_접근_없이_허용한다() {
-        var missing = new TripAttachmentMetadataRequest(null, null, null);
-        var timestamp = new TripAttachmentMetadataRequest(
-                OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null);
-        var gps = new TripAttachmentMetadataRequest(null, BigDecimal.ZERO, BigDecimal.ZERO);
-
-        for (var metadata : List.of(List.of(timestamp), List.of(gps),
-                List.of(missing, timestamp), List.of(gps, missing))) {
-            var result = tripService.validateCreation(metadata);
-            assertThat(result.canCreate()).isTrue();
-            assertThat(result.reasonCode()).isNull();
-        }
-        verifyNoInteractions(tripRepository, tripRegionRepository, regionCatalog,
-                tripAttachmentRepository, tripAttachmentStorageClient, tripAccessService);
+        assertThat(response.tripId()).isEqualTo(7L);
+        assertThat(response.status()).isEqualTo(ProcessingStatus.PROCESSING);
+        verify(tripRegionRepository).saveAll(anyList());
+        verifyNoInteractions(tripAttachmentRepository, tripAttachmentStorageClient);
     }
 
     @Test
@@ -402,15 +371,26 @@ class TripServiceTest {
         verifyNoInteractions(tripAttachmentRepository);
     }
 
-    private void assertInvalid(LocalDate start, LocalDate end, List<String> codes) {
+    private void assertInvalid(
+            LocalDate start,
+            LocalDate end,
+            List<String> codes
+    ) {
         assertThrows(InvalidTripRequestException.class,
                 () -> tripService.createTrip(1L, request(start, end, codes)));
     }
 
-    private TripCreateRequest request(LocalDate start, LocalDate end, List<String> codes) {
-        return new TripCreateRequest("여행", start, end, codes,
-                List.of(new TripAttachmentMetadataRequest(
-                        OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)));
+    private TripCreateRequest request(
+            LocalDate start,
+            LocalDate end,
+            List<String> codes
+    ) {
+        return new TripCreateRequest(
+                "여행",
+                start,
+                end,
+                codes
+        );
     }
 
     private void givenRegion() {
@@ -426,7 +406,10 @@ class TripServiceTest {
         });
     }
 
-    private Trip mapTrip(Long tripId, String tripName) {
+    private Trip mapTrip(
+            Long tripId,
+            String tripName
+    ) {
         Trip trip = mock(Trip.class);
         when(trip.getId()).thenReturn(tripId);
         when(trip.getTripName()).thenReturn(tripName);
@@ -466,7 +449,10 @@ class TripServiceTest {
         logAppender = appender;
     }
 
-    private Object keyValue(ILoggingEvent event, String key) {
+    private Object keyValue(
+            ILoggingEvent event,
+            String key
+    ) {
         return event.getKeyValuePairs().stream()
                 .filter(pair -> key.equals(pair.key))
                 .map(pair -> pair.value)

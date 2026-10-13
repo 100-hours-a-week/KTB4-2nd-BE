@@ -1,64 +1,60 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
-import com.yeodam.yeodambe.story.repository.StoryRepository;
-import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
 import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
-import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripUpdateNotAllowedException;
-import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
-import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
-import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
-import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
-import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
-import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
-import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.story.repository.StoryRepository;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
+import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripRegionName;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.repository.TripRegionName;
+import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
+import com.yeodam.yeodambe.trip.service.request.AttachmentCursor;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
-import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
-import com.yeodam.yeodambe.trip.exception.TripCreationMetadataMissingException;
-import com.yeodam.yeodambe.trip.service.response.TripCreationValidationResponse;
 import com.yeodam.yeodambe.trip.service.request.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
+import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
+import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
+import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
+import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
+import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.spi.LoggingEventBuilder;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.data.domain.PageRequest;
-import org.slf4j.spi.LoggingEventBuilder;
-import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
-import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
-import com.yeodam.yeodambe.common.response.ErrorMessage;
-import com.yeodam.yeodambe.trip.entity.TripAttachment;
-import com.yeodam.yeodambe.trip.service.request.AttachmentCursor;
-import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
-import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import tools.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
 
-
-import java.util.Collection;
-import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.HashSet;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -82,7 +78,10 @@ public class TripService {
     private final StoryRepository storyRepository;
 
     @Transactional(readOnly = true)
-    public List<TripSearchCandidateResponse> findSearchCandidates(Long userId, TripSearchCondition condition) {
+    public List<TripSearchCandidateResponse> findSearchCandidates(
+            Long userId,
+            TripSearchCondition condition
+    ) {
         List<String> regionNames = condition.regionNames() == null
                 ? List.of() : condition.regionNames();
         boolean filterRegions = !regionNames.isEmpty();
@@ -98,7 +97,10 @@ public class TripService {
     }
 
     @Transactional(readOnly = true)
-    public TripSearchResultResponse findSearchResults(Long userId, Collection<Long> attachmentIds) {
+    public TripSearchResultResponse findSearchResults(
+            Long userId,
+            Collection<Long> attachmentIds
+    ) {
         if (attachmentIds.isEmpty()) {
             return new TripSearchResultResponse(List.of(), List.of());
         }
@@ -145,32 +147,11 @@ public class TripService {
                 .toList();
     }
 
-    public TripCreationValidationResponse validateCreation(List<TripAttachmentMetadataRequest> metadata) {
-        boolean canCreate = !allAttachmentsLackMetadata(metadata);
-        return new TripCreationValidationResponse(canCreate,
-                canCreate ? null : ErrorMessage.ALL_PHOTOS_METADATA_MISSING.name());
-    }
-
-    private boolean allAttachmentsLackMetadata(List<TripAttachmentMetadataRequest> metadata) {
-        return metadata.stream()
-                .allMatch(
-                        photo -> photo.takenAt() == null
-                                && photo.latitude() == null && photo.longitude() == null
-                );
-    }
-
-    private void validateCreationMetadata(List<TripAttachmentMetadataRequest> metadata) {
-        if (allAttachmentsLackMetadata(metadata)) {
-            log.atInfo()
-                    .addKeyValue("errorCode", ErrorMessage.ALL_PHOTOS_METADATA_MISSING)
-                    .log("사진 메타데이터가 없어 여행 생성을 거절했습니다.");
-            throw new TripCreationMetadataMissingException();
-        }
-    }
-
     @Transactional
-    public TripCreateResponse createTrip(Long userId, TripCreateRequest request) {
-        validateCreationMetadata(request.attachmentMetadata());
+    public TripCreateResponse createTrip(
+            Long userId,
+            TripCreateRequest request
+    ) {
         validateTrip(
                 request.startDate(),
                 request.endDate(),
@@ -347,7 +328,10 @@ public class TripService {
     }
 
     @Transactional
-    public TripFavoriteResponse registerFavorite(Long tripId, Long userId) {
+    public TripFavoriteResponse registerFavorite(
+            Long tripId,
+            Long userId
+    ) {
         Trip trip = tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
                         tripId, userId, ProcessingStatus.COMPLETED)
                 .orElseThrow(TripNotFoundException::new);
@@ -357,7 +341,10 @@ public class TripService {
     }
 
     @Transactional(readOnly = true)
-    public TripDetailResponse findTripDetail(Long tripId, Long userId) {
+    public TripDetailResponse findTripDetail(
+            Long tripId,
+            Long userId
+    ) {
         long startedAt = System.nanoTime();
 
         log.atInfo()
@@ -441,7 +428,10 @@ public class TripService {
     }
 
     @Transactional
-    public void removeFavorite(Long tripId, Long userId) {
+    public void removeFavorite(
+            Long tripId,
+            Long userId
+    ) {
         Trip trip = tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
                         tripId, userId, ProcessingStatus.COMPLETED)
                 .orElseThrow(TripNotFoundException::new);
@@ -522,7 +512,10 @@ public class TripService {
     }
 
     @Transactional(readOnly = true)
-    public TripListResponse findTrips(Long userId, TripListRequest request) {
+    public TripListResponse findTrips(
+            Long userId,
+            TripListRequest request
+    ) {
         List<Trip> fetched = findTripPage(userId, request);
         boolean hasNext = fetched.size() > TRIP_LIST_SIZE;
         List<Trip> page = hasNext ? fetched.subList(0, TRIP_LIST_SIZE) : fetched;
@@ -577,7 +570,10 @@ public class TripService {
         return new TripListResponse(items, hasNext, nextCursor);
     }
 
-    private List<Trip> findTripPage(Long userId, TripListRequest request) {
+    private List<Trip> findTripPage(
+            Long userId,
+            TripListRequest request
+    ) {
         TripListCursor cursor = request.cursor();
         if (!request.favorite()) {
             return findGroup(userId, request.sort(), null, cursor, TRIP_LIST_FETCH_SIZE);

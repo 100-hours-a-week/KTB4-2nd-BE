@@ -15,16 +15,15 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Consumer;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -35,19 +34,16 @@ class TripDeletionServiceTest {
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final StoredFileRepository files = mock(StoredFileRepository.class);
     private final UserStatsService userStats = mock(UserStatsService.class);
-    private final TransactionOperations transactions = mock(TransactionOperations.class);
+    private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     private TripDeletionService service;
 
     @BeforeEach
     void setUp() {
-        doAnswer(invocation -> {
-            Consumer<TransactionStatus> callback = invocation.getArgument(0);
-            callback.accept(mock(TransactionStatus.class));
-            return null;
-        }).when(transactions).executeWithoutResult(any());
-        service = new TripDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
-                trips, regions, places, attachments, files, userStats, transactions, meterRegistry);
+        when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
+        service = new TripDeletionService(
+                mock(AdditionalAttachmentModificationGuard.class),
+                trips, regions, places, attachments, files, userStats, transactionManager, meterRegistry);
     }
 
     @Test

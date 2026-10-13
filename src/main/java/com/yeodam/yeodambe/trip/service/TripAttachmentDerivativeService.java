@@ -91,7 +91,9 @@ public class TripAttachmentDerivativeService {
                     if (failure == null && result.complete(photos)) {
                         return;
                     }
-                    Throwable cause = failure == null ? new CancellationException("사진 변환이 취소됐습니다.") : failure;
+                    Throwable cause = failure == null
+                            ? new CancellationException(TripInternalErrorMessage.PHOTO_CONVERSION_CANCELED.message())
+                            : failure;
                     for (int i = 0; i < uploadedByPhoto.size(); i++) {
                         try {
                             transactions.scheduleCleanupKeys(originalKeys.get(i), uploadedByPhoto.get(i), "CONVERSION_COMPENSATION");
@@ -372,7 +374,7 @@ public class TripAttachmentDerivativeService {
                     .start();
             if (!process.waitFor(120, TimeUnit.SECONDS)) {
                 throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_FAILED.message(),
-                        new TimeoutException("EXIF 추출 프로세스 제한 시간 초과"));
+                        new TimeoutException(TripInternalErrorMessage.EXIF_PROCESS_TIMEOUT.message()));
             }
             if (process.exitValue() != 0) {
                 throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_FAILED.message());
@@ -485,7 +487,7 @@ public class TripAttachmentDerivativeService {
 
             if (!process.waitFor(120, TimeUnit.SECONDS)) {
                 throw new IllegalStateException(TripInternalErrorMessage.COMMAND_TIMEOUT.message().formatted(command[0]),
-                        new TimeoutException("사진 변환 프로세스 제한 시간 초과"));
+                        new TimeoutException(TripInternalErrorMessage.PHOTO_CONVERSION_PROCESS_TIMEOUT.message()));
             }
             if (process.exitValue() != 0) {
                 throw new IllegalStateException(TripInternalErrorMessage.COMMAND_FAILED.message().formatted(command[0]));

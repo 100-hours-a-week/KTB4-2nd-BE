@@ -2,9 +2,13 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
+import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import com.yeodam.yeodambe.trip.service.InitialUploadExecutionRegistry;
 import com.yeodam.yeodambe.trip.service.TripAnalysisResultService;
 import com.yeodam.yeodambe.user.service.UserStatsService;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -28,7 +32,12 @@ class TripAnalysisResultServiceTest {
     private final InitialUploadExecutionRegistry executions = new InitialUploadExecutionRegistry();
     private final UserStatsService userStats = mock(UserStatsService.class);
     private final TripAnalysisResultService service = new TripAnalysisResultService(
-            trips, attachments, places, executions, userStats, mock(com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository.class));
+            trips, attachments, places, executions, userStats, mock(InitialAttachmentUploadBatchRepository.class),
+                mock(TripCreationExecutionRepository.class),
+                mock(InitialAttachmentUploadItemRepository.class),
+                mock(InitialAttachmentUploadTransactionService.class),
+                new ObjectMapper(),
+                mock(EntityManager.class));
     private final ObjectMapper json = new ObjectMapper();
 
     @Test

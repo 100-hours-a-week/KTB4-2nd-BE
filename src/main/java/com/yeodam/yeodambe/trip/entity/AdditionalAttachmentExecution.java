@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -209,6 +211,15 @@ public class AdditionalAttachmentExecution {
         resultClaimToken = null;
         resultLeaseUntil = null;
         resultNextAttemptAt = next;
+    }
+
+    public void accountPhoto(long bytes) {
+        if (reservationReleased || bytes < 0 || bytes > reservedBytes) {
+            throw new IllegalStateException(
+                    UserInternalErrorMessage.USER_STATS_NEGATIVE.message());
+        }
+        accountedBytes = Math.addExact(accountedBytes, bytes);
+        reservedBytes -= bytes;
     }
 
     public void releaseReservation(long accountedBytes) {

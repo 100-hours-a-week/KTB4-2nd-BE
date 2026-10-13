@@ -181,6 +181,23 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
+    void transfersSavedPhotoBytesFromReservationToAccountedAndRejectsOverSettlement() {
+        var execution = new AdditionalAttachmentExecution(
+                UUID.randomUUID().toString(), 1L, 2L, 2, LocalDateTime.now());
+        execution.reserve(3072L);
+        execution.accountPhoto(1024L);
+        assertThat(execution.getReservedBytes()).isEqualTo(2048L);
+        assertThat(execution.getAccountedBytes()).isEqualTo(1024L);
+        assertThatThrownBy(() -> execution.accountPhoto(2049L)).isInstanceOf(IllegalStateException.class);
+        assertThat(execution.getReservedBytes()).isEqualTo(2048L);
+        execution.accountPhoto(2048L);
+        execution.releaseReservation(execution.getAccountedBytes());
+        assertThat(execution.getAccountedBytes()).isEqualTo(3072L);
+        assertThat(execution.getReservedBytes()).isZero();
+        assertThatThrownBy(() -> execution.accountPhoto(0L)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void rejectsReservationOverflowWithoutReplacingPreviousAmount() {
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 1, LocalDateTime.now());

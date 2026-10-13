@@ -348,6 +348,10 @@ public class AdditionalAttachmentUploadTransactionService {
         }
         saveAttachment(claim.tripId(), claim.userId(), item, photo);
         item.conversionCompleted(objectMapper.writeValueAsString(photo));
+        AdditionalAttachmentExecution execution = executionRepository.findById(claim.executionId()).orElseThrow();
+        userStatsService.releaseInitialUploadReservation(claim.userId(), item.getSizeBytes());
+        execution.accountPhoto(item.getSizeBytes());
+        userStatsService.refreshFromActiveTrips(claim.userId());
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

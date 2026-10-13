@@ -41,7 +41,9 @@ class AdditionalAttachmentConversionClaimTest {
         jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET next_attempt_at = '2099-01-01'");
         var user = new User(UUID.randomUUID() + "@yeodam.test", "claim");
         entityManager.persist(user);
-        entityManager.persist(new UserStats(user));
+        var stats = new UserStats(user);
+        stats.reserveStorage(1024L);
+        entityManager.persist(stats);
         var trip = new Trip(user.getUserId(), "claim", LocalDate.now(), LocalDate.now());
         entityManager.persist(trip);
         jdbcTemplate.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", trip.getId());
@@ -49,6 +51,7 @@ class AdditionalAttachmentConversionClaimTest {
         execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), trip.getId(), user.getUserId(), 1, LocalDateTime.now());
         entityManager.persist(execution);
+        execution.reserve(1024L);
         batch = new AdditionalAttachmentUploadBatch(UUID.randomUUID().toString(), execution.getExecutionId(),
                 trip.getId(), user.getUserId(), 1, 1, true);
         entityManager.persist(batch);
@@ -120,6 +123,13 @@ class AdditionalAttachmentConversionClaimTest {
         assertThat(item.getTripAttachmentId()).isNotNull();
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trip_attachments WHERE trip_id = ?",
                 Integer.class, claim.tripId())).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT storage_reserved_bytes FROM user_stats WHERE user_id = ?",
+                Long.class, claim.userId())).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT storage_used_bytes FROM user_stats WHERE user_id = ?",
+                Long.class, claim.userId())).isEqualTo(1024L);
+        assertThat(entityManager.find(AdditionalAttachmentExecution.class, claim.executionId()).getReservedBytes()).isZero();
+        assertThat(entityManager.find(AdditionalAttachmentExecution.class, claim.executionId()).getAccountedBytes())
+                .isEqualTo(1024L);
         assertThatThrownBy(() -> service.startPhotoAttempt(claim, itemId)).isInstanceOf(IllegalStateException.class);
     }
 

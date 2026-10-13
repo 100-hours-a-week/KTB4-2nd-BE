@@ -37,6 +37,9 @@ import static org.mockito.Mockito.*;
 class AdditionalAttachmentReanalysisIntegrationTest {
     @Autowired private AdditionalAttachmentUploadUrlService urls;
     @Autowired private AdditionalAttachmentUploadCompletionService completion;
+    @Autowired private AdditionalAttachmentUploadOutboxService outboxService;
+    @Autowired private AdditionalAttachmentUploadOutboxRepository outboxes;
+    @Autowired private ObjectMapper applicationMapper;
     @Autowired private AdditionalAttachmentUploadTransactionService transactions;
     @Autowired private AdditionalAttachmentAnalysisPreparationService preparation;
     @Autowired private AdditionalAttachmentAnalysisResultService results;
@@ -96,6 +99,75 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         when(kakao.lookup(any(), any())).thenReturn(new KakaoLocalClient.LookupResult("새 장소", "서울", KakaoLocalClient.Failure.NONE));
         additionId = UUID.randomUUID().toString();
         uploadId = urls.issueUploadUrls(tripId, userId, request(1, 1, true)).uploadId();
+    }
+
+    @Test
+    void commitsBothPreparedMessagesAndReusesOriginalPublicationRecords() {
+        var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
+        var saved = outboxService.save(tripId, userId, uploadId, prepared, "request-first");
+        var ready = outboxes.findById(saved.photosReady().getId()).orElseThrow();
+        var process = outboxes.findById(saved.process().orElseThrow().getId()).orElseThrow();
+        assertThat(json.readTree(ready.getPayload())).isEqualTo(json.readTree(applicationMapper.writeValueAsString(prepared.photosReady())));
+        assertThat(json.readTree(process.getPayload())).isEqualTo(json.readTree(applicationMapper.writeValueAsString(prepared.process().orElseThrow())));
+        assertThat(ready.getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PENDING);
+        assertThat(process.getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PENDING);
+        jdbc.update("UPDATE additional_attachment_upload_outbox SET status = 'PUBLISHED', attempt_count = 1 "
+                + "WHERE outbox_id = ?", ready.getId());
+
+        var repeated = outboxService.save(tripId, userId, uploadId, prepared, "request-repeated");
+        assertThat(repeated.photosReady().getId()).isEqualTo(ready.getId());
+        assertThat(repeated.process().orElseThrow().getId()).isEqualTo(process.getId());
+        assertThat(repeated.photosReady().getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PUBLISHED);
+        assertThat(repeated.photosReady().getAttemptCount()).isEqualTo(1);
+        assertThat(repeated.photosReady().getRequestId()).isEqualTo("request-first");
+        assertThat(repeated.process().orElseThrow().getRequestId()).isEqualTo("request-first");
+        assertThat(repeated.photosReady().getPayload()).isEqualTo(ready.getPayload());
+        assertThat(outboxCount()).isEqualTo(2);
+    }
+
+    @Test
+    void savesOnlyPhotosReadyForIntermediateBatch() {
+        jdbc.update("UPDATE additional_attachment_upload_batches SET is_last_batch = false, "
+                + "total_attachment_count = 2 WHERE upload_id = ?", uploadId);
+        var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
+        assertThat(prepared.process()).isEmpty();
+        var saved = outboxService.save(tripId, userId, uploadId, prepared, "request-intermediate");
+        assertThat(saved.process()).isEmpty();
+        assertThat(saved.photosReady().getMessageType()).isEqualTo("photos_ready");
+        assertThat(outboxCount()).isEqualTo(1);
+    }
+
+    @Test
+    void rollsBackPhotosReadyWhenProcessInsertFailsButKeepsPreparedPhotos() {
+        var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
+        var process = prepared.process().orElseThrow();
+        var invalid = new com.yeodam.yeodambe.integration.service.request.PhotoProcessMessage(
+                "invalid", process.tripId(), process.executionId(), process.tripName(),
+                process.period(), process.regions(), process.attachments());
+        var messages = new AdditionalAttachmentUploadCompletionService.PreparedQueueBatch(
+                prepared.photosReady(), Optional.of(invalid));
+        assertThatThrownBy(() -> outboxService.save(tripId, userId, uploadId, messages, "request-invalid"))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(outboxCount()).isZero();
+        assertThat(batchStatus()).isEqualTo("PREPARED");
+        assertThat(attachments.findById(oldPhotoId)).isPresent();
+        assertThat(prepared.process().orElseThrow().attachments()).allSatisfy(photo ->
+                assertThat(attachments.findById(photo.tripAttachmentId())).isPresent());
+    }
+
+    @Test
+    void rejectsOutboxSaveForDifferentOwnerWithoutWritingMessages() {
+        var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
+        Long otherUserId = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원")).getUserId();
+        assertThatThrownBy(() -> outboxService.save(tripId, otherUserId, uploadId, prepared, "request-other"))
+                .isInstanceOf(InvalidAttachmentUploadException.class);
+        assertThat(outboxCount()).isZero();
+    }
+
+    private Integer outboxCount() {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM additional_attachment_upload_outbox o "
+                + "JOIN additional_attachment_upload_batches b ON b.upload_batch_id = o.upload_batch_id "
+                + "WHERE b.addition_id = ?", Integer.class, additionId);
     }
 
     @Test

@@ -14,6 +14,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
@@ -185,6 +187,66 @@ class AdditionalAttachmentUploadSchemaTest {
         insertItem(batchId, 1);
         assertThatThrownBy(() -> insertItem(batchId, 1))
                 .isInstanceOf(DuplicateKeyException.class);
+    }
+
+    @Test
+    void storesBothMessageTypesAndPreservesLargePayloadWithPendingDefaults() {
+        Long batchId = insertBatch(UUID.randomUUID().toString(), UUID.randomUUID().toString(), 2);
+        String payload = "{\"content\":\"" + "x".repeat(70_000) + "\"}";
+        insertOutbox(batchId, "photos_ready", payload);
+        insertOutbox(batchId, "process", "{}");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '17' AND success = 1",
+                Integer.class)).isEqualTo(1);
+        var stored = jdbcTemplate.queryForMap("""
+                SELECT payload, request_id, status, attempt_count, last_error,
+                       published_at, created_at, updated_at
+                FROM additional_attachment_upload_outbox
+                WHERE upload_batch_id = ? AND message_type = 'photos_ready'
+                """, batchId);
+        assertThat(stored.get("payload")).isEqualTo(payload);
+        assertThat(stored.get("request_id")).isEqualTo("outbox-test-request");
+        assertThat(stored.get("status")).isEqualTo("PENDING");
+        assertThat(((Number) stored.get("attempt_count")).intValue()).isZero();
+        assertThat(stored.get("last_error")).isNull();
+        assertThat(stored.get("published_at")).isNull();
+        assertThat(stored.get("created_at")).isNotNull();
+        assertThat(stored.get("updated_at")).isNotNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM additional_attachment_upload_outbox WHERE upload_batch_id = ?",
+                Integer.class, batchId)).isEqualTo(2);
+    }
+
+    @Test
+    void rejectsDuplicateOutboxMessageTypeForSameBatch() {
+        Long batchId = insertBatch(UUID.randomUUID().toString(), UUID.randomUUID().toString(), 1);
+        insertOutbox(batchId, "photos_ready", "{}");
+        assertThatThrownBy(() -> insertOutbox(batchId, "photos_ready", "{}"))
+                .isInstanceOf(DuplicateKeyException.class);
+    }
+
+    @Test
+    void rejectsOutboxForMissingBatchAndUnsupportedTypeOrStatus() {
+        assertThatThrownBy(() -> insertOutbox(Long.MAX_VALUE, "photos_ready", "{}"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        Long batchId = insertBatch(UUID.randomUUID().toString(), UUID.randomUUID().toString(), 1);
+        assertThatThrownBy(() -> insertOutbox(batchId, "story", "{}"))
+                .isInstanceOf(UncategorizedSQLException.class)
+                .hasMessageContaining("ck_additional_outbox_message_type");
+        insertOutbox(batchId, "photos_ready", "{}");
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "UPDATE additional_attachment_upload_outbox SET status = 'COMPLETED' WHERE upload_batch_id = ?",
+                batchId)).isInstanceOf(UncategorizedSQLException.class)
+                .hasMessageContaining("ck_additional_outbox_status");
+    }
+
+    private void insertOutbox(Long batchId, String type, String payload) {
+        jdbcTemplate.update("""
+                INSERT INTO additional_attachment_upload_outbox
+                    (upload_batch_id, message_type, payload, request_id)
+                VALUES (?, ?, ?, ?)
+                """, batchId, type, payload, "outbox-test-request");
     }
 
     private Long insertBatch(String uploadId, String additionId, int batchNo) {

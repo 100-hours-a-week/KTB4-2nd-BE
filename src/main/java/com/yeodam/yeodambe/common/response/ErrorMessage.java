@@ -2,7 +2,6 @@ package com.yeodam.yeodambe.common.response;
 
 public enum ErrorMessage {
     ACCOUNT_ALREADY_REGISTERED,
-    ALL_PHOTOS_METADATA_MISSING,
     AI_STATUS_UNAVAILABLE,
     ATTACHMENT_NOT_FOUND,
     ATTACHMENT_RESTORE_NOT_ALLOWED,

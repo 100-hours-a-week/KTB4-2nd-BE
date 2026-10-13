@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.integration.config;
 
+import org.apache.kafka.common.TopicPartition;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.kafka.autoconfigure.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,11 +20,15 @@ public class TripCreationKafkaConfiguration {
     tripResultKafkaListenerContainerFactory(
             ConcurrentKafkaListenerContainerFactoryConfigurer configurer,
             ConsumerFactory<Object, Object> consumerFactory,
-            KafkaTemplate<String, String> kafka
+            KafkaTemplate<String, String> kafka,
+            @Value("${app.kafka.dead-letter-topics.trip-create-result}") String deadLetterTopic
     ) {
         var factory = new ConcurrentKafkaListenerContainerFactory<Object, Object>();
         configurer.configure(factory, consumerFactory);
-        var recoverer = new DeadLetterPublishingRecoverer(kafka);
+        var recoverer = new DeadLetterPublishingRecoverer(
+                kafka,
+                (record, failure) -> new TopicPartition(deadLetterTopic, record.partition())
+        );
         recoverer.setFailIfSendResultIsError(true);
         var errors = new DefaultErrorHandler(
                 recoverer, new FixedBackOff(1000L,

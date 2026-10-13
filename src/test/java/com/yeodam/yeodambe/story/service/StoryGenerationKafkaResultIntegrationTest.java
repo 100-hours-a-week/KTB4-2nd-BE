@@ -99,7 +99,7 @@ class StoryGenerationKafkaResultIntegrationTest {
         }
         registry.add("app.kafka.topics.story-create-result", () -> TOPIC);
         registry.add("app.story.result-consumer-group", () -> GROUP);
-        registry.add("app.story.result-dead-letter-topic", () -> DLT);
+        registry.add("app.kafka.dead-letter-topics.story-create-result", () -> DLT);
     }
 
     @AfterAll

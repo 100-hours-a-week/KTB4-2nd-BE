@@ -10,6 +10,8 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration;
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties;
@@ -49,6 +51,36 @@ class KafkaEnvironmentTest {
             assertThat(producer).containsEntry(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
             assertThat(producer).doesNotContainKey(SaslConfigs.SASL_JAAS_CONFIG);
         });
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "trip-create-request, KAFKA_TRIP_CREATE_REQUEST_DLT_TOPIC, test.trip-create.request-dlt",
+            "trip-create-result, KAFKA_TRIP_CREATE_RESULT_DLT_TOPIC, test.trip-create.result-dlt",
+            "trip-update-request, KAFKA_TRIP_UPDATE_REQUEST_DLT_TOPIC, test.trip-update.request-dlt",
+            "trip-update-result, KAFKA_TRIP_UPDATE_RESULT_DLT_TOPIC, test.trip-update.result-dlt",
+            "story-create-request, KAFKA_STORY_CREATE_REQUEST_DLT_TOPIC, test.story-create.request-dlt",
+            "story-create-result, KAFKA_STORY_CREATE_RESULT_DLT_TOPIC, test.story-create.result-dlt"
+    })
+    void 모든_DLT는_업무_토픽에서_도출하고_환경변수로_변경한다(
+            String topicKey,
+            String environmentVariable,
+            String defaultTopic
+    ) {
+        String property = "app.kafka.dead-letter-topics." + topicKey;
+
+        context("local").run(application -> {
+            assertThat(application).hasNotFailed();
+            assertThat(application.getEnvironment().getProperty(property)).isEqualTo(defaultTopic);
+        });
+
+        context("local")
+                .withPropertyValues(environmentVariable + "=staging.custom-topic-dlt")
+                .run(application -> {
+                    assertThat(application).hasNotFailed();
+                    assertThat(application.getEnvironment().getProperty(property))
+                            .isEqualTo("staging.custom-topic-dlt");
+                });
     }
 
     @Test

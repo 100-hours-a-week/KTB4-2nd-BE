@@ -69,7 +69,7 @@ public class UserStatsService {
 
     private UserStats lockStats(Long userId) {
         UserStats stats = userStats.findActiveByUserIdForUpdate(userId)
-                .orElseThrow(() -> new IllegalStateException("사용자 통계가 없습니다."));
+                .orElseThrow(() -> new IllegalStateException(UserInternalErrorMessage.USER_STATS_MISSING.message()));
         entityManager.flush();
         entityManager.refresh(stats, LockModeType.PESSIMISTIC_WRITE);
         return stats;

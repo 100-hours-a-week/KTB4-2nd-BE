@@ -12,6 +12,44 @@ class TripPhotoAnalysisServiceTest {
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
+    void V2_대기_응답도_진행률을_검증한다() {
+        var invalid = json.readTree("""
+                {"trip_id":7,"execution_id":"run","status":"QUEUED",
+                 "progress":{"done":9,"total":1},"current_step":null}
+                """);
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateStatusResponse(7L, "run", invalid));
+    }
+
+    @Test
+    void V2_완료_조회는_결과_본문_없이_종료_상태를_읽는다() {
+        var completed = json.readTree("""
+                {"trip_id":7,"execution_id":"run","status":"COMPLETED",
+                 "progress":{"done":2,"total":2},"current_step":null}
+                """);
+        assertEquals(TripPhotoAnalysisStatusResponse.Status.COMPLETED,
+                TripPhotoAnalysisService.validateStatusResponse(7L, "run", completed).status());
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateStatusResponse(7L, "other", completed));
+    }
+
+    @Test
+    void V2_진행률_정수_오버플로와_알수없는_단계는_거부한다() {
+        var response = json.readTree("""
+                {"trip_id":7,"execution_id":"run","status":"PROCESSING",
+                 "progress":{"done":4294967296,"total":4294967298},"current_step":"EMBEDDING"}
+                """);
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateStatusResponse(7L, "run", response));
+        var unknown = json.readTree("""
+                {"trip_id":7,"execution_id":"run","status":"PROCESSING",
+                 "progress":{"done":0,"total":2},"current_step":"UNKNOWN"}
+                """);
+        assertThrows(IllegalStateException.class,
+                () -> TripPhotoAnalysisService.validateStatusResponse(7L, "run", unknown));
+    }
+
+    @Test
     void 현재_실행_ID와_다른_AI_응답은_거부한다() {
         var response = json.readTree("""
                 {"trip_id":7,"execution_id":"old-run","status":"COMPLETED",

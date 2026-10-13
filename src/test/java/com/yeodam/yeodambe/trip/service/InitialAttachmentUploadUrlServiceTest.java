@@ -3,44 +3,39 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException;
-import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
-import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
-import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
-import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadBatch;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadItem;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import org.junit.jupiter.api.Test;
+
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Map;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class InitialAttachmentUploadUrlServiceTest {
     private static final long MIB = 1024L * 1024;
     private final InitialAttachmentUploadItemRepository items = mock(InitialAttachmentUploadItemRepository.class);
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
-    private final InitialAttachmentUploadUrlService service = new InitialAttachmentUploadUrlService(
-            mock(InitialAttachmentUploadBatchRepository.class),
-            items,
-            mock(TripRepository.class),
-            mock(TripAttachmentRepository.class),
-            storage);
+    private final InitialAttachmentUploadTransactionService transactions = mock(InitialAttachmentUploadTransactionService.class);
+    private final InitialAttachmentUploadUrlService service = new InitialAttachmentUploadUrlService(transactions, storage);
 
     @Test
     void 필수_헤더와_10분_유효기간이_있는_파일_URL을_순서대로_발급한다() {
@@ -50,12 +45,18 @@ class InitialAttachmentUploadUrlServiceTest {
         var batch = mock(InitialAttachmentUploadBatch.class);
         when(batch.getId()).thenReturn(7L);
         when(batch.getUploadId()).thenReturn("upload-id");
-        var subject = spy(service);
-        doReturn(batch).when(subject).prepareBatch(10L, 2L, request);
+        var subject = service;
         var savedItems = List.of(
                 savedItem("same.jpg", "image/jpeg", "key-one"),
                 savedItem("same.jpg", "image/png", "key-two"));
         when(items.findAllByBatch_IdOrderByFileOrderAsc(7L)).thenReturn(savedItems);
+        var photos = savedItems.stream().map(item ->
+                new InitialAttachmentUploadBatchSnapshot.Photo(
+                        1L, item.getOriginalFileName(), item.getContentType(), 1024L, item.getObjectKey(), 0, null, null)).toList();
+        when(transactions.prepareBatch(10L, 2L, request)).thenReturn(
+                new InitialAttachmentUploadBatchSnapshot(
+                        7L, "upload-id", "execution", 10L, 2L, 1, 2, true,
+                        InitialAttachmentUploadStatus.PENDING, null, photos));
         when(storage.createUploadUrl("key-one", "image/jpeg", Duration.ofMinutes(10)))
                 .thenReturn("https://example.test/one");
         when(storage.createUploadUrl("key-two", "image/png", Duration.ofMinutes(10)))
@@ -83,7 +84,11 @@ class InitialAttachmentUploadUrlServiceTest {
         verify(storage, times(2)).createUploadUrl("key-two", "image/png", Duration.ofMinutes(10));
     }
 
-    private InitialAttachmentUploadItem savedItem(String name, String type, String key) {
+    private InitialAttachmentUploadItem savedItem(
+            String name,
+            String type,
+            String key
+    ) {
         var item = mock(InitialAttachmentUploadItem.class);
         when(item.getOriginalFileName()).thenReturn(name);
         when(item.getContentType()).thenReturn(type);
@@ -177,7 +182,11 @@ class InitialAttachmentUploadUrlServiceTest {
         return new InitialAttachmentUploadUrlRequest(1, total, complete, files);
     }
 
-    private InitialAttachmentUploadUrlRequest.Attachment file(String name, String contentType, long bytes) {
+    private InitialAttachmentUploadUrlRequest.Attachment file(
+            String name,
+            String contentType,
+            long bytes
+    ) {
         return new InitialAttachmentUploadUrlRequest.Attachment(name, contentType, bytes);
     }
 }

@@ -17,7 +17,9 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.user.entity.User;
+import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserRepository;
+import com.yeodam.yeodambe.user.repository.UserStatsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +31,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -40,14 +43,24 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class InitialAttachmentUploadPreparationTest {
-    @Autowired private InitialAttachmentUploadUrlService service;
-    @Autowired private InitialAttachmentUploadBatchRepository batches;
-    @Autowired private InitialAttachmentUploadItemRepository items;
-    @Autowired private TripRepository trips;
-    @Autowired private UserRepository users;
-    @Autowired private StoredFileRepository files;
-    @Autowired private TripAttachmentRepository attachments;
-    @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private InitialAttachmentUploadTransactionService service;
+    @Autowired
+    private InitialAttachmentUploadBatchRepository batches;
+    @Autowired
+    private InitialAttachmentUploadItemRepository items;
+    @Autowired
+    private TripRepository trips;
+    @Autowired
+    private UserRepository users;
+    @Autowired
+    private StoredFileRepository files;
+    @Autowired
+    private TripAttachmentRepository attachments;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private UserStatsRepository userStats;
 
     private User owner;
     private Trip trip;
@@ -55,6 +68,7 @@ class InitialAttachmentUploadPreparationTest {
     @BeforeEach
     void setUp() {
         owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "배치회원"));
+        userStats.save(new UserStats(owner));
         trip = trips.save(new Trip(owner.getUserId(), "배치여행", LocalDate.now(), LocalDate.now()));
     }
 
@@ -103,13 +117,13 @@ class InitialAttachmentUploadPreparationTest {
     }
 
     @Test
-    void 이전_배치_완료_후에만_다음_배치를_허용하고_작업_ID를_유지한다() {
+    void 이전_배치_접수_후에만_다음_배치를_허용하고_작업_ID를_유지한다() {
         InitialAttachmentUploadBatch first = prepare(request(1, 3, false, firstFiles()));
         var secondRequest = request(2, 3, true, List.of(file("third.jpg", 4096)));
         assertThatThrownBy(() -> prepare(secondRequest))
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
 
-        markCompleted(first);
+        markAccepted(first);
         assertThatThrownBy(() -> prepare(request(3, 3, true, secondRequest.attachments())))
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
         assertThatThrownBy(() -> prepare(request(2, 4, false, secondRequest.attachments())))
@@ -132,7 +146,7 @@ class InitialAttachmentUploadPreparationTest {
         assertThat(batches.findFirstByTripIdAndUserIdOrderByIdDesc(trip.getId(), owner.getUserId())).isEmpty();
 
         InitialAttachmentUploadBatch first = prepare(request(1, 3, false, firstFiles()));
-        markCompleted(first);
+        markAccepted(first);
         assertThatThrownBy(() -> prepare(request(2, 3, false, List.of(file("third.jpg", 4096)))))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
         assertThatThrownBy(() -> prepare(request(2, 3, true, firstFiles())))
@@ -168,7 +182,7 @@ class InitialAttachmentUploadPreparationTest {
 
         attachments.deleteById(existing.getId());
         InitialAttachmentUploadBatch last = prepare(request(1, 1, true, List.of(file("first.jpg", 1024))));
-        markCompleted(last);
+        markAccepted(last);
         assertThatThrownBy(() -> prepare(request(2, 1, true, List.of(file("second.jpg", 1024)))))
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
         assertThatThrownBy(() -> prepare(request(1, 1, true, List.of(file("first.jpg", 1024)))))
@@ -181,9 +195,11 @@ class InitialAttachmentUploadPreparationTest {
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         try (var executor = Executors.newFixedThreadPool(2)) {
-            var action = (java.util.concurrent.Callable<InitialAttachmentUploadBatch>) () -> {
+            var action = (Callable<InitialAttachmentUploadBatch>) () -> {
                 ready.countDown();
-                if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timeout");
+                if (!start.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Start timeout");
+                }
                 return prepare(request);
             };
             var first = executor.submit(action);
@@ -204,7 +220,7 @@ class InitialAttachmentUploadPreparationTest {
     }
 
     private InitialAttachmentUploadBatch prepare(InitialAttachmentUploadUrlRequest request) {
-        return service.prepareBatch(trip.getId(), owner.getUserId(), request);
+        return batches.findById(service.prepareBatch(trip.getId(), owner.getUserId(), request).batchId()).orElseThrow();
     }
 
     private List<String> keys(InitialAttachmentUploadBatch batch) {
@@ -212,15 +228,18 @@ class InitialAttachmentUploadPreparationTest {
                 .map(InitialAttachmentUploadItem::getObjectKey).toList();
     }
 
-    private void markCompleted(InitialAttachmentUploadBatch batch) {
-        jdbcTemplate.update("UPDATE initial_attachment_upload_batches SET status = 'COMPLETED' WHERE upload_batch_id = ?", batch.getId());
+    private void markAccepted(InitialAttachmentUploadBatch batch) {
+        service.startProcessing(trip.getId(), owner.getUserId(), batch.getUploadId());
     }
 
     private List<InitialAttachmentUploadUrlRequest.Attachment> firstFiles() {
         return List.of(file("first.jpg", 1024), file("second.jpg", 2048));
     }
 
-    private InitialAttachmentUploadUrlRequest.Attachment file(String name, long bytes) {
+    private InitialAttachmentUploadUrlRequest.Attachment file(
+            String name,
+            long bytes
+    ) {
         return new InitialAttachmentUploadUrlRequest.Attachment(name, "image/jpeg", bytes);
     }
 

@@ -1,18 +1,22 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripProcessingCannotBeCanceledException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
-import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -40,8 +44,8 @@ class TripProcessingCancellationServiceTest {
     private final InitialUploadExecutionRegistry executions = mock(InitialUploadExecutionRegistry.class);
     private final TransactionOperations transactions = mock(TransactionOperations.class);
     private final TripAttachmentDerivativeService derivatives = mock(TripAttachmentDerivativeService.class);
-    private final com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository uploadBatches =
-            mock(com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository.class);
+    private final InitialAttachmentUploadBatchRepository uploadBatches =
+            mock(InitialAttachmentUploadBatchRepository.class);
     private TripProcessingCancellationService service;
 
     @BeforeEach
@@ -51,9 +55,11 @@ class TripProcessingCancellationServiceTest {
             callback.accept(mock(TransactionStatus.class));
             return null;
         }).when(transactions).executeWithoutResult(any());
-        when(executions.snapshot(any())).thenThrow(new com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException());
+        when(executions.snapshot(any())).thenThrow(new TripInitialAttachmentUploadNotAllowedException());
         service = new TripProcessingCancellationService(
-                trips, regions, places, attachments, files, analysis, executions, transactions, uploadBatches, derivatives);
+                trips, regions, places, attachments, files, analysis, executions, transactions, uploadBatches, derivatives,
+                mock(InitialAttachmentUploadTransactionService.class),
+                mock(TripCreationExecutionRepository.class));
     }
 
     @Test
@@ -136,11 +142,13 @@ class TripProcessingCancellationServiceTest {
         var registry = new InitialUploadExecutionRegistry();
         String executionId = registry.reserve(7L);
         var cancellation = new TripProcessingCancellationService(
-                trips, regions, places, attachments, files, analysis, registry, transactions, uploadBatches, derivatives);
+                trips, regions, places, attachments, files, analysis, registry, transactions, uploadBatches, derivatives,
+                mock(InitialAttachmentUploadTransactionService.class),
+                mock(TripCreationExecutionRepository.class));
         when(trips.cancelProcessing(eq(7L), eq(1L), eq(ProcessingStatus.PROCESSING),
                 eq(ProcessingStatus.CANCELED), any(LocalDateTime.class))).thenReturn(1);
         cancellation.cancel(7L, 1L);
-        org.junit.jupiter.api.Assertions.assertFalse(registry.isCurrent(7L, executionId));
+        Assertions.assertFalse(registry.isCurrent(7L, executionId));
         verify(derivatives).cancelExecution(executionId);
         verifyNoInteractions(analysis);
     }
@@ -157,7 +165,7 @@ class TripProcessingCancellationServiceTest {
         when(trips.cancelProcessing(eq(7L), eq(1L), eq(ProcessingStatus.PROCESSING),
                 eq(ProcessingStatus.CANCELED), any(LocalDateTime.class))).thenReturn(1);
         when(uploadBatches.existsByTripIdAndStatus(7L,
-                com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus.ANALYZING)).thenReturn(true);
+                InitialAttachmentUploadStatus.ANALYZING)).thenReturn(true);
 
         service.cancel(7L, 1L);
 
@@ -165,7 +173,10 @@ class TripProcessingCancellationServiceTest {
         verifyNoInteractions(derivatives);
     }
 
-    private Trip trip(ProcessingStatus status, LocalDateTime deletedAt) {
+    private Trip trip(
+            ProcessingStatus status,
+            LocalDateTime deletedAt
+    ) {
         Trip trip = new Trip(1L, "여행", LocalDate.now(), LocalDate.now());
         ReflectionTestUtils.setField(trip, "id", 7L);
         ReflectionTestUtils.setField(trip, "processingStatus", status);

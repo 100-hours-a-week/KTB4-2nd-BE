@@ -2,35 +2,33 @@ package com.yeodam.yeodambe.common.exception;
 
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
-import com.yeodam.yeodambe.trip.exception.TripCreationMetadataMissingException;
-
 import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
-import org.springframework.validation.Errors;
-import org.springframework.validation.BindingResult;
-import org.springframework.validation.method.ParameterErrors;
-
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
 import io.sentry.Sentry;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.slf4j.MDC;
+import org.slf4j.spi.LoggingEventBuilder;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.validation.BindException;
-import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.Errors;
+import org.springframework.validation.method.ParameterErrors;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
-import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
-import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
-import org.springframework.web.HttpMediaTypeNotSupportedException;
-import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.http.ResponseEntity;
-import org.slf4j.spi.LoggingEventBuilder;
 import org.springframework.web.servlet.HandlerMapping;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
 @RestControllerAdvice
@@ -73,6 +71,9 @@ public class GlobalExceptionHandler {
         } else if (errors instanceof ParameterErrors parameterErrors) {
             target = parameterErrors.getArgument();
         }
+        if (target instanceof InitialAttachmentUploadCompleteRequest) {
+            return ErrorMessage.INVALID_ATTACHMENT_UPLOAD;
+        }
         boolean singleRequest = target instanceof AttachmentRestoreRequest;
         boolean bulkRequest = target instanceof BulkAttachmentRestoreRequest;
         if (errors.getFieldErrors().stream().anyMatch(error ->
@@ -97,7 +98,6 @@ public class GlobalExceptionHandler {
                 "AI 검색 서비스를 사용할 수 없습니다.", e);
         return new ApiResponse<>(ErrorMessage.SEARCH_SERVICE_UNAVAILABLE, null);
     }
-
 
     @ExceptionHandler(AiStatusUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
@@ -156,12 +156,6 @@ public class GlobalExceptionHandler {
             return new ApiResponse<>(ErrorMessage.INVALID_STORY_REQUEST, null);
         }
         return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
-    }
-
-    @ExceptionHandler(TripCreationMetadataMissingException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    ApiResponse<Void> handleTripCreationMetadataMissing(TripCreationMetadataMissingException e) {
-        return new ApiResponse<>(ErrorMessage.ALL_PHOTOS_METADATA_MISSING, null);
     }
 
     @ExceptionHandler(InvalidTripRequestException.class)
@@ -383,12 +377,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HandlerMethodValidationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleMethodValidation(HandlerMethodValidationException e) {
-        boolean missingDestination = e.getParameterValidationResults().stream()
+        ErrorMessage error = e.getParameterValidationResults().stream()
                 .filter(ParameterErrors.class::isInstance)
                 .map(ParameterErrors.class::cast)
-                .anyMatch(errors -> validationError(errors) == ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED);
-        return new ApiResponse<>(missingDestination
-                ? ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED : ErrorMessage.INVALID_REQUEST, null);
+                .map(this::validationError)
+                .filter(message -> message != ErrorMessage.INVALID_REQUEST)
+                .findFirst()
+                .orElse(ErrorMessage.INVALID_REQUEST);
+        return new ApiResponse<>(error, null);
     }
 
     @ExceptionHandler(StoryAlreadyExistsException.class)

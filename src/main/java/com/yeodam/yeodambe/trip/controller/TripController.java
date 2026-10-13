@@ -1,43 +1,41 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
-import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
-import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
-import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
-import org.springframework.validation.BindingResult;
-import org.springframework.web.bind.annotation.PatchMapping;
-import com.yeodam.yeodambe.trip.service.TripService;
-import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
-import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
-import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripDeletionService;
+import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
+import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
+import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
+import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
-import com.yeodam.yeodambe.trip.service.request.TripCreationValidationRequest;
-import com.yeodam.yeodambe.trip.service.response.TripCreationValidationResponse;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
+import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
-import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import jakarta.validation.Valid;
-import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.ObjectMapper;
 
 @RestController
 @RequiredArgsConstructor
@@ -48,14 +46,6 @@ public class TripController {
     private final TripPlaceFolderListService tripPlaceFolderListService;
     private final TripDeletionService tripDeletionService;
     private final ObjectMapper objectMapper;
-
-    @PostMapping("/trips/creation-validation")
-    public ResponseEntity<ApiResponse<TripCreationValidationResponse>> validateCreation(
-            @Valid @RequestBody TripCreationValidationRequest request
-    ) {
-        TripCreationValidationResponse data = tripService.validateCreation(request.attachmentMetadata());
-        return ResponseEntity.ok(new ApiResponse<>(SuccessMessage.TRIP_CREATION_VALIDATED, data));
-    }
 
     @PostMapping("/trips")
     public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(

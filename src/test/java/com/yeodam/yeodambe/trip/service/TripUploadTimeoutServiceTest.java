@@ -1,38 +1,56 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
+import com.yeodam.yeodambe.file.entity.StoredFile;
+import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
-import com.yeodam.yeodambe.file.entity.StoredFile;
+import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.transaction.support.TransactionTemplate;
+
 import java.time.*;
+import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.ExecutionException;
-import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class TripUploadTimeoutServiceTest {
     private final AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-10-02T00:00:00Z"));
     private final Clock clock = new Clock() {
-        public ZoneId getZone() { return ZoneOffset.UTC; }
-        public Clock withZone(ZoneId zone) { return this; }
-        public Instant instant() { return now.get(); }
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+        public Instant instant() {
+            return now.get();
+        }
     };
     private final InitialUploadExecutionRegistry registry = new InitialUploadExecutionRegistry(clock);
     private final TripRepository trips = mock(TripRepository.class);
-    private final org.springframework.transaction.support.TransactionOperations tx = new TransactionTemplate() {
-        public <T> T execute(org.springframework.transaction.support.TransactionCallback<T> action) {
-            return action.doInTransaction(mock(org.springframework.transaction.TransactionStatus.class));
+    private final TransactionOperations tx = new TransactionTemplate() {
+        public <T> T execute(TransactionCallback<T> action) {
+            return action.doInTransaction(mock(TransactionStatus.class));
         }
     };
-    private final TripUploadTimeoutService service = new TripUploadTimeoutService(registry, trips, tx, clock);
+    private final TripUploadTimeoutService service = new TripUploadTimeoutService(registry, trips, tx, clock,
+                mock(TripCreationExecutionRepository.class),
+                mockUploadTransactions(),
+                mock(TripPhotoAnalysisService.class));
 
     @Test
     void 중간_배치_완료_10분_후_상태만_FAILED로_바꾸고_예약을_해제한다() {
@@ -133,8 +151,8 @@ class TripUploadTimeoutServiceTest {
         when(trips.findById(7L)).thenReturn(Optional.of(new Trip(1L, "여행", LocalDate.now(), LocalDate.now())));
         var transaction = new TransactionTemplate() {
             private boolean first = true;
-            public <T> T execute(org.springframework.transaction.support.TransactionCallback<T> action) {
-                T result = action.doInTransaction(mock(org.springframework.transaction.TransactionStatus.class));
+            public <T> T execute(TransactionCallback<T> action) {
+                T result = action.doInTransaction(mock(TransactionStatus.class));
                 if (first) {
                     first = false;
                     throw new IllegalStateException("commit failed");
@@ -142,7 +160,10 @@ class TripUploadTimeoutServiceTest {
                 return result;
             }
         };
-        var expiry = new TripUploadTimeoutService(registry, trips, transaction, clock);
+        var expiry = new TripUploadTimeoutService(registry, trips, transaction, clock,
+                mock(TripCreationExecutionRepository.class),
+                mockUploadTransactions(),
+                mock(TripPhotoAnalysisService.class));
         expiry.failExpiredUploads();
         assertTrue(registry.isCurrent(7L, id));
         expiry.failExpiredUploads();
@@ -163,5 +184,10 @@ class TripUploadTimeoutServiceTest {
     private void verifyNoMoreInteractionsAfterRead() {
         verify(trips).findById(7L);
         verifyNoMoreInteractions(trips);
+    }
+    private InitialAttachmentUploadTransactionService mockUploadTransactions() {
+        var transactions = Mockito.mock(InitialAttachmentUploadTransactionService.class);
+        Mockito.when(transactions.databaseTime()).thenReturn(LocalDateTime.now());
+        return transactions;
     }
 }

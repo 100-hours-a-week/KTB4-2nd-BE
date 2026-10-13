@@ -1,37 +1,37 @@
 package com.yeodam.yeodambe.trip.client;
 
-import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
-
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
-import java.net.URLEncoder;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
-
-import java.time.Duration;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.UUID;
 import software.amazon.awssdk.services.s3.model.Tag;
 import software.amazon.awssdk.services.s3.model.Tagging;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 @Component
 public class S3TripAttachmentStorageClient implements TripAttachmentStorageClient {
@@ -62,7 +62,8 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
 
         var s3Builder = S3Client.builder()
                 .region(Region.of(region))
-                .serviceConfiguration(s3Configuration);
+                .serviceConfiguration(s3Configuration)
+                .overrideConfiguration(config -> config.apiCallTimeout(Duration.ofMinutes(1)));
 
         var presignerBuilder = S3Presigner.builder()
                 .region(Region.of(region))
@@ -93,7 +94,10 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     }
 
     @Override
-    public String store(String executionId, MultipartFile file) {
+    public String store(
+            String executionId,
+            MultipartFile file
+    ) {
         String key = "trip-uploads/" + executionId + "/original/" + UUID.randomUUID();
         Timer.Sample sample = Timer.start(meterRegistry);
         String outcome = "success";
@@ -184,7 +188,10 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     }
 
     @Override
-    public String createDownloadUrl(String objectKey, String originalFileName) {
+    public String createDownloadUrl(
+            String objectKey,
+            String originalFileName
+    ) {
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                 .bucket(bucket)
                 .key(objectKey)
@@ -228,7 +235,11 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     }
 
     @Override
-    public String storeDerived(String executionId, Path file, String mimeType) {
+    public String storeDerived(
+            String executionId,
+            Path file,
+            String mimeType
+    ) {
         if (!mimeType.equals("image/jpeg") && !mimeType.equals("image/webp")) {
             throw new IllegalArgumentException(TripInternalErrorMessage.UNSUPPORTED_DERIVATIVE_FILE_FORMAT.message());
         }
@@ -243,6 +254,24 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
             return key;
         } catch (RuntimeException failure) {
             throw new AttachmentStorageException(key, failure);
+        }
+    }
+
+    @Override
+    public String storeDerivedTo(
+            String objectKey,
+            Path file,
+            String mimeType
+    ) {
+        if (!Set.of("image/jpeg", "image/webp").contains(mimeType)) {
+            throw new IllegalArgumentException("지원하지 않는 파생본 형식입니다.");
+        }
+        try {
+            s3.putObject(request -> request.bucket(bucket).key(objectKey).contentType(mimeType)
+                    .tagging("status=retained"), RequestBody.fromFile(file));
+            return objectKey;
+        } catch (RuntimeException failure) {
+            throw new AttachmentStorageException(objectKey, failure);
         }
     }
 

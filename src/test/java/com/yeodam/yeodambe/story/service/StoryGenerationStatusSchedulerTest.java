@@ -35,7 +35,7 @@ class StoryGenerationStatusSchedulerTest {
     private final StoryGenerationJobRepository jobs = mock(StoryGenerationJobRepository.class);
     private final StoryGenerationOutboxRepository outboxes = mock(StoryGenerationOutboxRepository.class);
     private final StoryGenerationStatusSyncService sync = mock(StoryGenerationStatusSyncService.class);
-    private final StoryGenerationStatusScheduler scheduler = new StoryGenerationStatusScheduler(jobs, outboxes, sync);
+    private final StoryGenerationStatusScheduler scheduler = new StoryGenerationStatusScheduler(jobs, outboxes, sync, new StoryGenerationTimeoutService(jobs));
 
     @AfterEach
     void clearMdc() {
@@ -44,7 +44,8 @@ class StoryGenerationStatusSchedulerTest {
 
     @Test
     void queriesOnlyActiveStatesAndPassesEachOriginalRequestId() {
-        when(jobs.findAllByStatusIn(anyList())).thenReturn(List.of(job(10L), job(20L)));
+        var preparedJobs = List.of(job(10L), job(20L));
+        when(jobs.findAllByStatusIn(anyList())).thenReturn(preparedJobs);
         prepareOutbox(10L, "request-10");
         prepareOutbox(20L, "request-20");
         doAnswer(call -> {
@@ -64,7 +65,8 @@ class StoryGenerationStatusSchedulerTest {
     @Test
     void failureDoesNotStopNextJobAndRestoresPreviousRequestId() {
         MDC.put("request_id", "previous-request");
-        when(jobs.findAllByStatusIn(anyList())).thenReturn(List.of(job(10L), job(20L)));
+        var preparedJobs = List.of(job(10L), job(20L));
+        when(jobs.findAllByStatusIn(anyList())).thenReturn(preparedJobs);
         prepareOutbox(10L, "request-10");
         prepareOutbox(20L, "request-20");
         doThrow(new IllegalStateException("test failure")).when(sync).synchronize(10L);
@@ -81,7 +83,8 @@ class StoryGenerationStatusSchedulerTest {
 
     @Test
     void missingOutboxSkipsOnlyThatJob() {
-        when(jobs.findAllByStatusIn(anyList())).thenReturn(List.of(job(10L), job(20L)));
+        var preparedJobs = List.of(job(10L), job(20L));
+        when(jobs.findAllByStatusIn(anyList())).thenReturn(preparedJobs);
         when(outboxes.findByGenerationId(10L)).thenReturn(Optional.empty());
         prepareOutbox(20L, "request-20");
 
@@ -126,6 +129,21 @@ class StoryGenerationStatusSchedulerTest {
         }
     }
 
+    @Test
+    void overdueJobIsFailedWithoutAnotherAiStatusRequest() {
+        var overdue = job(10L);
+        ReflectionTestUtils.setField(overdue, "createdAt", java.time.LocalDateTime.now().minusHours(2));
+        when(jobs.findAllByStatusIn(anyList())).thenReturn(List.of(overdue));
+        when(jobs.findByIdForUpdate(10L)).thenReturn(Optional.of(overdue));
+        prepareOutbox(10L, "request-10");
+
+        scheduler.synchronizePendingJobs();
+
+        assertThat(overdue.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(overdue.getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+        verifyNoInteractions(sync);
+    }
+
     private AnnotationConfigApplicationContext context(boolean enabled) {
         var context = new AnnotationConfigApplicationContext();
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test",
@@ -133,6 +151,7 @@ class StoryGenerationStatusSchedulerTest {
         context.registerBean(StoryGenerationJobRepository.class, () -> jobs);
         context.registerBean(StoryGenerationOutboxRepository.class, () -> outboxes);
         context.registerBean(StoryGenerationStatusSyncService.class, () -> sync);
+        context.registerBean(StoryGenerationTimeoutService.class, () -> new StoryGenerationTimeoutService(jobs));
         context.register(SchedulingConfiguration.class);
         return context;
     }
@@ -150,6 +169,8 @@ class StoryGenerationStatusSchedulerTest {
     private StoryGenerationJob job(Long id) {
         var job = new StoryGenerationJob("execution-" + id, 241L, 2L, Story.Mood.PLAIN);
         ReflectionTestUtils.setField(job, "id", id);
+        ReflectionTestUtils.setField(job, "createdAt", java.time.LocalDateTime.now());
+        when(jobs.findByIdForUpdate(id)).thenReturn(Optional.of(job));
         return job;
     }
 }

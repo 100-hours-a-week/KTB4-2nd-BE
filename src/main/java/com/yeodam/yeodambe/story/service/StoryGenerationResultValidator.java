@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import org.springframework.stereotype.Component;
 import com.yeodam.yeodambe.story.client.request.StoryGenerationMessage;
 
@@ -81,7 +82,7 @@ public class StoryGenerationResultValidator {
     }
 
     private IllegalArgumentException invalidResponse() {
-        return new IllegalArgumentException(
+        return new InvalidStoryResultException(
                 StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
         );
     }

@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.event.StoryCreateResultEvent;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.story.service.StoryGenerationCompletionService;
 import com.yeodam.yeodambe.story.service.StoryGenerationTerminalService;
@@ -43,7 +44,7 @@ public class StoryCreateResultEventHandler
                 || event.status() == null
                 || event.status() == StoryGenerationAiResponse.Status.QUEUED
                 || event.status() == StoryGenerationAiResponse.Status.PROCESSING) {
-            throw new IllegalArgumentException(
+            throw new InvalidStoryResultException(
                     StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
             );
         }
@@ -56,7 +57,7 @@ public class StoryCreateResultEventHandler
         }
 
         if (!job.getTripId().equals(event.tripId())) {
-            throw new IllegalArgumentException(
+            throw new InvalidStoryResultException(
                     StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH.message()
             );
         }

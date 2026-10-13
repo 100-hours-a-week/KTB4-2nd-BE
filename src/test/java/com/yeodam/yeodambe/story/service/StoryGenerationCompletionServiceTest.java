@@ -49,6 +49,9 @@ class StoryGenerationCompletionServiceTest {
     @Autowired private StoryGenerationAcceptanceService acceptance;
     @Autowired private StoryGenerationTerminalService terminal;
     @Autowired private StoryGenerationPublicationStateService publicationState;
+    @Autowired private StoryGenerationTimeoutService timeout;
+    @Autowired private StoryGenerationProgressService progress;
+    @Autowired private StoryGenerationStatusService status;
     @Autowired private StoryGenerationJobRepository jobs;
     @Autowired private UserRepository users;
     @Autowired private TripRepository trips;
@@ -215,6 +218,43 @@ class StoryGenerationCompletionServiceTest {
             second.get(20, TimeUnit.SECONDS);
         }
 
+        assertCompletedOnce();
+    }
+
+    @Test
+    void expiredJobIsPersistedAsFailedAndLateResultAndProgressAreIgnored() {
+        jdbc.update("UPDATE story_generation_jobs SET created_at = ? WHERE generation_id = ?",
+                LocalDateTime.now().minusHours(2), job.getId());
+        assertThat(timeout.expire(job.getId(), LocalDateTime.now())).isTrue();
+
+        progress.updateProcessing(job.getId(), new StoryGenerationAiResponse(trip.getId(), job.getExecutionId(),
+                StoryGenerationAiResponse.Status.PROCESSING, new StoryGenerationAiResponse.Progress(4, 4),
+                null, null, null));
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+
+        var saved = jobs.findById(job.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(saved.getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+        assertThat(count("stories")).isZero();
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
+        var response = status.getStatus(owner.getUserId(), job.getId());
+        assertThat(response.status()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(response.error().code()).isEqualTo("STORY_GENERATION_FAILED");
+    }
+
+    @Test
+    void lateCompletionExpiresJobEvenBeforeNextSchedulerCycle() {
+        jdbc.update("UPDATE story_generation_jobs SET created_at = ? WHERE generation_id = ?",
+                LocalDateTime.now().minusHours(2), job.getId());
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+        assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+        assertThat(count("stories")).isZero();
+    }
+
+    @Test
+    void timeoutCheckAfterCompletionKeepsSavedStory() {
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+        assertThat(timeout.expire(job.getId(), LocalDateTime.now().plusHours(2))).isTrue();
         assertCompletedOnce();
     }
 

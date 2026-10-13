@@ -15,6 +15,10 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import com.yeodam.yeodambe.user.service.UserStatsService;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -22,6 +26,7 @@ import org.mockito.ArgumentCaptor;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -39,9 +44,13 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     private final AdditionalAttachmentUploadItemRepository itemRepository =
             mock(AdditionalAttachmentUploadItemRepository.class);
     private final TripAttachmentRepository attachmentRepository = mock(TripAttachmentRepository.class);
+    private final AdditionalAttachmentExecutionRepository executionRepository =
+            mock(AdditionalAttachmentExecutionRepository.class);
+    private final UserStatsService userStatsService = mock(UserStatsService.class);
+    private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private final AdditionalAttachmentUploadUrlService service = new AdditionalAttachmentUploadUrlService(
             tripRepository, batchRepository, itemRepository, attachmentRepository,
-            mock(TripAttachmentStorageClient.class));
+            mock(TripAttachmentStorageClient.class), executionRepository, userStatsService, jdbcTemplate);
     private final Trip trip = mock(Trip.class);
 
     @BeforeEach
@@ -50,6 +59,10 @@ class AdditionalAttachmentUploadBatchPreparationTest {
         when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
         when(batchRepository.save(any(AdditionalAttachmentUploadBatch.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionRepository.save(any(AdditionalAttachmentExecution.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(jdbcTemplate.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class))
+                .thenReturn(LocalDateTime.of(2026, 10, 13, 12, 0));
     }
 
     @Test
@@ -108,6 +121,8 @@ class AdditionalAttachmentUploadBatchPreparationTest {
 
     @Test
     void reusesSameBatchWithoutCreatingRecordsAgain() {
+        when(executionRepository.findForUpdate(ADDITION_ID)).thenReturn(Optional.of(
+                new AdditionalAttachmentExecution(ADDITION_ID, TRIP_ID, USER_ID, 1, LocalDateTime.now())));
         var batch = previousBatch(1, 1, true, AdditionalAttachmentUploadStatus.PENDING);
         when(batchRepository.findByAdditionIdAndBatchNo(ADDITION_ID, 1)).thenReturn(Optional.of(batch));
         when(itemRepository.findAllByBatch_IdOrderByFileOrderAsc(7L))
@@ -116,6 +131,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
         assertThat(service.prepareBatch(TRIP_ID, USER_ID, request(1, 1, true))).isSameAs(batch);
         verify(batchRepository, never()).save(any());
         verify(itemRepository, never()).save(any());
+        verifyNoInteractions(userStatsService);
     }
 
     @Test
@@ -139,6 +155,8 @@ class AdditionalAttachmentUploadBatchPreparationTest {
 
     @Test
     void acceptsNextBatchAfterPreviousBatchVerified() {
+        when(executionRepository.findForUpdate(ADDITION_ID)).thenReturn(Optional.of(
+                new AdditionalAttachmentExecution(ADDITION_ID, TRIP_ID, USER_ID, 2, LocalDateTime.now())));
         var previous = previousBatch(1, 2, false, AdditionalAttachmentUploadStatus.VERIFIED);
         when(batchRepository.findAllByAdditionIdOrderByBatchNoAsc(ADDITION_ID)).thenReturn(List.of(previous));
         when(itemRepository.findAdditionItems(ADDITION_ID)).thenReturn(List.of(savedItem(previous, 1024)));

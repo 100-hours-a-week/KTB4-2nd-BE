@@ -19,7 +19,12 @@ import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus;
 import org.springframework.transaction.annotation.Transactional;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse;
+import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import com.yeodam.yeodambe.user.service.UserStatsService;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.LocalDateTime;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -37,6 +42,9 @@ public class AdditionalAttachmentUploadUrlService {
     private final AdditionalAttachmentUploadItemRepository uploadItemRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
+    private final AdditionalAttachmentExecutionRepository executionRepository;
+    private final UserStatsService userStatsService;
+    private final JdbcTemplate jdbcTemplate;
 
     private static final long MAX_ADDITION_BYTES = 3L * 1024 * 1024 * 1024;
     private static final Duration UPLOAD_URL_TTL = Duration.ofMinutes(10);
@@ -101,6 +109,25 @@ public class AdditionalAttachmentUploadUrlService {
         long batchBytes = validateRequest(request);
         requireOwnedCompletedTrip(tripId, userId);
 
+        AdditionalAttachmentExecution execution =
+                executionRepository.findForUpdate(request.additionId())
+                        .orElse(null);
+
+        if (execution != null) {
+            if (!execution.getTripId().equals(tripId)
+                    || !execution.getUserId().equals(userId)
+                    || execution.getTotalAttachmentCount()
+                    != request.totalAttachmentCount()) {
+                throw new InvalidAttachmentUploadException();
+            }
+
+            if (execution.isTerminal()) {
+                throw new TripAttachmentAddNotAllowedException();
+            }
+        } else if (executionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+
         boolean otherAdditionExists =
                 uploadBatchRepository.existsByTripIdAndAdditionIdNotAndStatusIn(
                         tripId,
@@ -135,6 +162,12 @@ public class AdditionalAttachmentUploadUrlService {
                             existing.getId()
                     )
             );
+
+            if (execution == null) {
+                throw new InvalidAttachmentUploadException();
+            }
+
+            execution.recordUploadActivity(databaseTime());
             return existing;
         }
 
@@ -192,6 +225,32 @@ public class AdditionalAttachmentUploadUrlService {
         if (previousBytes + batchBytes > MAX_ADDITION_BYTES) {
             throw new AttachmentUploadLimitExceededException();
         }
+
+        LocalDateTime now = databaseTime();
+
+        if (execution == null) {
+            if (!previousBatches.isEmpty()) {
+                throw new InvalidAttachmentUploadException();
+            }
+
+            execution = executionRepository.save(
+                    new AdditionalAttachmentExecution(
+                            request.additionId(),
+                            tripId,
+                            userId,
+                            request.totalAttachmentCount(),
+                            now
+                    )
+            );
+        }
+
+        if (execution.isInputClosed()) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+
+        userStatsService.reserveInitialUpload(userId, batchBytes);
+        execution.reserve(batchBytes);
+        execution.recordUploadActivity(now);
 
         AdditionalAttachmentUploadBatch savedBatch =
                 uploadBatchRepository.save(
@@ -272,6 +331,13 @@ public class AdditionalAttachmentUploadUrlService {
         }
 
         return batchBytes;
+    }
+
+    private LocalDateTime databaseTime() {
+        return jdbcTemplate.queryForObject(
+                "SELECT CURRENT_TIMESTAMP(6)",
+                LocalDateTime.class
+        );
     }
 
     private Trip requireOwnedCompletedTrip(Long tripId, Long userId) {

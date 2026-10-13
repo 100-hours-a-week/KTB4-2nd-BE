@@ -70,8 +70,8 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     @Test
     void includesExistingPhotosInTwoHundredPhotoLimitBeforeIssuingUrls() {
         String key = "existing/" + UUID.randomUUID();
-        jdbcTemplate.update("INSERT INTO files (user_id, original_file_name, object_key, mime_type) "
-                + "VALUES (?, 'old.jpg', ?, 'image/jpeg')", userId, key);
+        jdbcTemplate.update("INSERT INTO files (user_id, original_file_name, object_key, mime_type, original_size_bytes) "
+                + "VALUES (?, 'old.jpg', ?, 'image/jpeg', 1024)", userId, key);
         Long fileId = jdbcTemplate.queryForObject("SELECT file_id FROM files WHERE object_key = ?", Long.class, key);
         jdbcTemplate.update("INSERT INTO trip_attachments (trip_id, file_id, region_origin, issue, "
                 + "analyze_storage_key, preview_storage_key) VALUES (?, ?, 'UNKNOWN', 'NONE', ?, ?)",
@@ -136,6 +136,9 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
                 .containsExactlyElementsOf(response.attachments().stream().map(a -> a.uploadUrl()).toList());
         assertThat(batchCount()).isEqualTo(1);
         assertThat(itemCount()).isEqualTo(2);
+        assertThat(executionCount()).isEqualTo(1);
+        assertThat(executionReservedBytes()).isEqualTo(3072L);
+        assertThat(memberReservedBytes()).isEqualTo(3072L);
         verify(storage, times(4)).createUploadUrl(anyString(), anyString(), eq(Duration.ofMinutes(10)));
     }
 
@@ -149,6 +152,8 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
                 .isInstanceOf(IllegalStateException.class).hasMessage("test presign failure");
         assertThat(batchCount()).isZero();
         assertThat(itemCount()).isZero();
+        assertThat(executionCount()).isZero();
+        assertThat(memberReservedBytes()).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT processing_status FROM trips WHERE trip_id = ?", String.class, tripId))
                 .isEqualTo("COMPLETED");
@@ -172,6 +177,117 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
         return new AdditionalAttachmentUploadUrlRequest(additionId, 1, 2, true, List.of(
                 new AdditionalAttachmentUploadUrlRequest.Attachment("same.jpg", "image/jpeg", 1024L),
                 new AdditionalAttachmentUploadUrlRequest.Attachment("same.jpg", "image/png", 2048L)));
+    }
+
+    @Test
+    void createsUploadingExecutionWithDeclaredCountAndDatabaseActivityTime() {
+        service.issueUploadUrls(tripId, userId, request());
+
+        Map<String, Object> execution = jdbcTemplate.queryForMap(
+                "SELECT trip_id, user_id, status, total_attachment_count, input_closed, "
+                        + "last_upload_activity_at, analysis_attachment_count "
+                        + "FROM additional_attachment_executions WHERE execution_id = ?", additionId);
+        assertThat(((Number) execution.get("trip_id")).longValue()).isEqualTo(tripId);
+        assertThat(((Number) execution.get("user_id")).longValue()).isEqualTo(userId);
+        assertThat(execution.get("status")).isEqualTo("UPLOADING");
+        assertThat(((Number) execution.get("total_attachment_count")).intValue()).isEqualTo(2);
+        assertThat(execution.get("analysis_attachment_count")).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT input_closed FROM additional_attachment_executions WHERE execution_id = ?",
+                Boolean.class, additionId)).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT last_upload_activity_at FROM additional_attachment_executions WHERE execution_id = ?",
+                java.time.LocalDateTime.class, additionId)).isNotNull();
+        assertThat(executionReservedBytes()).isEqualTo(3072L);
+        assertThat(memberReservedBytes()).isEqualTo(3072L);
+    }
+
+    @Test
+    void addsOnlyNewBatchBytesToSameExecutionAndMemberReservation() {
+        var first = new AdditionalAttachmentUploadUrlRequest(additionId, 1, 3, false, request().attachments());
+        var firstResponse = service.issueUploadUrls(tripId, userId, first);
+        jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET status = 'VERIFIED' WHERE upload_id = ?",
+                firstResponse.uploadId());
+        var second = new AdditionalAttachmentUploadUrlRequest(additionId, 2, 3, true, List.of(
+                new AdditionalAttachmentUploadUrlRequest.Attachment("third.jpg", "image/jpeg", 4096L)));
+
+        var secondResponse = service.issueUploadUrls(tripId, userId, second);
+        var repeated = service.issueUploadUrls(tripId, userId, second);
+
+        assertThat(repeated.uploadId()).isEqualTo(secondResponse.uploadId());
+        assertThat(executionCount()).isEqualTo(1);
+        assertThat(batchCount()).isEqualTo(2);
+        assertThat(itemCount()).isEqualTo(3);
+        assertThat(executionReservedBytes()).isEqualTo(7168L);
+        assertThat(memberReservedBytes()).isEqualTo(7168L);
+    }
+
+    @Test
+    void rollsBackNewExecutionWhenMemberCapacityIsInsufficient() {
+        jdbcTemplate.update("UPDATE user_stats SET storage_maximum_bytes = 3071 WHERE user_id = ?", userId);
+
+        assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, request()))
+                .isInstanceOf(AttachmentUploadLimitExceededException.class);
+
+        assertThat(executionCount()).isZero();
+        assertThat(batchCount()).isZero();
+        assertThat(itemCount()).isZero();
+        assertThat(memberReservedBytes()).isZero();
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void refreshesActivityOnPendingBatchReissueWithoutReservingAgain() {
+        service.issueUploadUrls(tripId, userId, request());
+        jdbcTemplate.update("UPDATE additional_attachment_executions "
+                + "SET last_upload_activity_at = '2020-01-01 00:00:00' WHERE execution_id = ?", additionId);
+
+        service.issueUploadUrls(tripId, userId, request());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT last_upload_activity_at FROM additional_attachment_executions WHERE execution_id = ?",
+                java.time.LocalDateTime.class, additionId)).isAfter(java.time.LocalDateTime.of(2020, 1, 1, 0, 0));
+        assertThat(executionReservedBytes()).isEqualTo(3072L);
+        assertThat(memberReservedBytes()).isEqualTo(3072L);
+    }
+
+    @Test
+    void rejectsNewBatchAfterInputClosedAndRejectsReissueAfterExecutionEnded() {
+        var first = new AdditionalAttachmentUploadUrlRequest(additionId, 1, 3, false, request().attachments());
+        var response = service.issueUploadUrls(tripId, userId, first);
+        jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET status = 'VERIFIED' WHERE upload_id = ?",
+                response.uploadId());
+        jdbcTemplate.update("UPDATE additional_attachment_executions SET input_closed = true WHERE execution_id = ?",
+                additionId);
+        clearInvocations(storage);
+        var next = new AdditionalAttachmentUploadUrlRequest(additionId, 2, 3, true, List.of(
+                new AdditionalAttachmentUploadUrlRequest.Attachment("third.jpg", "image/jpeg", 4096L)));
+
+        assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, next))
+                .isInstanceOf(TripAttachmentAddNotAllowedException.class);
+        jdbcTemplate.update("UPDATE additional_attachment_executions SET status = 'FAILED', "
+                + "ended_at = CURRENT_TIMESTAMP(6) WHERE execution_id = ?", additionId);
+        assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, first))
+                .isInstanceOf(TripAttachmentAddNotAllowedException.class);
+
+        assertThat(batchCount()).isEqualTo(1);
+        assertThat(memberReservedBytes()).isEqualTo(3072L);
+        verifyNoInteractions(storage);
+    }
+
+    private long executionCount() {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM additional_attachment_executions WHERE execution_id = ?", Long.class, additionId);
+    }
+
+    private long executionReservedBytes() {
+        return jdbcTemplate.queryForObject(
+                "SELECT reserved_bytes FROM additional_attachment_executions WHERE execution_id = ?", Long.class, additionId);
+    }
+
+    private long memberReservedBytes() {
+        return jdbcTemplate.queryForObject(
+                "SELECT storage_reserved_bytes FROM user_stats WHERE user_id = ?", Long.class, userId);
     }
 
     @Test

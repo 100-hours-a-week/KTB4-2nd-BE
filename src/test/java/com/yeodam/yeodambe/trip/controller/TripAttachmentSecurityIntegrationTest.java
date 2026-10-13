@@ -82,6 +82,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TripAttachmentSecurityIntegrationTest {
 
     @MockitoBean
+    private com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService additionalUploadCompletion;
+
+    @MockitoBean
     private TripAttachmentRestoreService restoreService;
 
     @Autowired
@@ -451,6 +454,32 @@ class TripAttachmentSecurityIntegrationTest {
                         .header("X-CSRF-TOKEN", "wrong-token"))
                 .andExpect(status().isForbidden());
         then(uploadCompletion).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void additionalCompletionRequiresAuthenticationAndCsrfAndReturnsAccepted() throws Exception {
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        mockMvc.perform(post("/trips/7/attachments").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}")
+                        .cookie(new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnauthorized());
+        String access = accessTokenIssuer.issue(42L, "sid-42");
+        mockMvc.perform(post("/trips/7/attachments").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}")
+                        .cookie(new Cookie("accessToken", access), new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "wrong-token"))
+                .andExpect(status().isForbidden());
+        then(additionalUploadCompletion).shouldHaveNoInteractions();
+        given(additionalUploadCompletion.complete(eq(7L), eq(42L), any())).willReturn(
+                new com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse(7L, "QUEUED", 10));
+        mockMvc.perform(post("/trips/7/attachments").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}")
+                        .cookie(new Cookie("accessToken", access), new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_ADD_ACCEPTED"))
+                .andExpect(jsonPath("$.data.totalAttachments").value(10));
     }
 
     private String uploadUrlBody() {

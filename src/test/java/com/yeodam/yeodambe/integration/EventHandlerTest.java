@@ -45,7 +45,7 @@ class EventHandlerTest {
     @Test
     void 여행_결과의_ID와_상태를_다른_JSON_타입에서_강제_변환하지_않는다() {
         var results = mock(TripAnalysisResultService.class);
-        var handler = new TripCreateResultEventHandler(results, new ObjectMapper());
+        var handler = new TripCreateResultEventHandler(results, new ObjectMapper(), mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class));
         for (String tripId : List.of("7.5", "\"7\"", "9223372036854775808")) {
             String raw = """
                     {"type":"process_result","trip_id":%s,"execution_id":"run",
@@ -70,6 +70,8 @@ class EventHandlerTest {
         new ApplicationContextRunner()
                 .withBean(InitialAttachmentUploadTransactionService.class, () -> mock(InitialAttachmentUploadTransactionService.class))
                 .withBean(TripAnalysisResultService.class, () -> mock(TripAnalysisResultService.class))
+                .withBean(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class,
+                        () -> mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class))
                 .withBean(KafkaTemplate.class, () -> mock(KafkaTemplate.class))
                 .withBean(KafkaTopicProperties.class, this::topics)
                 .withBean(ObjectMapper.class, ObjectMapper::new)
@@ -140,7 +142,7 @@ class EventHandlerTest {
 
     private TripCreateResultEventHandler resultHandler() {
         return new TripCreateResultEventHandler(mock(TripAnalysisResultService.class),
-                new ObjectMapper());
+                new ObjectMapper(), mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class));
     }
 
     private KafkaTopicProperties topics() {

@@ -29,4 +29,27 @@ public interface AdditionalAttachmentExecutionRepository
     );
 
     boolean existsByTripIdAndEndedAtIsNull(Long tripId);
+
+    java.util.List<AdditionalAttachmentExecution> findByTripIdAndUserIdAndEndedAtIsNull(Long tripId, Long userId);
+
+    @Query("""
+            select execution from AdditionalAttachmentExecution execution
+            where execution.endedAt is null and execution.resultRawPayload is not null
+              and (execution.resultLeaseUntil is null or execution.resultLeaseUntil <= :now)
+              and (execution.resultNextAttemptAt is null or execution.resultNextAttemptAt <= :now)
+            order by execution.createdAt, execution.executionId
+            """)
+    java.util.List<AdditionalAttachmentExecution> findResultsToApply(
+            @Param("now") java.time.LocalDateTime now, org.springframework.data.domain.Pageable pageable);
+
+    @Query("""
+            select execution from AdditionalAttachmentExecution execution
+            where execution.endedAt is null and execution.resultRawPayload is null
+              and ((execution.inputClosed = false and execution.lastUploadActivityAt <= :uploadBefore)
+                or (execution.processPublishedAt is not null and execution.processPublishedAt <= :resultBefore))
+            order by execution.createdAt
+            """)
+    java.util.List<AdditionalAttachmentExecution> findExpired(
+            @Param("uploadBefore") java.time.LocalDateTime uploadBefore,
+            @Param("resultBefore") java.time.LocalDateTime resultBefore, org.springframework.data.domain.Pageable pageable);
 }

@@ -66,6 +66,8 @@ class TripAttachmentControllerTest {
             mock(UnclassifiedFolderListService.class);
     private final TripAttachmentRestoreService restoreService =
             mock(TripAttachmentRestoreService.class);
+    private final com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService additionalUploadCompletion =
+            mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService.class);
     private final InitialAttachmentUploadCompletionService uploadCompletion =
             mock(InitialAttachmentUploadCompletionService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
@@ -77,10 +79,28 @@ class TripAttachmentControllerTest {
             uploadUrlService,
             uploadCompletion,
             additionalUploadUrlService,
-            mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService.class),
+            additionalUploadCompletion,
             unclassifiedFolderListService,
             restoreService
     );
+
+    @Test
+    void additionalUploadCompletionReturnsAcceptedAndBatchCount() throws Exception {
+        var request = new com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadCompleteRequest("upload-id");
+        when(additionalUploadCompletion.complete(7L, 1L, request)).thenReturn(
+                new com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse(7L, "QUEUED", 10));
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver()).build()
+                .perform(post("/api/trips/7/attachments").contextPath("/api")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_ADD_ACCEPTED"))
+                .andExpect(jsonPath("$.data.tripId").value(7))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"))
+                .andExpect(jsonPath("$.data.totalAttachments").value(10));
+        verify(additionalUploadCompletion).complete(7L, 1L, request);
+    }
 
     @Test
     void 소유자의_미분류_사진_목록을_명세대로_반환한다() throws Exception {
@@ -354,7 +374,7 @@ class TripAttachmentControllerTest {
                 uploadUrlService,
                 uploadCompletion,
                 additionalUploadUrlService,
-            mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService.class),
+            additionalUploadCompletion,
                 mock(UnclassifiedFolderListService.class),
                 restoreService
         );

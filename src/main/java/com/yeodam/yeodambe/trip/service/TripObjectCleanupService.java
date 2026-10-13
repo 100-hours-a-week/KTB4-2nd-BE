@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemRepository;
+
+
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
@@ -32,6 +35,8 @@ public class TripObjectCleanupService {
     private final TripAttachmentStorageClient storage;
     private final InitialAttachmentUploadItemRepository uploadItems;
     private final InitialAttachmentUploadTransactionService uploadTransactions;
+    private final AdditionalAttachmentUploadItemRepository additionalItems;
+    private final AdditionalAttachmentUploadTransactionService additionalTransactions;
 
     public void retryPending() {
         LocalDateTime before = uploadTransactions.databaseTime().minusDays(30);
@@ -39,6 +44,12 @@ public class TripObjectCleanupService {
                 LocalDateTime.now().minusDays(30),
                 PageRequest.of(0, RETRY_BATCH_SIZE)
         ), before);
+        for (var item : additionalItems.findPendingCleanup(before, PageRequest.of(0, RETRY_BATCH_SIZE))) {
+            for (var object : additionalTransactions.cleanupObjects(item)) {
+                if (!object.deleted() && object.startedAt() != null && !object.startedAt().isAfter(before)
+                        && cleanupKey(object.key())) additionalTransactions.recordObjectDeleted(item.getId(), object.key());
+            }
+        }
         for (var item : uploadItems.findPendingCleanup(before, PageRequest.of(0, RETRY_BATCH_SIZE))) {
             for (var object : uploadTransactions.cleanupObjects(item)) {
                 if (object.deleted() || object.startedAt() == null || object.startedAt().isAfter(before)) {

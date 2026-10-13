@@ -16,6 +16,13 @@ public interface AdditionalAttachmentUploadItemRepository
     findAllByBatch_IdOrderByFileOrderAsc(Long batchId);
 
     @Query("""
+            select item from AdditionalAttachmentUploadItem item
+            where item.cleanupStartedAt <= :before order by item.cleanupStartedAt, item.id
+            """)
+    List<AdditionalAttachmentUploadItem> findPendingCleanup(
+            @Param("before") java.time.LocalDateTime before, org.springframework.data.domain.Pageable pageable);
+
+    @Query("""
             select item
             from AdditionalAttachmentUploadItem item
             join fetch item.batch batch

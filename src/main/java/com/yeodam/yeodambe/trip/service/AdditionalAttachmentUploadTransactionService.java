@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.integration.service.request.PhotoProcessMessage;
+
+
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
@@ -389,7 +392,7 @@ public class AdditionalAttachmentUploadTransactionService {
                 value.getStatus() == AdditionalAttachmentUploadStatus.PREPARED)
                 ? Optional.of(analysisPreparationService.prepare(claim.tripId(), claim.userId(),
                     last.getUploadId()).processMessage(claim.executionId()))
-                : Optional.<com.yeodam.yeodambe.integration.service.request.PhotoProcessMessage>empty();
+                : Optional.<PhotoProcessMessage>empty();
         var saved = outboxService.save(claim.tripId(), claim.userId(), claim.uploadId(),
                 new AdditionalAttachmentUploadCompletionService.PreparedQueueBatch(ready, process),
                 batch.getRequestId() == null ? claim.executionId() : batch.getRequestId());
@@ -408,6 +411,13 @@ public class AdditionalAttachmentUploadTransactionService {
             var next = databaseTime().plusSeconds(10);
             item.conversionFailed(next);
             batch.retryConversion(claim.workerToken(), next);
+        }
+    }
+
+    @Transactional
+    public void cancelForWithdrawal(Long tripId, Long userId) {
+        for (var execution : executionRepository.findByTripIdAndUserIdAndEndedAtIsNull(tripId, userId)) {
+            failExecution(execution.getExecutionId(), "USER_WITHDRAWN");
         }
     }
 
@@ -464,6 +474,14 @@ public class AdditionalAttachmentUploadTransactionService {
         return item.getCleanupJson() == null
                 ? List.of(new CleanupObject(item.getObjectKey(), null, null, false))
                 : objectMapper.readValue(item.getCleanupJson(), new TypeReference<List<CleanupObject>>() {});
+    }
+
+    @Transactional
+    public void recordObjectDeleted(Long itemId, String key) {
+        var item = uploadItemRepository.findById(itemId).orElseThrow();
+        entityManager.refresh(item, LockModeType.PESSIMISTIC_WRITE);
+        recordCleanup(item, cleanupObjects(item).stream().map(object -> object.key().equals(key)
+                ? new CleanupObject(object.key(), object.startedAt(), object.reason(), true) : object).toList());
     }
 
     private void recordCleanup(AdditionalAttachmentUploadItem item, List<CleanupObject> objects) {

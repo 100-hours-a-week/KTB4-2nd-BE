@@ -193,6 +193,12 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
                     and attachment.id < :cursorId
                 )
           )
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
         order by attachment.createdAt desc, attachment.id desc
         """)
     List<TripAttachment> findForEditWithCursor(
@@ -211,6 +217,19 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
           and file.deletedAt is null
         """)
     long countForEditByTripId(@Param("tripId") Long tripId);
+
+    @Query("""
+        select count(attachment) from TripAttachment attachment
+        join attachment.file file
+        where attachment.tripId = :tripId and attachment.deletedAt is null and file.deletedAt is null
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
+        """)
+    long countVisibleForEditByTripId(@Param("tripId") Long tripId);
 
     List<TripAttachment> findAllByTripId(Long tripId);
 
@@ -314,6 +333,12 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
         FROM TripAttachment attachment
         WHERE attachment.tripId IN :tripIds
           AND attachment.deletedAt IS NULL
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
         GROUP BY attachment.tripId
         """)
     List<TripAttachmentCount> countNotDeletedByTripIds(
@@ -372,6 +397,12 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
           and attachment.deletedAt is null
           and trip.deletedAt is null
           and file.deletedAt is null
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
         """)
     Optional<TripAttachment> findAccessibleById(
             @Param("tripAttachmentId") Long tripAttachmentId,
@@ -387,6 +418,12 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
           and attachment.deletedAt is null
           and trip.deletedAt is null
           and file.deletedAt is null
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
         """)
     List<TripAttachment> findAllActiveWithTripAndFileByIds(
             @Param("tripAttachmentIds") Collection<Long> tripAttachmentIds

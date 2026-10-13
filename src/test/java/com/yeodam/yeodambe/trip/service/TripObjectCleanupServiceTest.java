@@ -35,7 +35,9 @@ class TripObjectCleanupServiceTest {
     private final TripObjectCleanupService service = new TripObjectCleanupService(
             attachments, files, trips, places, storage,
                 uploadItems,
-                uploadTransactions);
+                uploadTransactions,
+                mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemRepository.class),
+                mock(AdditionalAttachmentUploadTransactionService.class));
     private TripAttachment attachment;
 
     @BeforeEach

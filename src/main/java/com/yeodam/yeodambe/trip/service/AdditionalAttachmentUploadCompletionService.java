@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse;
+
+
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadItem;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus;
@@ -26,11 +29,11 @@ public class AdditionalAttachmentUploadCompletionService {
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
     private final AdditionalAttachmentAnalysisPreparationService analysisPreparationService;
 
-    public com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse complete(
+    public AdditionalAttachmentUploadCompleteResponse complete(
             Long tripId, Long userId, AdditionalAttachmentUploadCompleteRequest request) {
         verifyBatch(tripId, userId, request);
         var batch = uploadTransactionService.loadForVerification(tripId, userId, request.uploadId());
-        return new com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse(
+        return new AdditionalAttachmentUploadCompleteResponse(
                 tripId, "QUEUED", batch.items().size());
     }
 

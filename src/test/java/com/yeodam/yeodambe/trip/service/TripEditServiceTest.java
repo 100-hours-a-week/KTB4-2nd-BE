@@ -79,7 +79,7 @@ class TripEditServiceTest {
         List<TripAttachment> page = photos(18);
         when(attachments.findForEditWithCursor(7L, null, null, PageRequest.of(0, 19)))
                 .thenReturn(page);
-        when(attachments.countForEditByTripId(7L)).thenReturn(18L);
+        when(attachments.countVisibleForEditByTripId(7L)).thenReturn(18L);
         var result = service.findTripForEdit(7L, 1L, null);
         assertThat(result.attachments().items()).hasSize(18);
         assertThat(result.attachmentCount()).isEqualTo(18);
@@ -92,7 +92,7 @@ class TripEditServiceTest {
         List<TripAttachment> page = photos(19);
         when(attachments.findForEditWithCursor(7L, null, null, PageRequest.of(0, 19)))
                 .thenReturn(page);
-        when(attachments.countForEditByTripId(7L)).thenReturn(30L);
+        when(attachments.countVisibleForEditByTripId(7L)).thenReturn(30L);
         var result = service.findTripForEdit(7L, 1L, null);
         assertThat(result.attachments().items()).hasSize(18);
         assertThat(result.attachments().items().getFirst().thumbnailUrl()).isEqualTo("url/preview-100");

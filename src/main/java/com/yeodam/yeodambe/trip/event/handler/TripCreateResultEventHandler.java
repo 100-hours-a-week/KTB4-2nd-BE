@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.event.handler;
 
+import com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService;
+
+
 import com.yeodam.yeodambe.common.event.EventHandler;
 import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventType;
@@ -19,6 +22,7 @@ import tools.jackson.databind.ObjectMapper;
 public class TripCreateResultEventHandler implements EventHandler<TripCreateResultEvent> {
     private final TripAnalysisResultService results;
     private final ObjectMapper json;
+    private final AdditionalAttachmentKafkaResultService additionalResults;
 
     @Override
     public EventType eventType() {
@@ -67,6 +71,6 @@ public class TripCreateResultEventHandler implements EventHandler<TripCreateResu
             TripCreateResultEvent event,
             String rawPayload
     ) {
-        results.receiveKafkaResult(event, rawPayload);
+        if (!additionalResults.receive(event, rawPayload)) results.receiveKafkaResult(event, rawPayload);
     }
 }

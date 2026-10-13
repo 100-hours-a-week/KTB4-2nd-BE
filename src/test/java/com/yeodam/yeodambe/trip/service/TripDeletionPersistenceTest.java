@@ -84,6 +84,9 @@ class TripDeletionPersistenceTest {
     private InitialAttachmentUploadTransactionService uploadTransactions;
 
     @MockitoBean
+    private AdditionalAttachmentUploadTransactionService additionalTransactions;
+
+    @MockitoBean
 
     private TripAttachmentStorageClient storage;
 

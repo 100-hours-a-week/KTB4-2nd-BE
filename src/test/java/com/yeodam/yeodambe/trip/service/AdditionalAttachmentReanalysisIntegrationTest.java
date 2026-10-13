@@ -35,6 +35,13 @@ import static org.mockito.Mockito.*;
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class AdditionalAttachmentReanalysisIntegrationTest {
+    @Autowired private AdditionalAttachmentDeliveryService delivery;
+    @Autowired private AdditionalAttachmentKafkaResultService kafkaResults;
+    @Autowired private AdditionalAttachmentExecutionRepository executionRepository;
+    @Autowired private TripProcessingStatusService processingStatus;
+    @Autowired private TripWithdrawalService tripWithdrawal;
+    @Autowired private TripObjectCleanupService objectCleanup;
+    @Autowired private AdditionalAttachmentUploadItemRepository additionalItems;
     @Autowired private AdditionalAttachmentUploadUrlService urls;
     @Autowired private AdditionalAttachmentUploadCompletionService completion;
     @Autowired private AdditionalAttachmentUploadOutboxService outboxService;
@@ -100,6 +107,162 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         when(kakao.lookup(any(), any())).thenReturn(new KakaoLocalClient.LookupResult("새 장소", "서울", KakaoLocalClient.Failure.NONE));
         additionId = UUID.randomUUID().toString();
         uploadId = urls.issueUploadUrls(tripId, userId, request(1, 1, true)).uploadId();
+    }
+
+    private com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadBatchSnapshot prepareAsync() {
+        jdbc.update("UPDATE additional_attachment_upload_batches SET next_attempt_at = '2099-01-01' WHERE addition_id <> ?", additionId);
+        jdbc.update("UPDATE additional_attachment_upload_outbox SET next_attempt_at = '2099-01-01'");
+        var response = completion.complete(tripId, userId, completeRequest());
+        assertThat(response.status()).isEqualTo("QUEUED");
+        assertThat(response.totalAttachments()).isEqualTo(1);
+        assertThat(trips.findById(tripId).orElseThrow().getProcessingStatus()).isEqualTo(ProcessingStatus.COMPLETED);
+        var claim = transactions.claimBatch().orElseThrow();
+        assertThat(claim.executionId()).isEqualTo(additionId);
+        var item = claim.photos().getFirst();
+        var keys = transactions.startPhotoAttempt(claim, item.itemId());
+        transactions.savePhotoSuccess(claim, item.itemId(), new DerivedPhotoKeys(item.objectKey(), keys.get(0), keys.get(1), null,
+                OffsetDateTime.parse("2026-10-07T12:00:00+09:00"), BigDecimal.ONE, BigDecimal.TEN, "camera", 12L, 8L, 4L, null));
+        transactions.completeBatch(claim);
+        assertThat(outboxCount()).isEqualTo(2);
+        assertThat(attachments.countVisibleForEditByTripId(tripId)).isEqualTo(1);
+        assertThat(attachments.findForEditWithCursor(tripId, null, null,
+                org.springframework.data.domain.PageRequest.of(0, 19))).extracting(TripAttachment::getId).containsExactly(oldPhotoId);
+        return claim;
+    }
+
+    private void publishBoth() {
+        var ready = delivery.claim().orElseThrow();
+        assertThat(json.readTree(ready.payload()).path("type").asString()).isEqualTo("photos_ready");
+        assertThat(delivery.claim()).isEmpty();
+        delivery.finish(ready, true, null);
+        var process = delivery.claim().orElseThrow();
+        assertThat(json.readTree(process.payload()).path("attachments")).hasSize(2);
+        delivery.finish(process, true, null);
+    }
+
+    private String successfulPayload() {
+        var prepared = preparation.prepare(tripId, userId, uploadId);
+        var body = (tools.jackson.databind.node.ObjectNode) result(prepared, false);
+        body.putArray("failed");
+        var place = (tools.jackson.databind.node.ObjectNode) body.path("places").get(0);
+        place.put("first_taken_at", "2026-10-07T12:00:00+09:00");
+        place.put("last_taken_at", "2026-10-07T12:00:00+09:00");
+        return json.writeValueAsString(Map.of("type", "process_result", "trip_id", tripId,
+                "execution_id", additionId, "status", "COMPLETED", "result", body));
+    }
+
+    @Test
+    void asyncPipelinePublishesInOrderAndAppliesAllPhotosOnceWhilePreservingStory() {
+        Long storyId = createExistingStory();
+        prepareAsync();
+        assertThat(processingStatus.findStatus(tripId, userId).status())
+                .isEqualTo(com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status.PROCESSING);
+        assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
+        publishBoth();
+        String raw = successfulPayload();
+        var event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
+        assertThat(kafkaResults.receive(event, raw)).isTrue();
+        assertThat(kafkaResults.receive(event, raw)).isTrue();
+        jdbc.update("UPDATE additional_attachment_executions SET result_next_attempt_at = '2099-01-01' WHERE execution_id <> ?", additionId);
+        var claim = kafkaResults.claim().orElseThrow();
+        assertThat(kafkaResults.claim()).isEmpty();
+        assertThat(kafkaResults.start(claim)).isTrue();
+        var validated = kafkaResults.validate(claim);
+        kafkaResults.complete(claim, validated, Map.of("place-one", "new place"));
+        kafkaResults.receive(event, raw);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.COMPLETED);
+        assertThat(attachments.countVisibleForEditByTripId(tripId)).isEqualTo(2);
+        assertThat(batchStatus()).isEqualTo("COMPLETED");
+        assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(places.countByTripIdAndDeletedAtIsNull(tripId)).isEqualTo(1);
+        assertThat(trips.findById(tripId).orElseThrow().getCurrentStoryId()).isEqualTo(storyId);
+        assertThat(stats.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isZero();
+        assertThat(processingStatus.findStatus(tripId, userId).status())
+                .isEqualTo(com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status.COMPLETED);
+    }
+
+    @Test
+    void expiredPublicationClaimIsReclaimedAndOldOwnerCannotAcknowledgeIt() {
+        prepareAsync();
+        var first = delivery.claim().orElseThrow();
+        jdbc.update("UPDATE additional_attachment_upload_outbox SET lease_until = '2000-01-01' WHERE outbox_id = ?", first.outboxId());
+        var second = delivery.claim().orElseThrow();
+        assertThat(second.token()).isNotEqualTo(first.token());
+        delivery.finish(first, true, null);
+        assertThat(outboxes.findById(second.outboxId()).orElseThrow().getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PUBLISHING);
+        delivery.finish(second, true, null);
+        assertThat(delivery.claim()).isPresent();
+    }
+
+    @Test
+    void failedAiResultCleansOnlyNewPhotosAndRetainsOldClassificationAndStory() {
+        Long storyId = createExistingStory();
+        prepareAsync();
+        publishBoth();
+        String raw = json.writeValueAsString(Map.of("type", "process_result", "trip_id", tripId,
+                "execution_id", additionId, "status", "FAILED", "error", Map.of("code", "AI_FAILED")));
+        var event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
+        kafkaResults.receive(event, raw);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.FAILED);
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(outboxes.findPending(transactions.databaseTime(), org.springframework.data.domain.PageRequest.of(0, 100))).isEmpty();
+        assertThat(attachments.countForEditByTripId(tripId)).isEqualTo(1);
+        assertThat(trips.findById(tripId).orElseThrow().getCurrentStoryId()).isEqualTo(storyId);
+        verify(storage, never()).delete(anyString());
+    }
+
+    @Test
+    void withdrawalStopsPendingAdditionAndReleasesUnconvertedReservation() {
+        completion.complete(tripId, userId, completeRequest());
+        tripWithdrawal.withdrawAll(userId, LocalDateTime.now());
+        var ended = executionRepository.findById(additionId).orElseThrow();
+        assertThat(ended.isTerminal()).isTrue();
+        assertThat(ended.getErrorCode()).isEqualTo("USER_WITHDRAWN");
+        assertThat(stats.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isZero();
+        assertThat(trips.findById(tripId).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(jdbc.queryForObject("SELECT cleanup_started_at FROM additional_attachment_upload_items WHERE upload_batch_id = "
+                + "(SELECT upload_batch_id FROM additional_attachment_upload_batches WHERE upload_id = ?)", LocalDateTime.class, uploadId)).isNotNull();
+        verify(storage, never()).delete(anyString());
+    }
+
+    @Test
+    void failedAdditionObjectsRemainForThirtyDaysAndAreThenCleanedWithoutDeletingOldPhoto() {
+        prepareAsync();
+        transactions.failExecution(additionId, "IMAGE_CONVERSION_FAILED");
+        var item = additionalItems.findAdditionItems(additionId).getFirst();
+        var objects = transactions.cleanupObjects(item);
+        objectCleanup.retryPending();
+        for (var object : objects) verify(storage, never()).delete(object.key());
+        var expired = LocalDateTime.now().minusDays(31);
+        var aged = objects.stream().map(object -> new AdditionalAttachmentUploadTransactionService.CleanupObject(
+                object.key(), expired, object.reason(), false)).toList();
+        jdbc.update("UPDATE additional_attachment_upload_items SET cleanup_json = ?, cleanup_started_at = ? WHERE upload_item_id = ?",
+                applicationMapper.writeValueAsString(aged), expired, item.getId());
+        jdbc.update("UPDATE trip_attachments SET deleted_at = ? WHERE trip_attachment_id = ?", expired, item.getTripAttachmentId());
+        objectCleanup.retryPending();
+        for (var object : objects) verify(storage, atLeastOnce()).delete(object.key());
+        verify(storage, never()).delete(files.findById(attachments.findById(oldPhotoId).orElseThrow().getFileId()).orElseThrow().getObjectKey());
+        assertThat(additionalItems.findById(item.getId()).orElseThrow().getCleanupStartedAt()).isNull();
+        assertThat(attachments.findById(item.getTripAttachmentId()).orElseThrow().getClassificationStatus()).isEqualTo(ClassificationStatus.DELETED);
+        clearInvocations(storage);
+        objectCleanup.retryPending();
+        for (var object : objects) verify(storage, never()).delete(object.key());
+    }
+
+    @Test
+    void timesOutOneHourAfterProcessPublicationButIgnoresLateResult() {
+        prepareAsync();
+        publishBoth();
+        jdbc.update("UPDATE additional_attachment_executions SET process_published_at = CURRENT_TIMESTAMP - INTERVAL 61 MINUTE WHERE execution_id = ?", additionId);
+        kafkaResults.expire();
+        var ended = executionRepository.findById(additionId).orElseThrow();
+        assertThat(ended.getErrorCode()).isEqualTo("AI_RESULT_TIMEOUT");
+        String raw = json.writeValueAsString(Map.of("type", "process_result", "trip_id", tripId,
+                "execution_id", additionId, "status", "COMPLETED", "result", Map.of()));
+        kafkaResults.receive(applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class), raw);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getResultRawPayload()).isNull();
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
     }
 
     @Test

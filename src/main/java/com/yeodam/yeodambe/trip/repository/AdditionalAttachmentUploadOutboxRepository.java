@@ -18,8 +18,11 @@ public interface AdditionalAttachmentUploadOutboxRepository
     );
 
     @Query("""
-            select outbox from AdditionalAttachmentUploadOutbox outbox
-            where outbox.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadOutbox.Status.PUBLISHED
+            select outbox from AdditionalAttachmentUploadOutbox outbox,
+                AdditionalAttachmentUploadBatch batch, AdditionalAttachmentExecution execution
+            where outbox.uploadBatchId = batch.id and batch.additionId = execution.executionId
+              and execution.endedAt is null
+              and outbox.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadOutbox.Status.PUBLISHED
               and (outbox.leaseUntil is null or outbox.leaseUntil <= :now)
               and (outbox.nextAttemptAt is null or outbox.nextAttemptAt <= :now)
             order by outbox.id

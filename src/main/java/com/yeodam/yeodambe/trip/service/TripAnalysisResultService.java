@@ -574,7 +574,7 @@ public class TripAnalysisResultService {
         return photos;
     }
 
-    private Set<String> validateResult(
+    public Set<String> validateResult(
             List<TripAttachment> attachments,
             JsonNode result
     ) {

@@ -57,13 +57,19 @@ public class AdditionalAttachmentDerivativeWorker {
         try {
             int next = index + 1;
             var task = new TripDerivativeScheduler.PhotoTask(0, photo.contentType(), () -> {
-                var keys = transactions.startPhotoAttempt(claim, photo.itemId());
-                var derived = derivatives.generateAdditional(claim.executionId(), photo.objectKey(), photo.contentType(), keys);
-                var retained = new ArrayList<>(keys);
-                retained.add(photo.objectKey());
-                storage.retain(retained);
-                transactions.savePhotoSuccess(claim, photo.itemId(), derived);
-                return derived;
+                var previous = org.slf4j.MDC.getCopyOfContextMap();
+                try {
+                    org.slf4j.MDC.put("request_id", claim.requestId());
+                    var keys = transactions.startPhotoAttempt(claim, photo.itemId());
+                    var derived = derivatives.generateAdditional(claim.executionId(), photo.objectKey(), photo.contentType(), keys);
+                    var retained = new ArrayList<>(keys);
+                    retained.add(photo.objectKey());
+                    storage.retain(retained);
+                    transactions.savePhotoSuccess(claim, photo.itemId(), derived);
+                    return derived;
+                } finally {
+                    if (previous == null) org.slf4j.MDC.clear(); else org.slf4j.MDC.setContextMap(previous);
+                }
             });
             scheduler.submit(claim.executionId(), List.of(task), () -> transactions.renewLease(claim))
                     .whenComplete((result, failure) -> {

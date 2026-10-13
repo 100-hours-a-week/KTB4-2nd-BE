@@ -508,7 +508,8 @@ public class AdditionalAttachmentUploadTransactionService {
                                 .readValue(item.getDerivedJson())))
                 .toList();
         return new AdditionalAttachmentUploadBatchSnapshot(batch.getId(), batch.getUploadId(), batch.getAdditionId(),
-                batch.getTripId(), batch.getUserId(), batch.getWorkerToken(), photos);
+                batch.getTripId(), batch.getUserId(), batch.getWorkerToken(),
+                batch.getRequestId() == null ? batch.getAdditionId() : batch.getRequestId(), photos);
     }
 
     @Transactional

@@ -35,6 +35,13 @@ public class TripCreateRequestEventHandler implements EventHandler<TripCreateReq
         transactions.enqueueRequest(event);
     }
 
+    public CompletableFuture<SendResult<String, String>> publish(String key, String payload, String requestId) {
+        var record = new org.apache.kafka.clients.producer.ProducerRecord<String, String>(
+                topics.topicFor(eventType()), key, payload);
+        record.headers().add("X-Request-ID", requestId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return kafka.send(record);
+    }
+
     public CompletableFuture<SendResult<String, String>> publish(
             String key,
             String payload

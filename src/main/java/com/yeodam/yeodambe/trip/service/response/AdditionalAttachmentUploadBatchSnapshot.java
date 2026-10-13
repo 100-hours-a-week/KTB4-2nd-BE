@@ -12,6 +12,7 @@ public record AdditionalAttachmentUploadBatchSnapshot(
         Long tripId,
         Long userId,
         String workerToken,
+        String requestId,
         List<Photo> photos
 ) {
     public record Photo(

@@ -26,7 +26,7 @@ public class AdditionalAttachmentOutboxPublisher {
             var previous = MDC.getCopyOfContextMap();
             try {
                 MDC.put("request_id", claim.requestId());
-                requests.publish(claim.tripId().toString(), claim.payload()).get(30, TimeUnit.SECONDS);
+                requests.publish(claim.tripId().toString(), claim.payload(), claim.requestId()).get(30, TimeUnit.SECONDS);
                 delivery.finish(claim, true, null);
             } catch (Exception failure) {
                 if (failure instanceof InterruptedException) Thread.currentThread().interrupt();

@@ -88,6 +88,21 @@ public class AdditionalAttachmentUploadBatch {
         this.status = AdditionalAttachmentUploadStatus.PENDING;
     }
 
+    @Column(name = "request_id", length = 128)
+    private String requestId;
+
+    public void recordRequestId(String value) {
+        if (requestId == null) requestId = value;
+    }
+
+    public void abort() {
+        if (status == AdditionalAttachmentUploadStatus.COMPLETED) return;
+        status = AdditionalAttachmentUploadStatus.FAILED;
+        workerToken = null;
+        leaseExpiresAt = null;
+        nextAttemptAt = null;
+    }
+
     public void markVerified() {
         if (status == AdditionalAttachmentUploadStatus.VERIFIED) {
             return;

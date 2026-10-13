@@ -26,6 +26,14 @@ public class AdditionalAttachmentUploadCompletionService {
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
     private final AdditionalAttachmentAnalysisPreparationService analysisPreparationService;
 
+    public com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse complete(
+            Long tripId, Long userId, AdditionalAttachmentUploadCompleteRequest request) {
+        verifyBatch(tripId, userId, request);
+        var batch = uploadTransactionService.loadForVerification(tripId, userId, request.uploadId());
+        return new com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse(
+                tripId, "QUEUED", batch.items().size());
+    }
+
     public void verifyBatch(
             Long tripId,
             Long userId,

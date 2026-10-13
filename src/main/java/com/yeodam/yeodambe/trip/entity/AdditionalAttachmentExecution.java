@@ -143,6 +143,7 @@ public class AdditionalAttachmentExecution {
     }
 
     public void closeInput() {
+        if (isTerminal() || inputClosed) return;
         inputClosed = true;
         status = Status.IMAGE_PROCESSING;
     }

@@ -401,6 +401,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     void preparesAnalysisOnlyAfterAllBatchesAndReusesPreparedInputOnRepeat() {
         jdbc.update("DELETE FROM additional_attachment_upload_items WHERE object_key LIKE ?", "trip-additions/" + additionId + "/original/%");
         jdbc.update("DELETE FROM additional_attachment_upload_batches WHERE addition_id = ?", additionId);
+        jdbc.update("DELETE FROM additional_attachment_executions WHERE execution_id = ?", additionId);
+        jdbc.update("UPDATE user_stats SET storage_reserved_bytes = 0 WHERE user_id = ?", userId);
         uploadId = urls.issueUploadUrls(tripId, userId, request(1, 2, false)).uploadId();
         assertThat(completion.prepareAddition(tripId, userId, completeRequest())).isEmpty();
         assertThat(batchStatus()).isEqualTo("VERIFIED");

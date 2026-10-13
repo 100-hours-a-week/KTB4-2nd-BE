@@ -77,6 +77,7 @@ class TripAttachmentControllerTest {
             uploadUrlService,
             uploadCompletion,
             additionalUploadUrlService,
+            mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService.class),
             unclassifiedFolderListService,
             restoreService
     );
@@ -353,6 +354,7 @@ class TripAttachmentControllerTest {
                 uploadUrlService,
                 uploadCompletion,
                 additionalUploadUrlService,
+            mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService.class),
                 mock(UnclassifiedFolderListService.class),
                 restoreService
         );

@@ -160,6 +160,32 @@ class AdditionalAttachmentConversionClaimTest {
     }
 
     @Test
+    void completionClosesInputAndRepeatedCompletionKeepsResultState() {
+        service.markVerified(batch.getTripId(), batch.getUserId(), batch.getUploadId());
+        assertThat(execution.isInputClosed()).isTrue();
+        execution.receiveResult("{}", "COMPLETED", LocalDateTime.now());
+        service.markVerified(batch.getTripId(), batch.getUserId(), batch.getUploadId());
+        assertThat(execution.getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.RESULT_APPLYING);
+    }
+
+    @Test
+    void permanentConversionFailureDeletesOnlyNewPhotoAndReleasesReservation() {
+        var claim = service.claimBatch().orElseThrow();
+        var keys = service.startPhotoAttempt(claim, claim.photos().getFirst().itemId());
+        service.retryBatch(claim, claim.photos().getFirst().itemId(), true);
+        entityManager.flush();
+        entityManager.clear();
+        var ended = entityManager.find(AdditionalAttachmentExecution.class, claim.executionId());
+        assertThat(ended.getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.FAILED);
+        assertThat(ended.isReservationReleased()).isTrue();
+        assertThat(jdbcTemplate.queryForObject("SELECT storage_reserved_bytes FROM user_stats WHERE user_id = ?",
+                Long.class, claim.userId())).isZero();
+        var item = entityManager.find(AdditionalAttachmentUploadItem.class, claim.photos().getFirst().itemId());
+        assertThat(service.cleanupObjects(item)).allSatisfy(object -> assertThat(object.startedAt()).isNotNull());
+        assertThat(service.claimBatch()).isEmpty();
+    }
+
+    @Test
     void capacityRejectionSchedulesRetryWithoutStartingPhotoAttempt() {
         var claim = service.claimBatch().orElseThrow();
         service.releaseSaturatedBatch(claim);

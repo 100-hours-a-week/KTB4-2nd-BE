@@ -202,7 +202,9 @@ public class AdditionalAttachmentUploadUrlService {
 
             if (request.batchNo() != latest.getBatchNo() + 1
                     || latest.getLastBatch()
-                    || latest.getStatus() != AdditionalAttachmentUploadStatus.VERIFIED) {
+                    || !List.of(AdditionalAttachmentUploadStatus.VERIFIED,
+                        AdditionalAttachmentUploadStatus.CONVERTING,
+                        AdditionalAttachmentUploadStatus.PREPARED).contains(latest.getStatus())) {
                 throw new InvalidAttachmentUploadException();
             }
         }

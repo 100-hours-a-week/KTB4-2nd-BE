@@ -21,6 +21,9 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
+import com.yeodam.yeodambe.user.entity.UserStats;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -38,6 +41,7 @@ class AdditionalAttachmentConversionClaimTest {
         jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET next_attempt_at = '2099-01-01'");
         var user = new User(UUID.randomUUID() + "@yeodam.test", "claim");
         entityManager.persist(user);
+        entityManager.persist(new UserStats(user));
         var trip = new Trip(user.getUserId(), "claim", LocalDate.now(), LocalDate.now());
         entityManager.persist(trip);
         jdbcTemplate.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", trip.getId());
@@ -92,5 +96,66 @@ class AdditionalAttachmentConversionClaimTest {
         entityManager.flush();
         assertThat(service.renewLease(next)).isFalse();
         assertThat(service.claimBatch()).isEmpty();
+    }
+
+    @Test
+    void recordsPlannedKeysBeforeConversionAndSavesPhotoOnlyOnce() {
+        var claim = service.claimBatch().orElseThrow();
+        Long itemId = claim.photos().getFirst().itemId();
+        var keys = service.startPhotoAttempt(claim, itemId);
+        assertThat(keys).hasSize(2);
+        entityManager.flush();
+        var item = entityManager.find(AdditionalAttachmentUploadItem.class, itemId);
+        assertThat(item.getConversionAttempts()).isEqualTo(1);
+        assertThat(service.cleanupObjects(item)).extracting(AdditionalAttachmentUploadTransactionService.CleanupObject::key)
+                .containsExactly("original", keys.get(0), keys.get(1));
+        var derived = new DerivedPhotoKeys("original", keys.get(0), keys.get(1), null,
+                null, null, null, null, 1024L, 100L, 50L, null);
+        service.savePhotoSuccess(claim, itemId, derived);
+        service.savePhotoSuccess(claim, itemId, derived);
+        entityManager.flush();
+        entityManager.clear();
+        item = entityManager.find(AdditionalAttachmentUploadItem.class, itemId);
+        assertThat(item.getDerivedJson()).isNotNull();
+        assertThat(item.getTripAttachmentId()).isNotNull();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trip_attachments WHERE trip_id = ?",
+                Integer.class, claim.tripId())).isEqualTo(1);
+        assertThatThrownBy(() -> service.startPhotoAttempt(claim, itemId)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void rejectsWrongOutputKeysAndStaleWorkerPhotoSave() {
+        var first = service.claimBatch().orElseThrow();
+        Long itemId = first.photos().getFirst().itemId();
+        service.startPhotoAttempt(first, itemId);
+        var wrong = new DerivedPhotoKeys("original", "wrong", "wrong-preview", null,
+                null, null, null, null, 1024L, 100L, 50L, null);
+        assertThatThrownBy(() -> service.savePhotoSuccess(first, itemId, wrong))
+                .isInstanceOf(IllegalStateException.class);
+        entityManager.flush();
+        jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET lease_expires_at = '2000-01-01' "
+                + "WHERE upload_batch_id = ?", batch.getId());
+        var second = service.claimBatch().orElseThrow();
+        var keys = service.startPhotoAttempt(second, itemId);
+        var derived = new DerivedPhotoKeys("original", keys.get(0), keys.get(1), null,
+                null, null, null, null, 1024L, 100L, 50L, null);
+        assertThatThrownBy(() -> service.savePhotoSuccess(first, itemId, derived))
+                .isInstanceOf(TripAttachmentAddNotAllowedException.class);
+        assertThat(keys.getFirst()).contains("/2/");
+        var item = entityManager.find(AdditionalAttachmentUploadItem.class, itemId);
+        assertThat(service.cleanupObjects(item).stream()
+                .filter(object -> object.key().endsWith("/1/analyze.jpg")
+                        || object.key().endsWith("/1/preview.webp")).toList())
+                .allSatisfy(object -> assertThat(object.startedAt()).isNotNull());
+    }
+
+    @Test
+    void capacityRejectionSchedulesRetryWithoutStartingPhotoAttempt() {
+        var claim = service.claimBatch().orElseThrow();
+        service.releaseSaturatedBatch(claim);
+        assertThat(service.claimBatch()).isEmpty();
+        entityManager.flush();
+        assertThat(jdbcTemplate.queryForObject("SELECT conversion_attempts FROM additional_attachment_upload_items "
+                + "WHERE upload_item_id = ?", Integer.class, claim.photos().getFirst().itemId())).isZero();
     }
 }

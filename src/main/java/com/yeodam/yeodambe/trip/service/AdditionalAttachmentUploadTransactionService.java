@@ -26,6 +26,8 @@ import java.util.List;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import java.util.Optional;
+import java.util.Objects;
+import tools.jackson.core.type.TypeReference;
 import java.time.LocalDateTime;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
@@ -268,6 +270,7 @@ public class AdditionalAttachmentUploadTransactionService {
             AdditionalAttachmentExecution execution = executionRepository.findForUpdate(candidate.getAdditionId())
                     .orElse(null);
             if (execution == null) continue;
+            entityManager.flush();
             entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
             AdditionalAttachmentUploadBatch batch = uploadBatchRepository.findForUpdate(
                     candidate.getUploadId(), candidate.getTripId(), candidate.getUserId()).orElse(null);
@@ -298,11 +301,99 @@ public class AdditionalAttachmentUploadTransactionService {
         return true;
     }
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public List<String> startPhotoAttempt(AdditionalAttachmentUploadBatchSnapshot claim, Long itemId) {
+        requireCurrentClaim(claim);
+        AdditionalAttachmentUploadItem item = requireItem(claim, itemId);
+        if (item.getDerivedJson() != null || item.getConversionAttempts() >= 3) {
+            throw new IllegalStateException(TripInternalErrorMessage.ATTACHMENT_CONVERSION_ATTEMPT_NOT_ALLOWED.message());
+        }
+        LocalDateTime now = databaseTime();
+        if (item.getConversionNextAttemptAt() != null && item.getConversionNextAttemptAt().isAfter(now)) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+        var journal = new ArrayList<>(cleanupObjects(item));
+        journal.replaceAll(object -> !object.key().equals(item.getObjectKey()) && object.startedAt() == null
+                ? new CleanupObject(object.key(), now, "CONVERSION_RETRY", object.deleted()) : object);
+        item.startConversion(now);
+        String prefix = derivativePrefix(claim, item);
+        List<String> keys = "image/heic".equals(item.getContentType())
+                ? List.of(prefix + "analyze.jpg", prefix + "preview.webp", prefix + "display.jpg")
+                : List.of(prefix + "analyze.jpg", prefix + "preview.webp");
+        keys.forEach(key -> journal.add(new CleanupObject(key, null, null, false)));
+        recordCleanup(item, journal);
+        return keys;
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void savePhotoSuccess(AdditionalAttachmentUploadBatchSnapshot claim, Long itemId, DerivedPhotoKeys photo) {
+        requireCurrentClaim(claim);
+        AdditionalAttachmentUploadItem item = requireItem(claim, itemId);
+        if (item.getDerivedJson() != null) return;
+        if (photo == null || !item.getObjectKey().equals(photo.originalKey())
+                || !Objects.equals(item.getSizeBytes(), photo.originalSizeBytes())) {
+            throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_SOURCE_ATTACHMENT_MISMATCH.message());
+        }
+        String prefix = derivativePrefix(claim, item);
+        boolean heic = "image/heic".equals(item.getContentType());
+        if (item.getConversionAttempts() < 1
+                || !Objects.equals(photo.analyzeKey(), prefix + "analyze.jpg")
+                || !Objects.equals(photo.previewKey(), prefix + "preview.webp")
+                || photo.analyzeSizeBytes() == null || photo.analyzeSizeBytes() < 1
+                || photo.previewSizeBytes() == null || photo.previewSizeBytes() < 1
+                || (heic && (!Objects.equals(photo.displayKey(), prefix + "display.jpg")
+                    || photo.displaySizeBytes() == null || photo.displaySizeBytes() < 1))
+                || (!heic && photo.displayKey() != null)) {
+            throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_OUTPUT_KEY_OR_SIZE_INVALID.message());
+        }
+        saveAttachment(claim.tripId(), claim.userId(), item, photo);
+        item.conversionCompleted(objectMapper.writeValueAsString(photo));
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void releaseSaturatedBatch(AdditionalAttachmentUploadBatchSnapshot claim) {
+        AdditionalAttachmentUploadBatch batch = currentClaim(claim);
+        if (batch != null) batch.retryConversion(claim.workerToken(), databaseTime().plusSeconds(5));
+    }
+
+    private String derivativePrefix(AdditionalAttachmentUploadBatchSnapshot claim, AdditionalAttachmentUploadItem item) {
+        return "trip-additions/" + claim.executionId() + "/derived/"
+                + item.getId() + "/" + item.getConversionAttempts() + "/";
+    }
+
+    private AdditionalAttachmentUploadItem requireItem(AdditionalAttachmentUploadBatchSnapshot claim, Long itemId) {
+        AdditionalAttachmentUploadItem item = uploadItemRepository.findById(itemId)
+                .orElseThrow(InvalidAttachmentUploadException::new);
+        if (!item.getBatch().getId().equals(claim.batchId())) throw new InvalidAttachmentUploadException();
+        entityManager.flush();
+        entityManager.refresh(item, LockModeType.PESSIMISTIC_WRITE);
+        return item;
+    }
+
+    private void requireCurrentClaim(AdditionalAttachmentUploadBatchSnapshot claim) {
+        if (currentClaim(claim) == null) throw new TripAttachmentAddNotAllowedException();
+    }
+
+    public List<CleanupObject> cleanupObjects(AdditionalAttachmentUploadItem item) {
+        return item.getCleanupJson() == null
+                ? List.of(new CleanupObject(item.getObjectKey(), null, null, false))
+                : objectMapper.readValue(item.getCleanupJson(), new TypeReference<List<CleanupObject>>() {});
+    }
+
+    private void recordCleanup(AdditionalAttachmentUploadItem item, List<CleanupObject> objects) {
+        LocalDateTime earliest = objects.stream().filter(object -> !object.deleted())
+                .map(CleanupObject::startedAt).filter(Objects::nonNull).min(LocalDateTime::compareTo).orElse(null);
+        item.recordCleanup(objectMapper.writeValueAsString(objects), earliest);
+    }
+
+    public record CleanupObject(String key, LocalDateTime startedAt, String reason, boolean deleted) {}
+
     private AdditionalAttachmentUploadBatch currentClaim(AdditionalAttachmentUploadBatchSnapshot claim) {
         Trip trip = tripRepository.findOwnedActiveForUpdate(claim.tripId(), claim.userId()).orElse(null);
         if (trip == null || trip.getProcessingStatus() != ProcessingStatus.COMPLETED) return null;
         AdditionalAttachmentExecution execution = executionRepository.findForUpdate(claim.executionId()).orElse(null);
         if (execution == null) return null;
+        entityManager.flush();
         entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
         if (execution.isTerminal() || !execution.getTripId().equals(claim.tripId())
                 || !execution.getUserId().equals(claim.userId())) return null;

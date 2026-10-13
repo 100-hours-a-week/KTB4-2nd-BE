@@ -18,13 +18,13 @@ class StoryEntityTest {
         assertThatThrownBy(() -> new Story(null, Story.Mood.PLAIN, "요약")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new Story(1L, null, "요약")).isInstanceOf(IllegalArgumentException.class);
         for (String memo : new String[]{null, "", "가".repeat(125)}) {
-            assertThat(new StoryBlock(1L, 2L, 0, "가".repeat(40), "가".repeat(40), memo).getMemo()).isEqualTo(memo);
+            assertThat(new StoryBlock(1L, 2L, 5L, java.time.LocalDate.of(2026, 10, 13), 0, "가".repeat(40), "가".repeat(40), memo).getMemo()).isEqualTo(memo);
         }
         for (String text : new String[]{null, "", " ", "가".repeat(41)}) {
-            assertThatThrownBy(() -> new StoryBlock(1L, 2L, 1, text, "문구", null)).isInstanceOf(IllegalArgumentException.class);
-            assertThatThrownBy(() -> new StoryBlock(1L, 2L, 1, "날짜", text, null)).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> new StoryBlock(1L, 2L, 5L, java.time.LocalDate.of(2026, 10, 13), 1, text, "문구", null)).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> new StoryBlock(1L, 2L, 5L, java.time.LocalDate.of(2026, 10, 13), 1, "날짜", text, null)).isInstanceOf(IllegalArgumentException.class);
         }
-        assertThatThrownBy(() -> new StoryBlock(1L, 2L, 1, "날짜", "문구", "가".repeat(126)))
+        assertThatThrownBy(() -> new StoryBlock(1L, 2L, 5L, java.time.LocalDate.of(2026, 10, 13), 1, "날짜", "문구", "가".repeat(126)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -32,7 +32,7 @@ class StoryEntityTest {
     void 양방향_관계를_동기화하고_중복과_이력_이동을_막는다() {
         Story story = new Story(1L, Story.Mood.CALM, "요약");
         ReflectionTestUtils.setField(story, "id", 3L);
-        StoryBlock block = new StoryBlock(3L, 4L, 1, "첫째 날", "문구", null);
+        StoryBlock block = new StoryBlock(3L, 4L, 5L, java.time.LocalDate.of(2026, 10, 13), 1, "첫째 날", "문구", null);
         StorySelectedPlace place = new StorySelectedPlace(3L, 5L);
         story.addBlock(block);
         story.addBlock(block);

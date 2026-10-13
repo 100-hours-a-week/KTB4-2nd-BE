@@ -40,6 +40,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     @Autowired private AdditionalAttachmentUploadOutboxService outboxService;
     @Autowired private AdditionalAttachmentUploadOutboxRepository outboxes;
     @Autowired private ObjectMapper applicationMapper;
+    @Autowired private com.yeodam.yeodambe.story.service.StoryReadService storyReadService;
     @Autowired private AdditionalAttachmentUploadTransactionService transactions;
     @Autowired private AdditionalAttachmentAnalysisPreparationService preparation;
     @Autowired private AdditionalAttachmentAnalysisResultService results;
@@ -168,6 +169,111 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         return jdbc.queryForObject("SELECT COUNT(*) FROM additional_attachment_upload_outbox o "
                 + "JOIN additional_attachment_upload_batches b ON b.upload_batch_id = o.upload_batch_id "
                 + "WHERE b.addition_id = ?", Integer.class, additionId);
+    }
+
+    @Test
+    void reclassificationKeepsExistingStoryRowsAndCurrentStoryWithoutRegeneration() {
+        Long storyId = createExistingStory();
+        LocalDate sourceDate = places.findById(oldPlaceId).orElseThrow().getStartedAt().toLocalDate();
+        var beforeStory = jdbc.queryForMap("SELECT * FROM stories WHERE story_id = ?", storyId);
+        var beforeBlocks = jdbc.queryForList("SELECT * FROM story_blocks WHERE story_id = ?", storyId);
+        var beforeSelections = jdbc.queryForList("SELECT * FROM story_selected_places WHERE story_id = ?", storyId);
+        completion.prepareBatchPhotos(tripId, userId, completeRequest());
+        var prepared = preparation.prepare(tripId, userId, uploadId);
+        results.acceptResult(tripId, userId, additionId, result(prepared, false));
+
+        assertThat(jdbc.queryForMap("SELECT * FROM stories WHERE story_id = ?", storyId)).isEqualTo(beforeStory);
+        assertThat(jdbc.queryForList("SELECT * FROM story_blocks WHERE story_id = ?", storyId)).isEqualTo(beforeBlocks);
+        assertThat(jdbc.queryForList("SELECT * FROM story_selected_places WHERE story_id = ?", storyId)).isEqualTo(beforeSelections);
+        assertThat(jdbc.queryForObject("SELECT current_story_id FROM trips WHERE trip_id = ?", Long.class, tripId))
+                .isEqualTo(storyId);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stories WHERE trip_id = ?", Integer.class, tripId)).isEqualTo(1);
+        when(storage.createReadUrl(anyString())).thenReturn("https://example.test/story-photo");
+        jdbc.update("UPDATE trip_detail_places SET started_at = '2099-01-01 00:00:00' WHERE trip_place_id = ?", oldPlaceId);
+        var detail = storyReadService.findStory(userId, tripId);
+        assertThat(detail.storyId()).isEqualTo(storyId);
+        assertThat(detail.storySummary()).isEqualTo("기존 스토리");
+        assertThat(detail.days()).hasSize(1);
+        assertThat(detail.days().getFirst().date()).isEqualTo(sourceDate);
+        assertThat(detail.days().getFirst().blocks().getFirst().tripPlaceId()).isEqualTo(oldPlaceId);
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getTripPlaceId()).isNotEqualTo(oldPlaceId);
+        assertThat(detail.days().getFirst().blocks().getFirst().tripAttachmentId()).isEqualTo(oldPhotoId);
+    }
+
+    @Test
+    void failedAdditionPreservesExistingStoryAndItsReadablePhoto() {
+        Long storyId = createExistingStory();
+        var beforeStory = jdbc.queryForMap("SELECT * FROM stories WHERE story_id = ?", storyId);
+        var beforeBlocks = jdbc.queryForList("SELECT * FROM story_blocks WHERE story_id = ?", storyId);
+        completion.prepareBatchPhotos(tripId, userId, completeRequest());
+        preparation.prepare(tripId, userId, uploadId);
+        results.fail(tripId, userId, additionId);
+
+        assertThat(batchStatus()).isEqualTo("FAILED");
+        assertThat(jdbc.queryForMap("SELECT * FROM stories WHERE story_id = ?", storyId)).isEqualTo(beforeStory);
+        assertThat(jdbc.queryForList("SELECT * FROM story_blocks WHERE story_id = ?", storyId)).isEqualTo(beforeBlocks);
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getTripPlaceId()).isEqualTo(oldPlaceId);
+        assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
+        when(storage.createReadUrl(anyString())).thenReturn("https://example.test/story-photo");
+        assertThat(storyReadService.findStory(userId, tripId).storyId()).isEqualTo(storyId);
+    }
+
+    @Test
+    void keepsStoryReadableWithSourcePlaceAndDateWhenPhotoBecomesUnclassified() {
+        Long storyId = createExistingStory();
+        LocalDate sourceDate = places.findById(oldPlaceId).orElseThrow().getStartedAt().toLocalDate();
+        completion.prepareBatchPhotos(tripId, userId, completeRequest());
+        var prepared = preparation.prepare(tripId, userId, uploadId);
+        var unclassified = prepared.request().attachments().stream()
+                .map(photo -> Map.<String, Object>of("trip_attachment_id", photo.tripAttachmentId(),
+                        "issue", "BLURRY", "region_origin", "EXIF", "evaluation", 10)).toList();
+        JsonNode outcome = json.valueToTree(Map.of("trip_id", tripId, "execution_id", additionId,
+                "places", List.of(), "unclassified", unclassified));
+        results.acceptResult(tripId, userId, additionId, outcome);
+
+        assertThat(batchStatus()).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("SELECT current_story_id FROM trips WHERE trip_id = ?", Long.class, tripId))
+                .isEqualTo(storyId);
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getTripPlaceId()).isNull();
+        when(storage.createReadUrl(anyString())).thenReturn("https://example.test/story-photo");
+        var detail = storyReadService.findStory(userId, tripId);
+        assertThat(detail.storyId()).isEqualTo(storyId);
+        assertThat(detail.storySummary()).isEqualTo("기존 스토리");
+        assertThat(detail.days().getFirst().date()).isEqualTo(sourceDate);
+        var block = detail.days().getFirst().blocks().getFirst();
+        assertThat(block.tripPlaceId()).isEqualTo(oldPlaceId);
+        assertThat(block.tripAttachmentId()).isEqualTo(oldPhotoId);
+        assertThat(block.detailSummary()).isEqualTo("기존 사진 이야기");
+        assertThat(block.memo()).isEqualTo("기존 메모");
+    }
+
+    @Test
+    void requiresStorySourcePlaceAndDateAndRejectsMissingSourcePlace() {
+        Long storyId = createExistingStory();
+        var snapshot = jdbc.queryForMap("SELECT source_trip_place_id, source_date FROM story_blocks WHERE story_id = ?", storyId);
+        assertThat(((Number) snapshot.get("source_trip_place_id")).longValue()).isEqualTo(oldPlaceId);
+        assertThat(snapshot.get("source_date")).isNotNull();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.columns "
+                + "WHERE table_schema = DATABASE() AND table_name = 'story_blocks' "
+                + "AND column_name IN ('source_trip_place_id', 'source_date') AND is_nullable = 'NO'", Integer.class))
+                .isEqualTo(2);
+        assertThatThrownBy(() -> jdbc.update("UPDATE story_blocks SET source_date = NULL WHERE story_id = ?", storyId))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE story_blocks SET source_trip_place_id = ? WHERE story_id = ?",
+                Long.MAX_VALUE, storyId)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    private Long createExistingStory() {
+        jdbc.update("INSERT INTO stories (trip_id, mood, story_summary, processing_status) "
+                + "VALUES (?, 'PLAIN', '기존 스토리', 'COMPLETED')", tripId);
+        Long storyId = jdbc.queryForObject("SELECT story_id FROM stories WHERE trip_id = ?", Long.class, tripId);
+        jdbc.update("INSERT INTO story_selected_places (story_id, trip_place_id) VALUES (?, ?)", storyId, oldPlaceId);
+        jdbc.update("INSERT INTO story_blocks (story_id, trip_attachment_id, source_trip_place_id, source_date, "
+                + "order_number, day_label, detail_summary, memo) "
+                + "VALUES (?, ?, ?, ?, 1, '첫째 날', '기존 사진 이야기', '기존 메모')", storyId, oldPhotoId,
+                oldPlaceId, places.findById(oldPlaceId).orElseThrow().getStartedAt().toLocalDate());
+        jdbc.update("UPDATE trips SET current_story_id = ? WHERE trip_id = ?", storyId, tripId);
+        return storyId;
     }
 
     @Test

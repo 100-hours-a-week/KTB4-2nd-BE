@@ -6,6 +6,10 @@ import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.story.repository.StorySelectedPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
+import java.util.HashMap;
 import com.yeodam.yeodambe.common.exception.StoryAlreadyExistsException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.story.client.request.StoryGenerationMessage;
@@ -31,6 +35,7 @@ public class StoryGenerationCompletionService {
     private final StorySelectedPlaceRepository selectedPlaceRepository;
     private final StoryGenerationResultValidator resultValidator;
     private final ObjectMapper objectMapper;
+    private final TripDetailPlaceRepository tripDetailPlaceRepository;
 
     @Transactional
     public void complete(
@@ -101,15 +106,30 @@ public class StoryGenerationCompletionService {
                 .toList();
         selectedPlaceRepository.saveAll(selectedPlaces);
 
+        var sourcePlaces = new HashMap<Long, TripDetailPlace>();
+        tripDetailPlaceRepository.findAllById(
+                request.places().stream()
+                        .map(StoryGenerationMessage.Place::tripPlaceId)
+                        .toList()
+        ).forEach(place -> sourcePlaces.put(place.getId(), place));
+
         var blocks = response.result().blocks().stream()
-                .map(block -> new StoryBlock(
-                        story.getId(),
-                        block.tripAttachmentId(),
-                        block.orderNumber(),
-                        block.dayLabel(),
-                        block.detailSummary(),
-                        block.memo()
-                ))
+                .map(block -> {
+                    var sourcePlace = sourcePlaces.get(block.tripPlaceId());
+                    if (sourcePlace == null
+                            || !trip.getId().equals(sourcePlace.getTripId())
+                            || sourcePlace.getStartedAt() == null) {
+                        throw new StoryDataIntegrityException(
+                                "스토리 생성 장소 또는 날짜가 올바르지 않습니다."
+                        );
+                    }
+                    return new StoryBlock(
+                            story.getId(), block.tripAttachmentId(),
+                            sourcePlace.getId(), sourcePlace.getStartedAt().toLocalDate(),
+                            block.orderNumber(), block.dayLabel(),
+                            block.detailSummary(), block.memo()
+                    );
+                })
                 .toList();
         blockRepository.saveAll(blocks);
 

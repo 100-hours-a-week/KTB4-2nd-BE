@@ -42,8 +42,8 @@ public class StoryValidator {
         if (!tripId.equals(block.getPlace().getTripId())) {
             throw new StoryDataIntegrityException("표시 조건: 다른 여행의 장소입니다.");
         }
-        if (block.getPlace().getStartedAt() == null) {
-            throw new StoryDataIntegrityException("표시 조건: 장소 시작일이 없습니다.");
+        if (block.getBlock().getSourceDate() == null) {
+            throw new StoryDataIntegrityException("표시 조건: 스토리 날짜가 없습니다.");
         }
         String key = block.getAttachment().getPreviewStorageKey();
         if (key == null || key.isBlank()) {

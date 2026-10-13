@@ -27,13 +27,15 @@ class StorySchemaMigrationTest {
         Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()).load().migrate();
         assertThat(jdbc.queryForObject("SELECT current_story_id FROM trips WHERE trip_id=901", Long.class)).isNull();
         assertThat(jdbc.queryForObject("SELECT trip_name FROM trips WHERE trip_id=901", String.class)).isEqualTo("기존여행");
+        jdbc.update("INSERT INTO trip_detail_places (trip_place_id, trip_id, order_number, place_name, latitude, longitude, started_at, ended_at) "
+                + "VALUES (901, 901, 1, '장소', 0, 0, '2026-10-07 12:00:00', '2026-10-07 13:00:00')");
         jdbc.update("INSERT INTO stories(story_id,trip_id,mood,story_summary) VALUES (901,901,'PLAIN',?),(902,901,'CALM','이력')", "가".repeat(40));
         jdbc.update("UPDATE trips SET current_story_id=901 WHERE trip_id=901");
         jdbc.update("UPDATE trips SET current_story_id=902 WHERE trip_id=901");
         assertThat(jdbc.queryForObject("SELECT current_story_id FROM trips WHERE trip_id=901", Long.class)).isEqualTo(902L);
-        jdbc.update("INSERT INTO story_blocks(story_id,trip_attachment_id,order_number,day_label,detail_summary,memo) VALUES (901,901,1,?,?,?)", "가".repeat(40), "나".repeat(40), "다".repeat(125));
-        assertThatThrownBy(() -> jdbc.update("INSERT INTO story_blocks(story_id,trip_attachment_id,order_number,day_label,detail_summary) VALUES (901,901,2,'날','문구')")).isInstanceOf(DataIntegrityViolationException.class);
-        jdbc.update("INSERT INTO story_blocks(story_id,trip_attachment_id,order_number,day_label,detail_summary) VALUES (902,901,1,'날','문구')");
+        jdbc.update("INSERT INTO story_blocks(story_id,trip_attachment_id,source_trip_place_id,source_date,order_number,day_label,detail_summary,memo) VALUES (901,901,901,'2026-10-07',1,?,?,?)", "가".repeat(40), "나".repeat(40), "다".repeat(125));
+        assertThatThrownBy(() -> jdbc.update("INSERT INTO story_blocks(story_id,trip_attachment_id,source_trip_place_id,source_date,order_number,day_label,detail_summary) VALUES (901,901,901,'2026-10-07',2,'날','문구')")).isInstanceOf(DataIntegrityViolationException.class);
+        jdbc.update("INSERT INTO story_blocks(story_id,trip_attachment_id,source_trip_place_id,source_date,order_number,day_label,detail_summary) VALUES (902,901,901,'2026-10-07',1,'날','문구')");
         assertThatThrownBy(() -> jdbc.update("UPDATE trips SET current_story_id=999 WHERE trip_id=901")).isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> jdbc.update("UPDATE stories SET story_summary=? WHERE story_id=901", "가".repeat(41))).isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> jdbc.update("UPDATE story_blocks SET day_label=? WHERE story_id=901", "가".repeat(41))).isInstanceOf(DataIntegrityViolationException.class);

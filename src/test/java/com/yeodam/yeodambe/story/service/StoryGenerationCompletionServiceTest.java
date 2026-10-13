@@ -130,6 +130,10 @@ class StoryGenerationCompletionServiceTest {
                 Long.class, storyId)).isEqualTo(photo.getId());
         assertThat(jdbc.queryForObject("SELECT trip_place_id FROM story_selected_places WHERE story_id = ?",
                 Long.class, storyId)).isEqualTo(folder.getId());
+        assertThat(jdbc.queryForObject("SELECT source_trip_place_id FROM story_blocks WHERE story_id = ?",
+                Long.class, storyId)).isEqualTo(folder.getId());
+        assertThat(jdbc.queryForObject("SELECT source_date FROM story_blocks WHERE story_id = ?",
+                java.time.LocalDate.class, storyId)).isEqualTo(folder.getStartedAt().toLocalDate());
     }
 
     @Test

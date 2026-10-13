@@ -21,6 +21,10 @@ spring:
         "[allow.auto.create.topics]": false
     listener:
       ack-mode: record
+  task:
+    scheduling:
+      pool:
+        size: 4
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -86,8 +90,8 @@ app:
     result-consumer-group: ${KAFKA_STORY_RESULT_CONSUMER_GROUP:yeodam-story-results}
   kafka:
     topics:
-      trip-create-request: ${KAFKA_TRIP_CREATE_REQUEST_TOPIC:}
-      trip-create-result: ${KAFKA_TRIP_CREATE_RESULT_TOPIC:}
+      trip-create-request: ${KAFKA_TRIP_CREATE_REQUEST_TOPIC:ai-jobs}
+      trip-create-result: ${KAFKA_TRIP_CREATE_RESULT_TOPIC:ai-results}
       trip-update-request: ${KAFKA_TRIP_UPDATE_REQUEST_TOPIC:}
       trip-update-result: ${KAFKA_TRIP_UPDATE_RESULT_TOPIC:}
       story-create-request: ${KAFKA_STORY_CREATE_REQUEST_TOPIC:}
@@ -161,6 +165,9 @@ auth:
     secret: ${JWT_SECRET:local-development-jwt-secret-key-32-bytes}
     issuer: ${JWT_ISSUER:http://localhost:8080}
 app:
+  trip:
+    result-listener-enabled: ${KAFKA_TRIP_RESULT_LISTENER_ENABLED:true}
+    result-consumer-group: ${KAFKA_TRIP_RESULT_CONSUMER_GROUP:yeodam-trip-results}
   cors:
     allowed-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
 ---
@@ -297,6 +304,9 @@ auth:
 app:
   cors:
     allowed-origin: https://app.yeodam.test
+  trip:
+    worker-initial-delay-ms: 3600000
+    result-listener-enabled: false
   story:
     status-polling-enabled: false
     result-listener-enabled: false

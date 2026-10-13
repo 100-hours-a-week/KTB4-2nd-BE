@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.event.EventHandler;
 import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventPayload;
 import com.yeodam.yeodambe.common.event.EventType;
+import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
 import com.yeodam.yeodambe.story.event.StoryCreateRequestEvent;
 import com.yeodam.yeodambe.story.event.StoryCreateResultEvent;
 import com.yeodam.yeodambe.story.event.handler.StoryCreateRequestEventHandler;
@@ -19,11 +20,18 @@ import com.yeodam.yeodambe.trip.event.handler.TripCreateRequestEventHandler;
 import com.yeodam.yeodambe.trip.event.handler.TripCreateResultEventHandler;
 import com.yeodam.yeodambe.trip.event.handler.TripUpdateRequestEventHandler;
 import com.yeodam.yeodambe.trip.event.handler.TripUpdateResultEventHandler;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadTransactionService;
+import com.yeodam.yeodambe.trip.service.TripAnalysisResultService;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.kafka.core.KafkaTemplate;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -34,9 +42,15 @@ import static org.mockito.Mockito.when;
 
 class EventHandlerTest {
 
+
     @Test
     void 도메인_핸들러가_서로_다른_이벤트_타입의_빈으로_등록된다() {
         new ApplicationContextRunner()
+                .withBean(InitialAttachmentUploadTransactionService.class, () -> mock(InitialAttachmentUploadTransactionService.class))
+                .withBean(TripAnalysisResultService.class, () -> mock(TripAnalysisResultService.class))
+                .withBean(KafkaTemplate.class, () -> mock(KafkaTemplate.class))
+                .withBean(KafkaTopicProperties.class, this::topics)
+                .withBean(ObjectMapper.class, ObjectMapper::new)
                 .withBean(StoryGenerationJobRepository.class, () -> mock(StoryGenerationJobRepository.class))
                 .withBean(StoryGenerationCompletionService.class, () -> mock(StoryGenerationCompletionService.class))
                 .withBean(StoryGenerationTerminalService.class, () -> mock(StoryGenerationTerminalService.class))
@@ -58,8 +72,6 @@ class EventHandlerTest {
 
     @Test
     void 미구현_핸들러는_이벤트를_처리한_것처럼_정상_종료하지_않는다() {
-        assertNotImplemented(new TripCreateRequestEventHandler(), new TripCreateRequestEvent());
-        assertNotImplemented(new TripCreateResultEventHandler(), new TripCreateResultEvent());
         assertNotImplemented(new TripUpdateRequestEventHandler(), new TripUpdateRequestEvent());
         assertNotImplemented(new TripUpdateResultEventHandler(), new TripUpdateResultEvent());
         assertNotImplemented(new StoryCreateRequestEventHandler(), new StoryCreateRequestEvent());
@@ -91,12 +103,26 @@ class EventHandlerTest {
 
     @Test
     void 구현체를_직접_호출해도_지원하지_않는_타입을_건너뛰고_null을_거부한다() {
-        assertDirectInvocation(new TripCreateRequestEventHandler(), TripCreateRequestEvent.class);
-        assertDirectInvocation(new TripCreateResultEventHandler(), TripCreateResultEvent.class);
+        assertDirectInvocation(requestHandler(), TripCreateRequestEvent.class);
+        assertDirectInvocation(resultHandler(), TripCreateResultEvent.class);
         assertDirectInvocation(new TripUpdateRequestEventHandler(), TripUpdateRequestEvent.class);
         assertDirectInvocation(new TripUpdateResultEventHandler(), TripUpdateResultEvent.class);
         assertDirectInvocation(new StoryCreateRequestEventHandler(), StoryCreateRequestEvent.class);
         assertDirectInvocation(storyResultHandler(), StoryCreateResultEvent.class);
+    }
+
+    private TripCreateRequestEventHandler requestHandler() {
+        return new TripCreateRequestEventHandler(mock(InitialAttachmentUploadTransactionService.class),
+                mock(KafkaTemplate.class), topics());
+    }
+
+    private TripCreateResultEventHandler resultHandler() {
+        return new TripCreateResultEventHandler();
+    }
+
+    private KafkaTopicProperties topics() {
+        return new KafkaTopicProperties(Arrays.stream(EventType.values())
+                .collect(Collectors.toMap(type -> type, type -> "test." + type)));
     }
 
     private StoryCreateResultEventHandler storyResultHandler() {
@@ -104,7 +130,10 @@ class EventHandlerTest {
                 mock(StoryGenerationCompletionService.class), mock(StoryGenerationTerminalService.class));
     }
 
-    private <T extends EventPayload> void assertDirectInvocation(EventHandler<T> handler, Class<T> eventClass) {
+    private <T extends EventPayload> void assertDirectInvocation(
+            EventHandler<T> handler,
+            Class<T> eventClass
+    ) {
         T event = mock(eventClass);
         EventType unsupportedType = handler.eventType() == EventType.TRIP_CREATE_REQUEST
                 ? EventType.STORY_CREATE_REQUEST : EventType.TRIP_CREATE_REQUEST;
@@ -116,7 +145,10 @@ class EventHandlerTest {
                 .withMessage(EventInternalErrorMessage.EVENT_PAYLOAD_MISSING.message());
     }
 
-    private <T extends EventPayload> void assertNotImplemented(EventHandler<T> handler, T event) {
+    private <T extends EventPayload> void assertNotImplemented(
+            EventHandler<T> handler,
+            T event
+    ) {
         assertThat(handler.eventType()).isEqualTo(event.eventType());
         assertThatExceptionOfType(UnsupportedOperationException.class)
                 .isThrownBy(() -> handler.handleIfSupported(event))

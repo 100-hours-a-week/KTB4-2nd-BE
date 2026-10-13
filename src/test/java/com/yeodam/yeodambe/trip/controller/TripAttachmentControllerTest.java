@@ -1,59 +1,55 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
+import com.yeodam.yeodambe.common.exception.InvalidAttachmentIssueException;
+import com.yeodam.yeodambe.common.exception.InvalidCursorException;
+import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
+import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
 import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.response.AttachmentRestoreResponse;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
-import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
-import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
-import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
-import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
-import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
-import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.user.service.UserStatsService;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
-import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
-import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
-import com.yeodam.yeodambe.common.exception.InvalidAttachmentIssueException;
-import com.yeodam.yeodambe.common.exception.InvalidCursorException;
-import com.yeodam.yeodambe.common.exception.TripNotFoundException;
-import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
-import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
 import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
+import com.yeodam.yeodambe.user.service.UserStatsService;
+import org.hamcrest.Matchers;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -68,15 +64,16 @@ class TripAttachmentControllerTest {
             mock(UnclassifiedFolderListService.class);
     private final TripAttachmentRestoreService restoreService =
             mock(TripAttachmentRestoreService.class);
+    private final InitialAttachmentUploadCompletionService uploadCompletion =
+            mock(InitialAttachmentUploadCompletionService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
-
             listService,
             detailService,
             deletionService,
             downloadService,
             bulkDownloadService,
             uploadUrlService,
-            mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class),
+            uploadCompletion,
             unclassifiedFolderListService,
             restoreService
     );
@@ -113,7 +110,7 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.data.items[0].issue").value("BLURRY"))
                 .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(31))
                 .andExpect(jsonPath("$.data.hasNext").value(false))
-                .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data.nextCursor").value(Matchers.nullValue()));
 
         verify(unclassifiedFolderListService).findAttachments(1L, 7L, "BLURRY", "cursor");
     }
@@ -140,7 +137,7 @@ class TripAttachmentControllerTest {
                 .build()
                 .perform(get("/trips/7/unclassified-folders/UNCLEAR_LOCATION/attachments"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(Matchers.nullValue()))
                 .andExpect(jsonPath("$.data.hasNext").value(true))
                 .andExpect(jsonPath("$.data.nextCursor").value("next-cursor"));
     }
@@ -166,7 +163,7 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.data.attachmentCount").value(0))
                 .andExpect(jsonPath("$.data.items").isEmpty())
                 .andExpect(jsonPath("$.data.hasNext").value(false))
-                .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data.nextCursor").value(Matchers.nullValue()));
     }
 
     @ParameterizedTest
@@ -195,7 +192,7 @@ class TripAttachmentControllerTest {
                 .perform(get("/trips/7/unclassified-folders/BLURRY/attachments"))
                 .andExpect(status().is(statusCode))
                 .andExpect(jsonPath("$.message").value(message))
-                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data").value(Matchers.nullValue()));
     }
 
     @Test
@@ -270,12 +267,6 @@ class TripAttachmentControllerTest {
         verify(downloadService).issueDownloadUrl(1L, 11L);
     }
 
-
-
-
-
-
-
     @Test
     void API_접두사가_있는_JSON_완료_요청에_uploadId가_없으면_400을_반환한다() throws Exception {
         MockMvcBuilders.standaloneSetup(controller)
@@ -288,6 +279,7 @@ class TripAttachmentControllerTest {
                         .contentType("application/json").content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_ATTACHMENT_UPLOAD"));
+        verifyNoInteractions(uploadCompletion);
     }
 
     @Test
@@ -350,15 +342,14 @@ class TripAttachmentControllerTest {
         TripAttachmentDeletionService realDeletionService =
                 new TripAttachmentDeletionService(repository, stats);
         TripAttachmentController realController = new TripAttachmentController(
-
-                listService,
+                    listService,
                 detailService,
                 realDeletionService,
                 downloadService,
                 bulkDownloadService,
                 uploadUrlService,
-                mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class),
-                mock(com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService.class),
+                uploadCompletion,
+                mock(UnclassifiedFolderListService.class),
                 restoreService
         );
         String ids = LongStream.rangeClosed(1, 201)
@@ -502,32 +493,14 @@ class TripAttachmentControllerTest {
 
             @Override
             public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer container,
-                                          NativeWebRequest request, org.springframework.web.bind.support.WebDataBinderFactory binderFactory) {
+                                          NativeWebRequest request, WebDataBinderFactory binderFactory) {
                 return jwt();
             }
         };
-    }
-
-    private MockMultipartFile photo() {
-        return new MockMultipartFile("attachments[]", "photo.jpg", "image/jpeg", new byte[]{(byte) 0xff, (byte) 0xd8, (byte) 0xff});
     }
 
     private Jwt jwt() {
         return Jwt.withTokenValue("token").header("alg", "HS256").subject("1").build();
     }
 
-    private MockMultipartFile emptyPhoto() {
-        return new MockMultipartFile("attachments[]", "empty.jpg", "image/jpeg", new byte[0]);
-    }
-
-    private TripProcessingStatusResponse completed(int total) {
-        return new TripProcessingStatusResponse(
-                7L,
-                TripProcessingStatusResponse.Status.COMPLETED,
-                new TripProcessingStatusResponse.Progress(total, total),
-                null,
-                new TripProcessingStatusResponse.Result(7L, 1, total, 0),
-                null
-        );
-    }
 }

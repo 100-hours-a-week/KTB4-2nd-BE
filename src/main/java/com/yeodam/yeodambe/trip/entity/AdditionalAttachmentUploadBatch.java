@@ -50,6 +50,9 @@ public class AdditionalAttachmentUploadBatch {
     @Column(name = "lease_expires_at")
     private LocalDateTime leaseExpiresAt;
 
+    @Column(name = "next_attempt_at")
+    private LocalDateTime nextAttemptAt;
+
     @Column(
             name = "created_at",
             nullable = false,
@@ -105,15 +108,47 @@ public class AdditionalAttachmentUploadBatch {
         workerToken = token;
     }
 
+    public void claimConversion(
+            String token,
+            LocalDateTime until
+    ) {
+        claimConversion(token);
+        leaseExpiresAt = until;
+        nextAttemptAt = null;
+    }
+
+    public void renewConversion(
+            String token,
+            LocalDateTime until
+    ) {
+        if (!isConversionOwner(token)) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+
+        leaseExpiresAt = until;
+    }
+
+    public void retryConversion(
+            String token,
+            LocalDateTime next
+    ) {
+        releaseConversion(token);
+        nextAttemptAt = next;
+    }
+
     public boolean isConversionOwner(String token) {
         return status == AdditionalAttachmentUploadStatus.CONVERTING
                 && workerToken != null && workerToken.equals(token);
     }
 
     public void releaseConversion(String token) {
-        if (!isConversionOwner(token)) throw new TripAttachmentAddNotAllowedException();
+        if (!isConversionOwner(token)) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
         status = AdditionalAttachmentUploadStatus.VERIFIED;
         workerToken = null;
+        leaseExpiresAt = null;
+        nextAttemptAt = null;
     }
 
     public void markPrepared() {

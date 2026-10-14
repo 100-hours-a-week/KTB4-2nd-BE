@@ -53,6 +53,24 @@ class TripControllerTest {
     );
 
     @Test
+    void mapResponseContainsTripMarkersWithoutRegionGroupingFields() {
+        var data = new com.yeodam.yeodambe.trip.service.response.TripMapResponse(List.of(
+                new com.yeodam.yeodambe.trip.service.response.TripMapResponse.Marker(7L, "trip",
+                        new java.math.BigDecimal("37.5"), new java.math.BigDecimal("127.2"), "https://example.test/preview", 3L)));
+        when(tripService.findMap(1L)).thenReturn(data);
+        var response = controller.findMap(jwt());
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        var root = objectMapper.valueToTree(response.getBody());
+        assertThat(root.path("message").asString()).isEqualTo("TRIP_MAP_FOUND");
+        var marker = root.path("data").path("markers").get(0);
+        assertThat(marker.propertyNames()).containsExactlyInAnyOrder(
+                "tripId", "tripName", "latitude", "longitude", "thumbnailUrl", "attachmentCount");
+        assertThat(marker.path("tripId").asLong()).isEqualTo(7L);
+        assertThat(marker.path("thumbnailUrl").asString()).isEqualTo("https://example.test/preview");
+        verify(tripService).findMap(1L);
+    }
+
+    @Test
     void 인증된_사용자의_여행을_생성하면_처리중으로_응답한다() {
         when(tripService.createTrip(1L, request))
                 .thenReturn(new TripCreateResponse(7L, ProcessingStatus.PROCESSING));

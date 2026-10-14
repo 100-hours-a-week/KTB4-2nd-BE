@@ -16,6 +16,45 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface TripAttachmentRepository extends JpaRepository<TripAttachment, Long> {
+    @Query("""
+            select new com.yeodam.yeodambe.trip.repository.TripMapRepresentative(
+                trip.id, trip.tripName, attachment.latitude, attachment.longitude,
+                attachment.previewStorageKey
+            )
+            from TripAttachment attachment
+            join attachment.trip trip
+            join attachment.file file
+            where trip.userId = :userId
+              and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
+              and trip.deletedAt is null
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and attachment.latitude is not null
+              and attachment.longitude is not null
+              and not exists (
+                  select better.id from TripAttachment better
+                  join better.file betterFile
+                  where better.tripId = trip.id
+                    and better.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+                    and better.deletedAt is null
+                    and betterFile.deletedAt is null
+                    and better.latitude is not null
+                    and better.longitude is not null
+                    and (
+                        (better.evaluation is not null and attachment.evaluation is null)
+                        or better.evaluation > attachment.evaluation
+                        or (
+                            (better.evaluation = attachment.evaluation
+                                or (better.evaluation is null and attachment.evaluation is null))
+                            and better.id < attachment.id
+                        )
+                    )
+              )
+            order by trip.id
+            """)
+    List<TripMapRepresentative> findMapRepresentatives(@Param("userId") Long userId);
+
     @Modifying(flushAutomatically = true)
     @Query("""
             update TripAttachment attachment

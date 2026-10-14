@@ -94,4 +94,35 @@ class BackendJsonLogFormatterTest {
         assertThat(json.path("request_id").isNull()).isTrue();
         assertThat(json.path("release").asString()).isEqualTo("unknown");
     }
+    @Test
+    void DLT_알림의_필드와_타입을_안내대로_출력한다() {
+        var converter = new ThrowableProxyConverter();
+        converter.start();
+        var formatter = new BackendJsonLogFormatter(new MockEnvironment(), converter);
+        var event = new LoggingEvent();
+        event.setInstant(Instant.now());
+        event.setLevel(Level.WARN);
+        event.setLoggerName("kafka.dlt");
+        event.setMessage("Kafka 결과를 DLT로 발행했습니다.");
+        event.setMDCPropertyMap(Map.of());
+        event.setKeyValuePairs(List.of(
+                new KeyValuePair("event", "kafka_dlt_published"),
+                new KeyValuePair("service", "be"),
+                new KeyValuePair("dlt_topic", "staging.yeodam.trip-create.result-dlt"),
+                new KeyValuePair("source_topic", "staging.yeodam.trip-create.result"),
+                new KeyValuePair("trip_id", "42"),
+                new KeyValuePair("failure", "IllegalArgumentException"),
+                new KeyValuePair("attempts", 3)
+        ));
+
+        var json = objectMapper.readTree(formatter.format(event));
+
+        assertThat(json.path("service").asString()).isEqualTo("be");
+        assertThat(json.path("trip_id").isString()).isTrue();
+        assertThat(json.path("trip_id").asString()).isEqualTo("42");
+        assertThat(json.path("dlt_topic").asString()).isEqualTo("staging.yeodam.trip-create.result-dlt");
+        assertThat(json.path("source_topic").asString()).isEqualTo("staging.yeodam.trip-create.result");
+        assertThat(json.path("failure").asString()).isEqualTo("IllegalArgumentException");
+        assertThat(json.path("attempts").asInt()).isEqualTo(3);
+    }
 }

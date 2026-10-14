@@ -14,7 +14,6 @@ public enum IntegrationInternalErrorMessage {
     AI_SERVER_HEALTH_CHECK_FAILED("AI 서버 상태 확인에 실패했습니다."),
     AI_SERVER_READY_WAIT_INTERRUPTED("AI 서버 준비 대기가 중단됐습니다"),
     AI_SERVER_READY_WAIT_TIMEOUT("AI 서버 준비 시간이 초과됐습니다."),
-    MSK_BOOTSTRAP_SERVERS_BLANK("MSK 프로필에서는 KAFKA_BOOTSTRAP_SERVERS가 비어 있을 수 없습니다."),
     AI_PROGRESS_EXECUTION_MISMATCH("AI 진행률의 실행이 다릅니다."),
     AI_PROGRESS_INVALID("AI 진행률이 잘못됐습니다."),
     AI_PROCESS_STEP_INVALID("AI 처리 단계가 잘못됐습니다.");

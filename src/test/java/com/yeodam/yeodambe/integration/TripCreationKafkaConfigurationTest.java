@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.integration;
 
 import com.yeodam.yeodambe.integration.config.TripCreationKafkaConfiguration;
+import com.yeodam.yeodambe.integration.service.KafkaDltLogService;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -9,8 +10,8 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.kafka.autoconfigure.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -28,14 +29,16 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class TripCreationKafkaConfigurationTest {
 
     @ParameterizedTest
-    @ValueSource(strings = {"create", "update"})
+    @CsvSource({"create,false", "update,false", "create,true", "update,true"})
     @SuppressWarnings("unchecked")
-    void 설정한_DLT로_원래_파티션과_메시지를_유지해_발행한다(String operation) {
+    void DLT_실패는_재처리하고_성공한_발행만_기록한다(String operation, boolean failFirst) {
         var kafka = (KafkaTemplate<String, String>) mock(KafkaTemplate.class);
         var consumer = mock(Consumer.class);
         when(consumer.partitionsFor(eq("configured-trip-dlt"), any(Duration.class))).thenReturn(List.of(
@@ -44,9 +47,16 @@ class TripCreationKafkaConfigurationTest {
         ));
         var published = new ProducerRecord<>("configured-trip-dlt", 1, "7", "{broken");
         var metadata = new RecordMetadata(new TopicPartition("configured-trip-dlt", 1), 0, 0, 0, 1, 7);
-        when(kafka.send(any(ProducerRecord.class)))
-                .thenReturn(CompletableFuture.completedFuture(new SendResult<>(published, metadata)));
-        var configuration = new TripCreationKafkaConfiguration();
+        var successfulSend = CompletableFuture.completedFuture(new SendResult<>(published, metadata));
+        if (failFirst) {
+            when(kafka.send(any(ProducerRecord.class)))
+                    .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")))
+                    .thenReturn(successfulSend);
+        } else {
+            when(kafka.send(any(ProducerRecord.class))).thenReturn(successfulSend);
+        }
+        var dltLogs = mock(KafkaDltLogService.class);
+        var configuration = new TripCreationKafkaConfiguration(dltLogs);
         var configurer = mock(ConcurrentKafkaListenerContainerFactoryConfigurer.class);
         var consumerFactory = mock(ConsumerFactory.class);
         var factory = "update".equals(operation)
@@ -55,6 +65,11 @@ class TripCreationKafkaConfigurationTest {
         var handler = (DefaultErrorHandler) ReflectionTestUtils.getField(factory, "commonErrorHandler");
         var record = new ConsumerRecord<>("trip-result", 1, 10, "7", "{broken");
 
+        if (failFirst) {
+            assertThat(handler.handleOne(new IllegalArgumentException("invalid result"), record,
+                    consumer, mock(MessageListenerContainer.class))).isFalse();
+            verifyNoInteractions(dltLogs);
+        }
         boolean recovered = handler.handleOne(
                 new IllegalArgumentException("invalid result"),
                 record,
@@ -62,9 +77,11 @@ class TripCreationKafkaConfigurationTest {
                 mock(MessageListenerContainer.class)
         );
 
+        assertThat(factory.getContainerProperties().isDeliveryAttemptHeader()).isTrue();
         assertThat(recovered).isTrue();
+        verify(dltLogs).logPublished(eq(record), any(IllegalArgumentException.class), eq("configured-trip-dlt"));
         var captor = ArgumentCaptor.forClass(ProducerRecord.class);
-        verify(kafka).send(captor.capture());
+        verify(kafka, times(failFirst ? 2 : 1)).send(captor.capture());
         assertThat(captor.getValue().topic()).isEqualTo("configured-trip-dlt");
         assertThat(captor.getValue().partition()).isEqualTo(1);
         assertThat(captor.getValue().key()).isEqualTo("7");

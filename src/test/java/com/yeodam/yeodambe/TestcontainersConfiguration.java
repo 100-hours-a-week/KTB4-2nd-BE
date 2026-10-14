@@ -2,12 +2,12 @@ package com.yeodam.yeodambe;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisConnectionDetails;
+import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
 import org.springframework.context.annotation.Bean;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.sql.SQLException;
+import java.util.List;
 
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
@@ -18,9 +18,12 @@ public class TestcontainersConfiguration {
     }
 
     @Bean
-    @ServiceConnection(name = "redis")
-    GenericContainer<?> redisContainer() {
-        return new GenericContainer<>(DockerImageName.parse("redis:7.4-alpine"))
-                .withExposedPorts(6379);
+    DataRedisConnectionDetails sharedRedisConnectionDetails() {
+        return SharedTestRedis.createDatabase();
+    }
+
+    @Bean
+    KafkaConnectionDetails sharedKafkaConnectionDetails() {
+        return () -> List.of(SharedTestKafka.bootstrapServers());
     }
 }

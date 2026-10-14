@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.repository;
 
+import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.integration.service.AiQueryService;
 import com.yeodam.yeodambe.integration.service.response.AiQueryParseResponse;
@@ -17,7 +18,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -26,9 +26,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.mysql.MySQLContainer;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -45,17 +42,13 @@ import static org.mockito.Mockito.*;
         "spring.jpa.properties.hibernate.generate_statistics=true"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-@Import({TripService.class, SearchService.class, AdditionalAttachmentModificationGuard.class, tools.jackson.databind.ObjectMapper.class})
+@Import({TestcontainersConfiguration.class, TripService.class, SearchService.class, AdditionalAttachmentModificationGuard.class, tools.jackson.databind.ObjectMapper.class})
 class TripSearchMysqlIntegrationTest extends TripSearchRepositoryTest {
     @MockitoBean
-    private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
+    private TripMapCacheStore mapCache;
     @MockitoBean
-    private com.yeodam.yeodambe.trip.service.TripMapCacheLock mapLock;
-    @Container
-    @ServiceConnection
-    static MySQLContainer mysql = new MySQLContainer("mysql:9.7.2");
+    private TripMapCacheLock mapLock;
 
     @Autowired
     private EntityManager entityManager;

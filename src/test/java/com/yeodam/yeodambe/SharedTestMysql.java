@@ -8,7 +8,7 @@ import org.testcontainers.mysql.MySQLContainer;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
-final class SharedTestMysql {
+public final class SharedTestMysql {
 
     private static final Logger log = LoggerFactory.getLogger(SharedTestMysql.class);
     private static int databaseSequence;
@@ -16,7 +16,7 @@ final class SharedTestMysql {
     private SharedTestMysql() {
     }
 
-    static synchronized JdbcConnectionDetails createDatabase() throws SQLException {
+    public static synchronized JdbcConnectionDetails createDatabase() throws SQLException {
         MySQLContainer mysql = Holder.MYSQL;
         String database = "context_" + ++databaseSequence;
         initializeDatabase(mysql, database);
@@ -55,7 +55,12 @@ final class SharedTestMysql {
         private static final MySQLContainer MYSQL = startMysql();
 
         private static MySQLContainer startMysql() {
-            MySQLContainer mysql = new MySQLContainer("mysql:9.7.2");
+            MySQLContainer mysql = new MySQLContainer("mysql:9.7.2")
+                    .withCommand(
+                            "--innodb-buffer-pool-size=64M",
+                            "--performance-schema=OFF",
+                            "--table-open-cache=256"
+                    );
             // 컨텍스트 종료와 분리하고 테스트 JVM 종료 후 Ryuk이 컨테이너를 정리한다.
             mysql.start();
             return mysql;

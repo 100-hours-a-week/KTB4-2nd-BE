@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.story.controller;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.SharedTestKafka;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.story.entity.StoryGenerationOutbox;
@@ -21,7 +22,6 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -30,6 +30,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
@@ -48,15 +50,23 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@EnabledIfEnvironmentVariable(named = "YEODAM_KAFKA_INTEGRATION", matches = "true")
-@SpringBootTest(properties = {
-        "spring.kafka.bootstrap-servers=localhost:9092",
-        "app.kafka.topics.story-create-request=ai-jobs"
-})
+@SpringBootTest
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
 class StoryGenerationKafkaLocalIntegrationTest {
+
+    private static final String BOOTSTRAP_SERVERS = SharedTestKafka.bootstrapServers();
+
+    private static final String REQUEST_TOPIC = "story-request-" + UUID.randomUUID();
+
+    @DynamicPropertySource
+    static void configureKafka(DynamicPropertyRegistry registry) throws Exception {
+        SharedTestKafka.registerBootstrapServers(registry);
+        SharedTestKafka.createTopics(REQUEST_TOPIC);
+        registry.add("app.kafka.topics.story-create-request", () -> REQUEST_TOPIC);
+    }
+
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper mapper;
     @Autowired private AccessTokenIssuer issuer;
@@ -112,17 +122,19 @@ class StoryGenerationKafkaLocalIntegrationTest {
     @Test
     void apiCommitsOutboxPublishesExactJsonAndReturnsAccepted() throws Exception {
         Map<String, Object> config = Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092",
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS,
                 ConsumerConfig.GROUP_ID_CONFIG, "local-story-verification-" + UUID.randomUUID(),
                 ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false,
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
                 ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class
         );
         try (var consumer = new KafkaConsumer<String, String>(config)) {
-            var partition = new TopicPartition("ai-jobs", 0);
-            consumer.assign(List.of(partition));
-            consumer.seekToEnd(List.of(partition));
-            consumer.position(partition);
+            var partitions = consumer.partitionsFor(REQUEST_TOPIC).stream()
+                    .map(partition -> new TopicPartition(partition.topic(), partition.partition()))
+                    .toList();
+            consumer.assign(partitions);
+            consumer.seekToEnd(partitions);
+            partitions.forEach(consumer::position);
             String path = "/trips/" + trip.getId() + "/story-generations";
             String requestId = "local-kafka-" + UUID.randomUUID();
 

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.SharedTestKafka;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
@@ -55,7 +56,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.annotation.DirtiesContext;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import tools.jackson.databind.ObjectMapper;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -63,9 +63,7 @@ import java.util.function.BooleanSupplier;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.any;
 
-@EnabledIfEnvironmentVariable(named = "YEODAM_KAFKA_INTEGRATION", matches = "true")
 @SpringBootTest(properties = {
-        "spring.kafka.bootstrap-servers=localhost:9092",
         "spring.kafka.consumer.auto-offset-reset=earliest",
         "app.story.result-listener-enabled=true"
 })
@@ -73,6 +71,9 @@ import static org.mockito.ArgumentMatchers.any;
 @Import(TestcontainersConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class StoryGenerationKafkaResultIntegrationTest {
+
+    private static final String BOOTSTRAP_SERVERS = SharedTestKafka.bootstrapServers();
+
     private static final String TOPIC = "test-story-results-" + UUID.randomUUID();
     private static final String DLT = TOPIC + "-story-dlt";
     private static final String GROUP = "test-story-consumer-" + UUID.randomUUID();
@@ -93,6 +94,7 @@ class StoryGenerationKafkaResultIntegrationTest {
 
     @DynamicPropertySource
     static void configureKafka(DynamicPropertyRegistry registry) throws Exception {
+        SharedTestKafka.registerBootstrapServers(registry);
         try (var admin = admin()) {
             admin.createTopics(List.of(new NewTopic(TOPIC, 1, (short) 1), new NewTopic(DLT, 1, (short) 1)))
                     .all().get(15, TimeUnit.SECONDS);
@@ -111,7 +113,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     private static AdminClient admin() {
-        return AdminClient.create(Map.of("bootstrap.servers", "localhost:9092"));
+        return AdminClient.create(Map.of("bootstrap.servers", BOOTSTRAP_SERVERS));
     }
 
     private User owner;
@@ -299,7 +301,7 @@ class StoryGenerationKafkaResultIntegrationTest {
 
     private void assertDeadLetterContains(String expected) throws Exception {
         var properties = Map.<String, Object>of(
-                "bootstrap.servers", "localhost:9092",
+                "bootstrap.servers", BOOTSTRAP_SERVERS,
                 "group.id", "dlt-check-" + UUID.randomUUID(),
                 "key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer",
                 "value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");

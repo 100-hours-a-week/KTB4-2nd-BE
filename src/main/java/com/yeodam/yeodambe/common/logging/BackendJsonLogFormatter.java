@@ -30,6 +30,8 @@ public class BackendJsonLogFormatter
         members.add("event", event -> contextValue(event, "event"));
         members.add("result", event -> contextValue(event, "result"));
         members.add("request_id", event -> contextValue(event, "request_id"));
+        members.add("run_id", event -> contextValue(event, "run_id"));
+        members.add("commit_result", event -> contextValue(event, "commit_result"));
         members.add("trip_id", event -> numberValue(contextValue(event, "trip_id")));
         members.add("job_id", event -> contextValue(event, "job_id"));
         members.add("duration_ms", event -> numberValue(contextValue(event, "duration_ms")));

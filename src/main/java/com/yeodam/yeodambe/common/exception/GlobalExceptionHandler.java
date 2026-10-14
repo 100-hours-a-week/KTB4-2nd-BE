@@ -4,6 +4,9 @@ import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 
 import com.yeodam.yeodambe.user.exception.*;
+import com.yeodam.yeodambe.migrationprobe.exception.InvalidMigrationProbeRequestException;
+import com.yeodam.yeodambe.migrationprobe.exception.MigrationProbeHashConflictException;
+import com.yeodam.yeodambe.migrationprobe.exception.MigrationProbeStoreUnavailableException;
 import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -27,6 +30,25 @@ import org.slf4j.spi.LoggingEventBuilder;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(InvalidMigrationProbeRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidMigrationProbeRequest(InvalidMigrationProbeRequestException exception) {
+        return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
+    }
+
+    @ExceptionHandler(MigrationProbeHashConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleMigrationProbeHashConflict(MigrationProbeHashConflictException exception) {
+        return new ApiResponse<>(ErrorMessage.MIGRATION_WRITE_PROBE_HASH_CONFLICT, null);
+    }
+
+    @ExceptionHandler(MigrationProbeStoreUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handleMigrationProbeStoreUnavailable(MigrationProbeStoreUnavailableException exception) {
+        // Service가 민감정보 없이 실패 단계를 기록하므로 원본 DB 예외를 다시 출력하지 않는다.
+        return new ApiResponse<>(ErrorMessage.MIGRATION_WRITE_PROBE_STORE_UNAVAILABLE, null);
+    }
 
     @ExceptionHandler(AiStatusUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)

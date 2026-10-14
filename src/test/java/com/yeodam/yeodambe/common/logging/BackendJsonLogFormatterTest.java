@@ -17,6 +17,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class BackendJsonLogFormatterTest {
 
+    @Test
+    void probeRunAndCommitResultAreIncluded() {
+        ThrowableProxyConverter converter = new ThrowableProxyConverter();
+        converter.start();
+        var formatter = new BackendJsonLogFormatter(new MockEnvironment(), converter);
+        var event = new LoggingEvent();
+        event.setInstant(Instant.now());
+        event.setLevel(Level.INFO);
+        event.setLoggerName("probe");
+        event.setMessage("시험 요청 확인");
+        event.setMDCPropertyMap(Map.of("request_id", "request-1"));
+        event.setKeyValuePairs(List.of(
+                new KeyValuePair("run_id", "run-1"),
+                new KeyValuePair("commit_result", "committed"),
+                new KeyValuePair("result", "created")
+        ));
+
+        var json = objectMapper.readTree(formatter.format(event));
+        assertThat(json.path("run_id").asString()).isEqualTo("run-1");
+        assertThat(json.path("commit_result").asString()).isEqualTo("committed");
+        assertThat(json.path("request_id").asString()).isEqualTo("request-1");
+        assertThat(json.path("result").asString()).isEqualTo("created");
+    }
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test

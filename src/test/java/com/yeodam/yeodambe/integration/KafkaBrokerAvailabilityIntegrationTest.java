@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.integration;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.SharedTestKafka;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -8,7 +9,6 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -19,11 +19,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.kafka.KafkaContainer;
 
-import java.io.IOException;
-import java.net.ServerSocket;
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
@@ -37,7 +34,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@EnabledIfEnvironmentVariable(named = "YEODAM_KAFKA_INTEGRATION", matches = "true")
 @SpringBootTest(properties = {
         "app.trip.result-listener-enabled=true",
         "app.story.result-listener-enabled=true",
@@ -48,7 +44,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class KafkaBrokerAvailabilityIntegrationTest {
 
-    private static GenericContainer<?> broker;
+    private static KafkaContainer broker;
+    private static final String PREFIX = "availability-" + UUID.randomUUID();
     private static String bootstrapServers;
     private static final List<String> TOPIC_KEYS = List.of(
             "trip-create-request", "trip-create-result", "trip-update-request", "trip-update-result",
@@ -65,15 +62,13 @@ class KafkaBrokerAvailabilityIntegrationTest {
     private KafkaListenerEndpointRegistry listeners;
 
     @DynamicPropertySource
-    static void unavailableBroker(DynamicPropertyRegistry registry) throws IOException {
-        int port;
-        try (var socket = new ServerSocket(0)) {
-            port = socket.getLocalPort();
-        }
-        bootstrapServers = "localhost:" + port;
-        broker = new TestBroker(port);
-        broker.start();
+    static void unavailableBroker(DynamicPropertyRegistry registry) {
+        broker = SharedTestKafka.broker();
+        bootstrapServers = broker.getBootstrapServers();
         broker.getDockerClient().stopContainerCmd(broker.getContainerId()).withTimeout(0).exec();
+        registry.add("app.trip.result-consumer-group", () -> PREFIX + ".create-consumer");
+        registry.add("KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP", () -> PREFIX + ".update-consumer");
+        registry.add("app.story.result-consumer-group", () -> PREFIX + ".story-consumer");
         registry.add("spring.kafka.bootstrap-servers", () -> bootstrapServers);
         for (String key : TOPIC_KEYS) {
             registry.add("app.kafka.topics." + key, () -> topic(key));
@@ -82,9 +77,9 @@ class KafkaBrokerAvailabilityIntegrationTest {
     }
 
     @AfterAll
-    static void stopOwnedBroker() {
-        if (broker != null) {
-            broker.stop();
+    static void restoreSharedBroker() {
+        if (broker != null && !broker.isRunning()) {
+            broker.getDockerClient().startContainerCmd(broker.getContainerId()).exec();
         }
     }
 
@@ -166,26 +161,7 @@ class KafkaBrokerAvailabilityIntegrationTest {
     }
 
     private static String topic(String key) {
-        return "availability.yeodam." + key;
+        return PREFIX + "." + key;
     }
 
-    private static class TestBroker extends GenericContainer<TestBroker> {
-
-        TestBroker(int port) {
-            super(DockerImageName.parse("apache/kafka:3.9.1"));
-            addFixedExposedPort(port, 9092);
-            withEnv("CLUSTER_ID", "MkU3OEVBNTcwNTJENDM2Qk");
-            withEnv("KAFKA_NODE_ID", "1");
-            withEnv("KAFKA_PROCESS_ROLES", "broker,controller");
-            withEnv("KAFKA_LISTENERS", "CLIENT://:9092,CONTROLLER://:9093");
-            withEnv("KAFKA_ADVERTISED_LISTENERS", "CLIENT://localhost:" + port);
-            withEnv("KAFKA_LISTENER_SECURITY_PROTOCOL_MAP", "CLIENT:PLAINTEXT,CONTROLLER:PLAINTEXT");
-            withEnv("KAFKA_INTER_BROKER_LISTENER_NAME", "CLIENT");
-            withEnv("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER");
-            withEnv("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@localhost:9093");
-            withEnv("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1");
-            withEnv("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "false");
-            withStartupTimeout(Duration.ofSeconds(60));
-        }
-    }
 }

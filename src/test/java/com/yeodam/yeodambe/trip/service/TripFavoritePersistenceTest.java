@@ -27,6 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TripFavoritePersistenceTest {
     @MockitoBean
     private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.service.TripMapCacheLock mapLock;
     @Autowired
     private TripService tripService;
     @Autowired

@@ -27,7 +27,7 @@ class TripUpdateServiceTest {
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private final TripService service = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
             trips, regions, catalog, attachments, storage, mock(TripAccessService.class),
-            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class), mapCache);
+            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class), mapCache, mock(TripMapCacheLock.class));
     private Trip trip;
     private TripRegion seoul;
     private final LocalDate start = LocalDate.of(2026, 9, 1);

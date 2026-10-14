@@ -24,7 +24,7 @@ class TripSearchServiceTest {
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final TripService service = new TripService(mock(AdditionalAttachmentModificationGuard.class), mock(TripRepository.class), regions,
             mock(RegionCatalog.class), attachments, storage, mock(TripAccessService.class),
-            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class), mock(TripMapCacheStore.class));
+            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class), mock(TripMapCacheStore.class), mock(TripMapCacheLock.class));
 
     @Test
     void 사진_ID가_없으면_DB_조회와_URL_생성을_생략한다() {

@@ -51,6 +51,8 @@ import static org.mockito.Mockito.*;
 class TripSearchMysqlIntegrationTest extends TripSearchRepositoryTest {
     @MockitoBean
     private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.service.TripMapCacheLock mapLock;
     @Container
     @ServiceConnection
     static MySQLContainer mysql = new MySQLContainer("mysql:9.7.2");

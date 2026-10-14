@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.common.response;
 
 public enum SuccessMessage {
+    MIGRATION_WRITE_PROBE_CREATED,
+    MIGRATION_WRITE_PROBE_ALREADY_EXISTS,
     ATTACHMENT_DOWNLOAD_URL_ISSUED,
     ATTACHMENT_FOUND,
     ATTACHMENT_RESTORE_SUCCESS,

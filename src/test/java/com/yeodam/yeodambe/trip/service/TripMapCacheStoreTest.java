@@ -6,6 +6,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -72,6 +76,60 @@ class TripMapCacheStoreTest {
     void evictsOnlyRequestedMember() {
         store.evict(1L);
         verify(redis).delete("cache:trip-map:user:1");
+    }
+
+    @Test
+    void deletesAfterCommitButNotWhileTransactionIsRunning() {
+        transactions().executeWithoutResult(status -> {
+            store.evictAfterCommit(1L);
+            verify(redis, never()).delete(anyString());
+        });
+        verify(redis).delete("cache:trip-map:user:1");
+    }
+
+    @Test
+    void rollbackKeepsExistingCache() {
+        transactions().executeWithoutResult(status -> {
+            store.evictAfterCommit(1L);
+            status.setRollbackOnly();
+        });
+        verify(redis, never()).delete(anyString());
+    }
+
+    @Test
+    void withoutTransactionDeletesImmediately() {
+        store.evictAfterCommit(1L);
+        verify(redis).delete("cache:trip-map:user:1");
+    }
+
+    @Test
+    void failedDeletionDoesNotThrowAfterCommit() {
+        when(redis.delete("cache:trip-map:user:1"))
+                .thenThrow(new DataAccessResourceFailureException("unavailable"));
+        assertThatCode(() -> transactions().executeWithoutResult(status -> store.evictAfterCommit(1L)))
+                .doesNotThrowAnyException();
+        verify(redis).delete("cache:trip-map:user:1");
+    }
+
+    private TransactionTemplate transactions() {
+        return new TransactionTemplate(new AbstractPlatformTransactionManager() {
+            @Override
+            protected Object doGetTransaction() {
+                return new Object();
+            }
+
+            @Override
+            protected void doBegin(Object transaction, TransactionDefinition definition) {
+            }
+
+            @Override
+            protected void doCommit(DefaultTransactionStatus status) {
+            }
+
+            @Override
+            protected void doRollback(DefaultTransactionStatus status) {
+            }
+        });
     }
 
     private TripMapCacheData sample() {

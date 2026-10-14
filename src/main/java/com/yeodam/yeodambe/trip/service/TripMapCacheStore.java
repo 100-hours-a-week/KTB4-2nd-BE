@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.core.JacksonException;
 import com.yeodam.yeodambe.trip.service.response.TripMapCacheData;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Optional;
 import java.time.Duration;
@@ -54,6 +56,27 @@ public class TripMapCacheStore {
     }
 
     public void evict(Long userId) {
-        redisTemplate.delete(key(userId));
+        try {
+            redisTemplate.delete(key(userId));
+        } catch (DataAccessException exception) {
+            log.warn("메인 지도 캐시 삭제에 실패했습니다. userId={}",
+                    userId, exception);
+        }
+    }
+
+    public void evictAfterCommit(Long userId) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            evict(userId);
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        evict(userId);
+                    }
+                }
+        );
     }
 }

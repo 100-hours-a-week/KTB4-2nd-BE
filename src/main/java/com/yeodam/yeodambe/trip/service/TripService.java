@@ -252,6 +252,8 @@ public class TripService {
                 ))
                 .toList();
 
+        tripMapCacheStore.evictAfterCommit(userId);
+
         return new TripUpdateResponse(
                 trip.getId(),
                 trip.getTripName(),

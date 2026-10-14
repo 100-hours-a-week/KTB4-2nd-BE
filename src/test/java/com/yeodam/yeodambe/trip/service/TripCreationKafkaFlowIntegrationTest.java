@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.SharedTestKafka;
 import com.yeodam.yeodambe.integration.client.KafkaOutboxPublisher;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
@@ -14,13 +15,14 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -42,20 +44,35 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-@EnabledIfEnvironmentVariable(named = "YEODAM_KAFKA_INTEGRATION", matches = "true")
 @SpringBootTest(properties = {
-        "spring.kafka.bootstrap-servers=${KAFKA_TEST_BOOTSTRAP_SERVERS:localhost:9092}",
         "spring.kafka.consumer.auto-offset-reset=earliest",
-        "app.kafka.topics.trip-create-request=ai-jobs",
-        "app.kafka.topics.trip-create-result=ai-results",
         "app.trip.result-listener-enabled=true"
 })
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class TripCreationKafkaFlowIntegrationTest {
 
-    private static final String BOOTSTRAP_SERVERS = System.getenv()
-            .getOrDefault("KAFKA_TEST_BOOTSTRAP_SERVERS", "localhost:9092");
+    private static final String BOOTSTRAP_SERVERS = SharedTestKafka.bootstrapServers();
+
+    private static final String PREFIX = "trip-flow-" + UUID.randomUUID();
+    private static final String REQUEST_TOPIC = PREFIX + ".request";
+    private static final String RESULT_TOPIC = PREFIX + ".result";
+    private static final String DLT_TOPIC = RESULT_TOPIC + "-dlt";
+
+    @DynamicPropertySource
+    static void configureKafka(DynamicPropertyRegistry registry) throws Exception {
+        SharedTestKafka.registerBootstrapServers(registry);
+        String updateResultTopic = PREFIX + ".update-result";
+        SharedTestKafka.createTopics(REQUEST_TOPIC, RESULT_TOPIC, DLT_TOPIC,
+                updateResultTopic, updateResultTopic + "-dlt");
+        registry.add("app.kafka.topics.trip-create-request", () -> REQUEST_TOPIC);
+        registry.add("app.kafka.topics.trip-create-result", () -> RESULT_TOPIC);
+        registry.add("app.kafka.dead-letter-topics.trip-create-result", () -> DLT_TOPIC);
+        registry.add("app.kafka.topics.trip-update-result", () -> updateResultTopic);
+        registry.add("app.kafka.dead-letter-topics.trip-update-result", () -> updateResultTopic + "-dlt");
+        registry.add("app.trip.result-consumer-group", () -> PREFIX + ".create-consumer");
+        registry.add("KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP", () -> PREFIX + ".update-consumer");
+    }
 
     @Autowired
     private InitialAttachmentUploadTransactionService transactions;
@@ -127,9 +144,11 @@ class TripCreationKafkaFlowIntegrationTest {
         consumerProperties.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         consumerProperties.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         try (var consumer = new KafkaConsumer<String, String>(consumerProperties)) {
-            var partition = new TopicPartition("ai-jobs", 0);
-            consumer.assign(List.of(partition));
-            consumer.seekToBeginning(List.of(partition));
+            var partitions = consumer.partitionsFor(REQUEST_TOPIC).stream()
+                    .map(partition -> new TopicPartition(partition.topic(), partition.partition()))
+                    .toList();
+            consumer.assign(partitions);
+            consumer.seekToBeginning(partitions);
             var received = new ArrayList<JsonNode>();
             for (int attempt = 0; attempt < 20 && received.size() < 4; attempt++) {
                 for (var record : consumer.poll(Duration.ofMillis(500))) {
@@ -146,7 +165,7 @@ class TripCreationKafkaFlowIntegrationTest {
                     .containsExactly(10, 3, 10);
         }
         String raw = resultPayload(process);
-        kafka.send("ai-results", trip.getId().toString(), raw).get(10, TimeUnit.SECONDS);
+        kafka.send(RESULT_TOPIC, trip.getId().toString(), raw).get(10, TimeUnit.SECONDS);
         for (int attempt = 0; attempt < 100 && execution().getResultRawPayload() == null; attempt++) {
             Thread.sleep(100);
         }
@@ -169,11 +188,13 @@ class TripCreationKafkaFlowIntegrationTest {
         properties.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         properties.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         try (var consumer = new KafkaConsumer<String, String>(properties)) {
-            var partition = new TopicPartition("ai-results-dlt", 0);
-            consumer.assign(List.of(partition));
-            consumer.seekToEnd(List.of(partition));
-            consumer.position(partition);
-            kafka.send("ai-results", key, raw).get(10, TimeUnit.SECONDS);
+            var partitions = consumer.partitionsFor(DLT_TOPIC).stream()
+                    .map(partition -> new TopicPartition(partition.topic(), partition.partition()))
+                    .toList();
+            consumer.assign(partitions);
+            consumer.seekToEnd(partitions);
+            partitions.forEach(consumer::position);
+            kafka.send(RESULT_TOPIC, key, raw).get(10, TimeUnit.SECONDS);
             String received = null;
             for (int attempt = 0; attempt < 20 && received == null; attempt++) {
                 for (var record : consumer.poll(Duration.ofMillis(500))) {

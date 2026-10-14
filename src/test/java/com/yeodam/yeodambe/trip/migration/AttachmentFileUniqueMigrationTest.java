@@ -1,31 +1,36 @@
 package com.yeodam.yeodambe.trip.migration;
 
+import com.yeodam.yeodambe.SharedTestMysql;
+import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
+import org.junit.jupiter.api.BeforeAll;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.mysql.MySQLContainer;
+
+import java.sql.SQLException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-@Testcontainers
 class AttachmentFileUniqueMigrationTest {
-    @Container
-    static MySQLContainer mysql = new MySQLContainer("mysql:9.7.2");
+    private static JdbcConnectionDetails database;
+
+    @BeforeAll
+    static void prepareDatabase() throws SQLException {
+        database = SharedTestMysql.createDatabase();
+    }
     private JdbcTemplate jdbc;
 
     @BeforeEach
     void prepare() {
-        Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
+        Flyway.configure().dataSource(database.getJdbcUrl(), database.getUsername(), database.getPassword())
                 .cleanDisabled(false).load().clean();
         migrate("11");
         jdbc = new JdbcTemplate(new DriverManagerDataSource(
-                mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()));
+                database.getJdbcUrl(), database.getUsername(), database.getPassword()));
         jdbc.update("""
                 INSERT INTO trips (trip_id, user_id, trip_name, start_date, end_date)
                 VALUES (9001, 1, '제약검증', '2026-10-08', '2026-10-08')
@@ -63,7 +68,7 @@ class AttachmentFileUniqueMigrationTest {
     }
 
     private void migrate(String version) {
-        Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
+        Flyway.configure().dataSource(database.getJdbcUrl(), database.getUsername(), database.getPassword())
                 .target(version).load().migrate();
     }
 

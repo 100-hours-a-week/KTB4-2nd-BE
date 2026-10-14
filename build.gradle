@@ -48,9 +48,11 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testImplementation 'org.testcontainers:testcontainers-mysql'
+    testImplementation 'org.testcontainers:testcontainers-kafka'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
     systemProperty 'spring.test.context.cache.maxSize', '8'
+    systemProperty 'spring.datasource.hikari.maximum-pool-size', '3'
 }

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.SharedTestKafka;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
@@ -55,7 +56,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.annotation.DirtiesContext;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import tools.jackson.databind.ObjectMapper;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -63,9 +63,7 @@ import java.util.function.BooleanSupplier;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.any;
 
-@EnabledIfEnvironmentVariable(named = "YEODAM_KAFKA_INTEGRATION", matches = "true")
 @SpringBootTest(properties = {
-        "spring.kafka.bootstrap-servers=${KAFKA_TEST_BOOTSTRAP_SERVERS:localhost:9092}",
         "spring.kafka.consumer.auto-offset-reset=earliest",
         "app.story.result-listener-enabled=true"
 })
@@ -74,8 +72,7 @@ import static org.mockito.ArgumentMatchers.any;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class StoryGenerationKafkaResultIntegrationTest {
 
-    private static final String BOOTSTRAP_SERVERS = System.getenv()
-            .getOrDefault("KAFKA_TEST_BOOTSTRAP_SERVERS", "localhost:9092");
+    private static final String BOOTSTRAP_SERVERS = SharedTestKafka.bootstrapServers();
 
     private static final String TOPIC = "test-story-results-" + UUID.randomUUID();
     private static final String DLT = TOPIC + "-story-dlt";
@@ -97,6 +94,7 @@ class StoryGenerationKafkaResultIntegrationTest {
 
     @DynamicPropertySource
     static void configureKafka(DynamicPropertyRegistry registry) throws Exception {
+        SharedTestKafka.registerBootstrapServers(registry);
         try (var admin = admin()) {
             admin.createTopics(List.of(new NewTopic(TOPIC, 1, (short) 1), new NewTopic(DLT, 1, (short) 1)))
                     .all().get(15, TimeUnit.SECONDS);

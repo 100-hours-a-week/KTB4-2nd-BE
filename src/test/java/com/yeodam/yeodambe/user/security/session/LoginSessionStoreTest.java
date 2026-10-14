@@ -303,6 +303,7 @@ class LoginSessionStoreTest {
         LettuceConnectionFactory adminFactory = (LettuceConnectionFactory) redis.getConnectionFactory();
         RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(
                 adminFactory.getHostName(), adminFactory.getPort());
+        config.setDatabase(adminFactory.getDatabase());
         config.setUsername(username);
         config.setPassword(password);
         LettuceConnectionFactory factory = new LettuceConnectionFactory(config);
@@ -318,6 +319,7 @@ class LoginSessionStoreTest {
             String hash = tokenHasher.hash(sid);
             String rotated = tokenHasher.hash(sid + "rotated");
             store.save(sid, 1L, hash);
+            assertThat(loginSessionStore.findBySid(sid)).contains(new LoginSession(1L, hash));
             assertThat(store.findSidByRefreshTokenHash(hash)).contains(sid);
             assertThat(store.rotate(hash, rotated)).contains(1L);
             store.deleteIfMatches(sid, 1L, hash);

@@ -34,6 +34,7 @@ public class TripDeletionService {
     private final UserStatsService userStats;
     private final PlatformTransactionManager transactionManager;
     private final MeterRegistry meterRegistry;
+    private final TripMapCacheStore tripMapCacheStore;
 
     public void delete(
             Long tripId,
@@ -91,5 +92,6 @@ public class TripDeletionService {
         }
 
         userStats.refreshFromActiveTrips(userId);
+        tripMapCacheStore.evictAfterCommit(userId);
     }
 }

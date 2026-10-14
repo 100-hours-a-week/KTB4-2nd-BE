@@ -86,6 +86,59 @@ class TripMapCacheRedisTest {
                 .isBetween(90_000L, 120_000L);
     }
 
+    @Test
+    void onlyOneConcurrentRequestAcquiresSameLock() throws Exception {
+        try (var pool = Executors.newFixedThreadPool(8)) {
+            var gate = new java.util.concurrent.CyclicBarrier(8);
+            var tasks = IntStream.range(0, 8)
+                    .mapToObj(i -> (java.util.concurrent.Callable<Boolean>) () -> {
+                        var lock = new TripMapCacheLock(redis);
+                        gate.await(5, TimeUnit.SECONDS);
+                        return lock.tryAcquire(10L, "v1", "owner-" + i);
+                    }).toList();
+            var futures = pool.invokeAll(tasks);
+            int acquired = 0;
+            for (var future : futures) {
+                if (future.get(5, TimeUnit.SECONDS)) acquired++;
+            }
+            assertThat(acquired).isEqualTo(1);
+            assertThat(redis.getExpire("lock:trip-map:user:10:v1", TimeUnit.MILLISECONDS))
+                    .isBetween(5_000L, 10_000L);
+        }
+    }
+
+    @Test
+    void wrongOwnerCannotReleaseAndCorrectOwnerCanRelease() {
+        var lock = new TripMapCacheLock(redis);
+        assertThat(lock.tryAcquire(11L, "v1", "owner-a")).isTrue();
+        lock.release(11L, "v1", "owner-b");
+        assertThat(redis.opsForValue().get("lock:trip-map:user:11:v1")).isEqualTo("owner-a");
+        lock.release(11L, "v1", "owner-a");
+        assertThat(redis.hasKey("lock:trip-map:user:11:v1")).isFalse();
+    }
+
+    @Test
+    void expiredOwnersReleaseCannotDeleteNewOwnersLock() throws Exception {
+        var lock = new TripMapCacheLock(redis);
+        assertThat(lock.tryAcquire(12L, "v1", "old-owner")).isTrue();
+        redis.expire("lock:trip-map:user:12:v1", java.time.Duration.ofMillis(20));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        while (Boolean.TRUE.equals(redis.hasKey("lock:trip-map:user:12:v1")) && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertThat(lock.tryAcquire(12L, "v1", "new-owner")).isTrue();
+        lock.release(12L, "v1", "old-owner");
+        assertThat(redis.opsForValue().get("lock:trip-map:user:12:v1")).isEqualTo("new-owner");
+    }
+
+    @Test
+    void differentMembersAndVersionsDoNotShareLock() {
+        var lock = new TripMapCacheLock(redis);
+        assertThat(lock.tryAcquire(13L, "v1", "a")).isTrue();
+        assertThat(lock.tryAcquire(13L, "v2", "b")).isTrue();
+        assertThat(lock.tryAcquire(14L, "v1", "c")).isTrue();
+    }
+
     private TripMapCacheStore store() {
         return new TripMapCacheStore(redis, new ObjectMapper());
     }

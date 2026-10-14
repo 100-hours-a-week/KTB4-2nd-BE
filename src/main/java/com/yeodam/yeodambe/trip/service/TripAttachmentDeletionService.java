@@ -34,6 +34,7 @@ public class TripAttachmentDeletionService {
 
     private final TripAttachmentRepository tripAttachmentRepository;
     private final UserStatsService userStats;
+    private final TripMapCacheStore tripMapCacheStore;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void deleteOne(
@@ -115,6 +116,7 @@ public class TripAttachmentDeletionService {
         affectedPlaces.forEach(this::refreshThumbnail);
         affectedTrips.forEach(this::refreshThumbnail);
         userStats.refreshFromActiveTrips(userId);
+        tripMapCacheStore.evictAfterCommit(userId);
     }
 
     private void refreshThumbnail(TripDetailPlace place) {

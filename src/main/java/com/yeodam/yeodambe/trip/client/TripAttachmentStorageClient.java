@@ -16,6 +16,8 @@ public interface TripAttachmentStorageClient {
 
     InputStream open(String objectKey);
 
+    InputStream openHeader(String objectKey);
+
     String storeDerived(String executionId, Path file, String mimeType);
 
     String storeDerivedTo(String objectKey, Path file, String mimeType);

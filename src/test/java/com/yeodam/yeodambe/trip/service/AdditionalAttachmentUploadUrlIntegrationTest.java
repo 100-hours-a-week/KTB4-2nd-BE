@@ -14,6 +14,8 @@ import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -103,9 +105,10 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
         verifyNoInteractions(storage);
     }
 
-    @Test
-    void refusesTripThatHasNotCompletedBeforeSavingBatchOrIssuingUrls() {
-        jdbcTemplate.update("UPDATE trips SET processing_status = 'PROCESSING' WHERE trip_id = ?", tripId);
+    @ParameterizedTest
+    @ValueSource(strings = {"PROCESSING", "FAILED"})
+    void refusesTripThatHasNotCompletedBeforeSavingBatchOrIssuingUrls(String processingStatus) {
+        jdbcTemplate.update("UPDATE trips SET processing_status = ? WHERE trip_id = ?", processingStatus, tripId);
         assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, request()))
                 .isInstanceOf(TripAttachmentAddNotAllowedException.class);
         assertThat(batchCount()).isZero();

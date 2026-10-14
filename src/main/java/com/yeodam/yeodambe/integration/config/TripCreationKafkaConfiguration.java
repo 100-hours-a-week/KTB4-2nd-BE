@@ -55,7 +55,7 @@ public class TripCreationKafkaConfiguration {
         };
         var errors = new DefaultErrorHandler(
                 loggingRecoverer,
-                new FixedBackOff(1_000L, FixedBackOff.UNLIMITED_ATTEMPTS)
+                new FixedBackOff(1_000L, 3L)
         );
         errors.addNotRetryableExceptions(IllegalArgumentException.class, JacksonException.class);
         factory.setCommonErrorHandler(errors);

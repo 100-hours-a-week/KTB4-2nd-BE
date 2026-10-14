@@ -26,9 +26,10 @@ class TripAttachmentRestoreServiceTest {
     private final TripDetailPlaceRepository places = mock(TripDetailPlaceRepository.class);
     private final TripAccessService access = mock(TripAccessService.class);
     private final EntityManager entityManager = mock(EntityManager.class);
+    private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private final TripAttachmentRestoreService service = new TripAttachmentRestoreService(
             attachments, trips, places, access, entityManager,
-            Validation.buildDefaultValidatorFactory().getValidator()
+            Validation.buildDefaultValidatorFactory().getValidator(), mapCache
     );
     private Trip trip;
     private TripDetailPlace place;
@@ -55,6 +56,7 @@ class TripAttachmentRestoreServiceTest {
         assertThat(response.classificationType()).isEqualTo("CLASSIFIED");
         assertThat(response.tripPlaceId()).isEqualTo(20L);
         verify(entityManager, times(2)).refresh(attachment);
+        verify(mapCache).evictAfterCommit(1L);
     }
 
     @Test
@@ -63,6 +65,7 @@ class TripAttachmentRestoreServiceTest {
         assertThatThrownBy(() -> service.restoreOne(1L, 30L, new AttachmentRestoreRequest(20L)))
                 .isInstanceOf(RestorePlaceMismatchException.class);
         verify(attachments, never()).restoreIfUnclassified(any(), any(), any(), any(), any(), any());
+        verifyNoInteractions(mapCache);
     }
 
     @Test
@@ -90,6 +93,7 @@ class TripAttachmentRestoreServiceTest {
         var result = service.restoreBulk(1L, new BulkAttachmentRestoreRequest(items));
         assertThat(result.restoredTripAttachmentIds()).containsExactlyElementsOf(items.stream().map(BulkAttachmentRestoreRequest.Item::tripAttachmentId).toList());
         assertThat(result.tripPlaceIds()).hasSize(200).containsOnly(20L);
+        verify(mapCache).evictAfterCommit(1L);
     }
 
     @Test

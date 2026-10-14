@@ -56,6 +56,7 @@ public class TripAttachmentRestoreService {
     private final TripAccessService tripAccessService;
     private final EntityManager entityManager;
     private final Validator validator;
+    private final TripMapCacheStore tripMapCacheStore;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public AttachmentRestoreResponse restoreOne(
@@ -177,6 +178,7 @@ public class TripAttachmentRestoreService {
 
         restoreAttachments(userId, attachments, destinations);
         refreshThumbnails(places, trips);
+        tripMapCacheStore.evictAfterCommit(userId);
     }
 
     private List<Trip> lockTrips(Long userId, List<TripAttachment> attachments) {

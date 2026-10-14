@@ -22,6 +22,7 @@ public class TripWithdrawalService {
     private final StoredFileRepository storedFileRepository;
     private final InitialAttachmentUploadTransactionService uploadTransactions;
     private final AdditionalAttachmentUploadTransactionService additionalTransactions;
+    private final TripMapCacheStore tripMapCacheStore;
 
     @Transactional
     public void withdrawAll(
@@ -38,5 +39,6 @@ public class TripWithdrawalService {
         tripAttachmentRepository.softDeleteByUserId(userId, withdrawnAt);
         storedFileRepository.softDeleteByUserId(userId, withdrawnAt);
         tripRepository.softDeleteByUserId(userId, withdrawnAt);
+        tripMapCacheStore.evictAfterCommit(userId);
     }
 }

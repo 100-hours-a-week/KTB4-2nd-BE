@@ -41,6 +41,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 @Import({AdditionalAttachmentModificationGuard.class, TripAttachmentDeletionService.class, TripObjectCleanupService.class, UserStatsService.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripAttachmentDeletionPersistenceTest {
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     @Autowired
     private TripAttachmentDeletionService service;
     @Autowired

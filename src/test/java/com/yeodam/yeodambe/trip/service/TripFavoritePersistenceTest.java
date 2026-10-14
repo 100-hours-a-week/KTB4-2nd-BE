@@ -25,6 +25,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 @Import({TripService.class, AdditionalAttachmentModificationGuard.class})
 class TripFavoritePersistenceTest {
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     @Autowired
     private TripService tripService;
     @Autowired

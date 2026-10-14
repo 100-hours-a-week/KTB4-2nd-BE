@@ -49,6 +49,8 @@ import static org.mockito.Mockito.*;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @Import({TripService.class, SearchService.class, AdditionalAttachmentModificationGuard.class, tools.jackson.databind.ObjectMapper.class})
 class TripSearchMysqlIntegrationTest extends TripSearchRepositoryTest {
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     @Container
     @ServiceConnection
     static MySQLContainer mysql = new MySQLContainer("mysql:9.7.2");

@@ -54,6 +54,8 @@ import static org.mockito.Mockito.*;
         TripDeletionPersistenceTest.MeterRegistryTestConfiguration.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripDeletionPersistenceTest {
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     @TestConfiguration
     static class MeterRegistryTestConfiguration {
         @Bean

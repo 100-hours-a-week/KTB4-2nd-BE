@@ -194,7 +194,7 @@ public class TripAttachmentDerivativeService {
         leaseScheduler.shutdownNow();
     }
 
-    private boolean isTransientConversionFailure(Throwable failure) {
+    public boolean isTransientConversionFailure(Throwable failure) {
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
             if (cause instanceof S3Exception s3Failure) {
                 return s3Failure.statusCode() >= 500 || s3Failure.statusCode() == 429;
@@ -213,6 +213,11 @@ public class TripAttachmentDerivativeService {
 
     public void cancelExecution(String executionId) {
         scheduler.cancelExecution(executionId);
+    }
+
+    public DerivedPhotoKeys generateAdditional(String executionId, String originalKey,
+            String mimeType, List<String> plannedKeys) {
+        return generateOne(executionId, originalKey, mimeType, new ArrayList<>(), plannedKeys);
     }
 
     private DerivedPhotoKeys generateOne(

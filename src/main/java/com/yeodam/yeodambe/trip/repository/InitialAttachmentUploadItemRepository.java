@@ -8,10 +8,12 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 
 public interface InitialAttachmentUploadItemRepository
         extends JpaRepository<InitialAttachmentUploadItem, Long> {
+    List<InitialAttachmentUploadItem> findAllByTripAttachmentIdIn(Collection<Long> attachmentIds);
 
     Optional<InitialAttachmentUploadItem> findByObjectKey(String objectKey);
 

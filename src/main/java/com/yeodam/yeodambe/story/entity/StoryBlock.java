@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -29,6 +30,12 @@ public class StoryBlock {
 
     @Column(name = "trip_attachment_id", nullable = false)
     private Long tripAttachmentId;
+
+    @Column(name = "source_trip_place_id", nullable = false, updatable = false)
+    private Long sourceTripPlaceId;
+
+    @Column(name = "source_date", nullable = false, updatable = false)
+    private LocalDate sourceDate;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "trip_attachment_id", nullable = false, insertable = false, updatable = false)
@@ -66,13 +73,16 @@ public class StoryBlock {
     public StoryBlock(
             Long storyId,
             Long tripAttachmentId,
+            Long sourceTripPlaceId,
+            LocalDate sourceDate,
             int orderNumber,
             String dayLabel,
             String detailSummary,
             String memo
     ) {
-        if (storyId == null || tripAttachmentId == null) {
-            throw new IllegalArgumentException("블록 참조가 필요합니다.");
+        if (storyId == null || tripAttachmentId == null
+                || sourceTripPlaceId == null || sourceDate == null) {
+            throw new IllegalArgumentException("블록 참조와 날짜가 필요합니다.");
         }
         Story.validateText(dayLabel);
         Story.validateText(detailSummary);
@@ -81,6 +91,8 @@ public class StoryBlock {
         }
         this.storyId = storyId;
         this.tripAttachmentId = tripAttachmentId;
+        this.sourceTripPlaceId = sourceTripPlaceId;
+        this.sourceDate = sourceDate;
         this.orderNumber = orderNumber;
         this.dayLabel = dayLabel;
         this.detailSummary = detailSummary;

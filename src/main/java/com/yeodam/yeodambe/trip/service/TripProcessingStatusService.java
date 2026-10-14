@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+
+
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
@@ -30,12 +33,36 @@ public class TripProcessingStatusService {
     private final InitialUploadExecutionRegistry executions;
     private final InitialAttachmentUploadBatchRepository uploadBatches;
     private final TripCreationExecutionRepository creationExecutions;
+    private final AdditionalAttachmentExecutionRepository additionalExecutions;
 
     public TripProcessingStatusResponse findStatus(
             Long tripId,
             Long userId
     ) {
         Trip trip = findTrip(tripId, userId);
+        var addition = additionalExecutions.findFirstByTripIdAndUserIdOrderByCreatedAtDescExecutionIdDesc(tripId, userId);
+        if (addition.isPresent()) {
+            var execution = addition.get();
+            switch (execution.getStatus()) {
+                case FAILED -> { return new TripProcessingStatusResponse(tripId, Status.FAILED, null, null, null,
+                        new TripProcessingStatusResponse.Error(execution.getErrorCode(),
+                                TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message())); }
+                case CANCELED -> { return new TripProcessingStatusResponse(tripId, Status.CANCELED, null, null, null, null); }
+                case RESULT_APPLYING -> { return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null, null); }
+                case COMPLETED -> { return fromDatabase(trip); }
+                default -> {
+                    if (execution.getProcessPublishedAt() == null) return processing(tripId);
+                    var ai = analysis.findStatus(tripId, execution.getExecutionId());
+                    if (ai.progress() != null && !Integer.valueOf(ai.progress().total()).equals(execution.getAnalysisAttachmentCount()))
+                        throw new IllegalStateException(TripInternalErrorMessage.AI_PROGRESS_TOTAL_EXECUTION_MISMATCH.message());
+                    if (ai.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED)
+                        return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null, null);
+                    return new TripProcessingStatusResponse(tripId, Status.PROCESSING,
+                            ai.progress() == null ? null : new TripProcessingStatusResponse.Progress(ai.progress().done(), ai.progress().total()),
+                            ai.currentStep(), null, null);
+                }
+            }
+        }
 
         if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING) {
             return fromDatabase(trip);

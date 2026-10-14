@@ -1,9 +1,17 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService;
+import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadCompleteRequest;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse;
+
+
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
@@ -54,8 +62,19 @@ public class TripAttachmentController {
     private final BulkAttachmentDownloadService bulkAttachmentDownloadService;
     private final InitialAttachmentUploadUrlService uploadUrlService;
     private final InitialAttachmentUploadCompletionService uploadCompletion;
+    private final AdditionalAttachmentUploadUrlService additionalAttachmentUploadUrlService;
+    private final AdditionalAttachmentUploadCompletionService additionalUploadCompletion;
     private final UnclassifiedFolderListService unclassifiedFolderListService;
     private final TripAttachmentRestoreService tripAttachmentRestoreService;
+
+    @PostMapping(value = "/trips/{tripId}/attachments", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiResponse<AdditionalAttachmentUploadCompleteResponse>>
+    completeAdditionalUpload(@PathVariable Long tripId, @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AdditionalAttachmentUploadCompleteRequest request) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(new ApiResponse<>(
+                SuccessMessage.TRIP_ATTACHMENT_ADD_ACCEPTED,
+                additionalUploadCompletion.complete(tripId, Long.valueOf(jwt.getSubject()), request)));
+    }
 
     @PostMapping("/attachments/{tripAttachmentId}/restore")
     public ResponseEntity<ApiResponse<AttachmentRestoreResponse>> restoreAttachment(
@@ -145,6 +164,33 @@ public class TripAttachmentController {
         return ResponseEntity.ok(
                 new ApiResponse<>(
                         SuccessMessage.TRIP_INITIAL_ATTACHMENT_UPLOAD_URLS_ISSUED,
+                        data
+                )
+        );
+    }
+
+    @PostMapping(
+            value = "/trips/{tripId}/attachments/upload-urls",
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<ApiResponse<AdditionalAttachmentUploadUrlResponse>>
+    issueAdditionalAttachmentUploadUrls(
+            @PathVariable Long tripId,
+            @RequestBody AdditionalAttachmentUploadUrlRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        AdditionalAttachmentUploadUrlResponse data =
+                additionalAttachmentUploadUrlService.issueUploadUrls(
+                        tripId,
+                        userId,
+                        request
+                );
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(
+                        SuccessMessage.TRIP_ATTACHMENT_UPLOAD_URLS_ISSUED,
                         data
                 )
         );

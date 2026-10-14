@@ -54,7 +54,8 @@ class StoryValidatorTest {
         attachment.classify((long)day, RegionOrigin.EXIF, place.getStartedAt(), BigDecimal.ZERO, BigDecimal.ZERO, 1);
         ReflectionTestUtils.setField(attachment, "id", (long)order);
         StoredFile file = StoredFile.uploaded(42L, "사진.jpg", "원본", "image/jpeg");
-        StoryBlock block = new StoryBlock(1L, (long)order, order, label, "문구"+order, memo);
+        StoryBlock block = new StoryBlock(1L, (long)order, place.getId(), place.getStartedAt().toLocalDate(),
+                order, label, "문구"+order, memo);
         ReflectionTestUtils.setField(block, "id", (long)order);
         return new Row(block, attachment, file, place);
     }
@@ -79,16 +80,16 @@ class StoryValidatorTest {
     }
 
     @Test
-    void 표시_장소의_존재_소속_시작일과_미리보기키를_검증한다() {
+    void 표시_장소의_존재_소속_보존날짜와_미리보기키를_검증한다() {
         Row valid = row(1, 7, "날", null);
         validator.validateDisplayBlocks(7L, List.of(valid));
         invalidDisplay(new Row(valid.block(), valid.attachment(), valid.file(), null));
         ReflectionTestUtils.setField(valid.place(), "tripId", 8L);
         invalidDisplay(valid);
         ReflectionTestUtils.setField(valid.place(), "tripId", 7L);
-        ReflectionTestUtils.setField(valid.place(), "startedAt", null);
+        ReflectionTestUtils.setField(valid.block(), "sourceDate", null);
         invalidDisplay(valid);
-        ReflectionTestUtils.setField(valid.place(), "startedAt", LocalDateTime.now());
+        ReflectionTestUtils.setField(valid.block(), "sourceDate", java.time.LocalDate.of(2026, 10, 7));
         for (String key : new String[]{null, "", " "}) {
             ReflectionTestUtils.setField(valid.attachment(), "previewStorageKey", key);
             invalidDisplay(valid);

@@ -26,7 +26,7 @@ class TripAttachmentDeletionServiceTest {
     private final TripAttachmentRepository tripAttachmentRepository = mock(TripAttachmentRepository.class);
     private final UserStatsService userStats = mock(UserStatsService.class);
     private final TripAttachmentDeletionService service =
-            new TripAttachmentDeletionService(tripAttachmentRepository, userStats);
+            new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), tripAttachmentRepository, userStats);
 
     @Test
     void 첨부_200개는_일괄_삭제할_수_있다() {

@@ -122,14 +122,16 @@ class StoryRepositoryTest {
         statistics.clear();
         List<StoryBlockRepository.BlockDetail> rows = blocks.findDetailsByStoryId(story.getId());
         assertThat(rows).extracting(row -> row.getBlock().getId()).containsExactly(second.getId(), third.getId(), first.getId());
-        assertThat(rows.getFirst().getPlace()).isNull();
+        assertThat(rows.getFirst().getAttachment().getTripPlaceId()).isNull();
+        assertThat(rows.getFirst().getPlace().getId()).isEqualTo(second.getSourceTripPlaceId());
         for (StoryBlockRepository.BlockDetail row : rows) {
             assertThat(row.getAttachment().getTripId()).isEqualTo(trip.getId());
             assertThat(row.getAttachment().getPreviewStorageKey()).isEqualTo("미리보기");
             row.getFile().getDeletedAt();
             row.getBlock().getDayLabel();
             if (row.getPlace() != null) {
-                assertThat(row.getPlace().getStartedAt()).isEqualTo(LocalDateTime.of(2026, 10, 7, 12, 0));
+                assertThat(row.getPlace().getId()).isEqualTo(row.getBlock().getSourceTripPlaceId());
+                assertThat(row.getPlace().getStartedAt().toLocalDate()).isEqualTo(row.getBlock().getSourceDate());
             }
         }
         assertThat(rows.get(1).getFile().getDeletedAt()).isNotNull();
@@ -165,7 +167,15 @@ class StoryRepositoryTest {
             attachment.classify(place.getId(), RegionOrigin.EXIF, place.getStartedAt(), BigDecimal.ZERO, BigDecimal.ZERO, 1);
         }
         em.persist(attachment);
-        StoryBlock block = new StoryBlock(story.getId(), attachment.getId(), order, "첫째 날", "문구", "편집 메모");
+        TripDetailPlace sourcePlace = place;
+        if (sourcePlace == null) {
+            sourcePlace = TripDetailPlace.fromAnalysis(trip.getId(), 1, "생성 당시 장소", BigDecimal.ZERO,
+                    BigDecimal.ZERO, java.time.LocalDateTime.of(2026, 10, 13, 12, 0),
+                    java.time.LocalDateTime.of(2026, 10, 13, 13, 0), null);
+            em.persist(sourcePlace);
+        }
+        StoryBlock block = new StoryBlock(story.getId(), attachment.getId(), sourcePlace.getId(),
+                sourcePlace.getStartedAt().toLocalDate(), order, "첫째 날", "문구", "편집 메모");
         em.persist(block);
         return block;
     }

@@ -70,7 +70,7 @@ public class StoryReadService {
     private List<Day> buildDays(List<BlockDetail> details) {
         List<Day> days = new ArrayList<>();
         for (BlockDetail detail : details) {
-            LocalDate date = detail.getPlace().getStartedAt().toLocalDate();
+            LocalDate date = detail.getBlock().getSourceDate();
             String dayLabel = detail.getBlock().getDayLabel();
 
             if (days.isEmpty()
@@ -94,7 +94,7 @@ public class StoryReadService {
         return new Block(
                 block.getId(),
                 block.getOrderNumber(),
-                detail.getAttachment().getTripPlaceId(),
+                block.getSourceTripPlaceId(),
                 detail.getAttachment().getId(),
                 thumbnailUrl,
                 block.getDetailSummary(),

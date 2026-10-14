@@ -22,7 +22,7 @@ class TripSearchServiceTest {
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final TripRegionRepository regions = mock(TripRegionRepository.class);
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
-    private final TripService service = new TripService(mock(TripRepository.class), regions,
+    private final TripService service = new TripService(mock(AdditionalAttachmentModificationGuard.class), mock(TripRepository.class), regions,
             mock(RegionCatalog.class), attachments, storage, mock(TripAccessService.class),
             new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class));
 

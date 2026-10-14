@@ -35,7 +35,7 @@ class TripEditServiceTest {
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final TripAccessService access = mock(TripAccessService.class);
     private final ObjectMapper mapper = new ObjectMapper();
-    private final TripService service = new TripService(
+    private final TripService service = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
             trips, regions, mock(RegionCatalog.class), attachments, storage, access, mapper, mock(StoryRepository.class));
     private final LocalDateTime createdAt = LocalDateTime.of(2026, 10, 1, 12, 0);
     private Trip trip;
@@ -79,7 +79,7 @@ class TripEditServiceTest {
         List<TripAttachment> page = photos(18);
         when(attachments.findForEditWithCursor(7L, null, null, PageRequest.of(0, 19)))
                 .thenReturn(page);
-        when(attachments.countForEditByTripId(7L)).thenReturn(18L);
+        when(attachments.countVisibleForEditByTripId(7L)).thenReturn(18L);
         var result = service.findTripForEdit(7L, 1L, null);
         assertThat(result.attachments().items()).hasSize(18);
         assertThat(result.attachmentCount()).isEqualTo(18);
@@ -92,7 +92,7 @@ class TripEditServiceTest {
         List<TripAttachment> page = photos(19);
         when(attachments.findForEditWithCursor(7L, null, null, PageRequest.of(0, 19)))
                 .thenReturn(page);
-        when(attachments.countForEditByTripId(7L)).thenReturn(30L);
+        when(attachments.countVisibleForEditByTripId(7L)).thenReturn(30L);
         var result = service.findTripForEdit(7L, 1L, null);
         assertThat(result.attachments().items()).hasSize(18);
         assertThat(result.attachments().items().getFirst().thumbnailUrl()).isEqualTo("url/preview-100");

@@ -22,6 +22,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class TripAttachmentDeletionService {
+    private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
+    private final jakarta.persistence.EntityManager entityManager;
     private static final int MAX_DELETE_COUNT = 200;
 
     private static final Comparator<TripAttachment> THUMBNAIL_ORDER = Comparator.comparing(
@@ -79,10 +81,14 @@ public class TripAttachmentDeletionService {
         }
     }
 
-    private void softDelete(
-            List<TripAttachment> attachments,
-            Long userId
-    ) {
+    private void softDelete(List<TripAttachment> attachments, Long userId) {
+        attachments.stream().map(TripAttachment::getTripId).distinct().sorted()
+                .forEach(tripId -> additionalAttachmentModificationGuard.check(tripId, userId));
+        attachments.forEach(entityManager::refresh);
+        if (attachments.stream().anyMatch(attachment -> attachment.getDeletedAt() != null
+                || attachment.getFile().getDeletedAt() != null)) {
+            throw new InvalidAttachmentIdsException();
+        }
         LocalDateTime deletedAt = LocalDateTime.now();
 
         List<TripDetailPlace> affectedPlaces = attachments.stream()

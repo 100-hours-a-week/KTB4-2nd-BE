@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
 import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
@@ -60,10 +61,13 @@ class TripAttachmentControllerTest {
     private final TripAttachmentDownloadService downloadService = mock(TripAttachmentDownloadService.class);
     private final BulkAttachmentDownloadService bulkDownloadService = mock(BulkAttachmentDownloadService.class);
     private final InitialAttachmentUploadUrlService uploadUrlService = mock(InitialAttachmentUploadUrlService.class);
+    private final AdditionalAttachmentUploadUrlService additionalUploadUrlService = mock(AdditionalAttachmentUploadUrlService.class);
     private final UnclassifiedFolderListService unclassifiedFolderListService =
             mock(UnclassifiedFolderListService.class);
     private final TripAttachmentRestoreService restoreService =
             mock(TripAttachmentRestoreService.class);
+    private final com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService additionalUploadCompletion =
+            mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService.class);
     private final InitialAttachmentUploadCompletionService uploadCompletion =
             mock(InitialAttachmentUploadCompletionService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
@@ -74,9 +78,29 @@ class TripAttachmentControllerTest {
             bulkDownloadService,
             uploadUrlService,
             uploadCompletion,
+            additionalUploadUrlService,
+            additionalUploadCompletion,
             unclassifiedFolderListService,
             restoreService
     );
+
+    @Test
+    void additionalUploadCompletionReturnsAcceptedAndBatchCount() throws Exception {
+        var request = new com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadCompleteRequest("upload-id");
+        when(additionalUploadCompletion.complete(7L, 1L, request)).thenReturn(
+                new com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse(7L, "QUEUED", 10));
+        MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver()).build()
+                .perform(post("/api/trips/7/attachments").contextPath("/api")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_ADD_ACCEPTED"))
+                .andExpect(jsonPath("$.data.tripId").value(7))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"))
+                .andExpect(jsonPath("$.data.totalAttachments").value(10));
+        verify(additionalUploadCompletion).complete(7L, 1L, request);
+    }
 
     @Test
     void 소유자의_미분류_사진_목록을_명세대로_반환한다() throws Exception {
@@ -340,7 +364,7 @@ class TripAttachmentControllerTest {
         TripAttachmentRepository repository = mock(TripAttachmentRepository.class);
         UserStatsService stats = mock(UserStatsService.class);
         TripAttachmentDeletionService realDeletionService =
-                new TripAttachmentDeletionService(repository, stats);
+                new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), repository, stats);
         TripAttachmentController realController = new TripAttachmentController(
                     listService,
                 detailService,
@@ -349,6 +373,8 @@ class TripAttachmentControllerTest {
                 bulkDownloadService,
                 uploadUrlService,
                 uploadCompletion,
+                additionalUploadUrlService,
+            additionalUploadCompletion,
                 mock(UnclassifiedFolderListService.class),
                 restoreService
         );

@@ -163,6 +163,31 @@ public class TripAnalysisResultService {
         validateUnclassifiedPlaceReferences(result.path("unclassified"), placeIds);
     }
 
+    @Transactional
+    public void replaceCompleted(Long tripId, Long userId, JsonNode result, Map<String, String> placeNames) {
+        Trip trip = trips.findOwnedActiveForUpdate(tripId, userId).orElseThrow(TripNotFoundException::new);
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException();
+        }
+        List<TripAttachment> attachments = attachmentRepository.findAllForReanalysis(tripId);
+        validateCompletedResult(attachments, result, placeNames);
+        placeRepository.softDeleteByTripId(tripId, LocalDateTime.now());
+        applyClassification(tripId, userId, attachments, result, placeNames);
+    }
+
+    private void applyClassification(Long tripId, Long userId, List<TripAttachment> attachments,
+                                     JsonNode result, Map<String, String> placeNames) {
+        Map<Long, TripAttachment> byId = new HashMap<>();
+        for (TripAttachment attachment : attachments) {
+            byId.put(attachment.getId(), attachment);
+        }
+        Map<String, Long> savedPlaceIds = savePlaces(tripId, result.path("places"), placeNames, byId);
+        saveUnclassifiedAttachments(result.path("unclassified"), savedPlaceIds, byId);
+        updateTripThumbnail(tripId, userId, attachments);
+        attachmentRepository.saveAll(attachments);
+        userStats.refreshFromActiveTrips(userId);
+    }
+
     private Map<String, Long> savePlaces(
             Long tripId,
             JsonNode places,
@@ -549,7 +574,7 @@ public class TripAnalysisResultService {
         return photos;
     }
 
-    private Set<String> validateResult(
+    public Set<String> validateResult(
             List<TripAttachment> attachments,
             JsonNode result
     ) {

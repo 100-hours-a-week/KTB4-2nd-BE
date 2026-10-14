@@ -42,6 +42,7 @@ class TripDeletionServiceTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
         service = new TripDeletionService(
+                mock(AdditionalAttachmentModificationGuard.class),
                 trips, regions, places, attachments, files, userStats, transactionManager, meterRegistry);
     }
 

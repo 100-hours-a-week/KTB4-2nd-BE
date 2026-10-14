@@ -70,6 +70,8 @@ class EventHandlerTest {
         new ApplicationContextRunner()
                 .withBean(InitialAttachmentUploadTransactionService.class, () -> mock(InitialAttachmentUploadTransactionService.class))
                 .withBean(TripAnalysisResultService.class, () -> mock(TripAnalysisResultService.class))
+                .withBean(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class,
+                        () -> mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class))
                 .withBean(KafkaTemplate.class, () -> mock(KafkaTemplate.class))
                 .withBean(KafkaTopicProperties.class, this::topics)
                 .withBean(ObjectMapper.class, ObjectMapper::new)
@@ -95,7 +97,7 @@ class EventHandlerTest {
     @Test
     void 미구현_핸들러는_이벤트를_처리한_것처럼_정상_종료하지_않는다() {
         assertNotImplemented(new TripUpdateRequestEventHandler(), new TripUpdateRequestEvent());
-        assertNotImplemented(new TripUpdateResultEventHandler(), new TripUpdateResultEvent());
+        assertNotImplemented(new TripUpdateResultEventHandler(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class), new ObjectMapper()), new TripUpdateResultEvent());
         assertNotImplemented(new StoryCreateRequestEventHandler(), new StoryCreateRequestEvent());
     }
 
@@ -128,7 +130,7 @@ class EventHandlerTest {
         assertDirectInvocation(requestHandler(), TripCreateRequestEvent.class);
         assertDirectInvocation(resultHandler(), TripCreateResultEvent.class);
         assertDirectInvocation(new TripUpdateRequestEventHandler(), TripUpdateRequestEvent.class);
-        assertDirectInvocation(new TripUpdateResultEventHandler(), TripUpdateResultEvent.class);
+        assertDirectInvocation(new TripUpdateResultEventHandler(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class), new ObjectMapper()), TripUpdateResultEvent.class);
         assertDirectInvocation(new StoryCreateRequestEventHandler(), StoryCreateRequestEvent.class);
         assertDirectInvocation(storyResultHandler(), StoryCreateResultEvent.class);
     }

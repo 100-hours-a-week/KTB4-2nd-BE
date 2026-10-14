@@ -47,7 +47,7 @@ import static org.mockito.Mockito.*;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-@Import({TripService.class, SearchService.class, tools.jackson.databind.ObjectMapper.class})
+@Import({TripService.class, SearchService.class, AdditionalAttachmentModificationGuard.class, tools.jackson.databind.ObjectMapper.class})
 class TripSearchMysqlIntegrationTest extends TripSearchRepositoryTest {
     @Container
     @ServiceConnection

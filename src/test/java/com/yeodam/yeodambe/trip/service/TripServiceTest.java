@@ -45,6 +45,7 @@ class TripServiceTest {
     private RegionCatalog regionCatalog;
     private TripAccessService tripAccessService;
     private TripService tripService;
+    private TripMapCacheStore mapCache;
     private final Logger logger = (Logger) LoggerFactory.getLogger(TripService.class);
     private ListAppender<ILoggingEvent> logAppender;
 
@@ -64,6 +65,7 @@ class TripServiceTest {
         tripAttachmentStorageClient = mock(TripAttachmentStorageClient.class);
         regionCatalog = mock(RegionCatalog.class);
         tripAccessService = mock(TripAccessService.class);
+        mapCache = mock(TripMapCacheStore.class);
         tripService = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
                 tripRepository,
                 tripRegionRepository,
@@ -72,7 +74,8 @@ class TripServiceTest {
                 tripAttachmentStorageClient,
                 tripAccessService,
                 new ObjectMapper(),
-                mock(StoryRepository.class)
+                mock(StoryRepository.class),
+                mapCache
         );
     }
 
@@ -299,6 +302,53 @@ class TripServiceTest {
         assertThat(tripService.findMap(1L).markers()).isEmpty();
         verify(tripAttachmentRepository, never()).countNotDeletedByTripIds(anyList());
         verifyNoInteractions(tripAttachmentStorageClient, tripRegionRepository);
+    }
+
+    @Test
+    void cachedMapSkipsDatabaseAndCreatesFreshUrlsOnEachRequest() {
+        var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of(
+                new com.yeodam.yeodambe.trip.service.response.TripMapCacheData.Marker(
+                        7L, "cached-trip", BigDecimal.ONE, BigDecimal.TEN, "preview-key", 3L)));
+        when(mapCache.find(1L)).thenReturn(Optional.of(cached));
+        when(tripAttachmentStorageClient.createReadUrl("preview-key"))
+                .thenReturn("https://example.test/first", "https://example.test/second");
+
+        var first = tripService.findMap(1L);
+        var second = tripService.findMap(1L);
+
+        assertThat(first.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/first");
+        assertThat(second.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/second");
+        assertThat(first.markers().getFirst().attachmentCount()).isEqualTo(3);
+        verifyNoInteractions(tripAttachmentRepository);
+        verify(mapCache, never()).save(anyLong(), any());
+    }
+
+    @Test
+    void cacheMissLoadsDatabaseAndStoresObjectKeyInsteadOfSignedUrl() {
+        when(mapCache.find(1L)).thenReturn(Optional.empty());
+        when(tripAttachmentRepository.findMapRepresentatives(1L))
+                .thenReturn(List.of(mapRepresentative(7L, "preview-key")));
+        when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(7L)))
+                .thenReturn(List.of(new TripAttachmentCount(7L, 3L)));
+        when(tripAttachmentStorageClient.createReadUrl("preview-key"))
+                .thenReturn("https://example.test/signed");
+
+        var response = tripService.findMap(1L);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                com.yeodam.yeodambe.trip.service.response.TripMapCacheData.class);
+        verify(mapCache).save(eq(1L), captor.capture());
+        assertThat(captor.getValue().markers().getFirst().previewStorageKey()).isEqualTo("preview-key");
+        assertThat(captor.getValue().markers().getFirst().attachmentCount()).isEqualTo(3);
+        assertThat(response.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/signed");
+    }
+
+    @Test
+    void emptyMapIsAlsoCached() {
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+        verify(mapCache).save(eq(1L), eq(
+                new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of())));
     }
 
     private com.yeodam.yeodambe.trip.repository.TripMapRepresentative mapRepresentative(Long tripId, String previewKey) {

@@ -35,6 +35,7 @@ import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
+import com.yeodam.yeodambe.trip.service.response.TripMapCacheData;
 import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
@@ -76,6 +77,7 @@ public class TripService {
     private final TripAccessService tripAccessService;
     private final ObjectMapper objectMapper;
     private final StoryRepository storyRepository;
+    private final TripMapCacheStore tripMapCacheStore;
 
     @Transactional(readOnly = true)
     public List<TripSearchCandidateResponse> findSearchCandidates(
@@ -441,9 +443,30 @@ public class TripService {
 
     @Transactional(readOnly = true)
     public TripMapResponse findMap(Long userId) {
+        TripMapCacheData data = tripMapCacheStore.find(userId)
+                .orElseGet(() -> {
+                    TripMapCacheData loaded = loadMapData(userId);
+                    tripMapCacheStore.save(userId, loaded);
+                    return loaded;
+                });
+
+        List<TripMapResponse.Marker> markers = data.markers().stream()
+                .map(marker -> new TripMapResponse.Marker(
+                        marker.tripId(),
+                        marker.tripName(),
+                        marker.latitude(),
+                        marker.longitude(),
+                        tripAttachmentStorageClient.createReadUrl(marker.previewStorageKey()),
+                        marker.attachmentCount()
+                ))
+                .toList();
+        return new TripMapResponse(markers);
+    }
+
+    private TripMapCacheData loadMapData(Long userId) {
         var representatives = tripAttachmentRepository.findMapRepresentatives(userId);
         if (representatives.isEmpty()) {
-            return new TripMapResponse(List.of());
+            return new TripMapCacheData(List.of());
         }
 
         List<Long> tripIds = representatives.stream()
@@ -452,17 +475,17 @@ public class TripService {
         Map<Long, Long> attachmentCounts = tripAttachmentRepository.countNotDeletedByTripIds(tripIds)
                 .stream().collect(Collectors.toMap(TripAttachmentCount::tripId, TripAttachmentCount::attachmentCount));
 
-        List<TripMapResponse.Marker> markers = representatives.stream()
-                .map(representative -> new TripMapResponse.Marker(
+        List<TripMapCacheData.Marker> markers = representatives.stream()
+                .map(representative -> new TripMapCacheData.Marker(
                         representative.tripId(),
                         representative.tripName(),
                         representative.latitude(),
                         representative.longitude(),
-                        tripAttachmentStorageClient.createReadUrl(representative.previewStorageKey()),
+                        representative.previewStorageKey(),
                         attachmentCounts.getOrDefault(representative.tripId(), 0L)
                 ))
                 .toList();
-        return new TripMapResponse(markers);
+        return new TripMapCacheData(markers);
     }
 
     @Transactional(readOnly = true)

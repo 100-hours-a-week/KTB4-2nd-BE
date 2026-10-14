@@ -46,6 +46,7 @@ class TripMapRepresentativeMysqlTest {
     @Autowired private TripService service;
     @Autowired private EntityManager entityManager;
     @MockitoBean private TripAttachmentStorageClient storage;
+    @MockitoBean private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     private User owner;
     private final Map<Long, Long> placeIds = new HashMap<>();
 

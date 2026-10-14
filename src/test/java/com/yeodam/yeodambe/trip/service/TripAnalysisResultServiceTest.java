@@ -31,13 +31,14 @@ class TripAnalysisResultServiceTest {
     private final TripDetailPlaceRepository places = mock(TripDetailPlaceRepository.class);
     private final InitialUploadExecutionRegistry executions = new InitialUploadExecutionRegistry();
     private final UserStatsService userStats = mock(UserStatsService.class);
+    private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private final TripAnalysisResultService service = new TripAnalysisResultService(
             trips, attachments, places, executions, userStats, mock(InitialAttachmentUploadBatchRepository.class),
                 mock(TripCreationExecutionRepository.class),
                 mock(InitialAttachmentUploadItemRepository.class),
                 mock(InitialAttachmentUploadTransactionService.class),
                 new ObjectMapper(),
-                mock(EntityManager.class));
+                mock(EntityManager.class), mapCache);
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
@@ -62,6 +63,7 @@ class TripAnalysisResultServiceTest {
         verify(trips).finishInitialUpload(7L, 1L, ProcessingStatus.PROCESSING,
                 ProcessingStatus.COMPLETED);
         verify(userStats).refreshFromActiveTrips(1L);
+        verify(mapCache).evictAfterCommit(1L);
     }
 
     @ParameterizedTest
@@ -99,6 +101,28 @@ class TripAnalysisResultServiceTest {
         assertThrows(IllegalStateException.class,
                 () -> service.saveCompleted(7L, 1L, executionId, List.of(photo), result, Map.of()));
         verifyNoInteractions(trips, attachments, places);
+        verifyNoInteractions(mapCache);
+    }
+
+    @Test
+    void 추가_사진_재분석_저장후_지도_캐시를_무효화한다() {
+        Trip trip = new Trip(1L, "trip", java.time.LocalDate.now(), java.time.LocalDate.now());
+        ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
+        when(trips.findOwnedActiveForUpdate(7L, 1L)).thenReturn(java.util.Optional.of(trip));
+        TripAttachment photo = photo(30L);
+        when(attachments.findAllForReanalysis(7L)).thenReturn(List.of(photo));
+        when(trips.updateThumbnailKey(7L, 1L, ProcessingStatus.COMPLETED, null)).thenReturn(1);
+        var result = json.readTree("""
+                {"places":[],"unclassified":[{"trip_attachment_id":30,"issue":"BLURRY",
+                "region_origin":"UNKNOWN","taken_at":null,"latitude":null,
+                "longitude":null,"evaluation":31}]}
+                """);
+
+        service.replaceCompleted(7L, 1L, result, Map.of());
+
+        verify(attachments).saveAll(List.of(photo));
+        verify(userStats).refreshFromActiveTrips(1L);
+        verify(mapCache).evictAfterCommit(1L);
     }
 
     @Test

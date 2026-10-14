@@ -76,6 +76,9 @@ class TripAttachmentTransactionPersistenceTest {
     @MockitoBean
     private TripAttachmentStorageClient storage;
 
+    @MockitoBean
+    private TripMapCacheStore mapCache;
+
     @Test
     void 표시본_키를_저장하고_기존_첨부는_NULL을_허용한다() {
         User user = users.saveAndFlush(new User("display-key@yeodam.test", "표시본"));

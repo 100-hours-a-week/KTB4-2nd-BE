@@ -44,7 +44,7 @@ import static org.mockito.Mockito.when;
 
 @EnabledIfEnvironmentVariable(named = "YEODAM_KAFKA_INTEGRATION", matches = "true")
 @SpringBootTest(properties = {
-        "spring.kafka.bootstrap-servers=localhost:9092",
+        "spring.kafka.bootstrap-servers=${KAFKA_TEST_BOOTSTRAP_SERVERS:localhost:9092}",
         "spring.kafka.consumer.auto-offset-reset=earliest",
         "app.kafka.topics.trip-create-request=ai-jobs",
         "app.kafka.topics.trip-create-result=ai-results",
@@ -53,6 +53,10 @@ import static org.mockito.Mockito.when;
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class TripCreationKafkaFlowIntegrationTest {
+
+    private static final String BOOTSTRAP_SERVERS = System.getenv()
+            .getOrDefault("KAFKA_TEST_BOOTSTRAP_SERVERS", "localhost:9092");
+
     @Autowired
     private InitialAttachmentUploadTransactionService transactions;
     @Autowired
@@ -117,7 +121,7 @@ class TripCreationKafkaFlowIntegrationTest {
                 "type", "trip_id", "execution_id", "trigger", "trip_name", "period", "regions", "attachments");
         assertThat(execution().getProcessPayload().getBytes(StandardCharsets.UTF_8).length).isLessThan(1024 * 1024);
         var consumerProperties = new Properties();
-        consumerProperties.put("bootstrap.servers", "localhost:9092");
+        consumerProperties.put("bootstrap.servers", BOOTSTRAP_SERVERS);
         consumerProperties.put("group.id", "trip-wire-test-" + UUID.randomUUID());
         consumerProperties.put("enable.auto.commit", "false");
         consumerProperties.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
@@ -159,7 +163,7 @@ class TripCreationKafkaFlowIntegrationTest {
         String key = "invalid-result-" + UUID.randomUUID();
         String raw = "{invalid-json";
         var properties = new Properties();
-        properties.put("bootstrap.servers", "localhost:9092");
+        properties.put("bootstrap.servers", BOOTSTRAP_SERVERS);
         properties.put("group.id", "trip-dlt-test-" + UUID.randomUUID());
         properties.put("enable.auto.commit", "false");
         properties.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");

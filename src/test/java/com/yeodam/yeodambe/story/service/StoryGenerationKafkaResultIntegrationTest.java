@@ -65,7 +65,7 @@ import static org.mockito.ArgumentMatchers.any;
 
 @EnabledIfEnvironmentVariable(named = "YEODAM_KAFKA_INTEGRATION", matches = "true")
 @SpringBootTest(properties = {
-        "spring.kafka.bootstrap-servers=localhost:9092",
+        "spring.kafka.bootstrap-servers=${KAFKA_TEST_BOOTSTRAP_SERVERS:localhost:9092}",
         "spring.kafka.consumer.auto-offset-reset=earliest",
         "app.story.result-listener-enabled=true"
 })
@@ -73,6 +73,10 @@ import static org.mockito.ArgumentMatchers.any;
 @Import(TestcontainersConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class StoryGenerationKafkaResultIntegrationTest {
+
+    private static final String BOOTSTRAP_SERVERS = System.getenv()
+            .getOrDefault("KAFKA_TEST_BOOTSTRAP_SERVERS", "localhost:9092");
+
     private static final String TOPIC = "test-story-results-" + UUID.randomUUID();
     private static final String DLT = TOPIC + "-story-dlt";
     private static final String GROUP = "test-story-consumer-" + UUID.randomUUID();
@@ -111,7 +115,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     private static AdminClient admin() {
-        return AdminClient.create(Map.of("bootstrap.servers", "localhost:9092"));
+        return AdminClient.create(Map.of("bootstrap.servers", BOOTSTRAP_SERVERS));
     }
 
     private User owner;
@@ -299,7 +303,7 @@ class StoryGenerationKafkaResultIntegrationTest {
 
     private void assertDeadLetterContains(String expected) throws Exception {
         var properties = Map.<String, Object>of(
-                "bootstrap.servers", "localhost:9092",
+                "bootstrap.servers", BOOTSTRAP_SERVERS,
                 "group.id", "dlt-check-" + UUID.randomUUID(),
                 "key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer",
                 "value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");

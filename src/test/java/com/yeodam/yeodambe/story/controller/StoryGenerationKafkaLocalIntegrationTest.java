@@ -50,13 +50,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @EnabledIfEnvironmentVariable(named = "YEODAM_KAFKA_INTEGRATION", matches = "true")
 @SpringBootTest(properties = {
-        "spring.kafka.bootstrap-servers=localhost:9092",
+        "spring.kafka.bootstrap-servers=${KAFKA_TEST_BOOTSTRAP_SERVERS:localhost:9092}",
         "app.kafka.topics.story-create-request=ai-jobs"
 })
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
 class StoryGenerationKafkaLocalIntegrationTest {
+
+    private static final String BOOTSTRAP_SERVERS = System.getenv()
+            .getOrDefault("KAFKA_TEST_BOOTSTRAP_SERVERS", "localhost:9092");
+
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper mapper;
     @Autowired private AccessTokenIssuer issuer;
@@ -112,17 +116,19 @@ class StoryGenerationKafkaLocalIntegrationTest {
     @Test
     void apiCommitsOutboxPublishesExactJsonAndReturnsAccepted() throws Exception {
         Map<String, Object> config = Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092",
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS,
                 ConsumerConfig.GROUP_ID_CONFIG, "local-story-verification-" + UUID.randomUUID(),
                 ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false,
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
                 ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class
         );
         try (var consumer = new KafkaConsumer<String, String>(config)) {
-            var partition = new TopicPartition("ai-jobs", 0);
-            consumer.assign(List.of(partition));
-            consumer.seekToEnd(List.of(partition));
-            consumer.position(partition);
+            var partitions = consumer.partitionsFor("ai-jobs").stream()
+                    .map(partition -> new TopicPartition(partition.topic(), partition.partition()))
+                    .toList();
+            consumer.assign(partitions);
+            consumer.seekToEnd(partitions);
+            partitions.forEach(consumer::position);
             String path = "/trips/" + trip.getId() + "/story-generations";
             String requestId = "local-kafka-" + UUID.randomUUID();
 

@@ -45,6 +45,8 @@ class TripServiceTest {
     private RegionCatalog regionCatalog;
     private TripAccessService tripAccessService;
     private TripService tripService;
+    private TripMapCacheStore mapCache;
+    private TripMapCacheLock mapLock;
     private final Logger logger = (Logger) LoggerFactory.getLogger(TripService.class);
     private ListAppender<ILoggingEvent> logAppender;
 
@@ -64,6 +66,10 @@ class TripServiceTest {
         tripAttachmentStorageClient = mock(TripAttachmentStorageClient.class);
         regionCatalog = mock(RegionCatalog.class);
         tripAccessService = mock(TripAccessService.class);
+        mapCache = mock(TripMapCacheStore.class);
+        mapLock = mock(TripMapCacheLock.class);
+        when(mapLock.tryAcquire(eq(1L), eq("v1"), anyString())).thenReturn(true);
+        when(mapCache.version(1L)).thenReturn(Optional.of("v1"));
         tripService = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
                 tripRepository,
                 tripRegionRepository,
@@ -72,7 +78,9 @@ class TripServiceTest {
                 tripAttachmentStorageClient,
                 tripAccessService,
                 new ObjectMapper(),
-                mock(StoryRepository.class)
+                mock(StoryRepository.class),
+                mapCache,
+                mapLock
         );
     }
 
@@ -299,6 +307,136 @@ class TripServiceTest {
         assertThat(tripService.findMap(1L).markers()).isEmpty();
         verify(tripAttachmentRepository, never()).countNotDeletedByTripIds(anyList());
         verifyNoInteractions(tripAttachmentStorageClient, tripRegionRepository);
+    }
+
+    @Test
+    void cachedMapSkipsDatabaseAndCreatesFreshUrlsOnEachRequest() {
+        var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of(
+                new com.yeodam.yeodambe.trip.service.response.TripMapCacheData.Marker(
+                        7L, "cached-trip", BigDecimal.ONE, BigDecimal.TEN, "preview-key", 3L)));
+        when(mapCache.find(1L, "v1")).thenReturn(Optional.of(cached));
+        when(tripAttachmentStorageClient.createReadUrl("preview-key"))
+                .thenReturn("https://example.test/first", "https://example.test/second");
+
+        var first = tripService.findMap(1L);
+        var second = tripService.findMap(1L);
+
+        assertThat(first.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/first");
+        assertThat(second.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/second");
+        assertThat(first.markers().getFirst().attachmentCount()).isEqualTo(3);
+        verifyNoInteractions(tripAttachmentRepository);
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+    }
+
+    @Test
+    void cacheMissLoadsDatabaseAndStoresObjectKeyInsteadOfSignedUrl() {
+        when(mapCache.find(1L, "v1")).thenReturn(Optional.empty());
+        when(tripAttachmentRepository.findMapRepresentatives(1L))
+                .thenReturn(List.of(mapRepresentative(7L, "preview-key")));
+        when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(7L)))
+                .thenReturn(List.of(new TripAttachmentCount(7L, 3L)));
+        when(tripAttachmentStorageClient.createReadUrl("preview-key"))
+                .thenReturn("https://example.test/signed");
+
+        var response = tripService.findMap(1L);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                com.yeodam.yeodambe.trip.service.response.TripMapCacheData.class);
+        verify(mapCache).save(eq(1L), eq("v1"), captor.capture());
+        assertThat(captor.getValue().markers().getFirst().previewStorageKey()).isEqualTo("preview-key");
+        assertThat(captor.getValue().markers().getFirst().attachmentCount()).isEqualTo(3);
+        assertThat(response.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/signed");
+    }
+
+    @Test
+    void emptyMapIsAlsoCached() {
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+        verify(mapCache).save(eq(1L), eq("v1"), eq(
+                new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of())));
+    }
+
+    @Test
+    void unavailableVersionBypassesCacheAndReadsDatabase() {
+        when(mapCache.version(1L)).thenReturn(Optional.empty());
+        when(tripAttachmentRepository.findMapRepresentatives(1L))
+                .thenReturn(List.of(mapRepresentative(7L, "preview")));
+        var response = tripService.findMap(1L);
+        assertThat(response.markers()).hasSize(1);
+        verify(mapCache, never()).find(anyLong(), anyString());
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+        verify(tripAttachmentRepository).findMapRepresentatives(1L);
+    }
+
+    @Test
+    void lockOwnerLoadsAndSavesBeforeReleasingTheSameOwner() {
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
+
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+
+        var owner = org.mockito.ArgumentCaptor.forClass(String.class);
+        var order = inOrder(mapLock, mapCache, tripAttachmentRepository);
+        order.verify(mapCache).version(1L);
+        order.verify(mapCache).find(1L, "v1");
+        order.verify(mapLock).tryAcquire(eq(1L), eq("v1"), owner.capture());
+        order.verify(mapCache).find(1L, "v1");
+        order.verify(tripAttachmentRepository).findMapRepresentatives(1L);
+        order.verify(mapCache).save(eq(1L), eq("v1"), any());
+        order.verify(mapLock).release(1L, "v1", owner.getValue());
+        assertThat(java.util.UUID.fromString(owner.getValue())).isNotNull();
+    }
+
+    @Test
+    void waitingRequestUsesCacheFilledByAnotherRequest() {
+        var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of());
+        when(mapCache.find(1L, "v1")).thenReturn(Optional.empty(), Optional.of(cached));
+        when(mapLock.tryAcquire(eq(1L), eq("v1"), anyString())).thenReturn(false);
+
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+
+        verify(mapCache, times(2)).find(1L, "v1");
+        verifyNoInteractions(tripAttachmentRepository);
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+        verify(mapLock, never()).release(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void cacheIsRecheckedAfterAcquiringLock() {
+        var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of());
+        when(mapCache.find(1L, "v1")).thenReturn(Optional.empty(), Optional.of(cached));
+
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+
+        verifyNoInteractions(tripAttachmentRepository);
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+        verify(mapLock).release(eq(1L), eq("v1"), anyString());
+    }
+
+    @Test
+    void redisLockFailureFallsBackToDatabaseWithoutSavingCache() {
+        when(mapLock.tryAcquire(eq(1L), eq("v1"), anyString()))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("redis unavailable"));
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
+
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+
+        verify(tripAttachmentRepository).findMapRepresentatives(1L);
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+        verify(mapLock, never()).release(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void databaseFailureStillReleasesAcquiredLock() {
+        var failure = new org.springframework.dao.DataAccessResourceFailureException("database unavailable");
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenThrow(failure);
+
+        assertThat(assertThrows(org.springframework.dao.DataAccessResourceFailureException.class,
+                () -> tripService.findMap(1L))).isSameAs(failure);
+
+        var owner = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(mapLock).tryAcquire(eq(1L), eq("v1"), owner.capture());
+        verify(mapLock).release(1L, "v1", owner.getValue());
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
     }
 
     private com.yeodam.yeodambe.trip.repository.TripMapRepresentative mapRepresentative(Long tripId, String previewKey) {

@@ -54,6 +54,7 @@ public class TripAnalysisResultService {
     private final InitialAttachmentUploadTransactionService uploadTransactions;
     private final ObjectMapper json;
     private final EntityManager entityManager;
+    private final TripMapCacheStore tripMapCacheStore;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void saveCompleted(
@@ -118,6 +119,7 @@ public class TripAnalysisResultService {
         updateTripThumbnail(tripId, userId, attachments);
         attachmentRepository.saveAll(attachments);
         userStats.refreshFromActiveTrips(userId);
+        tripMapCacheStore.evictAfterCommit(userId);
     }
 
     private void validateCompletedResult(
@@ -186,6 +188,7 @@ public class TripAnalysisResultService {
         updateTripThumbnail(tripId, userId, attachments);
         attachmentRepository.saveAll(attachments);
         userStats.refreshFromActiveTrips(userId);
+        tripMapCacheStore.evictAfterCommit(userId);
     }
 
     private Map<String, Long> savePlaces(

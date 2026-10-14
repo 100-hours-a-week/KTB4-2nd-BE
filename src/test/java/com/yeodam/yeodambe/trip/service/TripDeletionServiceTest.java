@@ -36,6 +36,7 @@ class TripDeletionServiceTest {
     private final UserStatsService userStats = mock(UserStatsService.class);
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private TripDeletionService service;
 
     @BeforeEach
@@ -43,7 +44,7 @@ class TripDeletionServiceTest {
         when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
         service = new TripDeletionService(
                 mock(AdditionalAttachmentModificationGuard.class),
-                trips, regions, places, attachments, files, userStats, transactionManager, meterRegistry);
+                trips, regions, places, attachments, files, userStats, transactionManager, meterRegistry, mapCache);
     }
 
     @Test
@@ -51,6 +52,7 @@ class TripDeletionServiceTest {
         assertThrows(TripNotFoundException.class, () -> service.delete(7L, 1L));
         verify(trips).findOwnedActiveForUpdate(7L, 1L);
         verifyNoInteractions(userStats);
+        verifyNoInteractions(mapCache);
         assertEquals(1, meterRegistry.find("yeodam.trip.stage")
                 .tags("stage", "trip_delete", "outcome", "failure")
                 .timer()
@@ -64,6 +66,7 @@ class TripDeletionServiceTest {
 
         assertThrows(TripDeletionNotAllowedException.class, () -> service.delete(7L, 1L));
         verifyNoInteractions(userStats);
+        verifyNoInteractions(mapCache);
     }
 
     @Test
@@ -78,6 +81,7 @@ class TripDeletionServiceTest {
         service.delete(7L, 1L);
 
         verify(userStats).refreshFromActiveTrips(1L);
+        verify(mapCache).evictAfterCommit(1L);
         verify(files).softDeleteByIds(eq(List.of(20L)), any());
         assertEquals(1, meterRegistry.find("yeodam.trip.stage")
                 .tags("stage", "trip_delete", "outcome", "success")
@@ -112,6 +116,22 @@ class TripDeletionServiceTest {
         verifyNoInteractions(files);
         verify(attachments, never()).existsByFileIdAndDeletedAtIsNull(anyLong());
         verify(userStats).refreshFromActiveTrips(1L);
+        verify(mapCache).evictAfterCommit(1L);
+    }
+
+    @Test
+    void 통계_갱신_실패시_무효화를_예약하지_않고_롤백한다() {
+        when(trips.findOwnedActiveForUpdate(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
+        when(attachments.findAllByTripIdAndDeletedAtIsNull(7L)).thenReturn(List.of());
+        doThrow(new IllegalStateException("stats failed"))
+                .when(userStats).refreshFromActiveTrips(1L);
+
+        assertThrows(IllegalStateException.class, () -> service.delete(7L, 1L));
+
+        verify(transactionManager).rollback(any());
+        verify(transactionManager, never()).commit(any());
+        verifyNoInteractions(mapCache);
     }
 
     private Trip trip(ProcessingStatus status) {

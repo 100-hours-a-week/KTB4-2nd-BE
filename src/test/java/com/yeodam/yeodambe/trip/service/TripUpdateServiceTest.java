@@ -24,9 +24,10 @@ class TripUpdateServiceTest {
     private final RegionCatalog catalog = mock(RegionCatalog.class);
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
+    private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private final TripService service = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
             trips, regions, catalog, attachments, storage, mock(TripAccessService.class),
-            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class));
+            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class), mapCache, mock(TripMapCacheLock.class));
     private Trip trip;
     private TripRegion seoul;
     private final LocalDate start = LocalDate.of(2026, 9, 1);
@@ -61,6 +62,7 @@ class TripUpdateServiceTest {
         assertThat(seoul.getDeletedAt()).isNull();
         verify(regions, never()).saveAll(any());
         verifyNoInteractions(attachments, storage);
+        verify(mapCache).evictAfterCommit(1L);
     }
 
     @Test
@@ -69,6 +71,7 @@ class TripUpdateServiceTest {
                 new TripUpdateRequest(null, end.plusDays(1), null, null)))
                 .isInstanceOf(InvalidTripRequestException.class);
         assertThat(trip.getStartDate()).isEqualTo(start);
+        verifyNoInteractions(mapCache);
     }
 
     @Test

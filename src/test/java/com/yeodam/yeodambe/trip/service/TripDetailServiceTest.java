@@ -47,7 +47,8 @@ class TripDetailServiceTest {
                 mock(TripAttachmentStorageClient.class),
                 tripAccessService,
                 new tools.jackson.databind.ObjectMapper(),
-                storyRepository
+                storyRepository,
+                mock(TripMapCacheStore.class), mock(TripMapCacheLock.class)
         );
     }
 

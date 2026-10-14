@@ -45,6 +45,10 @@ import static org.mockito.Mockito.*;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @Import({TestcontainersConfiguration.class, TripService.class, SearchService.class, AdditionalAttachmentModificationGuard.class, tools.jackson.databind.ObjectMapper.class})
 class TripSearchMysqlIntegrationTest extends TripSearchRepositoryTest {
+    @MockitoBean
+    private TripMapCacheStore mapCache;
+    @MockitoBean
+    private TripMapCacheLock mapLock;
 
     @Autowired
     private EntityManager entityManager;

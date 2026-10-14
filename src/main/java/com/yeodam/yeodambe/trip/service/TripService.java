@@ -445,12 +445,21 @@ public class TripService {
 
     @Transactional(readOnly = true)
     public TripMapResponse findMap(Long userId) {
-        TripMapCacheData data = tripMapCacheStore.find(userId)
-                .orElseGet(() -> {
-                    TripMapCacheData loaded = loadMapData(userId);
-                    tripMapCacheStore.save(userId, loaded);
-                    return loaded;
-                });
+        var version = tripMapCacheStore.version(userId);
+
+        TripMapCacheData data;
+        if (version.isEmpty()) {
+            data = loadMapData(userId);
+        } else {
+            String cacheVersion = version.get();
+
+            data = tripMapCacheStore.find(userId, cacheVersion)
+                    .orElseGet(() -> {
+                        TripMapCacheData loaded = loadMapData(userId);
+                        tripMapCacheStore.save(userId, cacheVersion, loaded);
+                        return loaded;
+                    });
+        }
 
         List<TripMapResponse.Marker> markers = data.markers().stream()
                 .map(marker -> new TripMapResponse.Marker(

@@ -66,6 +66,7 @@ class TripServiceTest {
         regionCatalog = mock(RegionCatalog.class);
         tripAccessService = mock(TripAccessService.class);
         mapCache = mock(TripMapCacheStore.class);
+        when(mapCache.version(1L)).thenReturn(Optional.of("v1"));
         tripService = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
                 tripRepository,
                 tripRegionRepository,
@@ -309,7 +310,7 @@ class TripServiceTest {
         var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of(
                 new com.yeodam.yeodambe.trip.service.response.TripMapCacheData.Marker(
                         7L, "cached-trip", BigDecimal.ONE, BigDecimal.TEN, "preview-key", 3L)));
-        when(mapCache.find(1L)).thenReturn(Optional.of(cached));
+        when(mapCache.find(1L, "v1")).thenReturn(Optional.of(cached));
         when(tripAttachmentStorageClient.createReadUrl("preview-key"))
                 .thenReturn("https://example.test/first", "https://example.test/second");
 
@@ -320,12 +321,12 @@ class TripServiceTest {
         assertThat(second.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/second");
         assertThat(first.markers().getFirst().attachmentCount()).isEqualTo(3);
         verifyNoInteractions(tripAttachmentRepository);
-        verify(mapCache, never()).save(anyLong(), any());
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
     }
 
     @Test
     void cacheMissLoadsDatabaseAndStoresObjectKeyInsteadOfSignedUrl() {
-        when(mapCache.find(1L)).thenReturn(Optional.empty());
+        when(mapCache.find(1L, "v1")).thenReturn(Optional.empty());
         when(tripAttachmentRepository.findMapRepresentatives(1L))
                 .thenReturn(List.of(mapRepresentative(7L, "preview-key")));
         when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(7L)))
@@ -337,7 +338,7 @@ class TripServiceTest {
 
         var captor = org.mockito.ArgumentCaptor.forClass(
                 com.yeodam.yeodambe.trip.service.response.TripMapCacheData.class);
-        verify(mapCache).save(eq(1L), captor.capture());
+        verify(mapCache).save(eq(1L), eq("v1"), captor.capture());
         assertThat(captor.getValue().markers().getFirst().previewStorageKey()).isEqualTo("preview-key");
         assertThat(captor.getValue().markers().getFirst().attachmentCount()).isEqualTo(3);
         assertThat(response.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/signed");
@@ -347,8 +348,20 @@ class TripServiceTest {
     void emptyMapIsAlsoCached() {
         when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
         assertThat(tripService.findMap(1L).markers()).isEmpty();
-        verify(mapCache).save(eq(1L), eq(
+        verify(mapCache).save(eq(1L), eq("v1"), eq(
                 new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of())));
+    }
+
+    @Test
+    void unavailableVersionBypassesCacheAndReadsDatabase() {
+        when(mapCache.version(1L)).thenReturn(Optional.empty());
+        when(tripAttachmentRepository.findMapRepresentatives(1L))
+                .thenReturn(List.of(mapRepresentative(7L, "preview")));
+        var response = tripService.findMap(1L);
+        assertThat(response.markers()).hasSize(1);
+        verify(mapCache, never()).find(anyLong(), anyString());
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+        verify(tripAttachmentRepository).findMapRepresentatives(1L);
     }
 
     private com.yeodam.yeodambe.trip.repository.TripMapRepresentative mapRepresentative(Long tripId, String previewKey) {

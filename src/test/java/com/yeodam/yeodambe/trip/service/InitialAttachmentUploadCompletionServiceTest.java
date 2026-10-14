@@ -189,6 +189,29 @@ class InitialAttachmentUploadCompletionServiceTest {
     }
 
     @Test
+    void 빈_객체는_크기_검증에서_거부하고_헤더를_읽지_않는다() {
+        when(storage.size("key-one")).thenReturn(0L);
+
+        assertThatThrownBy(() -> service.verifyUploadedFiles(List.of(item(1, "key-one", 1024))))
+                .isInstanceOf(InvalidAttachmentUploadException.class);
+
+        verify(storage).size("key-one");
+        verifyNoMoreInteractions(storage);
+    }
+
+    @Test
+    void HEIF_브랜드는_기존과_같이_지원하지_않는_형식으로_거부한다() {
+        byte[] header = "0000ftypmif1".getBytes(StandardCharsets.US_ASCII);
+        when(storage.size("key-one")).thenReturn(12L);
+        when(storage.openHeader("key-one")).thenReturn(new ByteArrayInputStream(header));
+
+        assertThatThrownBy(() -> service.verifyUploadedFiles(List.of(
+                new InitialAttachmentUploadBatchSnapshot.Photo(1L, "photo.heif", "image/heif", 12L,
+                        "key-one", 0, null, null))))
+                .isInstanceOf(UnsupportedAttachmentFormatException.class);
+    }
+
+    @Test
     void 이미_접수한_배치는_원본을_재검사하지_않는다() {
         var snapshot = new InitialAttachmentUploadBatchSnapshot(
                 1L, "upload-id", "execution-id", 7L, 42L, 1, 1, true,

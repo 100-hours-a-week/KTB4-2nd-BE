@@ -142,6 +142,14 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     }
 
     @Override
+    public InputStream openHeader(String objectKey) {
+        return s3.getObject(request -> request
+                .bucket(bucket)
+                .key(objectKey)
+                .range("bytes=0-11"));
+    }
+
+    @Override
     public String createUploadUrl(
             String objectKey,
             String contentType,

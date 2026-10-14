@@ -41,8 +41,8 @@ class InitialAttachmentUploadCompletionServiceTest {
     void 모든_저장_키를_확인하고_실제_크기가_일치하면_상태_변경_없이_허용한다() {
         when(storage.size("key-one")).thenReturn(1024L);
         when(storage.size("key-two")).thenReturn(2048L);
-        when(storage.open("key-one")).thenReturn(new ByteArrayInputStream(jpeg(1024)));
-        when(storage.open("key-two")).thenReturn(new ByteArrayInputStream(jpeg(2048)));
+        when(storage.openHeader("key-one")).thenReturn(new ByteArrayInputStream(jpeg(1024)));
+        when(storage.openHeader("key-two")).thenReturn(new ByteArrayInputStream(jpeg(2048)));
 
         assertThatCode(() -> service.verifyUploadedFiles(List.of(
                 item(1, "key-one", 1024), item(2, "key-two", 2048))))
@@ -50,9 +50,9 @@ class InitialAttachmentUploadCompletionServiceTest {
 
         var order = inOrder(storage);
         order.verify(storage).size("key-one");
-        order.verify(storage).open("key-one");
+        order.verify(storage).openHeader("key-one");
         order.verify(storage).size("key-two");
-        order.verify(storage).open("key-two");
+        order.verify(storage).openHeader("key-two");
         verifyNoMoreInteractions(storage);
         assertThat(batch.getStatus()).isEqualTo(InitialAttachmentUploadStatus.PENDING);
     }
@@ -105,7 +105,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     void 기존_업로드가_인식하는_PNG와_모든_HEIC_브랜드를_허용한다() {
         byte[] png = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
         when(storage.size("png-key")).thenReturn((long) png.length);
-        when(storage.open("png-key")).thenReturn(new ByteArrayInputStream(png));
+        when(storage.openHeader("png-key")).thenReturn(new ByteArrayInputStream(png));
         assertThatCode(() -> service.verifyUploadedFiles(List.of(
                 new InitialAttachmentUploadBatchSnapshot.Photo(1L, "photo.png", "image/png", (long) png.length, "png-key", 0, null, null))))
                 .doesNotThrowAnyException();
@@ -115,7 +115,7 @@ class InitialAttachmentUploadCompletionServiceTest {
             System.arraycopy(("ftyp" + brand).getBytes(StandardCharsets.US_ASCII), 0, header, 4, 8);
             String key = "heic-" + brand;
             when(storage.size(key)).thenReturn(12L);
-            when(storage.open(key)).thenReturn(new ByteArrayInputStream(header));
+            when(storage.openHeader(key)).thenReturn(new ByteArrayInputStream(header));
             assertThatCode(() -> service.verifyUploadedFiles(List.of(
                     new InitialAttachmentUploadBatchSnapshot.Photo(1L, "photo.heic", "image/heic", 12L, key, 0, null, null))))
                     .doesNotThrowAnyException();
@@ -125,7 +125,7 @@ class InitialAttachmentUploadCompletionServiceTest {
     @Test
     void 인식한_파일_형식이_선언한_형식과_다르면_거부한다() {
         when(storage.size("key-one")).thenReturn(12L);
-        when(storage.open("key-one")).thenReturn(new ByteArrayInputStream(jpeg(12)));
+        when(storage.openHeader("key-one")).thenReturn(new ByteArrayInputStream(jpeg(12)));
 
         assertThatThrownBy(() -> service.verifyUploadedFiles(List.of(
                 new InitialAttachmentUploadBatchSnapshot.Photo(1L, "photo.png", "image/png", 12L, "key-one", 0, null, null))))
@@ -142,7 +142,7 @@ class InitialAttachmentUploadCompletionServiceTest {
 
         for (byte[] bytes : unsupported) {
             when(storage.size("key-one")).thenReturn((long) bytes.length);
-            when(storage.open("key-one")).thenReturn(new ByteArrayInputStream(bytes));
+            when(storage.openHeader("key-one")).thenReturn(new ByteArrayInputStream(bytes));
             assertThatThrownBy(() -> service.verifyUploadedFiles(List.of(item(1, "key-one", bytes.length))))
                     .isInstanceOf(UnsupportedAttachmentFormatException.class);
         }
@@ -153,13 +153,14 @@ class InitialAttachmentUploadCompletionServiceTest {
         InputStream stream = mock(InputStream.class);
         when(stream.readNBytes(12)).thenReturn(jpeg(12));
         when(storage.size("key-one")).thenReturn(1024L);
-        when(storage.open("key-one")).thenReturn(stream);
+        when(storage.openHeader("key-one")).thenReturn(stream);
 
         service.verifyUploadedFiles(List.of(item(1, "key-one", 1024)));
 
         verify(stream).readNBytes(12);
         verify(stream).close();
         verifyNoMoreInteractions(stream);
+        Mockito.verify(storage, Mockito.never()).open(Mockito.anyString());
     }
 
     @Test
@@ -168,7 +169,7 @@ class InitialAttachmentUploadCompletionServiceTest {
         IOException failure = new IOException("test read failure");
         when(stream.readNBytes(12)).thenThrow(failure);
         when(storage.size("key-one")).thenReturn(1024L);
-        when(storage.open("key-one")).thenReturn(stream);
+        when(storage.openHeader("key-one")).thenReturn(stream);
 
         assertThatThrownBy(() -> service.verifyUploadedFiles(List.of(item(1, "key-one", 1024))))
                 .isInstanceOfSatisfying(AttachmentStorageException.class, exception -> {
@@ -182,9 +183,32 @@ class InitialAttachmentUploadCompletionServiceTest {
     void HEAD_확인이_성공한_후의_객체_조회_오류를_유지한다() {
         S3Exception failure = s3Failure(500, null);
         when(storage.size("key-one")).thenReturn(1024L);
-        when(storage.open("key-one")).thenThrow(failure);
+        when(storage.openHeader("key-one")).thenThrow(failure);
 
         assertStorageFailure(failure);
+    }
+
+    @Test
+    void 빈_객체는_크기_검증에서_거부하고_헤더를_읽지_않는다() {
+        when(storage.size("key-one")).thenReturn(0L);
+
+        assertThatThrownBy(() -> service.verifyUploadedFiles(List.of(item(1, "key-one", 1024))))
+                .isInstanceOf(InvalidAttachmentUploadException.class);
+
+        verify(storage).size("key-one");
+        verifyNoMoreInteractions(storage);
+    }
+
+    @Test
+    void HEIF_브랜드는_기존과_같이_지원하지_않는_형식으로_거부한다() {
+        byte[] header = "0000ftypmif1".getBytes(StandardCharsets.US_ASCII);
+        when(storage.size("key-one")).thenReturn(12L);
+        when(storage.openHeader("key-one")).thenReturn(new ByteArrayInputStream(header));
+
+        assertThatThrownBy(() -> service.verifyUploadedFiles(List.of(
+                new InitialAttachmentUploadBatchSnapshot.Photo(1L, "photo.heif", "image/heif", 12L,
+                        "key-one", 0, null, null))))
+                .isInstanceOf(UnsupportedAttachmentFormatException.class);
     }
 
     @Test

@@ -79,7 +79,7 @@ public class InitialAttachmentUploadCompletionService {
     private void verifyFileType(InitialAttachmentUploadBatchSnapshot.Photo item) {
         byte[] header;
 
-        try (InputStream input = storage.open(item.objectKey())) {
+        try (InputStream input = storage.openHeader(item.objectKey())) {
             header = input.readNBytes(12);
         } catch (IOException | SdkException failure) {
             throw new AttachmentStorageException(

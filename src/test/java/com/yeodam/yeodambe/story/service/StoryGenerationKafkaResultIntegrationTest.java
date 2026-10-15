@@ -325,9 +325,9 @@ class StoryGenerationKafkaResultIntegrationTest {
     void kafkaLateCompletionForTimedOutJobIsConsumedWithoutSavingStory() throws Exception {
         jdbc.update("""
                 UPDATE story_generation_outbox
-                SET published_at = ?
+                SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
                 WHERE generation_id = ?
-                """, LocalDateTime.now().minusHours(2), job.getId());
+                """, job.getId());
         timeout.expire(job.getId(), LocalDateTime.now());
 
         awaitCommitted(send(completionEvent(job.getExecutionId())));

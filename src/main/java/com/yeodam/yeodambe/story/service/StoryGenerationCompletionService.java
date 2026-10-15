@@ -23,6 +23,7 @@ import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -37,6 +38,7 @@ public class StoryGenerationCompletionService {
     private final StoryGenerationResultValidator resultValidator;
     private final ObjectMapper objectMapper;
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
+    private final JdbcTemplate jdbc;
 
     @Transactional
     public void complete(
@@ -69,7 +71,9 @@ public class StoryGenerationCompletionService {
                 .orElseThrow(() -> new IllegalStateException(
                         StoryGenerationInternalErrorMessage.OUTBOX_NOT_FOUND.message()
                 ));
-        var now = LocalDateTime.now();
+        var now = outbox.isCdcManaged()
+                ? jdbc.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class)
+                : LocalDateTime.now();
         if (job.failIfTimedOut(outbox.getPublishedAt(), now)) {
             return;
         }

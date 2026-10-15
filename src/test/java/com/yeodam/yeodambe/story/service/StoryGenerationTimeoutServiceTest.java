@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -20,7 +21,8 @@ class StoryGenerationTimeoutServiceTest {
     private final StoryGenerationJobRepository jobs = mock(StoryGenerationJobRepository.class);
     private final StoryGenerationOutboxRepository outboxes =
             mock(StoryGenerationOutboxRepository.class);
-    private final StoryGenerationTimeoutService service = new StoryGenerationTimeoutService(jobs, outboxes);
+    private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+    private final StoryGenerationTimeoutService service = new StoryGenerationTimeoutService(jobs, outboxes, jdbc);
     private final LocalDateTime created = LocalDateTime.of(2026, 10, 12, 12, 0);
 
     private StoryGenerationJob prepare() {
@@ -47,6 +49,20 @@ class StoryGenerationTimeoutServiceTest {
         var job = prepare();
         assertThat(service.expire(1L, created.plusHours(3).minusNanos(1))).isFalse();
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verifyNoInteractions(jdbc);
+    }
+
+    @Test
+    void cdcDeadlineUsesDatabaseTimeInsteadOfJvmTime() {
+        var job = prepare();
+        var outbox = outboxes.findByGenerationId(1L).orElseThrow();
+        outbox.enableCdc(7L, "story-requests");
+        when(jdbc.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class))
+                .thenReturn(created.plusHours(3).minusNanos(1), created.plusHours(3));
+
+        assertThat(service.expire(1L, created.plusDays(10))).isFalse();
+        assertThat(service.expire(1L, created.minusDays(10))).isTrue();
+        assertThat(job.getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
     }
 
     @Test

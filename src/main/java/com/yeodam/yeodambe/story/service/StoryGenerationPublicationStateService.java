@@ -1,13 +1,17 @@
 package com.yeodam.yeodambe.story.service;
 
-import com.yeodam.yeodambe.story.entity.StoryGenerationOutbox;
+import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
+import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
+
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.yeodam.yeodambe.common.response.ErrorMessage;
-import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
+import org.springframework.util.Assert;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Service
@@ -17,35 +21,21 @@ public class StoryGenerationPublicationStateService {
 
     private final StoryGenerationOutboxRepository outboxRepository;
     private final StoryGenerationJobRepository jobRepository;
+    private final EntityManager entityManager;
+    private final JdbcTemplate jdbc;
 
-    public StoryGenerationOutbox begin(Long generationId) {
-        StoryGenerationOutbox outbox = outboxRepository
-                .findByGenerationId(generationId)
-                .orElseThrow();
-
-        outbox.beginPublishing();
-
-        return outbox;
-    }
-
-    public void succeeded(Long outboxId, LocalDateTime publishedAt) {
-        StoryGenerationOutbox outbox = outboxRepository
-                .findById(outboxId)
-                .orElseThrow();
-
+    public void recordPublished(
+            Long outboxId,
+            OutboxReceipt receipt
+    ) {
+        var candidate = outboxRepository.findById(outboxId).orElseThrow();
+        jobRepository.findByIdForUpdate(candidate.getGenerationId()).orElseThrow();
+        var outbox = outboxRepository.findByIdForUpdate(outboxId).orElseThrow();
+        entityManager.refresh(outbox);
+        Assert.isTrue(outbox.isCdcManaged(), "Expected a CDC-managed Outbox");
+        receipt.verify(outbox.getTopic(), outbox.getTripId(), outbox.getPayload());
+        var publishedAt = jdbc.queryForObject("SELECT FROM_UNIXTIME(?)", LocalDateTime.class,
+                BigDecimal.valueOf(receipt.publishedAt().toEpochMilli(), 3));
         outbox.publicationSucceeded(publishedAt);
-    }
-
-    public void failed(Long outboxId, String error) {
-        StoryGenerationOutbox outbox = outboxRepository
-                .findById(outboxId)
-                .orElseThrow();
-
-        var job = jobRepository
-                .findByIdForUpdate(outbox.getGenerationId())
-                .orElseThrow();
-
-        outbox.publicationFailed(error);
-        job.fail(ErrorMessage.INTERNAL_SERVER_ERROR.name());
     }
 }

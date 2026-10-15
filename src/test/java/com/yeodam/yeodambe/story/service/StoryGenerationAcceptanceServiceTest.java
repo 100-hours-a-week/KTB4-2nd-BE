@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.common.exception.InvalidStoryRequestException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 import com.yeodam.yeodambe.story.entity.StoryGenerationOutbox;
@@ -32,8 +33,10 @@ import org.springframework.test.context.ActiveProfiles;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -102,6 +105,8 @@ class StoryGenerationAcceptanceServiceTest {
                 "SELECT outbox_id FROM story_generation_outbox WHERE generation_id = ?",
                 Long.class, result.getId());
         var outbox = outboxes.findById(outboxId).orElseThrow();
+        assertThat(outbox.isCdcManaged()).isTrue();
+        assertThat(outbox.getTripId()).isEqualTo(trip.getId());
         assertThat(outbox.getRequestId()).isEqualTo("request-original");
         assertThat(outbox.getStatus()).isEqualTo(StoryGenerationOutbox.Status.PENDING);
         var payload = objectMapper.readTree(outbox.getPayload());
@@ -115,47 +120,55 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void publicationStateServiceCommitsStartAndSuccessBetweenCalls() {
+    void publicationReceiptMarksExistingOutboxWithoutChangingQueuedJob() {
         photo(takenAt);
         var job = service.accept(owner.getUserId(), trip.getId(), request(), "request-original");
-
-        var started = publicationState.begin(job.getId());
-        var publishing = outboxes.findById(started.getId()).orElseThrow();
-        assertThat(publishing.getStatus()).isEqualTo(StoryGenerationOutbox.Status.PUBLISHING);
-        assertThat(publishing.getAttemptCount()).isEqualTo(1);
-        LocalDateTime publishedAt = LocalDateTime.of(2026, 10, 11, 18, 0);
-
-        publicationState.succeeded(started.getId(), publishedAt);
-
-        var published = outboxes.findById(started.getId()).orElseThrow();
+        var outbox = outboxes.findByGenerationId(job.getId()).orElseThrow();
+        var appended = Instant.now().minusSeconds(120).truncatedTo(ChronoUnit.MILLIS);
+        publicationState.recordPublished(outbox.getId(), new OutboxReceipt(
+                outbox.getTopic(), outbox.getTripId().toString(), outbox.getPayload(), appended));
+        var published = outboxes.findById(outbox.getId()).orElseThrow();
         assertThat(published.getStatus()).isEqualTo(StoryGenerationOutbox.Status.PUBLISHED);
-        assertThat(published.getPublishedAt()).isEqualTo(publishedAt);
-        assertThat(published.getPayload()).isEqualTo(started.getPayload());
+        assertThat(jdbcTemplate.queryForObject("SELECT UNIX_TIMESTAMP(published_at) * 1000 FROM story_generation_outbox WHERE outbox_id = ?",
+                java.math.BigDecimal.class, outbox.getId()).longValueExact()).isEqualTo(appended.toEpochMilli());
+        publicationState.recordPublished(outbox.getId(), new OutboxReceipt(
+                outbox.getTopic(), trip.getId().toString(), outbox.getPayload(), appended.plusSeconds(60)));
+        assertThat(outboxes.findById(outbox.getId()).orElseThrow().getPublishedAt())
+                .isEqualTo(published.getPublishedAt());
+        assertThatThrownBy(() -> publicationState.recordPublished(outbox.getId(),
+                new OutboxReceipt(
+                        outbox.getTopic(), trip.getId().toString(), "mismatched-payload", appended)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(published.getPayload()).isEqualTo(outbox.getPayload());
         assertThat(published.getRequestId()).isEqualTo("request-original");
-        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
-                .isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
     }
 
     @Test
-    void publicationStateServiceCommitsFailureWithoutPublishingMessage() {
+    void lateReceiptPreservesCanceledJob() {
+        photo(takenAt);
+        var job = service.accept(owner.getUserId(), trip.getId(), request(), "request-canceled");
+        job.cancel();
+        jobs.saveAndFlush(job);
+        var outbox = outboxes.findByGenerationId(job.getId()).orElseThrow();
+
+        publicationState.recordPublished(outbox.getId(), new OutboxReceipt(
+                outbox.getTopic(), trip.getId().toString(), outbox.getPayload(), Instant.now()));
+
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.CANCELED);
+        assertThat(outboxes.findById(outbox.getId()).orElseThrow().getPublishedAt()).isNotNull();
+    }
+
+    @Test
+    void pendingPublicationPreservesJobAndPayload() {
         photo(takenAt);
         var job = service.accept(owner.getUserId(), trip.getId(), request(), "request-original");
-        var started = publicationState.begin(job.getId());
-
-        publicationState.failed(started.getId(), "broker unavailable");
-
-        var failed = outboxes.findById(started.getId()).orElseThrow();
-        assertThat(failed.getStatus()).isEqualTo(StoryGenerationOutbox.Status.PENDING);
-        assertThat(failed.getAttemptCount()).isEqualTo(1);
-        assertThat(failed.getLastError()).isEqualTo("broker unavailable");
-        assertThat(failed.getPublishedAt()).isNull();
-        assertThat(failed.getPayload()).isEqualTo(started.getPayload());
-        var failedJob = jobs.findById(job.getId()).orElseThrow();
-        assertThat(failedJob.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
-        assertThat(failedJob.getErrorCode()).isEqualTo("INTERNAL_SERVER_ERROR");
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT active_trip_id FROM story_generation_jobs WHERE generation_id = ?",
-                Long.class, job.getId())).isNull();
+        var outbox = outboxes.findByGenerationId(job.getId()).orElseThrow();
+        assertThat(outbox.getStatus()).isEqualTo(StoryGenerationOutbox.Status.PENDING);
+        assertThat(outbox.getPublishedAt()).isNull();
+        assertThat(outbox.getPayload()).isNotBlank();
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
     }
 
     @Test

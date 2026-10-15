@@ -1,12 +1,12 @@
 package com.yeodam.yeodambe.story.entity;
 
+import org.springframework.util.Assert;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
-import org.springframework.util.Assert;
 
 import java.time.LocalDateTime;
 
@@ -77,23 +77,12 @@ public class StoryGenerationOutbox {
         this.cdcManaged = true;
     }
 
-    public void beginPublishing() {
-        this.status = Status.PUBLISHING;
-        this.attemptCount++;
-        this.lastError = null;
-    }
-
     public void publicationSucceeded(LocalDateTime publishedAt) {
         this.status = Status.PUBLISHED;
         if (this.publishedAt == null) {
             this.publishedAt = publishedAt;
         }
         this.lastError = null;
-    }
-
-    public void publicationFailed(String error) {
-        this.status = Status.PENDING;
-        this.lastError = error;
     }
 
     public enum Status {

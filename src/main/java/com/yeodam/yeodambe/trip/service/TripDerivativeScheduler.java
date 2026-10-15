@@ -38,10 +38,10 @@ public class TripDerivativeScheduler {
     private boolean stopping;
 
     public TripDerivativeScheduler(
-            @Value("${attachment.derivative.heic-workers:1}") int heicWorkers,
-            @Value("${attachment.derivative.light-workers:1}") int lightWorkers,
-            @Value("${attachment.derivative.heic-max-inflight-photos:10}") int heicLimit,
-            @Value("${attachment.derivative.light-max-inflight-photos:20}") int lightLimit,
+            @Value("${attachment.derivative.heic-workers}") int heicWorkers,
+            @Value("${attachment.derivative.light-workers}") int lightWorkers,
+            @Value("${attachment.derivative.heic-max-inflight-photos}") int heicLimit,
+            @Value("${attachment.derivative.light-max-inflight-photos}") int lightLimit,
             MeterRegistry meters
     ) {
         if (heicWorkers < 1 || lightWorkers < 1 || heicLimit < heicWorkers || lightLimit < lightWorkers) {

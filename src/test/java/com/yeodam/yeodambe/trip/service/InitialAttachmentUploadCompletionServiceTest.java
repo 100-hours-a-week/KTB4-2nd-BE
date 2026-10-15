@@ -32,8 +32,9 @@ import static org.mockito.Mockito.when;
 class InitialAttachmentUploadCompletionServiceTest {
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final InitialAttachmentUploadTransactionService transactions = mock(InitialAttachmentUploadTransactionService.class);
+    private final TripAttachmentDerivativeService derivatives = mock(TripAttachmentDerivativeService.class);
     private final InitialAttachmentUploadCompletionService service =
-            new InitialAttachmentUploadCompletionService(storage, transactions);
+            new InitialAttachmentUploadCompletionService(storage, transactions, derivatives);
     private final InitialAttachmentUploadBatch batch = new InitialAttachmentUploadBatch(
             "upload-id", "execution-id", 7L, 42L, 1, 2, true);
 
@@ -226,6 +227,45 @@ class InitialAttachmentUploadCompletionServiceTest {
                 new InitialAttachmentUploadCompleteRequest("upload-id")))
                 .isEqualTo(status);
         Mockito.verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 신규_접수는_원본_검증과_DB_접수_후_변환을_즉시_제출한다() {
+        var snapshot = new InitialAttachmentUploadBatchSnapshot(
+                1L, "upload-id", "execution-id", 7L, 42L, 1, 1, true,
+                InitialAttachmentUploadStatus.PENDING, null, List.of(item(1, "key-one", 1024)));
+        when(transactions.loadAcceptanceCandidate(7L, 42L, "upload-id")).thenReturn(snapshot);
+        when(storage.size("key-one")).thenReturn(1024L);
+        when(storage.openHeader("key-one")).thenReturn(new ByteArrayInputStream(jpeg(1024)));
+        var status = new TripProcessingStatusResponse(
+                7L, TripProcessingStatusResponse.Status.PROCESSING, null, null, null, null);
+        when(transactions.startProcessing(7L, 42L, "upload-id")).thenReturn(status);
+
+        assertThat(service.complete(7L, 42L, new InitialAttachmentUploadCompleteRequest("upload-id")))
+                .isEqualTo(status);
+
+        var order = inOrder(storage, transactions, derivatives);
+        order.verify(transactions).loadAcceptanceCandidate(7L, 42L, "upload-id");
+        order.verify(storage).size("key-one");
+        order.verify(storage).openHeader("key-one");
+        order.verify(transactions).startProcessing(7L, 42L, "upload-id");
+        order.verify(derivatives).processAcceptedBatch(7L, 42L, "upload-id");
+    }
+
+    @Test
+    void 완료된_실행의_중복_접수는_변환을_다시_제출하지_않는다() {
+        var snapshot = new InitialAttachmentUploadBatchSnapshot(
+                1L, "upload-id", "execution-id", 7L, 42L, 1, 1, true,
+                InitialAttachmentUploadStatus.READY, null, List.of());
+        when(transactions.loadAcceptanceCandidate(7L, 42L, "upload-id")).thenReturn(snapshot);
+        var status = new TripProcessingStatusResponse(
+                7L, TripProcessingStatusResponse.Status.COMPLETED, null, null, null, null);
+        when(transactions.startProcessing(7L, 42L, "upload-id")).thenReturn(status);
+
+        assertThat(service.complete(7L, 42L, new InitialAttachmentUploadCompleteRequest("upload-id")))
+                .isEqualTo(status);
+
+        Mockito.verifyNoInteractions(storage, derivatives);
     }
 
     private byte[] jpeg(int size) {

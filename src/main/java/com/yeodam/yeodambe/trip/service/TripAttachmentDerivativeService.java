@@ -111,6 +111,20 @@ public class TripAttachmentDerivativeService {
         transactions.claimBatch().ifPresent(claim -> convertNextPhoto(claim, 0));
     }
 
+    public void processAcceptedBatch(
+            Long tripId,
+            Long userId,
+            String uploadId
+    ) {
+        try {
+            transactions.claimBatch(tripId, userId, uploadId)
+                    .ifPresent(claim -> convertNextPhoto(claim, 0));
+        } catch (RuntimeException failure) {
+            log.warn("접수한 사진 배치의 즉시 제출 재시도: tripId={}, uploadId={}, stage=conversion_submit, cause={}",
+                    tripId, uploadId, failure.getClass().getSimpleName());
+        }
+    }
+
     private void convertNextPhoto(
             InitialAttachmentUploadBatchSnapshot claim,
             int from

@@ -4,8 +4,10 @@ import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
@@ -23,10 +25,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.ByteArrayInputStream;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -64,6 +69,12 @@ class InitialAttachmentUploadTransactionServiceTest {
     private TripAttachmentRepository attachments;
     @MockitoSpyBean
     private UserStatsService userStatsService;
+    @Autowired
+    private InitialAttachmentUploadCompletionService completion;
+    @MockitoBean
+    private TripAttachmentDerivativeService derivatives;
+    @MockitoBean
+    private TripAttachmentStorageClient storage;
     private User owner;
     private Trip trip;
 
@@ -101,6 +112,70 @@ class InitialAttachmentUploadTransactionServiceTest {
         assertThat(reserved()).isEqualTo(12L);
         assertThat(execution(batch).isInputClosed()).isTrue();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM files WHERE user_id = ?", Integer.class, owner.getUserId())).isZero();
+    }
+
+    @Test
+    void 완료_접수는_외부_트랜잭션과_분리해_커밋한_후_변환을_제출한다() {
+        var batch = prepare(true);
+        String key = batch.photos().getFirst().objectKey();
+        byte[] original = {(byte) 0xff, (byte) 0xd8, (byte) 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        Mockito.when(storage.size(key)).thenReturn(12L);
+        Mockito.when(storage.openHeader(key)).thenReturn(new ByteArrayInputStream(original));
+        Mockito.doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(jdbc.queryForObject(
+                    "SELECT status FROM initial_attachment_upload_batches WHERE upload_batch_id = ?",
+                    String.class, batch.batchId())).isEqualTo("ACCEPTED");
+            return null;
+        }).when(derivatives).processAcceptedBatch(trip.getId(), owner.getUserId(), batch.uploadId());
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(outer -> {
+            assertThat(completion.complete(trip.getId(), owner.getUserId(),
+                    new InitialAttachmentUploadCompleteRequest(batch.uploadId())).status())
+                    .isEqualTo(TripProcessingStatusResponse.Status.PROCESSING);
+            outer.setRollbackOnly();
+        });
+
+        Mockito.verify(derivatives).processAcceptedBatch(trip.getId(), owner.getUserId(), batch.uploadId());
+        assertThat(transactions.claimBatch(trip.getId(), owner.getUserId(), batch.uploadId())).isPresent();
+    }
+
+    @Test
+    void 접수한_배치를_직접_선점하면_스케줄러가_중복_선점하지_않는다() {
+        var batch = prepare(true);
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+
+        var claim = transactions.claimBatch(trip.getId(), owner.getUserId(), batch.uploadId()).orElseThrow();
+
+        assertThat(claim.batchId()).isEqualTo(batch.batchId());
+        assertThat(claim.claimToken()).isNotBlank();
+        assertThat(transactions.claimBatch()).isEmpty();
+        assertThat(transactions.claimBatch(trip.getId(), owner.getUserId(), batch.uploadId())).isEmpty();
+    }
+
+    @Test
+    void 미접수_배치와_다른_소유자의_배치는_즉시_선점하지_않는다() {
+        var batch = prepare(true);
+        assertThat(transactions.claimBatch(trip.getId(), owner.getUserId(), batch.uploadId())).isEmpty();
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+
+        assertThat(transactions.claimBatch(trip.getId(), -1L, batch.uploadId())).isEmpty();
+        assertThat(transactions.claimBatch(trip.getId(), owner.getUserId(), batch.uploadId())).isPresent();
+    }
+
+    @Test
+    void 즉시_제출이_포화된_배치는_재시도_시각_후_스케줄러가_복구한다() {
+        var batch = prepare(true);
+        transactions.startProcessing(trip.getId(), owner.getUserId(), batch.uploadId());
+        var claim = transactions.claimBatch(trip.getId(), owner.getUserId(), batch.uploadId()).orElseThrow();
+        transactions.releaseSaturatedBatch(claim);
+
+        assertThat(transactions.claimBatch(trip.getId(), owner.getUserId(), batch.uploadId())).isEmpty();
+        jdbc.update("UPDATE initial_attachment_upload_batches SET next_attempt_at = NULL WHERE upload_batch_id = ?",
+                batch.batchId());
+
+        assertThat(transactions.claimBatch()).isPresent();
+        assertThat(items.findById(claim.photos().getFirst().itemId()).orElseThrow().getConversionAttempts()).isZero();
     }
 
     @Test

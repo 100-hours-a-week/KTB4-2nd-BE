@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -36,15 +37,18 @@ import java.util.Optional;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Answers.RETURNS_SELF;
 import static org.mockito.ArgumentMatchers.any;
@@ -94,6 +98,74 @@ class TripAttachmentDerivativeServiceTest {
         service.processPendingBatches();
 
         verify(transactions).retryBatch(claim, photo.itemId(), false);
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 즉시_제출은_워커를_시작하고_이미지_처리_완료를_기다리지_않는다() throws Exception {
+        var photo = new InitialAttachmentUploadBatchSnapshot.Photo(
+                1L, "photo.jpg", "image/jpeg", 12L, "original", 0, null, null);
+        var claim = new InitialAttachmentUploadBatchSnapshot(
+                1L, "upload", "execution", 7L, 1L, 1, 1, true,
+                InitialAttachmentUploadStatus.CONVERTING, "token", List.of(photo));
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
+        when(transactions.renewLease(claim)).thenReturn(true);
+        when(transactions.startPhotoAttempt(claim, photo.itemId())).thenReturn(List.of("analyze", "preview"));
+        when(storage.open("original")).thenAnswer(invocation -> {
+            started.countDown();
+            if (!release.await(10, TimeUnit.SECONDS)) {
+                throw new IOException("원본 읽기 대기 시간 초과");
+            }
+            throw new IOException("일시적인 원본 읽기 실패");
+        });
+
+        try {
+            assertTimeoutPreemptively(Duration.ofSeconds(5),
+                    () -> service.processAcceptedBatch(7L, 1L, "upload"));
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            verify(transactions, never()).savePhotoSuccess(any(), any(), any());
+        } finally {
+            release.countDown();
+        }
+
+        verify(transactions, Mockito.timeout(5000)).retryBatch(claim, photo.itemId(), false);
+    }
+
+    @Test
+    void 즉시_제출한_배치도_포화되면_DB_대기로_돌리고_원본을_읽지_않는다() {
+        var photo = new InitialAttachmentUploadBatchSnapshot.Photo(
+                1L, "photo.jpg", "image/jpeg", 12L, "original", 0, null, null);
+        var claim = new InitialAttachmentUploadBatchSnapshot(
+                1L, "upload", "execution", 7L, 1L, 1, 1, true,
+                InitialAttachmentUploadStatus.CONVERTING, "token", List.of(photo));
+        var saturatedScheduler = mock(TripDerivativeScheduler.class);
+        var immediate = new TripAttachmentDerivativeService(
+                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions);
+        when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
+        when(saturatedScheduler.submit(eq("execution"), any(), any()))
+                .thenThrow(new RejectedExecutionException("queue full"));
+
+        try {
+            immediate.processAcceptedBatch(7L, 1L, "upload");
+
+            verify(transactions).releaseSaturatedBatch(claim);
+            verify(transactions, never()).startPhotoAttempt(any(), any());
+            verifyNoInteractions(storage);
+        } finally {
+            immediate.stopLeaseScheduler();
+        }
+    }
+
+    @Test
+    void 즉시_선점에_실패해도_접수_응답을_실패로_바꾸지_않는다() {
+        when(transactions.claimBatch(7L, 1L, "upload"))
+                .thenThrow(new TransientDataAccessResourceException("DB unavailable"));
+
+        assertDoesNotThrow(
+                () -> service.processAcceptedBatch(7L, 1L, "upload"));
+
         verifyNoInteractions(storage);
     }
 

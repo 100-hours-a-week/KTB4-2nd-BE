@@ -10,6 +10,8 @@ import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSna
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -25,7 +27,9 @@ import java.util.Set;
 public class InitialAttachmentUploadCompletionService {
     private final TripAttachmentStorageClient storage;
     private final InitialAttachmentUploadTransactionService transactions;
+    private final TripAttachmentDerivativeService derivatives;
 
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public TripProcessingStatusResponse complete(
             Long tripId,
             Long userId,
@@ -41,7 +45,11 @@ public class InitialAttachmentUploadCompletionService {
             verifyUploadedFiles(candidate.photos());
         }
 
-        return transactions.startProcessing(tripId, userId, request.uploadId());
+        TripProcessingStatusResponse status = transactions.startProcessing(tripId, userId, request.uploadId());
+        if (status.status() == TripProcessingStatusResponse.Status.PROCESSING) {
+            derivatives.processAcceptedBatch(tripId, userId, request.uploadId());
+        }
+        return status;
     }
 
     void verifyUploadedFiles(

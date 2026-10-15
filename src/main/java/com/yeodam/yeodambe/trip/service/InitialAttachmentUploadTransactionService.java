@@ -396,25 +396,45 @@ public class InitialAttachmentUploadTransactionService {
     public Optional<InitialAttachmentUploadBatchSnapshot> claimBatch() {
         for (InitialAttachmentUploadBatch candidate : batches.findPendingConversion(
                 now(), PageRequest.of(0, 20))) {
-            Trip trip = trips.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId()).orElse(null);
-            if (trip == null) {
-                continue;
+            Optional<InitialAttachmentUploadBatchSnapshot> claim = claimCandidate(candidate);
+            if (claim.isPresent()) {
+                return claim;
             }
-            TripCreationExecution execution = requireExecutionForUpdate(candidate.getExecutionId());
-            InitialAttachmentUploadBatch batch = batches.findForUpdate(
-                    candidate.getUploadId(), candidate.getTripId(), candidate.getUserId()).orElseThrow();
-            entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
-            if (execution.isTerminal() || trip.getProcessingStatus() != ProcessingStatus.PROCESSING
-                    || (batch.getStatus() != InitialAttachmentUploadStatus.ACCEPTED
-                        && batch.getStatus() != InitialAttachmentUploadStatus.CONVERTING)
-                    || (batch.getLeaseUntil() != null && batch.getLeaseUntil().isAfter(now()))
-                    || (batch.getNextAttemptAt() != null && batch.getNextAttemptAt().isAfter(now()))) {
-                continue;
-            }
-            batch.claim(UUID.randomUUID().toString(), now().plusMinutes(10));
-            return Optional.of(snapshot(batch));
         }
         return Optional.empty();
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Optional<InitialAttachmentUploadBatchSnapshot> claimBatch(
+            Long tripId,
+            Long userId,
+            String uploadId
+    ) {
+        return batches.findByUploadIdAndTripIdAndUserId(uploadId, tripId, userId)
+                .flatMap(this::claimCandidate);
+    }
+
+    private Optional<InitialAttachmentUploadBatchSnapshot> claimCandidate(
+            InitialAttachmentUploadBatch candidate
+    ) {
+        Trip trip = trips.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId()).orElse(null);
+        if (trip == null) {
+            return Optional.empty();
+        }
+        TripCreationExecution execution = requireExecutionForUpdate(candidate.getExecutionId());
+        InitialAttachmentUploadBatch batch = batches.findForUpdate(
+                candidate.getUploadId(), candidate.getTripId(), candidate.getUserId()).orElseThrow();
+        entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
+        LocalDateTime currentTime = now();
+        if (execution.isTerminal() || trip.getProcessingStatus() != ProcessingStatus.PROCESSING
+                || (batch.getStatus() != InitialAttachmentUploadStatus.ACCEPTED
+                    && batch.getStatus() != InitialAttachmentUploadStatus.CONVERTING)
+                || (batch.getLeaseUntil() != null && batch.getLeaseUntil().isAfter(currentTime))
+                || (batch.getNextAttemptAt() != null && batch.getNextAttemptAt().isAfter(currentTime))) {
+            return Optional.empty();
+        }
+        batch.claim(UUID.randomUUID().toString(), currentTime.plusMinutes(10));
+        return Optional.of(snapshot(batch));
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

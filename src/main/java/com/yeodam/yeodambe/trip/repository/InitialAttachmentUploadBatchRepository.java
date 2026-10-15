@@ -57,17 +57,4 @@ public interface InitialAttachmentUploadBatchRepository
             @Param("now") LocalDateTime now,
             Pageable page
     );
-
-    @Query("""
-            select batch from InitialAttachmentUploadBatch batch, TripCreationExecution execution
-            where batch.executionId = execution.executionId and execution.endedAt is null
-              and batch.status = 'READY' and batch.deliveryStatus <> 'SENT'
-              and (batch.deliveryLeaseUntil is null or batch.deliveryLeaseUntil <= :now)
-              and (batch.deliveryNextAttemptAt is null or batch.deliveryNextAttemptAt <= :now)
-            order by batch.id
-            """)
-    List<InitialAttachmentUploadBatch> findPendingDelivery(
-            @Param("now") LocalDateTime now,
-            Pageable page
-    );
 }

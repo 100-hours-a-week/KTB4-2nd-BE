@@ -4,7 +4,6 @@ import com.yeodam.yeodambe.common.event.EventHandler;
 import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventPayload;
 import com.yeodam.yeodambe.common.event.EventType;
-import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
 import com.yeodam.yeodambe.story.event.StoryCreateRequestEvent;
 import com.yeodam.yeodambe.story.event.StoryCreateResultEvent;
 import com.yeodam.yeodambe.story.event.handler.StoryCreateRequestEventHandler;
@@ -25,13 +24,10 @@ import com.yeodam.yeodambe.trip.service.TripAnalysisResultService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.kafka.core.KafkaTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -72,8 +68,6 @@ class EventHandlerTest {
                 .withBean(TripAnalysisResultService.class, () -> mock(TripAnalysisResultService.class))
                 .withBean(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class,
                         () -> mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class))
-                .withBean(KafkaTemplate.class, () -> mock(KafkaTemplate.class))
-                .withBean(KafkaTopicProperties.class, this::topics)
                 .withBean(ObjectMapper.class, ObjectMapper::new)
                 .withBean(StoryGenerationJobRepository.class, () -> mock(StoryGenerationJobRepository.class))
                 .withBean(StoryGenerationCompletionService.class, () -> mock(StoryGenerationCompletionService.class))
@@ -136,18 +130,12 @@ class EventHandlerTest {
     }
 
     private TripCreateRequestEventHandler requestHandler() {
-        return new TripCreateRequestEventHandler(mock(InitialAttachmentUploadTransactionService.class),
-                mock(KafkaTemplate.class), topics());
+        return new TripCreateRequestEventHandler(mock(InitialAttachmentUploadTransactionService.class));
     }
 
     private TripCreateResultEventHandler resultHandler() {
         return new TripCreateResultEventHandler(mock(TripAnalysisResultService.class),
                 new ObjectMapper());
-    }
-
-    private KafkaTopicProperties topics() {
-        return new KafkaTopicProperties(Arrays.stream(EventType.values())
-                .collect(Collectors.toMap(type -> type, type -> "test." + type)));
     }
 
     private StoryCreateResultEventHandler storyResultHandler() {

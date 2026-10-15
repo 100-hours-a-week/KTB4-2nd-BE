@@ -1,5 +1,10 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.event.EventType;
+import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
+import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
+import com.yeodam.yeodambe.trip.entity.TripCreationOutbox;
+import com.yeodam.yeodambe.trip.repository.TripCreationOutboxRepository;
 import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
@@ -26,7 +31,6 @@ import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
-import com.yeodam.yeodambe.trip.service.response.TripKafkaDeliveryClaim;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import jakarta.persistence.EntityManager;
@@ -41,6 +45,7 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.cfg.DateTimeFeature;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -66,6 +71,8 @@ public class InitialAttachmentUploadTransactionService {
     private final TripRegionRepository regions;
     private final EntityManager entityManager;
     private final JdbcTemplate jdbc;
+    private final KafkaTopicProperties topics;
+    private final TripCreationOutboxRepository outboxes;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public InitialAttachmentUploadBatchSnapshot prepareBatch(
@@ -375,6 +382,7 @@ public class InitialAttachmentUploadTransactionService {
             }
 
             execution.closeInput();
+            enqueueProcessIfReady(execution);
         }
         return acceptanceStatus(trip, execution);
     }
@@ -544,6 +552,8 @@ public class InitialAttachmentUploadTransactionService {
                 "photos_ready", claim.tripId(), claim.executionId(), claim.batchNo(), null, null, null, null,
                 objectMapper.valueToTree(refs));
         batch.ready(objectMapper.writeValueAsString(event));
+        saveCdcOutbox(batch.getOutboxId(), claim.executionId(), "photos_ready",
+                claim.batchNo(), claim.tripId(), batch.getOutboxPayload());
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -787,89 +797,6 @@ public class InitialAttachmentUploadTransactionService {
                 batch.getTripId(), batch.getUserId(), batch.getBatchNo(), batch.getTotalAttachmentCount(),
                 batch.getLastBatch(), batch.getStatus(), batch.getClaimToken(), photos);
     }
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public Optional<TripKafkaDeliveryClaim> claimDelivery(Long batchId) {
-        InitialAttachmentUploadBatch candidate = batches.findById(batchId)
-                .orElseThrow();
-        Trip trip = trips.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId())
-                .orElse(null);
-        TripCreationExecution execution = requireExecutionForUpdate(candidate.getExecutionId());
-
-        InitialAttachmentUploadBatch batch = batches.findForUpdate(
-                        candidate.getUploadId(),
-                        candidate.getTripId(),
-                        candidate.getUserId()
-                )
-                .orElseThrow();
-
-        entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
-
-        if (trip == null || execution.isTerminal() || batch.getStatus() != InitialAttachmentUploadStatus.READY
-                || batch.getDeliveryStatus() == InitialAttachmentDeliveryStatus.SENT
-                || (batch.getDeliveryLeaseUntil() != null && batch.getDeliveryLeaseUntil().isAfter(now()))
-                || (batch.getDeliveryNextAttemptAt() != null && batch.getDeliveryNextAttemptAt().isAfter(now()))) {
-            return Optional.empty();
-        }
-
-        batch.claimDelivery(UUID.randomUUID().toString(), now().plusMinutes(2));
-
-        return Optional.of(new TripKafkaDeliveryClaim(
-                execution.getExecutionId(), trip.getId(), trip.getUserId(), batch.getId(), batch.getOutboxId(),
-                batch.getDeliveryClaimToken(), batch.getOutboxPayload(), batch.getDeliveryAttempts()));
-    }
-
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public Optional<TripKafkaDeliveryClaim> claimProcess(String executionId) {
-        TripCreationExecution current = executionRepository.findById(executionId).orElseThrow();
-        Trip trip = trips.findOwnedActiveForUpdate(current.getTripId(), current.getUserId()).orElse(null);
-        TripCreationExecution execution = requireExecutionForUpdate(executionId);
-        if (trip == null || execution.isTerminal() || execution.getProcessPayload() == null
-                || execution.getProcessDeliveryStatus() == InitialAttachmentDeliveryStatus.SENT
-                || (execution.getProcessLeaseUntil() != null && execution.getProcessLeaseUntil().isAfter(now()))
-                || (execution.getProcessNextAttemptAt() != null && execution.getProcessNextAttemptAt().isAfter(now()))) {
-            return Optional.empty();
-        }
-        execution.claimProcess(UUID.randomUUID().toString(), now().plusMinutes(2));
-        return Optional.of(new TripKafkaDeliveryClaim(
-                executionId, trip.getId(), trip.getUserId(), null, execution.getProcessOutboxId(),
-                execution.getProcessClaimToken(), execution.getProcessPayload(), execution.getProcessAttempts()));
-    }
-
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public void finishDelivery(
-            TripKafkaDeliveryClaim claim,
-            boolean sent
-    ) {
-        Trip trip = trips.findOwnedActiveForUpdate(claim.tripId(), claim.userId()).orElse(null);
-        TripCreationExecution execution = requireExecutionForUpdate(claim.executionId());
-        if (trip == null || execution.isTerminal()) {
-            return;
-        }
-        LocalDateTime next = now().plusSeconds(Math.min(300L, 5L << Math.min(6, claim.attempt() - 1)));
-        if (claim.batchId() == null) {
-            if (!Objects.equals(execution.getProcessClaimToken(), claim.claimToken())) {
-                return;
-            }
-            if (sent) {
-                execution.processSent(now());
-            } else {
-                execution.retryProcess(next);
-            }
-        } else {
-            InitialAttachmentUploadBatch candidate = batches.findById(claim.batchId()).orElseThrow();
-            InitialAttachmentUploadBatch batch = batches.findForUpdate(candidate.getUploadId(), claim.tripId(), claim.userId()).orElseThrow();
-            if (!Objects.equals(batch.getDeliveryClaimToken(), claim.claimToken())) {
-                return;
-            }
-            if (sent) {
-                batch.deliverySent(now());
-                enqueueProcessIfReady(execution);
-            } else {
-                batch.retryDelivery(next);
-            }
-        }
-    }
-
     private void enqueueProcessIfReady(TripCreationExecution execution) {
         List<InitialAttachmentUploadBatch> all = batches.findAllByExecutionIdOrderByBatchNoAsc(execution.getExecutionId());
         if (!execution.isInputClosed() || execution.getProcessPayload() != null || all.isEmpty()
@@ -897,6 +824,51 @@ public class InitialAttachmentUploadTransactionService {
                 new TripPhotoAnalysisRequest.Period(
                         trip.getStartDate(), trip.getEndDate()), coordinates, objectMapper.valueToTree(photos));
         execution.enqueueProcess(objectMapper.writeValueAsString(event));
+        saveCdcOutbox(execution.getProcessOutboxId(), execution.getExecutionId(), "process",
+                0, execution.getTripId(), execution.getProcessPayload());
+    }
+
+    private void saveCdcOutbox(
+            String id,
+            String executionId,
+            String messageType,
+            int batchNo,
+            Long tripId,
+            String payload
+    ) {
+        outboxes.save(new TripCreationOutbox(
+                id, executionId, messageType, batchNo, tripId,
+                topics.topicFor(EventType.TRIP_CREATE_REQUEST), payload));
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void recordPublished(
+            String outboxId,
+            OutboxReceipt receipt
+    ) {
+        var candidate = outboxes.findById(outboxId).orElseThrow();
+        var snapshot = executionRepository.findById(candidate.getExecutionId()).orElseThrow();
+        Trip trip = trips.findOwnedActiveForUpdate(snapshot.getTripId(), snapshot.getUserId()).orElse(null);
+        var execution = requireExecutionForUpdate(candidate.getExecutionId());
+        entityManager.refresh(candidate);
+        receipt.verify(candidate.getTopic(), candidate.getTripId(), candidate.getPayload());
+        if (candidate.getPublishedAt() != null) {
+            return;
+        }
+        var publishedAt = jdbc.queryForObject("SELECT FROM_UNIXTIME(?)", LocalDateTime.class,
+                BigDecimal.valueOf(receipt.publishedAt().toEpochMilli(), 3));
+        candidate.recordPublished(publishedAt);
+        if ("process".equals(candidate.getMessageType())) {
+            execution.processSent(publishedAt);
+            return;
+        }
+        var batch = batches.findByExecutionIdAndBatchNo(candidate.getExecutionId(), candidate.getBatchNo())
+                .orElseThrow();
+        entityManager.refresh(batch);
+        batch.deliverySent(publishedAt);
+        if (trip != null && !execution.isTerminal()) {
+            enqueueProcessIfReady(execution);
+        }
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

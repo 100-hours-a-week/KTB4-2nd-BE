@@ -42,14 +42,5 @@ public interface TripCreationExecutionRepository extends JpaRepository<TripCreat
             """)
     List<TripCreationExecution> findResultsToApply(@Param("now") LocalDateTime now, Pageable page);
 
-    @Query("""
-            select execution from TripCreationExecution execution
-            where execution.endedAt is null and execution.processOutboxId is not null
-              and execution.processDeliveryStatus <> 'SENT'
-              and (execution.processLeaseUntil is null or execution.processLeaseUntil <= :now)
-              and (execution.processNextAttemptAt is null or execution.processNextAttemptAt <= :now)
-            """)
-    List<TripCreationExecution> findPendingProcesses(@Param("now") LocalDateTime now, Pageable page);
-
     List<TripCreationExecution> findByCancelPendingTrue(Pageable page);
 }

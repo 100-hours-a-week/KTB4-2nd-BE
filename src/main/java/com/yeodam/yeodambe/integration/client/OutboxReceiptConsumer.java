@@ -1,6 +1,6 @@
 package com.yeodam.yeodambe.integration.client;
 
-import com.yeodam.yeodambe.story.service.StoryGenerationPublicationStateService;
+import com.yeodam.yeodambe.integration.service.OutboxReceiptService;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 
 import lombok.RequiredArgsConstructor;
@@ -17,10 +17,10 @@ import java.time.Instant;
 @Component
 @RequiredArgsConstructor
 public class OutboxReceiptConsumer {
-    private final StoryGenerationPublicationStateService receipts;
+    private final OutboxReceiptService receipts;
 
     @KafkaListener(
-            topics = "${app.kafka.topics.story-create-request}",
+            topics = {"${app.kafka.topics.trip-create-request}", "${app.kafka.topics.story-create-request}"},
             groupId = "${app.outbox.receipt-consumer-group:yeodam-outbox-receipts}",
             autoStartup = "${app.outbox.receipt-listener-enabled:true}",
             containerFactory = "outboxReceiptKafkaListenerContainerFactory",
@@ -34,8 +34,7 @@ public class OutboxReceiptConsumer {
         Assert.isTrue(record.timestampType() == TimestampType.LOG_APPEND_TIME
                 && record.timestamp() >= 0, "CDC request topic must use LogAppendTime");
         String id = header(record.headers().lastHeader("id"));
-        Assert.isTrue("story_generation_outbox".equals(header(source)), "Unexpected story Outbox source");
-        receipts.recordPublished(Long.valueOf(id), new OutboxReceipt(
+        receipts.observe(header(source), id, new OutboxReceipt(
                 record.topic(), record.key(), record.value(), Instant.ofEpochMilli(record.timestamp())));
     }
 

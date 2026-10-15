@@ -2,7 +2,7 @@ package com.yeodam.yeodambe.integration;
 
 import com.yeodam.yeodambe.integration.client.OutboxReceiptConsumer;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
-import com.yeodam.yeodambe.story.service.StoryGenerationPublicationStateService;
+import com.yeodam.yeodambe.integration.service.OutboxReceiptService;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
@@ -18,7 +18,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 class OutboxReceiptConsumerTest {
-    private final StoryGenerationPublicationStateService receipts = mock(StoryGenerationPublicationStateService.class);
+    private final OutboxReceiptService receipts = mock(OutboxReceiptService.class);
     private final OutboxReceiptConsumer consumer = new OutboxReceiptConsumer(receipts);
 
     @Test
@@ -31,7 +31,8 @@ class OutboxReceiptConsumerTest {
         consumer.consume(record);
         var receipt = ArgumentCaptor.forClass(
                 OutboxReceipt.class);
-        org.mockito.Mockito.verify(receipts).recordPublished(org.mockito.ArgumentMatchers.eq(7L), receipt.capture());
+        org.mockito.Mockito.verify(receipts).observe(org.mockito.ArgumentMatchers.eq("story_generation_outbox"),
+                org.mockito.ArgumentMatchers.eq("7"), receipt.capture());
         org.assertj.core.api.Assertions.assertThat(receipt.getValue().publishedAt())
                 .isEqualTo(Instant.parse("2027-01-15T08:00:00Z"));
     }

@@ -12,7 +12,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.time.LocalDateTime;
 
 @Slf4j
 @Component
@@ -40,7 +39,7 @@ public class StoryGenerationStatusScheduler {
             String previousRequestId = MDC.get("request_id");
 
             try {
-                if (timeoutService.expire(job.getId(), LocalDateTime.now())) {
+                if (timeoutService.expire(job.getId())) {
                     continue;
                 }
                 var outbox = outboxRepository.findByGenerationId(job.getId())

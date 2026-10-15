@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
+import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,12 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class StoryGenerationTimeoutService {
     private final StoryGenerationJobRepository jobRepository;
+    private final StoryGenerationOutboxRepository outboxRepository;
+
+    @Transactional
+    public boolean expire(Long generationId) {
+        return expire(generationId, LocalDateTime.now());
+    }
 
     @Transactional
     public boolean expire(Long generationId, LocalDateTime now) {
@@ -20,7 +27,8 @@ public class StoryGenerationTimeoutService {
         if (job == null || job.isFinished()) {
             return true;
         }
-        if (!job.failIfTimedOut(now)) {
+        var outbox = outboxRepository.findByGenerationId(generationId).orElseThrow();
+        if (!job.failIfTimedOut(outbox.getPublishedAt(), now)) {
             return false;
         }
         log.atWarn()
@@ -29,7 +37,7 @@ public class StoryGenerationTimeoutService {
                 .addKeyValue("trip_id", job.getTripId())
                 .addKeyValue("job_id", job.getId())
                 .addKeyValue("error_code", job.getErrorCode())
-                .log("스토리 생성 접수 후 1시간이 지나 작업을 실패 처리했습니다.");
+                .log("스토리 요청 Kafka 발행 후 1시간이 지나 작업을 실패 처리했습니다.");
         return true;
     }
 }

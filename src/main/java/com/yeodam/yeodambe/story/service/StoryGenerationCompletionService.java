@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import com.yeodam.yeodambe.common.exception.StoryAlreadyExistsException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
@@ -61,7 +62,15 @@ public class StoryGenerationCompletionService {
             );
         }
 
-        if (job.isFinished() || job.failIfTimedOut(java.time.LocalDateTime.now())) {
+        if (job.isFinished()) {
+            return;
+        }
+        var outbox = outboxRepository.findByGenerationId(generationId)
+                .orElseThrow(() -> new IllegalStateException(
+                        StoryGenerationInternalErrorMessage.OUTBOX_NOT_FOUND.message()
+                ));
+        var now = LocalDateTime.now();
+        if (job.failIfTimedOut(outbox.getPublishedAt(), now)) {
             return;
         }
 
@@ -72,11 +81,6 @@ public class StoryGenerationCompletionService {
         if (storyRepository.findCurrentCompletedByTripId(trip.getId()).isPresent()) {
             throw new StoryAlreadyExistsException();
         }
-
-        var outbox = outboxRepository.findByGenerationId(generationId)
-                .orElseThrow(() -> new IllegalStateException(
-                        StoryGenerationInternalErrorMessage.OUTBOX_NOT_FOUND.message()
-                ));
 
         var request = objectMapper.readValue(
                 outbox.getPayload(), StoryGenerationMessage.class

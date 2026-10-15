@@ -10,6 +10,8 @@ import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.core.script.RedisScript;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -28,6 +30,11 @@ public class LoginSessionStore {
 
     private static final Duration SESSION_TTL = Duration.ofDays(7);
     private static final int MAX_TRANSACTION_ATTEMPTS = 16;
+    private static final RedisScript<Long> ROTATE_SCRIPT =
+            RedisScript.of(
+                    new ClassPathResource("redis/rotate-refresh-token.lua"),
+                    Long.class
+            );
 
     private final StringRedisTemplate redisTemplate;
     private final String keyPrefix;
@@ -74,7 +81,59 @@ public class LoginSessionStore {
             return Optional.empty();
         }
 
-        return executeWithRetry(operations -> rotateSession(operations, oldHash, newHash));
+        try {
+            String sid = redisTemplate.opsForValue()
+                    .get(refreshKey(oldHash));
+
+            if (sid == null) {
+                return Optional.empty();
+            }
+
+            Optional<LoginSession> session =
+                    readSession(redisTemplate, sessionKey(sid));
+
+            if (session.isEmpty()
+                    || !oldHash.equals(session.get().refreshTokenHash())) {
+                return Optional.empty();
+            }
+
+            Long userId = session.get().userId();
+
+            Long result = redisTemplate.execute(
+                    ROTATE_SCRIPT,
+                    List.of(
+                            refreshKey(oldHash),
+                            refreshKey(newHash),
+                            sessionKey(sid),
+                            userSessionsKey(userId)
+                    ),
+                    oldHash,
+                    newHash,
+                    sid,
+                    userId.toString(),
+                    Long.toString(SESSION_TTL.toMillis())
+            );
+
+            if (result == null) {
+                throw new DataAccessResourceFailureException(
+                        "토큰 교체 결과를 확인할 수 없습니다."
+                );
+            }
+
+            if (result == 0L) {
+                return Optional.empty();
+            }
+
+            if (result != 1L) {
+                throw new DataAccessResourceFailureException(
+                        "토큰 교체 결과가 유효하지 않습니다."
+                );
+            }
+
+            return Optional.of(userId);
+        } catch (DataAccessException exception) {
+            throw storageUnavailable(exception);
+        }
     }
 
     public void deleteBySid(String sid) {
@@ -159,49 +218,6 @@ public class LoginSessionStore {
             return Optional.empty();
         }
         return Optional.of(sid);
-    }
-
-    private Optional<Long> rotateSession(RedisOperations<String, String> operations, String oldHash, String newHash) {
-        String oldRefreshKey = refreshKey(oldHash);
-        operations.watch(oldRefreshKey);
-        String sid = operations.opsForValue().get(oldRefreshKey);
-        if (sid == null) {
-            return Optional.empty();
-        }
-
-        String sessionKey = sessionKey(sid);
-        operations.watch(sessionKey);
-        Optional<LoginSession> session = readSession(operations, sessionKey);
-        if (session.isEmpty() || !oldHash.equals(session.get().refreshTokenHash())) {
-            return Optional.empty();
-        }
-
-        Long userId = session.get().userId();
-        String userSessionsKey = userSessionsKey(userId);
-        String newRefreshKey = refreshKey(newHash);
-        operations.watch(List.of(userSessionsKey, newRefreshKey));
-        validateUserIndex(operations, userSessionsKey);
-        if (Boolean.TRUE.equals(operations.hasKey(newRefreshKey))) {
-            throw new DataAccessResourceFailureException("Refresh Token 식별자가 중복되었습니다.");
-        }
-
-        long now = currentRedisTimeMillis();
-        Instant expiresAt = Instant.ofEpochMilli(now + SESSION_TTL.toMillis());
-        boolean committed = executeTransaction(operations, writes -> {
-            writes.opsForHash().putAll(sessionKey, Map.of(
-                    "refreshTokenHash", newHash,
-                    "expiresAt", Long.toString(expiresAt.toEpochMilli())
-            ));
-            writes.expireAt(sessionKey, expiresAt);
-            writes.delete(oldRefreshKey);
-            writes.opsForValue().set(newRefreshKey, sid);
-            writes.expireAt(newRefreshKey, expiresAt);
-            updateUserIndex(writes, userSessionsKey, sid, now);
-        });
-        if (!committed) {
-            return null;
-        }
-        return Optional.of(userId);
     }
 
     private Boolean deleteSession(

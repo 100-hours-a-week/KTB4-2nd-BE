@@ -20,7 +20,11 @@ public class OutboxReceiptConsumer {
     private final OutboxReceiptService receipts;
 
     @KafkaListener(
-            topics = {"${app.kafka.topics.trip-create-request}", "${app.kafka.topics.story-create-request}"},
+            topics = {
+                    "${app.kafka.topics.trip-create-request}",
+                    "${app.kafka.topics.trip-update-request}",
+                    "${app.kafka.topics.story-create-request}"
+            },
             groupId = "${app.outbox.receipt-consumer-group:yeodam-outbox-receipts}",
             autoStartup = "${app.outbox.receipt-listener-enabled:true}",
             containerFactory = "outboxReceiptKafkaListenerContainerFactory",

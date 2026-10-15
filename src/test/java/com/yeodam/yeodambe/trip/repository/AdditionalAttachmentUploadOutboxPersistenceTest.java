@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.repository;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadBatch;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadOutbox;
@@ -75,7 +77,8 @@ class AdditionalAttachmentUploadOutboxPersistenceTest {
     void persistsPublishingThenPublishedWithoutChangingMessage() {
         var outbox = outboxes.saveAndFlush(new AdditionalAttachmentUploadOutbox(
                 batchId, "photos_ready", "{}", "request-1"));
-        outbox.beginPublishing();
+        ReflectionTestUtils.setField(outbox, "status", AdditionalAttachmentUploadOutbox.Status.PUBLISHING);
+        ReflectionTestUtils.setField(outbox, "attemptCount", 1);
         entityManager.flush();
         entityManager.clear();
 
@@ -99,11 +102,12 @@ class AdditionalAttachmentUploadOutboxPersistenceTest {
     }
 
     @Test
-    void persistsFailureAndClearsErrorOnNextPublicationAttempt() {
+    void historicalFailureIsPreservedUntilSuccessfulConfirmation() {
         var outbox = outboxes.saveAndFlush(new AdditionalAttachmentUploadOutbox(
                 batchId, "photos_ready", "{}", "request-1"));
-        outbox.beginPublishing();
-        outbox.publicationFailed("broker unavailable");
+        ReflectionTestUtils.setField(outbox, "attemptCount", 1);
+        ReflectionTestUtils.setField(outbox, "status", AdditionalAttachmentUploadOutbox.Status.PENDING);
+        ReflectionTestUtils.setField(outbox, "lastError", "broker unavailable");
         entityManager.flush();
         entityManager.clear();
 
@@ -112,15 +116,14 @@ class AdditionalAttachmentUploadOutboxPersistenceTest {
         assertThat(failed.getLastError()).isEqualTo("broker unavailable");
         assertThat(failed.getAttemptCount()).isEqualTo(1);
         assertThat(failed.getPublishedAt()).isNull();
-        failed.beginPublishing();
+        failed.publicationSucceeded(LocalDateTime.of(2026, 10, 15, 12, 0));
         entityManager.flush();
         entityManager.clear();
-
-        var retrying = outboxes.findById(outbox.getId()).orElseThrow();
-        assertThat(retrying.getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PUBLISHING);
-        assertThat(retrying.getAttemptCount()).isEqualTo(2);
-        assertThat(retrying.getLastError()).isNull();
-        assertThat(retrying.getPayload()).isEqualTo("{}");
-        assertThat(retrying.getRequestId()).isEqualTo("request-1");
+        var published = outboxes.findById(outbox.getId()).orElseThrow();
+        assertThat(published.getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PUBLISHED);
+        assertThat(published.getAttemptCount()).isEqualTo(1);
+        assertThat(published.getLastError()).isNull();
+        assertThat(published.getPayload()).isEqualTo("{}");
+        assertThat(published.getRequestId()).isEqualTo("request-1");
     }
 }

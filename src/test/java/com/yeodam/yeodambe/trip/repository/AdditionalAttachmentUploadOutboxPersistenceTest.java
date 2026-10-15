@@ -85,6 +85,7 @@ class AdditionalAttachmentUploadOutboxPersistenceTest {
         assertThat(publishing.getPublishedAt()).isNull();
         LocalDateTime time = LocalDateTime.of(2026, 10, 13, 10, 0);
         publishing.publicationSucceeded(time);
+        publishing.publicationSucceeded(time.plusMinutes(1));
         entityManager.flush();
         entityManager.clear();
 

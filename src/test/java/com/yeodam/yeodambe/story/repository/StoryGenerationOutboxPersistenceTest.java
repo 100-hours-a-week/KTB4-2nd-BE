@@ -92,6 +92,7 @@ class StoryGenerationOutboxPersistenceTest {
         assertThat(publishing.getPublishedAt()).isNull();
         LocalDateTime time = LocalDateTime.of(2026, 10, 11, 17, 0);
         publishing.publicationSucceeded(time);
+        publishing.publicationSucceeded(time.plusMinutes(1));
         entityManager.flush();
         entityManager.clear();
 

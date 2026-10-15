@@ -12,10 +12,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.nio.charset.StandardCharsets;
@@ -24,6 +26,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
 
@@ -295,7 +299,7 @@ class LoginSessionStoreTest {
     }
 
     @Test
-    void 서버에서_Lua를_금지해도_세션_생명주기가_동작한다() {
+    void Lua를_금지하면_교체는_실패하고_기존_세션과_다른_기능은_유지한다() {
         String username = "template-test-" + UUID.randomUUID();
         String password = UUID.randomUUID().toString();
         acl("SETUSER", username, "on", ">" + password, "~yeodam:test:auth:*",
@@ -321,12 +325,16 @@ class LoginSessionStoreTest {
             store.save(sid, 1L, hash);
             assertThat(loginSessionStore.findBySid(sid)).contains(new LoginSession(1L, hash));
             assertThat(store.findSidByRefreshTokenHash(hash)).contains(sid);
-            assertThat(store.rotate(hash, rotated)).contains(1L);
-            store.deleteIfMatches(sid, 1L, hash);
-            assertThat(store.findBySid(sid)).contains(new LoginSession(1L, rotated));
+            assertThatThrownBy(() -> store.rotate(hash, rotated))
+                    .isInstanceOf(DataAccessResourceFailureException.class);
+            assertThat(store.findBySid(sid)).contains(new LoginSession(1L, hash));
+            assertThat(store.findSidByRefreshTokenHash(hash)).contains(sid);
+            assertThat(redis.hasKey("yeodam:test:auth:refresh:" + rotated)).isFalse();
+            store.deleteIfMatches(sid, 1L, rotated);
+            assertThat(store.findBySid(sid)).contains(new LoginSession(1L, hash));
             store.deleteBySid(sid);
             assertThat(store.findBySid(sid)).isEmpty();
-            assertThat(store.findSidByRefreshTokenHash(rotated)).isEmpty();
+            assertThat(store.findSidByRefreshTokenHash(hash)).isEmpty();
             store.save(otherSid, 1L, tokenHasher.hash(otherSid));
             store.deleteByUserId(1L);
             assertThat(store.findBySid(otherSid)).isEmpty();
@@ -339,6 +347,118 @@ class LoginSessionStoreTest {
                 return nativeCommands.aclDeluser(username).toCompletableFuture().join();
             });
         }
+    }
+
+    @Test
+    void 새_토큰_키가_이미_있으면_기존_세션과_연결을_변경하지_않는다() {
+        User user = saveUser("new-token-collision");
+        String sid = UUID.randomUUID().toString();
+        String oldHash = tokenHasher.hash(sid);
+        String newHash = tokenHasher.hash(sid + "new");
+        String newKey = "yeodam:test:auth:refresh:" + newHash;
+        loginSessionStore.save(sid, user.getUserId(), oldHash);
+        redis.opsForValue().set(newKey, "another-session");
+
+        assertThatThrownBy(() -> loginSessionStore.rotate(oldHash, newHash))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+
+        assertThat(loginSessionStore.findBySid(sid))
+                .contains(new LoginSession(user.getUserId(), oldHash));
+        assertThat(redis.opsForValue().get("yeodam:test:auth:refresh:" + oldHash)).isEqualTo(sid);
+        assertThat(redis.opsForValue().get(newKey)).isEqualTo("another-session");
+    }
+
+    @Test
+    void 회원_인덱스의_자료형이_잘못되면_토큰을_일부만_교체하지_않는다() {
+        User user = saveUser("invalid-index-type");
+        String sid = UUID.randomUUID().toString();
+        String oldHash = tokenHasher.hash(sid);
+        String newHash = tokenHasher.hash(sid + "new");
+        String index = "yeodam:test:auth:user-sessions:" + user.getUserId();
+        loginSessionStore.save(sid, user.getUserId(), oldHash);
+        redis.delete(index);
+        redis.opsForValue().set(index, "wrong-type");
+
+        assertThatThrownBy(() -> loginSessionStore.rotate(oldHash, newHash))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+
+        assertThat(loginSessionStore.findBySid(sid))
+                .contains(new LoginSession(user.getUserId(), oldHash));
+        assertThat(redis.opsForValue().get("yeodam:test:auth:refresh:" + oldHash)).isEqualTo(sid);
+        assertThat(redis.hasKey("yeodam:test:auth:refresh:" + newHash)).isFalse();
+        assertThat(redis.opsForValue().get(index)).isEqualTo("wrong-type");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void 준비_조회_이후_로그아웃되면_Lua가_재확인하여_세션을_되살리지_않는다() {
+        User user = saveUser("logout-before-script");
+        String sid = UUID.randomUUID().toString();
+        String oldHash = tokenHasher.hash(sid);
+        String newHash = tokenHasher.hash(sid + "new");
+        loginSessionStore.save(sid, user.getUserId(), oldHash);
+        StringRedisTemplate intercepted = spy(redis);
+        doAnswer(invocation -> {
+            loginSessionStore.deleteBySid(sid);
+            return invocation.callRealMethod();
+        }).when(intercepted).execute(any(RedisScript.class), anyList(), any(Object[].class));
+        LoginSessionStore store = new LoginSessionStore(intercepted, "yeodam:test:auth:");
+
+        assertThat(store.rotate(oldHash, newHash)).isEmpty();
+
+        assertThat(loginSessionStore.findBySid(sid)).isEmpty();
+        assertThat(redis.hasKey("yeodam:test:auth:refresh:" + oldHash)).isFalse();
+        assertThat(redis.hasKey("yeodam:test:auth:refresh:" + newHash)).isFalse();
+        assertThat(redis.hasKey("yeodam:test:auth:user-sessions:" + user.getUserId())).isFalse();
+    }
+
+    @Test
+    void 같은_회원의_서로_다른_세션_10개를_동시에_교체한다() throws Exception {
+        User user = saveUser("parallel-distinct-sessions");
+        List<String> sids = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            String sid = UUID.randomUUID().toString();
+            sids.add(sid);
+            loginSessionStore.save(sid, user.getUserId(), tokenHasher.hash(sid));
+        }
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newFixedThreadPool(10)) {
+            List<Future<Optional<Long>>> futures = new ArrayList<>();
+            for (String sid : sids) {
+                futures.add(executor.submit(() -> {
+                    start.await();
+                    return loginSessionStore.rotate(tokenHasher.hash(sid), tokenHasher.hash(sid + "new"));
+                }));
+            }
+            start.countDown();
+            for (var future : futures) {
+                assertThat(future.get(10, TimeUnit.SECONDS)).contains(user.getUserId());
+            }
+        }
+        String index = "yeodam:test:auth:user-sessions:" + user.getUserId();
+        assertThat(redis.opsForZSet().range(index, 0, -1))
+                .containsExactlyInAnyOrderElementsOf(sids);
+        Long indexExpiration = redisExpiration(index);
+        for (String sid : sids) {
+            assertThat(loginSessionStore.findSidByRefreshTokenHash(tokenHasher.hash(sid))).isEmpty();
+            assertThat(loginSessionStore.findSidByRefreshTokenHash(tokenHasher.hash(sid + "new"))).contains(sid);
+            long expected = Long.parseLong((String) redis.opsForHash().get(sessionKey(sid), "expiresAt"));
+            assertThat(redis.opsForZSet().score(index, sid)).isEqualTo((double) expected);
+            assertThat(indexExpiration).isGreaterThanOrEqualTo(expected);
+            for (String key : List.of(sessionKey(sid), "yeodam:test:auth:refresh:" + tokenHasher.hash(sid + "new"))) {
+                Long actual = redisExpiration(key);
+                assertThat(actual).isEqualTo(expected);
+            }
+        }
+    }
+
+    private Long redisExpiration(String key) {
+        return redis.execute((RedisCallback<Long>) connection -> {
+            @SuppressWarnings("unchecked")
+            RedisAsyncCommands<byte[], byte[]> commands =
+                    (RedisAsyncCommands<byte[], byte[]>) connection.getNativeConnection();
+            return commands.pexpiretime(bytes(key)).toCompletableFuture().join();
+        });
     }
 
     @Test

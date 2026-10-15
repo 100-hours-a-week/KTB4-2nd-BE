@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
+import java.time.Instant;
+
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.file.entity.StoredFile;
@@ -35,7 +38,6 @@ import static org.mockito.Mockito.*;
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class AdditionalAttachmentReanalysisIntegrationTest {
-    @Autowired private AdditionalAttachmentDeliveryService delivery;
     @Autowired private AdditionalAttachmentKafkaResultService kafkaResults;
     @Autowired private AdditionalAttachmentExecutionRepository executionRepository;
     @Autowired private TripProcessingStatusService processingStatus;
@@ -123,7 +125,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         transactions.savePhotoSuccess(claim, item.itemId(), new DerivedPhotoKeys(item.objectKey(), keys.get(0), keys.get(1), null,
                 OffsetDateTime.parse("2026-10-07T12:00:00+09:00"), BigDecimal.ONE, BigDecimal.TEN, "camera", 12L, 8L, 4L, null));
         transactions.completeBatch(claim);
-        assertThat(outboxCount()).isEqualTo(2);
+        assertThat(outboxCount()).isEqualTo(1);
         assertThat(attachments.countVisibleForEditByTripId(tripId)).isEqualTo(1);
         assertThat(attachments.findForEditWithCursor(tripId, null, null,
                 org.springframework.data.domain.PageRequest.of(0, 19))).extracting(TripAttachment::getId).containsExactly(oldPhotoId);
@@ -131,13 +133,12 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     private void publishBoth() {
-        var ready = delivery.claim().orElseThrow();
-        assertThat(json.readTree(ready.payload()).path("type").asString()).isEqualTo("photos_ready");
-        assertThat(delivery.claim()).isEmpty();
-        delivery.finish(ready, true, null);
-        var process = delivery.claim().orElseThrow();
-        assertThat(json.readTree(process.payload()).path("attachments")).hasSize(2);
-        delivery.finish(process, true, null);
+        var ready = outboxes.findAll().stream().filter(value -> "photos_ready".equals(value.getMessageType())
+                && value.getTripId().equals(tripId)).findFirst().orElseThrow();
+        assertThat(executionRepository.findById(additionId).orElseThrow().getProcessOutboxId()).isNull();
+        confirm(ready);
+        var process = outboxes.findById(executionRepository.findById(additionId).orElseThrow().getProcessOutboxId()).orElseThrow();
+        confirm(process);
     }
 
     private String successfulPayload() {
@@ -149,6 +150,11 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         place.put("last_taken_at", "2026-10-07T12:00:00+09:00");
         return json.writeValueAsString(Map.of("type", "process_result", "trip_id", tripId,
                 "execution_id", additionId, "status", "COMPLETED", "result", body));
+    }
+
+    private void confirm(AdditionalAttachmentUploadOutbox outbox) {
+        outboxService.recordPublished(outbox.getId(), new OutboxReceipt(
+                outbox.getTopic(), outbox.getTripId().toString(), outbox.getPayload(), Instant.now()));
     }
 
     @Test
@@ -182,16 +188,14 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void expiredPublicationClaimIsReclaimedAndOldOwnerCannotAcknowledgeIt() {
+    void duplicatePublicationReceiptKeepsFirstTimestamp() {
         prepareAsync();
-        var first = delivery.claim().orElseThrow();
-        jdbc.update("UPDATE additional_attachment_upload_outbox SET lease_until = '2000-01-01' WHERE outbox_id = ?", first.outboxId());
-        var second = delivery.claim().orElseThrow();
-        assertThat(second.token()).isNotEqualTo(first.token());
-        delivery.finish(first, true, null);
-        assertThat(outboxes.findById(second.outboxId()).orElseThrow().getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PUBLISHING);
-        delivery.finish(second, true, null);
-        assertThat(delivery.claim()).isPresent();
+        var ready = outboxes.findAll().stream().filter(value -> value.getTripId().equals(tripId)
+                && "photos_ready".equals(value.getMessageType())).findFirst().orElseThrow();
+        confirm(ready);
+        var time = outboxes.findById(ready.getId()).orElseThrow().getPublishedAt();
+        confirm(ready);
+        assertThat(outboxes.findById(ready.getId()).orElseThrow().getPublishedAt()).isEqualTo(time);
     }
 
     @Test
@@ -206,7 +210,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(executionRepository.findById(additionId).orElseThrow().getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.FAILED);
         assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
         assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
-        assertThat(outboxes.findPending(transactions.databaseTime(), org.springframework.data.domain.PageRequest.of(0, 100))).isEmpty();
+        assertThat(executionRepository.findById(additionId).orElseThrow().isTerminal()).isTrue();
         assertThat(attachments.countForEditByTripId(tripId)).isEqualTo(1);
         assertThat(trips.findById(tripId).orElseThrow().getCurrentStoryId()).isEqualTo(storyId);
         verify(storage, never()).delete(anyString());
@@ -266,25 +270,20 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void commitsBothPreparedMessagesAndReusesOriginalPublicationRecords() {
+    void reusesPhotosReadyAndCreatesProcessOnlyAfterItsReceipt() {
         var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
         var saved = outboxService.save(tripId, userId, uploadId, prepared, "request-first");
         var ready = outboxes.findById(saved.photosReady().getId()).orElseThrow();
-        var process = outboxes.findById(saved.process().orElseThrow().getId()).orElseThrow();
+        assertThat(saved.process()).isEmpty();
+        assertThat(outboxCount()).isEqualTo(1);
         assertThat(json.readTree(ready.getPayload())).isEqualTo(json.readTree(applicationMapper.writeValueAsString(prepared.photosReady())));
+        confirm(ready);
+        var process = outboxes.findById(executionRepository.findById(additionId).orElseThrow().getProcessOutboxId()).orElseThrow();
         assertThat(json.readTree(process.getPayload())).isEqualTo(json.readTree(applicationMapper.writeValueAsString(prepared.process().orElseThrow())));
-        assertThat(ready.getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PENDING);
-        assertThat(process.getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PENDING);
-        jdbc.update("UPDATE additional_attachment_upload_outbox SET status = 'PUBLISHED', attempt_count = 1 "
-                + "WHERE outbox_id = ?", ready.getId());
-
         var repeated = outboxService.save(tripId, userId, uploadId, prepared, "request-repeated");
         assertThat(repeated.photosReady().getId()).isEqualTo(ready.getId());
-        assertThat(repeated.process().orElseThrow().getId()).isEqualTo(process.getId());
         assertThat(repeated.photosReady().getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PUBLISHED);
-        assertThat(repeated.photosReady().getAttemptCount()).isEqualTo(1);
         assertThat(repeated.photosReady().getRequestId()).isEqualTo("request-first");
-        assertThat(repeated.process().orElseThrow().getRequestId()).isEqualTo("request-first");
         assertThat(repeated.photosReady().getPayload()).isEqualTo(ready.getPayload());
         assertThat(outboxCount()).isEqualTo(2);
     }
@@ -302,15 +301,9 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void rollsBackPhotosReadyWhenProcessInsertFailsButKeepsPreparedPhotos() {
+    void outboxInsertFailureRollsBackWithoutRemovingPreparedPhotos() {
         var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
-        var process = prepared.process().orElseThrow();
-        var invalid = new com.yeodam.yeodambe.integration.service.request.PhotoProcessMessage(
-                "invalid", process.tripId(), process.executionId(), process.tripName(),
-                process.period(), process.regions(), process.attachments());
-        var messages = new AdditionalAttachmentUploadCompletionService.PreparedQueueBatch(
-                prepared.photosReady(), Optional.of(invalid));
-        assertThatThrownBy(() -> outboxService.save(tripId, userId, uploadId, messages, "request-invalid"))
+        assertThatThrownBy(() -> outboxService.save(tripId, userId, uploadId, prepared, null))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         assertThat(outboxCount()).isZero();
         assertThat(batchStatus()).isEqualTo("PREPARED");

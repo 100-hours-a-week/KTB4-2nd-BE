@@ -1,12 +1,12 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import org.springframework.util.Assert;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
-import org.springframework.util.Assert;
 
 import java.time.LocalDateTime;
 
@@ -85,20 +85,6 @@ public class AdditionalAttachmentUploadOutbox {
     @Column(name = "next_attempt_at")
     private LocalDateTime nextAttemptAt;
 
-    public void claim(String token, LocalDateTime until) {
-        beginPublishing();
-        claimToken = token;
-        leaseUntil = until;
-        nextAttemptAt = null;
-    }
-
-    public void finishClaim(boolean success, LocalDateTime now, String error) {
-        if (success) publicationSucceeded(now);
-        else { publicationFailed(error); nextAttemptAt = now.plusSeconds(10); }
-        claimToken = null;
-        leaseUntil = null;
-    }
-
     public void enableCdc(Long tripId, String topic) {
         Assert.notNull(tripId, "Outbox tripId is required");
         Assert.hasText(topic, "Outbox topic is required");
@@ -107,23 +93,12 @@ public class AdditionalAttachmentUploadOutbox {
         this.cdcManaged = true;
     }
 
-    public void beginPublishing() {
-        this.status = Status.PUBLISHING;
-        this.attemptCount++;
-        this.lastError = null;
-    }
-
     public void publicationSucceeded(LocalDateTime publishedAt) {
         this.status = Status.PUBLISHED;
         if (this.publishedAt == null) {
             this.publishedAt = publishedAt;
         }
         this.lastError = null;
-    }
-
-    public void publicationFailed(String error) {
-        this.status = Status.PENDING;
-        this.lastError = error;
     }
 
     public enum Status {

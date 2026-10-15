@@ -7,19 +7,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AdditionalAttachmentDeliveryStateTest {
     @Test
-    void failedDeliveryReleasesClaimAndSchedulesRetry() {
+    void confirmationPreservesFirstTimeAndPayloadAcrossDuplicates() {
         var outbox = new AdditionalAttachmentUploadOutbox(1L, "photos_ready", "{}", "request");
-        var now = LocalDateTime.of(2026, 10, 13, 12, 0);
-        outbox.claim("first", now.plusMinutes(1));
-        outbox.finishClaim(false, now, "timeout");
+        var first = LocalDateTime.of(2026, 10, 15, 12, 0);
         assertThat(outbox.getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PENDING);
-        assertThat(outbox.getClaimToken()).isNull();
-        assertThat(outbox.getNextAttemptAt()).isEqualTo(now.plusSeconds(10));
-        outbox.claim("second", now.plusMinutes(2));
-        outbox.finishClaim(true, now.plusSeconds(11), null);
-        assertThat(outbox.getAttemptCount()).isEqualTo(2);
+        outbox.publicationSucceeded(first);
+        outbox.publicationSucceeded(first.plusHours(1));
         assertThat(outbox.getStatus()).isEqualTo(AdditionalAttachmentUploadOutbox.Status.PUBLISHED);
-        assertThat(outbox.getPublishedAt()).isEqualTo(now.plusSeconds(11));
-        assertThat(outbox.getLeaseUntil()).isNull();
+        assertThat(outbox.getPublishedAt()).isEqualTo(first);
+        assertThat(outbox.getPayload()).isEqualTo("{}");
     }
 }

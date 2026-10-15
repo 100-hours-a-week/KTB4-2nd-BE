@@ -1,8 +1,5 @@
 package com.yeodam.yeodambe.trip.service;
 
-import com.yeodam.yeodambe.integration.service.request.PhotoProcessMessage;
-
-
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
@@ -43,7 +40,6 @@ import org.springframework.transaction.annotation.Isolation;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.cfg.DateTimeFeature;
 import com.yeodam.yeodambe.user.service.UserStatsService;
-
 
 @Service
 @RequiredArgsConstructor
@@ -406,18 +402,9 @@ public class AdditionalAttachmentUploadTransactionService {
         batch.markPrepared();
         var ready = analysisPreparationService.photosReady(claim.tripId(), claim.userId(),
                 claim.uploadId(), claim.executionId());
-        var batches = uploadBatchRepository.findAllByAdditionIdOrderByBatchNoAsc(claim.executionId());
-        var last = batches.getLast();
-        var process = last.getLastBatch() && batches.stream().allMatch(value ->
-                value.getStatus() == AdditionalAttachmentUploadStatus.PREPARED)
-                ? Optional.of(analysisPreparationService.prepare(claim.tripId(), claim.userId(),
-                    last.getUploadId()).processMessage(claim.executionId()))
-                : Optional.<PhotoProcessMessage>empty();
-        var saved = outboxService.save(claim.tripId(), claim.userId(), claim.uploadId(),
-                new AdditionalAttachmentUploadCompletionService.PreparedQueueBatch(ready, process),
+        outboxService.save(claim.tripId(), claim.userId(), claim.uploadId(),
+                new AdditionalAttachmentUploadCompletionService.PreparedQueueBatch(ready, Optional.empty()),
                 batch.getRequestId() == null ? claim.executionId() : batch.getRequestId());
-        saved.process().ifPresent(value -> executionRepository.findById(claim.executionId()).orElseThrow()
-                .attachProcessOutbox(value.getId(), tripAttachmentRepository.findAllForReanalysis(claim.tripId()).size()));
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

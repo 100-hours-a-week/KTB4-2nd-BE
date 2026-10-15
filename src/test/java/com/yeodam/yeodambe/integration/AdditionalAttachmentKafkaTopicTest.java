@@ -1,23 +1,14 @@
 package com.yeodam.yeodambe.integration;
 
-import com.yeodam.yeodambe.common.event.EventType;
-import com.yeodam.yeodambe.integration.client.AdditionalAttachmentOutboxPublisher;
-import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
+import com.yeodam.yeodambe.integration.client.OutboxReceiptConsumer;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+
 import com.yeodam.yeodambe.trip.event.handler.TripUpdateResultEventHandler;
-import com.yeodam.yeodambe.trip.service.AdditionalAttachmentDeliveryService;
 import com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.core.KafkaTemplate;
 import tools.jackson.databind.ObjectMapper;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -25,24 +16,11 @@ import static org.mockito.ArgumentMatchers.*;
 
 class AdditionalAttachmentKafkaTopicTest {
     @Test
-    @SuppressWarnings("unchecked")
-    void publishesAdditionalPayloadToConfiguredUpdateTopicWithKeyAndRequestId() {
-        var delivery = mock(AdditionalAttachmentDeliveryService.class);
-        var kafka = (KafkaTemplate<String, String>) mock(KafkaTemplate.class);
-        var topics = new KafkaTopicProperties(Arrays.stream(EventType.values()).collect(Collectors.toMap(
-                type -> type, type -> "configured." + type)));
-        var claim = new AdditionalAttachmentDeliveryService.Claim(1L, "execution", 7L, "token", "{payload}", "request-123");
-        when(delivery.claim()).thenReturn(Optional.of(claim), Optional.empty());
-        when(kafka.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(null));
-        new AdditionalAttachmentOutboxPublisher(delivery, kafka, topics).publishPending();
-        var captor = ArgumentCaptor.forClass(ProducerRecord.class);
-        verify(kafka).send(captor.capture());
-        var record = captor.getValue();
-        assertThat(record.topic()).isEqualTo("configured.TRIP_UPDATE_REQUEST");
-        assertThat(record.key()).isEqualTo("7");
-        assertThat(record.value()).isEqualTo("{payload}");
-        assertThat(new String(record.headers().lastHeader("X-Request-ID").value(), StandardCharsets.UTF_8)).isEqualTo("request-123");
-        verify(delivery).finish(claim, true, null);
+    void cdcListenerSubscribesToConfiguredUpdateRequestTopic() throws Exception {
+        var annotation = OutboxReceiptConsumer.class.getMethod("consume", ConsumerRecord.class)
+                .getAnnotation(KafkaListener.class);
+        assertThat(annotation.topics()).contains("${app.kafka.topics.trip-update-request}");
+        assertThat(annotation.containerFactory()).isEqualTo("outboxReceiptKafkaListenerContainerFactory");
     }
 
     @Test

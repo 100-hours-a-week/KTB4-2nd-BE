@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.common.event.EventType;
+import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 import com.yeodam.yeodambe.story.entity.StoryGenerationOutbox;
 import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
@@ -17,6 +19,7 @@ public class StoryGenerationAcceptanceService {
     private final StoryGenerationMessageService messageService;
     private final StoryGenerationOutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
+    private final KafkaTopicProperties topics;
 
     @Transactional
     public StoryGenerationJob accept(
@@ -29,9 +32,9 @@ public class StoryGenerationAcceptanceService {
         var message = messageService.assemble(job);
         String payload = objectMapper.writeValueAsString(message);
 
-        outboxRepository.saveAndFlush(
-                new StoryGenerationOutbox(job.getId(), payload, requestId)
-        );
+        var outbox = new StoryGenerationOutbox(job.getId(), payload, requestId);
+        outbox.enableCdc(tripId, topics.topicFor(EventType.STORY_CREATE_REQUEST));
+        outboxRepository.saveAndFlush(outbox);
 
         return job;
     }

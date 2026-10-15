@@ -14,6 +14,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -37,7 +38,7 @@ class StoryGenerationStatusSchedulerTest {
     private final StoryGenerationOutboxRepository outboxes = mock(StoryGenerationOutboxRepository.class);
     private final StoryGenerationStatusSyncService sync = mock(StoryGenerationStatusSyncService.class);
     private final StoryGenerationStatusScheduler scheduler = new StoryGenerationStatusScheduler(
-            jobs, outboxes, sync, new StoryGenerationTimeoutService(jobs, outboxes));
+            jobs, outboxes, sync, new StoryGenerationTimeoutService(jobs, outboxes, mock(JdbcTemplate.class)));
 
     @AfterEach
     void clearMdc() {
@@ -156,7 +157,7 @@ class StoryGenerationStatusSchedulerTest {
         context.registerBean(StoryGenerationOutboxRepository.class, () -> outboxes);
         context.registerBean(StoryGenerationStatusSyncService.class, () -> sync);
         context.registerBean(StoryGenerationTimeoutService.class,
-                () -> new StoryGenerationTimeoutService(jobs, outboxes));
+                () -> new StoryGenerationTimeoutService(jobs, outboxes, mock(JdbcTemplate.class)));
         context.register(SchedulingConfiguration.class);
         return context;
     }

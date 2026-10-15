@@ -78,14 +78,15 @@ class KafkaBrokerAvailabilityIntegrationTest {
 
     @AfterAll
     static void restoreSharedBroker() {
-        if (broker != null && !broker.isRunning()) {
+        if (broker != null && !Boolean.TRUE.equals(broker.getDockerClient()
+                .inspectContainerCmd(broker.getContainerId()).exec().getState().getRunning())) {
             broker.getDockerClient().startContainerCmd(broker.getContainerId()).exec();
         }
     }
 
     @Test
     void 브로커_없이_시작하고_중단중에도_health를_유지하며_재연결한다() throws Exception {
-        assertThat(listeners.getListenerContainers()).hasSize(3).allMatch(container -> container.isRunning());
+        assertThat(listeners.getListenerContainers()).filteredOn(container -> container.isRunning()).hasSize(3);
         assertHealthy();
         broker.getDockerClient().startContainerCmd(broker.getContainerId()).exec();
         createTopics();
@@ -102,7 +103,7 @@ class KafkaBrokerAvailabilityIntegrationTest {
         long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
         boolean assigned = false;
         while (!assigned && System.nanoTime() < deadline) {
-            assigned = listeners.getListenerContainers().stream().allMatch(container -> {
+            assigned = listeners.getListenerContainers().stream().filter(container -> container.isRunning()).allMatch(container -> {
                 var partitions = container.getAssignedPartitions();
                 return partitions != null && partitions.size() == 2;
             });

@@ -5,7 +5,6 @@ import com.yeodam.yeodambe.common.logging.RequestIdFilter;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.service.StoryGenerationAcceptanceService;
-import com.yeodam.yeodambe.story.service.StoryGenerationPublicationService;
 import com.yeodam.yeodambe.story.service.StoryGenerationStatusService;
 import com.yeodam.yeodambe.story.service.StoryGenerationCancelService;
 import com.yeodam.yeodambe.story.client.StoryGenerationAiClient;
@@ -36,7 +35,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -53,7 +51,6 @@ class StoryGenerationControllerTest {
     @Autowired private MockMvc mvc;
     @Autowired private AccessTokenIssuer issuer;
     @MockitoBean private StoryGenerationAcceptanceService acceptance;
-    @MockitoBean private StoryGenerationPublicationService publication;
     @MockitoBean private StoryGenerationJobRepository jobs;
     @MockitoBean private StoryGenerationAiClient ai;
     @MockitoBean private ActiveLoginSessionValidator sessionValidator;
@@ -68,36 +65,28 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void waitsForPublicationAndReturnsContractResponseWithOriginalRequestId() throws Exception {
+    void acceptsCommittedJobWithoutWaitingForKafkaAndPreservesRequestId() throws Exception {
         prepareJob("request-original");
-        var pending = new CompletableFuture<Void>();
-        when(publication.publish(7L)).thenReturn(pending);
 
-        var started = mvc.perform(authenticated().header("X-Request-ID", "request-original"))
-                .andExpect(request().asyncStarted()).andReturn();
-        assertThat(pending.isDone()).isFalse();
-        pending.complete(null);
-
-        mvc.perform(asyncDispatch(started)).andExpect(status().isAccepted())
+        mvc.perform(authenticated().header("X-Request-ID", "request-original"))
+                .andExpect(request().asyncNotStarted())
+                .andExpect(status().isAccepted())
                 .andExpect(header().string("X-Request-ID", "request-original"))
                 .andExpect(content().json("""
                         {"message":"STORY_GENERATION_ACCEPTED",
                          "data":{"generationId":7,"tripId":100,"status":"QUEUED"}}
                         """));
         verify(acceptance).accept(42L, 100L, input, "request-original");
-        verify(publication).publish(7L);
     }
 
     @Test
     void generatedRequestIdIsPassedToAcceptanceWhenHeaderIsAbsent() throws Exception {
         var job = job();
         when(acceptance.accept(eq(42L), eq(100L), eq(input), anyString())).thenReturn(job);
-        when(publication.publish(7L)).thenReturn(CompletableFuture.completedFuture(null));
 
-        var started = mvc.perform(authenticated()).andExpect(request().asyncStarted()).andReturn();
+        var started = mvc.perform(authenticated()).andExpect(status().isAccepted()).andReturn();
         String requestId = started.getResponse().getHeader("X-Request-ID");
         assertThat(requestId).isNotBlank();
-        mvc.perform(asyncDispatch(started)).andExpect(status().isAccepted());
         verify(acceptance).accept(42L, 100L, input, requestId);
     }
 
@@ -105,7 +94,7 @@ class StoryGenerationControllerTest {
     void missingAuthenticationIsRejectedBeforeAcceptance() throws Exception {
         mvc.perform(base().cookie(new Cookie("CSRF_CONTEXT", "browser"))
                 .header("X-CSRF-TOKEN", "csrf-token")).andExpect(status().isUnauthorized());
-        verifyNoInteractions(acceptance, publication);
+        verifyNoInteractions(acceptance);
     }
 
     @Test
@@ -113,19 +102,15 @@ class StoryGenerationControllerTest {
         mvc.perform(base().cookie(new Cookie("accessToken", issuer.issue(42L, "session")),
                         new Cookie("CSRF_CONTEXT", "browser")))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
-        verifyNoInteractions(acceptance, publication);
+        verifyNoInteractions(acceptance);
     }
 
     @Test
-    void publicationFailureReturnsInternalErrorInsteadOfAcceptedResponse() throws Exception {
-        prepareJob("request-original");
-        when(publication.publish(7L)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")));
-
-        var started = mvc.perform(authenticated().header("X-Request-ID", "request-original"))
-                .andExpect(request().asyncStarted()).andReturn();
-
-        mvc.perform(asyncDispatch(started)).andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.message").value("INTERNAL_SERVER_ERROR"));
+    void databaseAcceptanceFailurePreservesUnavailableResponse() throws Exception {
+        when(acceptance.accept(eq(42L), eq(100L), eq(input), anyString()))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("DB unavailable"));
+        mvc.perform(authenticated()).andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message").value("AUTH_STORE_UNAVAILABLE"));
     }
 
     @ParameterizedTest
@@ -139,7 +124,7 @@ class StoryGenerationControllerTest {
         mvc.perform(authenticated().content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_STORY_REQUEST"));
-        verifyNoInteractions(acceptance, publication);
+        verifyNoInteractions(acceptance);
     }
 
     @ParameterizedTest
@@ -155,7 +140,6 @@ class StoryGenerationControllerTest {
         when(acceptance.accept(42L, 100L, input, "request-original")).thenThrow(failure);
         mvc.perform(authenticated().header("X-Request-ID", "request-original"))
                 .andExpect(status().is(code)).andExpect(jsonPath("$.message").value(message));
-        verifyNoInteractions(publication);
     }
 
     @ParameterizedTest
@@ -187,7 +171,7 @@ class StoryGenerationControllerTest {
             result.andExpect(jsonPath("$.data.storyId").isEmpty());
         }
         verify(jobs).findById(7L);
-        verifyNoInteractions(acceptance, publication);
+        verifyNoInteractions(acceptance);
     }
 
     @ParameterizedTest
@@ -204,13 +188,13 @@ class StoryGenerationControllerTest {
         mvc.perform(statusRequest().cookie(new Cookie("accessToken", issuer.issue(42L, "session"))))
                 .andExpect(status().isNotFound())
                 .andExpect(content().json("{\"message\":\"STORY_GENERATION_NOT_FOUND\",\"data\":null}"));
-        verifyNoInteractions(acceptance, publication);
+        verifyNoInteractions(acceptance);
     }
 
     @Test
     void unauthenticatedStatusReadStopsBeforeRepositoryLookup() throws Exception {
         mvc.perform(statusRequest()).andExpect(status().isUnauthorized());
-        verifyNoInteractions(jobs, acceptance, publication);
+        verifyNoInteractions(jobs, acceptance);
     }
 
     private MockHttpServletRequestBuilder statusRequest() {
@@ -229,7 +213,7 @@ class StoryGenerationControllerTest {
 
         assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
         verify(ai).cancel(100L);
-        verifyNoInteractions(acceptance, publication);
+        verifyNoInteractions(acceptance);
     }
 
     @ParameterizedTest

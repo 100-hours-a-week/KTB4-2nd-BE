@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -15,6 +16,7 @@ import java.time.LocalDateTime;
 public class StoryGenerationTimeoutService {
     private final StoryGenerationJobRepository jobRepository;
     private final StoryGenerationOutboxRepository outboxRepository;
+    private final JdbcTemplate jdbc;
 
     @Transactional
     public boolean expire(Long generationId) {
@@ -28,7 +30,10 @@ public class StoryGenerationTimeoutService {
             return true;
         }
         var outbox = outboxRepository.findByGenerationId(generationId).orElseThrow();
-        if (!job.failIfTimedOut(outbox.getPublishedAt(), now)) {
+        var comparisonTime = outbox.isCdcManaged()
+                ? jdbc.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class)
+                : now;
+        if (!job.failIfTimedOut(outbox.getPublishedAt(), comparisonTime)) {
             return false;
         }
         log.atWarn()

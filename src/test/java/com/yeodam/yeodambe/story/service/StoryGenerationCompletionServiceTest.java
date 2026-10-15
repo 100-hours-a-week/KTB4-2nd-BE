@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.story.service;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
@@ -30,6 +31,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -182,12 +184,15 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void latePublicationFailureDoesNotOverwriteCompletedJob() {
+    void latePublicationReceiptDoesNotOverwriteCompletedJob() {
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
         Long outboxId = jdbc.queryForObject("SELECT outbox_id FROM story_generation_outbox WHERE generation_id = ?",
                 Long.class, job.getId());
 
-        publicationState.failed(outboxId, "late broker failure");
+        var outbox = jdbc.queryForMap("SELECT topic, trip_id, payload FROM story_generation_outbox WHERE outbox_id = ?", outboxId);
+        publicationState.recordPublished(outboxId, new OutboxReceipt(
+                outbox.get("topic").toString(), outbox.get("trip_id").toString(),
+                outbox.get("payload").toString(), Instant.now()));
 
         assertCompletedOnce();
         assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode()).isNull();
@@ -229,9 +234,9 @@ class StoryGenerationCompletionServiceTest {
     void expiredJobIsPersistedAsFailedAndLateResultAndProgressAreIgnored() {
         jdbc.update("""
                 UPDATE story_generation_outbox
-                SET published_at = ?
+                SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
                 WHERE generation_id = ?
-                """, LocalDateTime.now().minusHours(2), job.getId());
+                """, job.getId());
         assertThat(timeout.expire(job.getId(), LocalDateTime.now())).isTrue();
 
         progress.updateProcessing(job.getId(), new StoryGenerationAiResponse(trip.getId(), job.getExecutionId(),
@@ -253,9 +258,9 @@ class StoryGenerationCompletionServiceTest {
     void lateCompletionExpiresJobEvenBeforeNextSchedulerCycle() {
         jdbc.update("""
                 UPDATE story_generation_outbox
-                SET published_at = ?
+                SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
                 WHERE generation_id = ?
-                """, LocalDateTime.now().minusHours(2), job.getId());
+                """, job.getId());
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
         assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
         assertThat(count("stories")).isZero();

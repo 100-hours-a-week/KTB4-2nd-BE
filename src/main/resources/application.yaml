@@ -84,6 +84,8 @@ auth:
     access-token-ttl: 30m
 
 app:
+  outbox:
+    receipt-consumer-group: ${KAFKA_OUTBOX_RECEIPT_CONSUMER_GROUP:yeodam-outbox-receipts}
   public-api-prefix: /api
   story:
     status-polling-enabled: ${STORY_STATUS_POLLING_ENABLED:true}
@@ -271,6 +273,8 @@ auth:
     secret: ${JWT_SECRET}
     issuer: ${JWT_ISSUER}
 app:
+  outbox:
+    receipt-consumer-group: ${KAFKA_OUTBOX_RECEIPT_CONSUMER_GROUP:yeodam-outbox-receipts}
   public-api-prefix: /api
   cors:
     allowed-origin: ${FRONTEND_ORIGIN}
@@ -310,6 +314,8 @@ auth:
     secret: test-jwt-secret-key-must-be-at-least-32-bytes
     issuer: https://api.yeodam.test
 app:
+  outbox:
+    receipt-listener-enabled: false
   cors:
     allowed-origin: https://app.yeodam.test
   trip:

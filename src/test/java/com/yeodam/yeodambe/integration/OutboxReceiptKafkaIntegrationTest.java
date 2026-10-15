@@ -2,7 +2,7 @@ package com.yeodam.yeodambe.integration;
 
 import com.yeodam.yeodambe.SharedTestKafka;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
-import com.yeodam.yeodambe.story.service.StoryGenerationPublicationStateService;
+import com.yeodam.yeodambe.integration.service.OutboxReceiptService;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -38,7 +38,7 @@ class OutboxReceiptKafkaIntegrationTest {
     private static final String PREFIX = "receipt-" + UUID.randomUUID();
     private static final String TOPIC = PREFIX + ".requests";
     @Autowired private KafkaTemplate<String, String> kafka;
-    @MockitoBean private StoryGenerationPublicationStateService receipts;
+    @MockitoBean private OutboxReceiptService receipts;
     @Autowired private KafkaListenerEndpointRegistry listeners;
 
     @DynamicPropertySource
@@ -62,7 +62,7 @@ class OutboxReceiptKafkaIntegrationTest {
             }
             confirmed.countDown();
             return null;
-        }).when(receipts).recordPublished(eq(7L), any());
+        }).when(receipts).observe(eq("story_generation_outbox"), eq("7"), any());
         var preceding = new ProducerRecord<String, String>(TOPIC, "77", "{}");
         preceding.headers().add("outbox-source", "story_generation_outbox".getBytes(StandardCharsets.UTF_8));
         preceding.headers().add("id", "6".getBytes(StandardCharsets.UTF_8));

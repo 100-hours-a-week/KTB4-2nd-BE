@@ -179,28 +179,11 @@ public class TripCreationExecution {
         }
     }
 
-    public void claimProcess(
-            String token,
-            LocalDateTime until
-    ) {
-        processClaimToken = token;
-        processLeaseUntil = until;
-        processDeliveryStatus = InitialAttachmentDeliveryStatus.PUBLISHING;
-        processAttempts++;
-    }
-
     public void processSent(LocalDateTime now) {
         processDeliveryStatus = InitialAttachmentDeliveryStatus.SENT;
         processClaimToken = null;
         processLeaseUntil = null;
         recordProcessPublished(now);
-    }
-
-    public void retryProcess(LocalDateTime next) {
-        processDeliveryStatus = InitialAttachmentDeliveryStatus.PENDING;
-        processClaimToken = null;
-        processLeaseUntil = null;
-        processNextAttemptAt = next;
     }
 
     public void claimResult(

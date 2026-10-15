@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
+import java.time.Instant;
+
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
@@ -68,6 +71,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     private TripPlaceNameService names;
     @Autowired
     private TripWithdrawalService withdrawal;
+    @Autowired private TripCreationOutboxRepository outboxes;
     private User owner;
     private Trip trip;
 
@@ -92,20 +96,19 @@ class InitialAttachmentUploadFlowIntegrationTest {
         assertThat(accept(first).status()).isEqualTo(TripProcessingStatusResponse.Status.PROCESSING);
         convert();
         assertThat(execution().getProcessPayload()).isNull();
-        var firstSend = transactions.claimDelivery(first.batchId()).orElseThrow();
-        transactions.finishDelivery(firstSend, true);
+        confirmBatch(first.batchId());
         assertThat(execution().getProcessPayload()).isNull();
         var last = prepare(2, 2, true);
         accept(last);
         convert();
         assertThat(execution().getProcessPayload()).isNull();
-        transactions.finishDelivery(transactions.claimDelivery(last.batchId()).orElseThrow(), true);
-        var process = transactions.claimProcess(first.executionId()).orElseThrow();
-        var wire = json.readTree(process.payload());
+        confirmBatch(last.batchId());
+        var process = processOutbox(first.executionId());
+        var wire = json.readTree(process.getPayload());
         assertThat(wire.path("type").asString()).isEqualTo("process");
         assertThat(wire.path("attachments").size()).isEqualTo(2);
         assertThat(wire.has("eventType")).isFalse();
-        transactions.finishDelivery(process, true);
+        confirm(process);
         String raw = resultPayload(wire, false);
         results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
         assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.RESULT_APPLYING);
@@ -124,10 +127,10 @@ class InitialAttachmentUploadFlowIntegrationTest {
         var batch = prepare(1, 1, true);
         accept(batch);
         convert();
-        transactions.finishDelivery(transactions.claimDelivery(batch.batchId()).orElseThrow(), true);
-        var process = transactions.claimProcess(batch.executionId()).orElseThrow();
-        transactions.finishDelivery(process, true);
-        String raw = resultPayload(json.readTree(process.payload()), true);
+        confirmBatch(batch.batchId());
+        var process = processOutbox(batch.executionId());
+        confirm(process);
+        String raw = resultPayload(json.readTree(process.getPayload()), true);
         results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
         worker.applyPendingResults();
         assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.FAILED);
@@ -144,21 +147,23 @@ class InitialAttachmentUploadFlowIntegrationTest {
         var batch = prepare(1, 1, true);
         accept(batch);
         convert();
-        var claim = transactions.claimDelivery(batch.batchId()).orElseThrow();
-        transactions.finishDelivery(claim, false);
-        jdbc.update("UPDATE initial_attachment_upload_batches SET delivery_next_attempt_at = NULL WHERE upload_batch_id = ?", batch.batchId());
-        var retried = transactions.claimDelivery(batch.batchId()).orElseThrow();
-        assertThat(retried.outboxId()).isEqualTo(claim.outboxId());
-        assertThat(retried.payload()).isEqualTo(claim.payload());
+        var outbox = outboxes.findById(batches.findById(batch.batchId()).orElseThrow().getOutboxId()).orElseThrow();
+        String id = outbox.getId();
+        String payload = outbox.getPayload();
         assertThat(execution().isTerminal()).isFalse();
-        transactions.finishDelivery(claim, true);
-        assertThat(batches.findById(batch.batchId()).orElseThrow().getDeliveryStatus()).isEqualTo(InitialAttachmentDeliveryStatus.PUBLISHING);
+        assertThat(execution().getProcessPublishedAt()).isNull();
+        assertThat(outboxes.findById(id).orElseThrow().getPayload()).isEqualTo(payload);
+        confirm(outbox);
+        confirm(outbox);
+        assertThat(outboxes.findById(id).orElseThrow().getPayload()).isEqualTo(payload);
+        assertThat(batches.findById(batch.batchId()).orElseThrow().getDeliveryStatus())
+                .isEqualTo(InitialAttachmentDeliveryStatus.SENT);
     }
 
     @Test
     void 결과_반영_일시_실패는_원문을_보존하고_세번_후_종료한다() {
         var process = publishSingleBatch();
-        String raw = resultPayload(json.readTree(process.payload()), false);
+        String raw = resultPayload(json.readTree(process.getPayload()), false);
         results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
         when(names.resolve(any(), any(), any(), any()))
                 .thenThrow(new TransientDataAccessResourceException("테스트 DB 일시 장애"));
@@ -166,7 +171,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
             worker.applyPendingResults();
             assertThat(execution().getResultAttempts()).isEqualTo(attempt);
             assertThat(execution().getResultRawPayload()).isEqualTo(raw);
-            jdbc.update("UPDATE trip_creation_executions SET result_next_attempt_at = NULL WHERE execution_id = ?", process.executionId());
+            jdbc.update("UPDATE trip_creation_executions SET result_next_attempt_at = NULL WHERE execution_id = ?", process.getExecutionId());
         }
         assertThat(execution().getErrorCode()).isEqualTo("RESULT_APPLY_RETRY_EXHAUSTED");
         assertThat(execution().isReservationReleased()).isTrue();
@@ -175,7 +180,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     @Test
     void 취소_후_늦은_결과와_이전_선점은_최종_저장을_하지_못한다() {
         var process = publishSingleBatch();
-        String raw = resultPayload(json.readTree(process.payload()), false);
+        String raw = resultPayload(json.readTree(process.getPayload()), false);
         var event = json.readValue(raw, TripCreateResultEvent.class);
         results.receiveKafkaResult(event, raw);
         var claim = results.claimResult().orElseThrow();
@@ -192,13 +197,13 @@ class InitialAttachmentUploadFlowIntegrationTest {
     @Test
     void 결과_수신_상한은_첫_발행부터_한시간이고_원문_인계_후는_제외한다() {
         var process = publishSingleBatch();
-        jdbc.update("UPDATE trip_creation_executions SET process_published_at = CURRENT_TIMESTAMP(6) - INTERVAL 3599 SECOND WHERE execution_id = ?", process.executionId());
-        transactions.failExpiredExecution(process.executionId(), true);
+        jdbc.update("UPDATE trip_creation_executions SET process_published_at = CURRENT_TIMESTAMP(6) - INTERVAL 3599 SECOND WHERE execution_id = ?", process.getExecutionId());
+        transactions.failExpiredExecution(process.getExecutionId(), true);
         assertThat(execution().isTerminal()).isFalse();
-        jdbc.update("UPDATE trip_creation_executions SET process_published_at = CURRENT_TIMESTAMP(6) - INTERVAL 1 HOUR WHERE execution_id = ?", process.executionId());
-        String raw = resultPayload(json.readTree(process.payload()), false);
+        jdbc.update("UPDATE trip_creation_executions SET process_published_at = CURRENT_TIMESTAMP(6) - INTERVAL 1 HOUR WHERE execution_id = ?", process.getExecutionId());
+        String raw = resultPayload(json.readTree(process.getPayload()), false);
         results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
-        transactions.failExpiredExecution(process.executionId(), true);
+        transactions.failExpiredExecution(process.getExecutionId(), true);
         assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.RESULT_APPLYING);
         worker.applyPendingResults();
         assertThat(execution().getAccountedBytes()).isEqualTo(12L);
@@ -207,9 +212,9 @@ class InitialAttachmentUploadFlowIntegrationTest {
     @Test
     void 한시간_미수신_후_늦은_완료는_실패를_되돌리지_않는다() {
         var process = publishSingleBatch();
-        jdbc.update("UPDATE trip_creation_executions SET process_published_at = CURRENT_TIMESTAMP(6) - INTERVAL 1 HOUR WHERE execution_id = ?", process.executionId());
-        transactions.failExpiredExecution(process.executionId(), true);
-        String raw = resultPayload(json.readTree(process.payload()), false);
+        jdbc.update("UPDATE trip_creation_executions SET process_published_at = CURRENT_TIMESTAMP(6) - INTERVAL 1 HOUR WHERE execution_id = ?", process.getExecutionId());
+        transactions.failExpiredExecution(process.getExecutionId(), true);
+        String raw = resultPayload(json.readTree(process.getPayload()), false);
         results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
         assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.FAILED);
         assertThat(execution().getErrorCode()).isEqualTo("AI_RESULT_TIMEOUT");
@@ -227,22 +232,22 @@ class InitialAttachmentUploadFlowIntegrationTest {
                     new InitialAttachmentUploadUrlRequest(number, 200, number == 20, declarations));
             accept(batch);
             convert();
-            transactions.finishDelivery(transactions.claimDelivery(batch.batchId()).orElseThrow(), true);
+            confirmBatch(batch.batchId());
             executionId = batch.executionId();
         }
-        var process = transactions.claimProcess(executionId).orElseThrow();
-        assertThat(json.readTree(process.payload()).path("attachments").size()).isEqualTo(200);
-        assertThat(process.payload().getBytes(StandardCharsets.UTF_8).length).isLessThan(1024 * 1024);
+        var process = processOutbox(executionId);
+        assertThat(json.readTree(process.getPayload()).path("attachments").size()).isEqualTo(200);
+        assertThat(process.getPayload().getBytes(StandardCharsets.UTF_8).length).isLessThan(1024 * 1024);
     }
 
     @Test
     void 결과_선점은_시도를_늘리지_않고_만료된_token은_시작할_수_없다() {
         var process = publishSingleBatch();
-        String raw = resultPayload(json.readTree(process.payload()), false);
+        String raw = resultPayload(json.readTree(process.getPayload()), false);
         results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
         var old = results.claimResult().orElseThrow();
         assertThat(execution().getResultAttempts()).isZero();
-        jdbc.update("UPDATE trip_creation_executions SET result_lease_until = CURRENT_TIMESTAMP(6) - INTERVAL 1 SECOND WHERE execution_id = ?", process.executionId());
+        jdbc.update("UPDATE trip_creation_executions SET result_lease_until = CURRENT_TIMESTAMP(6) - INTERVAL 1 SECOND WHERE execution_id = ?", process.getExecutionId());
         var current = results.claimResult().orElseThrow();
         assertThat(results.startResultAttempt(old)).isFalse();
         assertThat(results.startResultAttempt(current)).isTrue();
@@ -264,13 +269,26 @@ class InitialAttachmentUploadFlowIntegrationTest {
                 Boolean.class, batch.photos().getFirst().itemId())).isTrue();
     }
 
-    private TripKafkaDeliveryClaim publishSingleBatch() {
+    private void confirmBatch(Long id) {
+        confirm(outboxes.findById(batches.findById(id).orElseThrow().getOutboxId()).orElseThrow());
+    }
+
+    private TripCreationOutbox processOutbox(String executionId) {
+        return outboxes.findById(executions.findById(executionId).orElseThrow().getProcessOutboxId()).orElseThrow();
+    }
+
+    private void confirm(TripCreationOutbox outbox) {
+        transactions.recordPublished(outbox.getId(), new OutboxReceipt(
+                outbox.getTopic(), outbox.getTripId().toString(), outbox.getPayload(), Instant.now()));
+    }
+
+    private TripCreationOutbox publishSingleBatch() {
         var batch = prepare(1, 1, true);
         accept(batch);
         convert();
-        transactions.finishDelivery(transactions.claimDelivery(batch.batchId()).orElseThrow(), true);
-        var process = transactions.claimProcess(batch.executionId()).orElseThrow();
-        transactions.finishDelivery(process, true);
+        confirmBatch(batch.batchId());
+        var process = processOutbox(batch.executionId());
+        confirm(process);
         return process;
     }
 

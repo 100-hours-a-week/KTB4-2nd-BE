@@ -195,27 +195,10 @@ public class InitialAttachmentUploadBatch {
         outboxPayload = payload;
     }
 
-    public void claimDelivery(
-            String token,
-            LocalDateTime until
-    ) {
-        deliveryStatus = InitialAttachmentDeliveryStatus.PUBLISHING;
-        deliveryClaimToken = token;
-        deliveryLeaseUntil = until;
-        deliveryAttempts++;
-    }
-
     public void deliverySent(LocalDateTime now) {
         deliveryStatus = InitialAttachmentDeliveryStatus.SENT;
         deliveredAt = now;
         deliveryClaimToken = null;
         deliveryLeaseUntil = null;
-    }
-
-    public void retryDelivery(LocalDateTime next) {
-        deliveryStatus = InitialAttachmentDeliveryStatus.PENDING;
-        deliveryClaimToken = null;
-        deliveryLeaseUntil = null;
-        deliveryNextAttemptAt = next;
     }
 }

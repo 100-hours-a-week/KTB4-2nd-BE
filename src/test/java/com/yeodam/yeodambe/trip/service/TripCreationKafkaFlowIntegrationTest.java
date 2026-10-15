@@ -1,8 +1,11 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
+import java.time.Instant;
+import java.util.Comparator;
+
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.SharedTestKafka;
-import com.yeodam.yeodambe.integration.client.KafkaOutboxPublisher;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.request.*;
@@ -99,11 +102,27 @@ class TripCreationKafkaFlowIntegrationTest {
     @MockitoBean
     private TripPlaceNameService names;
     @Autowired
-    private KafkaOutboxPublisher publisher;
+    private TripCreationOutboxRepository outboxes;
     @Autowired
     private KafkaTemplate<String, String> kafka;
     private User owner;
     private Trip trip;
+
+    // BE does not publish requests in production; this fixture simulates the CDC boundary.
+    private void publishOutboxFixture() throws Exception {
+        for (int pass = 0; pass < 2; pass++) {
+            var pending = outboxes.findAll().stream()
+                    .filter(value -> value.getTripId().equals(trip.getId()) && value.getPublishedAt() == null)
+                    .sorted(Comparator.comparing(TripCreationOutbox::getCreatedAt)
+                            .thenComparing(TripCreationOutbox::getBatchNo))
+                    .toList();
+            for (var event : pending) {
+                kafka.send(event.getTopic(), event.getTripId().toString(), event.getPayload()).get(10, TimeUnit.SECONDS);
+                transactions.recordPublished(event.getId(), new OutboxReceipt(
+                        event.getTopic(), event.getTripId().toString(), event.getPayload(), Instant.now()));
+            }
+        }
+    }
 
     @BeforeEach
     void prepareUser() {
@@ -127,10 +146,10 @@ class TripCreationKafkaFlowIntegrationTest {
         var lastClaim = transactions.claimBatch().orElseThrow();
         assertThat(lastClaim.batchNo()).isEqualTo(3);
         finishConversion(lastClaim);
-        publisher.publishPending();
+        publishOutboxFixture();
         assertThat(execution().getProcessPayload()).isNull();
         finishConversion(secondClaim);
-        publisher.publishPending();
+        publishOutboxFixture();
         assertThat(execution().getProcessDeliveryStatus()).isEqualTo(InitialAttachmentDeliveryStatus.SENT);
         var process = json.readTree(execution().getProcessPayload());
         assertThat(process.path("attachments").size()).isEqualTo(23);

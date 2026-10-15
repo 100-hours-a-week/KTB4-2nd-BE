@@ -227,8 +227,11 @@ class StoryGenerationCompletionServiceTest {
 
     @Test
     void expiredJobIsPersistedAsFailedAndLateResultAndProgressAreIgnored() {
-        jdbc.update("UPDATE story_generation_jobs SET created_at = ? WHERE generation_id = ?",
-                LocalDateTime.now().minusHours(2), job.getId());
+        jdbc.update("""
+                UPDATE story_generation_outbox
+                SET published_at = ?
+                WHERE generation_id = ?
+                """, LocalDateTime.now().minusHours(2), job.getId());
         assertThat(timeout.expire(job.getId(), LocalDateTime.now())).isTrue();
 
         progress.updateProcessing(job.getId(), new StoryGenerationAiResponse(trip.getId(), job.getExecutionId(),
@@ -248,11 +251,30 @@ class StoryGenerationCompletionServiceTest {
 
     @Test
     void lateCompletionExpiresJobEvenBeforeNextSchedulerCycle() {
-        jdbc.update("UPDATE story_generation_jobs SET created_at = ? WHERE generation_id = ?",
-                LocalDateTime.now().minusHours(2), job.getId());
+        jdbc.update("""
+                UPDATE story_generation_outbox
+                SET published_at = ?
+                WHERE generation_id = ?
+                """, LocalDateTime.now().minusHours(2), job.getId());
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
         assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
         assertThat(count("stories")).isZero();
+    }
+
+    @Test
+    void completionBeforePublicationConfirmationIgnoresOldCreationDeadline() {
+        jdbc.update("""
+                UPDATE story_generation_jobs
+                SET created_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
+                WHERE generation_id = ?
+                """, job.getId());
+        assertThat(jdbc.queryForObject(
+                "SELECT published_at FROM story_generation_outbox WHERE generation_id = ?",
+                LocalDateTime.class, job.getId())).isNull();
+
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+
+        assertCompletedOnce();
     }
 
     @Test

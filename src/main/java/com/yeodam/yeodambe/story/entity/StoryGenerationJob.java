@@ -73,8 +73,8 @@ public class StoryGenerationJob {
                 || status == Status.CANCELED;
     }
 
-    public boolean failIfTimedOut(LocalDateTime now) {
-        if (isFinished() || createdAt.plusHours(1).isAfter(now)) {
+    public boolean failIfTimedOut(LocalDateTime publishedAt, LocalDateTime now) {
+        if (isFinished() || publishedAt == null || publishedAt.plusHours(1).isAfter(now)) {
             return false;
         }
         fail("STORY_GENERATION_TIMEOUT");

@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.story.service;
 
-import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 import com.yeodam.yeodambe.story.entity.StoryGenerationOutbox;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
@@ -15,6 +15,7 @@ import org.springframework.core.env.MapPropertySource;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,7 +36,8 @@ class StoryGenerationStatusSchedulerTest {
     private final StoryGenerationJobRepository jobs = mock(StoryGenerationJobRepository.class);
     private final StoryGenerationOutboxRepository outboxes = mock(StoryGenerationOutboxRepository.class);
     private final StoryGenerationStatusSyncService sync = mock(StoryGenerationStatusSyncService.class);
-    private final StoryGenerationStatusScheduler scheduler = new StoryGenerationStatusScheduler(jobs, outboxes, sync, new StoryGenerationTimeoutService(jobs));
+    private final StoryGenerationStatusScheduler scheduler = new StoryGenerationStatusScheduler(
+            jobs, outboxes, sync, new StoryGenerationTimeoutService(jobs, outboxes));
 
     @AfterEach
     void clearMdc() {
@@ -132,10 +134,12 @@ class StoryGenerationStatusSchedulerTest {
     @Test
     void overdueJobIsFailedWithoutAnotherAiStatusRequest() {
         var overdue = job(10L);
-        ReflectionTestUtils.setField(overdue, "createdAt", java.time.LocalDateTime.now().minusHours(2));
+        ReflectionTestUtils.setField(overdue, "createdAt", LocalDateTime.now().minusHours(2));
         when(jobs.findAllByStatusIn(anyList())).thenReturn(List.of(overdue));
         when(jobs.findByIdForUpdate(10L)).thenReturn(Optional.of(overdue));
-        prepareOutbox(10L, "request-10");
+        var outbox = new StoryGenerationOutbox(10L, "{}", "request-10");
+        outbox.publicationSucceeded(LocalDateTime.now().minusHours(2));
+        when(outboxes.findByGenerationId(10L)).thenReturn(Optional.of(outbox));
 
         scheduler.synchronizePendingJobs();
 
@@ -151,7 +155,8 @@ class StoryGenerationStatusSchedulerTest {
         context.registerBean(StoryGenerationJobRepository.class, () -> jobs);
         context.registerBean(StoryGenerationOutboxRepository.class, () -> outboxes);
         context.registerBean(StoryGenerationStatusSyncService.class, () -> sync);
-        context.registerBean(StoryGenerationTimeoutService.class, () -> new StoryGenerationTimeoutService(jobs));
+        context.registerBean(StoryGenerationTimeoutService.class,
+                () -> new StoryGenerationTimeoutService(jobs, outboxes));
         context.register(SchedulingConfiguration.class);
         return context;
     }
@@ -169,7 +174,7 @@ class StoryGenerationStatusSchedulerTest {
     private StoryGenerationJob job(Long id) {
         var job = new StoryGenerationJob("execution-" + id, 241L, 2L, Story.Mood.PLAIN);
         ReflectionTestUtils.setField(job, "id", id);
-        ReflectionTestUtils.setField(job, "createdAt", java.time.LocalDateTime.now());
+        ReflectionTestUtils.setField(job, "createdAt", LocalDateTime.now());
         when(jobs.findByIdForUpdate(id)).thenReturn(Optional.of(job));
         return job;
     }

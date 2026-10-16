@@ -3,12 +3,10 @@ package com.yeodam.yeodambe.trip.client;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -22,7 +20,6 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -91,31 +88,6 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         this.presigner = presigner;
         this.readUrlTtl = readUrlTtl;
         this.meterRegistry = meterRegistry;
-    }
-
-    @Override
-    public String store(
-            String executionId,
-            MultipartFile file
-    ) {
-        String key = "trip-uploads/" + executionId + "/original/" + UUID.randomUUID();
-        Timer.Sample sample = Timer.start(meterRegistry);
-        String outcome = "success";
-
-        try (InputStream input = file.getInputStream()) {
-            s3.putObject(
-                    request -> request.bucket(bucket).key(key).tagging("status=temporary"),
-                    RequestBody.fromInputStream(input, file.getSize())
-            );
-            return key;
-        } catch (IOException | RuntimeException failure) {
-            outcome = "failure";
-            throw new AttachmentStorageException(key, failure);
-        } finally {
-            sample.stop(Timer.builder("yeodam.trip.stage")
-                    .tags("stage", "original_s3_upload", "outcome", outcome)
-                    .register(meterRegistry));
-        }
     }
 
     @Override

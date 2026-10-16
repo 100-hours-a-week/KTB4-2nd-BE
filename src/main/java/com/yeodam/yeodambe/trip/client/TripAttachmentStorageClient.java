@@ -1,6 +1,5 @@
 package com.yeodam.yeodambe.trip.client;
 
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
 import java.nio.file.Path;
@@ -8,8 +7,6 @@ import java.time.Duration;
 import java.util.List;
 
 public interface TripAttachmentStorageClient {
-    String store(String executionId, MultipartFile file);
-
     void delete(String objectKey);
 
     long size(String objectKey);

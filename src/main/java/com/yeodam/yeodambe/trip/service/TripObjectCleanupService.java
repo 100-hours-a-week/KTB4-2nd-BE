@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemReposit
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
@@ -16,6 +17,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,40 @@ public class TripObjectCleanupService {
     private final InitialAttachmentUploadTransactionService uploadTransactions;
     private final AdditionalAttachmentUploadItemRepository additionalItems;
     private final AdditionalAttachmentUploadTransactionService additionalTransactions;
+    private final AttachmentCleanupScheduleStore cleanupScheduleStore;
+
+    public void processClaim(AttachmentCleanupScheduleStore.Claim claim) {
+        List<TripAttachment> found = attachments.findAllForObjectCleanupByIds(
+                List.of(claim.attachmentId())
+        );
+
+        if (found.isEmpty()) {
+            cleanupScheduleStore.complete(claim);
+            return;
+        }
+
+        TripAttachment attachment = found.getFirst();
+        if (attachment.getDeletedAt() == null
+                || attachment.getClassificationStatus() == ClassificationStatus.DELETED) {
+            cleanupScheduleStore.complete(claim);
+            return;
+        }
+
+        Instant scheduledAt = attachment.getDeletedAt()
+                .plusDays(30)
+                .atZone(ZoneId.systemDefault())
+                .toInstant();
+        if (scheduledAt.isAfter(Instant.now())) {
+            cleanupScheduleStore.schedule(attachment.getId(), scheduledAt);
+            cleanupScheduleStore.complete(claim);
+            return;
+        }
+
+        cleanup(found, uploadTransactions.databaseTime().minusDays(30));
+        if (attachment.getClassificationStatus() == ClassificationStatus.DELETED) {
+            cleanupScheduleStore.complete(claim);
+        }
+    }
 
     public void retryPending() {
         LocalDateTime before = uploadTransactions.databaseTime().minusDays(30);

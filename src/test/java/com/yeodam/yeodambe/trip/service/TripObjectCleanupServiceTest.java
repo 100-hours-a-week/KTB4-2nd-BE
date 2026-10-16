@@ -17,10 +17,12 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class TripObjectCleanupServiceTest {
@@ -32,12 +34,14 @@ class TripObjectCleanupServiceTest {
     private final InitialAttachmentUploadTransactionService uploadTransactions = mock(InitialAttachmentUploadTransactionService.class);
     private final InitialAttachmentUploadItemRepository uploadItems =
             mock(InitialAttachmentUploadItemRepository.class);
+    private final AttachmentCleanupScheduleStore cleanupSchedule = mock(AttachmentCleanupScheduleStore.class);
+    private final AttachmentCleanupScheduleStore.Claim claim = new AttachmentCleanupScheduleStore.Claim(30L, "token");
     private final TripObjectCleanupService service = new TripObjectCleanupService(
             attachments, files, trips, places, storage,
                 uploadItems,
                 uploadTransactions,
                 mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemRepository.class),
-                mock(AdditionalAttachmentUploadTransactionService.class));
+                mock(AdditionalAttachmentUploadTransactionService.class), cleanupSchedule);
     private TripAttachment attachment;
 
     @BeforeEach
@@ -50,6 +54,7 @@ class TripObjectCleanupServiceTest {
         ReflectionTestUtils.setField(attachment, "file", file);
         when(attachments.findExpiredPendingCleanup(any(LocalDateTime.class), any()))
                 .thenReturn(List.of(attachment));
+        when(attachments.findAllForObjectCleanupByIds(List.of(30L))).thenReturn(List.of(attachment));
     }
 
     @Test
@@ -155,6 +160,112 @@ class TripObjectCleanupServiceTest {
 
         verifyNoInteractions(storage);
         assertThat(attachment.getClassificationStatus()).isNotEqualTo(ClassificationStatus.DELETED);
+    }
+
+    @Test
+    void 선점한_첨부가_없으면_S3_호출_없이_선점만_정리한다() {
+        when(attachments.findAllForObjectCleanupByIds(List.of(30L))).thenReturn(List.of());
+
+        service.processClaim(claim);
+
+        verify(cleanupSchedule).complete(claim);
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 미삭제_첨부는_S3_호출_없이_선점만_정리한다() {
+        ReflectionTestUtils.setField(attachment, "deletedAt", null);
+
+        service.processClaim(claim);
+
+        verify(cleanupSchedule).complete(claim);
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 이미_정리된_첨부는_S3를_다시_삭제하지_않는다() {
+        attachment.markObjectCleanupCompleted();
+
+        service.processClaim(claim);
+
+        verify(cleanupSchedule).complete(claim);
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 보존기간이_남으면_예약을_먼저_등록한_뒤_선점을_정리한다() {
+        LocalDateTime deletedAt = LocalDateTime.now().minusDays(10);
+        attachment.softDelete(deletedAt);
+
+        service.processClaim(claim);
+
+        var ordered = inOrder(cleanupSchedule);
+        ordered.verify(cleanupSchedule).schedule(30L,
+                deletedAt.plusDays(30).atZone(ZoneId.systemDefault()).toInstant());
+        ordered.verify(cleanupSchedule).complete(claim);
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 미래_예약_등록에_실패하면_선점을_정리하지_않는다() {
+        attachment.softDelete(LocalDateTime.now().minusDays(10));
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("Redis unavailable"))
+                .when(cleanupSchedule).schedule(eq(30L), any());
+
+        assertThatThrownBy(() -> service.processClaim(claim))
+                .isInstanceOf(org.springframework.dao.DataAccessException.class);
+
+        verify(cleanupSchedule, never()).complete(any());
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void S3_삭제와_DB_저장을_끝낸_뒤_선점을_정리한다() {
+        service.processClaim(claim);
+
+        var ordered = inOrder(storage, attachments, cleanupSchedule);
+        ordered.verify(storage).delete("original");
+        ordered.verify(storage).delete("analyze");
+        ordered.verify(storage).delete("preview");
+        ordered.verify(storage).delete("display");
+        ordered.verify(attachments).save(attachment);
+        ordered.verify(cleanupSchedule).complete(claim);
+        assertThat(attachment.getClassificationStatus()).isEqualTo(ClassificationStatus.DELETED);
+    }
+
+    @Test
+    void 선점_작업의_S3_삭제가_실패하면_완료_처리하지_않는다() {
+        doThrow(new IllegalStateException("S3 unavailable")).when(storage).delete("display");
+
+        service.processClaim(claim);
+
+        verify(cleanupSchedule, never()).complete(any());
+        verify(attachments, never()).save(any());
+    }
+
+    @Test
+    void 선점_작업의_DB_저장이_실패하면_완료_처리하지_않는다() {
+        doThrow(new IllegalStateException("DB unavailable")).when(attachments).save(attachment);
+
+        assertThatThrownBy(() -> service.processClaim(claim)).hasMessage("DB unavailable");
+
+        verify(cleanupSchedule, never()).complete(any());
+    }
+
+    @Test
+    void 업로드_객체의_추가_보존기간이_남으면_선점을_완료하지_않는다() {
+        LocalDateTime now = LocalDateTime.now();
+        when(uploadTransactions.databaseTime()).thenReturn(now);
+        var item = mock(InitialAttachmentUploadItem.class);
+        when(uploadItems.findByTripAttachmentId(30L)).thenReturn(Optional.of(item));
+        when(uploadTransactions.cleanupObjects(item)).thenReturn(List.of(
+                new InitialAttachmentUploadTransactionService.CleanupObject(
+                        "original", now.minusDays(30).plusSeconds(1), "FAILED", false)));
+
+        service.processClaim(claim);
+
+        verifyNoInteractions(storage);
+        verify(cleanupSchedule, never()).complete(any());
     }
 
     private enum ActiveReference {

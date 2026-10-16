@@ -71,6 +71,8 @@ class TripDeletionPersistenceTest {
 
     private TripDeletionService service;
     @Autowired
+    private TripObjectCleanupService cleanup;
+    @Autowired
     private UserRepository users;
     @Autowired
     private UserStatsRepository stats;
@@ -299,6 +301,33 @@ class TripDeletionPersistenceTest {
     @Test
     void 예약_ID가_DB에_없으면_빈_목록을_반환한다() {
         assertThat(attachments.findAllForObjectCleanupByIds(List.of(Long.MAX_VALUE))).isEmpty();
+    }
+
+    @Test
+    void 선점_완료_호출_시점에는_DB_정리_기록이_커밋되어_있다() {
+        User owner = owner("cleanup-commit@test.com");
+        Trip trip = completedTrip(owner, "정리커밋");
+        TripAttachment photo = attachment(owner, trip, null, "cleanup-commit");
+        LocalDateTime deletedAt = LocalDateTime.now().minusDays(31);
+        photo.softDelete(deletedAt);
+        attachments.saveAndFlush(photo);
+        StoredFile file = files.findById(photo.getFileId()).orElseThrow();
+        file.softDelete(deletedAt);
+        files.saveAndFlush(file);
+        when(uploadTransactions.databaseTime()).thenReturn(LocalDateTime.now());
+        var claim = new AttachmentCleanupScheduleStore.Claim(photo.getId(), "commit-token");
+        when(cleanupSchedule.complete(claim)).thenAnswer(call -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
+                    .isActualTransactionActive()).isFalse();
+            assertThat(attachments.findById(photo.getId()).orElseThrow().getClassificationStatus())
+                    .isEqualTo(ClassificationStatus.DELETED);
+            return true;
+        });
+
+        cleanup.processClaim(claim);
+
+        verify(cleanupSchedule).complete(claim);
+        verify(storage).delete("original/cleanup-commit");
     }
 
     private User owner(String email) {

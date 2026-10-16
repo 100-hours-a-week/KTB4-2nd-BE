@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -86,6 +87,69 @@ class MixedProfilesMetricsSecurityTest extends MetricsSecuritySupport {
     @Test
     void 운영_프로필이_로컬_프로필보다_우선한다() throws Exception {
         mockMvc.perform(get("/actuator/prometheus").with(jwt()))
+                .andExpect(status().isForbidden());
+    }
+}
+
+@ActiveProfiles({"prod", "test", "internal-metrics"})
+@TestPropertySource(properties = "management.server.port=9091")
+class InternalMetricsSecurityTest extends MetricsSecuritySupport {
+    @Test
+    void 관리_포트의_메트릭은_익명으로_조회한다() throws Exception {
+        mockMvc.perform(get("/actuator/prometheus")
+                        .with(request -> {
+                            request.setLocalPort(9091);
+                            return request;
+                        }))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void 서비스_포트의_메트릭은_회원도_조회할_수_없다() throws Exception {
+        mockMvc.perform(get("/actuator/prometheus").with(jwt())
+                        .with(request -> {
+                            request.setLocalPort(8080);
+                            return request;
+                        }))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void 전달_헤더로_관리_포트를_위조해도_접근할_수_없다() throws Exception {
+        mockMvc.perform(get("/actuator/prometheus")
+                        .header("Forwarded", "host=localhost:9091;proto=http")
+                        .header("X-Forwarded-Port", "9091")
+                        .with(request -> {
+                            request.setLocalPort(8080);
+                            return request;
+                        }))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void 관리_포트에서_일반_API는_접근할_수_없다() throws Exception {
+        mockMvc.perform(get("/auth/csrf")
+                        .with(request -> {
+                            request.setLocalPort(9091);
+                            return request;
+                        }))
+                .andExpect(status().isForbidden());
+    }
+}
+
+@ActiveProfiles({"prod", "test", "internal-metrics"})
+@TestPropertySource(properties = {
+        "server.port=8080",
+        "management.server.port=8080"
+})
+class SamePortMetricsSecurityTest extends MetricsSecuritySupport {
+    @Test
+    void 관리_포트가_서비스_포트와_같으면_메트릭을_허용하지_않는다() throws Exception {
+        mockMvc.perform(get("/actuator/prometheus").with(jwt())
+                        .with(request -> {
+                            request.setLocalPort(8080);
+                            return request;
+                        }))
                 .andExpect(status().isForbidden());
     }
 }

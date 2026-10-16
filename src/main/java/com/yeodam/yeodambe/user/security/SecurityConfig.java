@@ -6,9 +6,13 @@ import com.yeodam.yeodambe.user.security.csrf.CsrfStoreFailureFilter;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.session.NullAuthenticatedSessionStrategy;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.csrf.CsrfFilter;
@@ -26,6 +30,31 @@ import java.util.List;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfig {
+
+    @Bean
+    @Order(0)
+    @Profile("internal-metrics")
+    SecurityFilterChain internalMetricsSecurityFilterChain(
+            HttpSecurity http,
+            @Value("${management.server.port:-1}") int managementPort,
+            @Value("${server.port:8080}") int serverPort
+    ) throws Exception {
+        // 전달 헤더가 아닌 실제 수신 포트로 서비스 요청과 관리 요청을 구분한다.
+        http.securityMatcher(request -> managementPort > 0
+                && managementPort != serverPort
+                && request.getLocalPort() == managementPort);
+        http.authorizeHttpRequests(authorize -> authorize
+                .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/prometheus").permitAll()
+                .anyRequest().denyAll()
+        );
+        http.exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.FORBIDDEN))
+        );
+        http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        http.requestCache(cache -> cache.disable());
+
+        return http.build();
+    }
 
     @Bean
     SecurityFilterChain securityFilterChain(

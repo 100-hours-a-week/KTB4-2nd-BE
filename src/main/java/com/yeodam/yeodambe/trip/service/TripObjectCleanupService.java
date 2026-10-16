@@ -93,6 +93,39 @@ public class TripObjectCleanupService {
         }
     }
 
+    public void recoverSchedules() {
+        long afterId = 0L;
+
+        while (true) {
+            var targets = attachments.findCleanupScheduleTargets(
+                    afterId,
+                    PageRequest.of(0, RETRY_BATCH_SIZE)
+            );
+
+            if (targets.isEmpty()) {
+                return;
+            }
+
+            for (var target : targets) {
+                Instant scheduledAt = target.deletedAt()
+                        .plusDays(30)
+                        .atZone(ZoneId.systemDefault())
+                        .toInstant();
+
+                cleanupScheduleStore.scheduleIfAbsent(
+                        target.attachmentId(),
+                        scheduledAt
+                );
+            }
+
+            afterId = targets.getLast().attachmentId();
+
+            if (targets.size() < RETRY_BATCH_SIZE) {
+                return;
+            }
+        }
+    }
+
     public void retryPending() {
         LocalDateTime before = uploadTransactions.databaseTime().minusDays(30);
         cleanup(attachments.findExpiredPendingCleanup(

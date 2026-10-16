@@ -12,6 +12,7 @@ import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.AttachmentCleanupTarget;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
@@ -328,6 +329,33 @@ class TripDeletionPersistenceTest {
 
         verify(cleanupSchedule).complete(claim);
         verify(storage).delete("original/cleanup-commit");
+    }
+
+    @Test
+    void 예약_복구는_미정리_삭제_첨부의_ID와_삭제시각을_ID순으로_나눠_조회한다() {
+        User owner = owner("cleanup-recovery@test.com");
+        Trip trip = completedTrip(owner, "예약복구");
+        TripAttachment sentinel = attachment(owner, trip, null, "recovery-sentinel");
+        LocalDateTime oldDeletedAt = LocalDateTime.now().minusDays(31).truncatedTo(ChronoUnit.MICROS);
+        LocalDateTime recentDeletedAt = oldDeletedAt.plusDays(30);
+        TripAttachment old = attachment(owner, trip, null, "recovery-old");
+        old.softDelete(oldDeletedAt);
+        attachments.saveAndFlush(old);
+        TripAttachment recent = attachment(owner, trip, null, "recovery-recent");
+        recent.softDelete(recentDeletedAt);
+        attachments.saveAndFlush(recent);
+        TripAttachment completed = attachment(owner, trip, null, "recovery-completed");
+        completed.softDelete(oldDeletedAt);
+        completed.markObjectCleanupCompleted();
+        attachments.saveAndFlush(completed);
+        attachment(owner, trip, null, "recovery-active");
+
+        assertThat(attachments.findCleanupScheduleTargets(sentinel.getId(), PageRequest.of(0, 1)))
+                .containsExactly(new AttachmentCleanupTarget(old.getId(), oldDeletedAt));
+        assertThat(attachments.findCleanupScheduleTargets(old.getId(), PageRequest.of(0, 1)))
+                .containsExactly(new AttachmentCleanupTarget(recent.getId(), recentDeletedAt));
+        assertThat(attachments.findCleanupScheduleTargets(recent.getId(), PageRequest.of(0, 100)))
+                .isEmpty();
     }
 
     private User owner(String email) {

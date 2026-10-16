@@ -285,6 +285,21 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     List<TripAttachment> findAllByTripIdAndDeletedAtIsNull(Long tripId);
 
     @Query("""
+            select new com.yeodam.yeodambe.trip.repository.AttachmentCleanupTarget(
+                    attachment.id, attachment.deletedAt
+            )
+            from TripAttachment attachment
+            where attachment.id > :afterId
+              and attachment.deletedAt is not null
+              and attachment.classificationStatus <> com.yeodam.yeodambe.trip.entity.ClassificationStatus.DELETED
+            order by attachment.id
+            """)
+    List<AttachmentCleanupTarget> findCleanupScheduleTargets(
+            @Param("afterId") Long afterId,
+            Pageable pageable
+    );
+
+    @Query("""
             select attachment
             from TripAttachment attachment
             join fetch attachment.file file

@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadItem;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.AttachmentCleanupTarget;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
 import java.time.Duration;
@@ -56,6 +58,68 @@ class TripObjectCleanupServiceTest {
         when(attachments.findExpiredPendingCleanup(any(LocalDateTime.class), any()))
                 .thenReturn(List.of(attachment));
         when(attachments.findAllForObjectCleanupByIds(List.of(30L))).thenReturn(List.of(attachment));
+    }
+
+    @Test
+    void 복구_대상이_없으면_예약을_등록하거나_객체를_삭제하지_않는다() {
+        when(attachments.findCleanupScheduleTargets(0L, PageRequest.of(0, 100)))
+                .thenReturn(List.of());
+
+        service.recoverSchedules();
+
+        verifyNoInteractions(cleanupSchedule, storage);
+    }
+
+    @Test
+    void 복구는_백개씩_마지막_ID_이후를_읽고_삭제시각에_삼십일을_더해_예약한다() {
+        LocalDateTime deletedAt = LocalDateTime.of(2026, 10, 1, 12, 0);
+        var first = java.util.stream.LongStream.rangeClosed(1, 100)
+                .mapToObj(id -> new AttachmentCleanupTarget(id, deletedAt))
+                .toList();
+        when(attachments.findCleanupScheduleTargets(0L, PageRequest.of(0, 100)))
+                .thenReturn(first);
+        when(attachments.findCleanupScheduleTargets(100L, PageRequest.of(0, 100)))
+                .thenReturn(List.of(new AttachmentCleanupTarget(101L, deletedAt.plusDays(1))));
+
+        service.recoverSchedules();
+
+        for (var target : first) {
+            verify(cleanupSchedule).scheduleIfAbsent(target.attachmentId(),
+                    deletedAt.plusDays(30).atZone(ZoneId.systemDefault()).toInstant());
+        }
+        verify(cleanupSchedule).scheduleIfAbsent(101L,
+                deletedAt.plusDays(31).atZone(ZoneId.systemDefault()).toInstant());
+        verify(attachments, times(2)).findCleanupScheduleTargets(anyLong(), any());
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 복구가_정확히_백개면_다음_조회가_빈_목록인지_확인하고_종료한다() {
+        LocalDateTime deletedAt = LocalDateTime.now();
+        var targets = java.util.stream.LongStream.rangeClosed(1, 100)
+                .mapToObj(id -> new AttachmentCleanupTarget(id, deletedAt)).toList();
+        when(attachments.findCleanupScheduleTargets(0L, PageRequest.of(0, 100)))
+                .thenReturn(targets);
+        when(attachments.findCleanupScheduleTargets(100L, PageRequest.of(0, 100)))
+                .thenReturn(List.of());
+
+        service.recoverSchedules();
+
+        verify(attachments, times(2)).findCleanupScheduleTargets(anyLong(), any());
+        verify(cleanupSchedule, times(100)).scheduleIfAbsent(anyLong(), any());
+    }
+
+    @Test
+    void 복구_중_Redis_장애는_호출자에게_전달하고_삭제를_수행하지_않는다() {
+        LocalDateTime deletedAt = LocalDateTime.now();
+        when(attachments.findCleanupScheduleTargets(0L, PageRequest.of(0, 100)))
+                .thenReturn(List.of(new AttachmentCleanupTarget(1L, deletedAt)));
+        var failure = new org.springframework.data.redis.RedisConnectionFailureException("unavailable");
+        when(cleanupSchedule.scheduleIfAbsent(anyLong(), any())).thenThrow(failure);
+
+        assertThatThrownBy(service::recoverSchedules).isSameAs(failure);
+
+        verifyNoInteractions(storage);
     }
 
     @Test

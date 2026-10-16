@@ -85,6 +85,17 @@ class AttachmentCleanupScheduleStoreTest {
     }
 
     @Test
+    void 복구_등록은_누락된_예약만_추가하고_기존_예약시각은_유지한다() {
+        assertThat(store.scheduleIfAbsent(10L, now.plusSeconds(60))).isTrue();
+        assertThat(store.scheduleIfAbsent(10L, now.minusSeconds(1))).isFalse();
+
+        assertThat(store.findDue(now, 100)).isEmpty();
+        assertThat(redis.opsForZSet().score(KEY, "10"))
+                .isEqualTo((double) now.plusSeconds(60).toEpochMilli());
+        assertThat(redis.opsForZSet().zCard(KEY)).isEqualTo(1L);
+    }
+
+    @Test
     void 예약이_없으면_빈_목록을_반환한다() {
         assertThat(store.findDue(now, 100)).isEmpty();
     }

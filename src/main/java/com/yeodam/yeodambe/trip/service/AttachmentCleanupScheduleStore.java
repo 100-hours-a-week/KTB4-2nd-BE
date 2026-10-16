@@ -102,6 +102,14 @@ public class AttachmentCleanupScheduleStore {
         );
     }
 
+    public boolean scheduleIfAbsent(Long attachmentId, Instant scheduledAt) {
+        return Boolean.TRUE.equals(redisTemplate.opsForZSet().addIfAbsent(
+                KEY,
+                attachmentId.toString(),
+                scheduledAt.toEpochMilli()
+        ));
+    }
+
     public List<Long> findDue(Instant now, int limit) {
         var ids = redisTemplate.opsForZSet().rangeByScore(
                 KEY,

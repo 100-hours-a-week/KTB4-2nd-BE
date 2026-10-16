@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -35,6 +36,7 @@ public class TripAttachmentDeletionService {
     private final TripAttachmentRepository tripAttachmentRepository;
     private final UserStatsService userStats;
     private final TripMapCacheStore tripMapCacheStore;
+    private final AttachmentCleanupScheduleStore cleanupScheduleStore;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void deleteOne(
@@ -117,6 +119,14 @@ public class TripAttachmentDeletionService {
         affectedTrips.forEach(this::refreshThumbnail);
         userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
+        cleanupScheduleStore.scheduleAfterCommit(
+                attachments.stream()
+                        .map(TripAttachment::getId)
+                        .toList(),
+                deletedAt.plusDays(30)
+                        .atZone(ZoneId.systemDefault())
+                        .toInstant()
+        );
     }
 
     private void refreshThumbnail(TripDetailPlace place) {

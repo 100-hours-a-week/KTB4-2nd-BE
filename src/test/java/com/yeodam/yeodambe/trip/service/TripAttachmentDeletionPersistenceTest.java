@@ -29,10 +29,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verify;
 
 @DataJpaTest(properties = {
         "spring.flyway.enabled=false",
@@ -41,6 +43,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 @Import({AdditionalAttachmentModificationGuard.class, TripAttachmentDeletionService.class, TripObjectCleanupService.class, UserStatsService.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripAttachmentDeletionPersistenceTest {
+    @MockitoBean
+    private AttachmentCleanupScheduleStore cleanupSchedule;
     @MockitoBean
     private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     @Autowired
@@ -90,6 +94,9 @@ class TripAttachmentDeletionPersistenceTest {
         assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo(replacement.getPreviewStorageKey());
         assertThat(attachments.findById(old.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        LocalDateTime deletedAt = attachments.findById(old.getId()).orElseThrow().getDeletedAt();
+        verify(cleanupSchedule).scheduleAfterCommit(List.of(old.getId()),
+                deletedAt.plusDays(30).atZone(ZoneId.systemDefault()).toInstant());
         assertThat(files.findById(old.getFileId()).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getStorageUsedBytes())
                 .isEqualTo(20L);
@@ -132,6 +139,9 @@ class TripAttachmentDeletionPersistenceTest {
 
         assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo(replacement.getPreviewStorageKey());
+        LocalDateTime deletedAt = attachments.findById(old.getId()).orElseThrow().getDeletedAt();
+        verify(cleanupSchedule).scheduleAfterCommit(List.of(old.getId(), alsoDeleted.getId()),
+                deletedAt.plusDays(30).atZone(ZoneId.systemDefault()).toInstant());
     }
 
     private TripDetailPlace savePlace(

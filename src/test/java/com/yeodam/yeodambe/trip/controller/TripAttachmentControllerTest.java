@@ -365,8 +365,7 @@ class TripAttachmentControllerTest {
         UserStatsService stats = mock(UserStatsService.class);
         TripAttachmentDeletionService realDeletionService =
                 new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), repository, stats,
-                        mock(com.yeodam.yeodambe.trip.service.TripMapCacheStore.class),
-                        mock(com.yeodam.yeodambe.trip.service.AttachmentCleanupScheduleStore.class));
+                        mock(com.yeodam.yeodambe.trip.service.TripMapCacheStore.class));
         TripAttachmentController realController = new TripAttachmentController(
                     listService,
                 detailService,

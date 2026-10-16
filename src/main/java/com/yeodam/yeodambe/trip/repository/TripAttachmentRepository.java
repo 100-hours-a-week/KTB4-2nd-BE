@@ -285,21 +285,6 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     List<TripAttachment> findAllByTripIdAndDeletedAtIsNull(Long tripId);
 
     @Query("""
-            select new com.yeodam.yeodambe.trip.repository.AttachmentCleanupTarget(
-                    attachment.id, attachment.deletedAt
-            )
-            from TripAttachment attachment
-            where attachment.id > :afterId
-              and attachment.deletedAt is not null
-              and attachment.classificationStatus <> com.yeodam.yeodambe.trip.entity.ClassificationStatus.DELETED
-            order by attachment.id
-            """)
-    List<AttachmentCleanupTarget> findCleanupScheduleTargets(
-            @Param("afterId") Long afterId,
-            Pageable pageable
-    );
-
-    @Query("""
             select attachment
             from TripAttachment attachment
             join fetch attachment.file file
@@ -311,16 +296,6 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     List<TripAttachment> findExpiredPendingCleanup(
             @Param("deletedBefore") LocalDateTime deletedBefore,
             Pageable pageable
-    );
-
-    @Query("""
-            select attachment
-            from TripAttachment attachment
-            join fetch attachment.file
-            where attachment.id in :attachmentIds
-            """)
-    List<TripAttachment> findAllForObjectCleanupByIds(
-            @Param("attachmentIds") Collection<Long> attachmentIds
     );
 
     boolean existsByFileIdAndDeletedAtIsNull(Long fileId);
@@ -411,15 +386,6 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
 
     long countByTripIdAndDeletedAtIsNullAndClassificationStatus(
             Long tripId, ClassificationStatus classificationStatus);
-
-    @Query("""
-            select attachment.id
-            from TripAttachment attachment
-            join attachment.trip trip
-            where trip.userId = :userId
-              and attachment.deletedAt is null
-            """)
-    List<Long> findAllActiveIdsByUserId(@Param("userId") Long userId);
 
     @Modifying
     @Query("""

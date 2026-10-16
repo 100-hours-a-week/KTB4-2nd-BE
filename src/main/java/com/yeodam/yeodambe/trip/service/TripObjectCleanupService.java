@@ -6,7 +6,6 @@ import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemReposit
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
-import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
@@ -17,9 +16,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +27,6 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class TripObjectCleanupService {
     private static final int RETRY_BATCH_SIZE = 100;
-    private static final Duration CLEANUP_LEASE = Duration.ofMinutes(5);
 
     private final TripAttachmentRepository attachments;
     private final StoredFileRepository files;
@@ -42,92 +37,13 @@ public class TripObjectCleanupService {
     private final InitialAttachmentUploadTransactionService uploadTransactions;
     private final AdditionalAttachmentUploadItemRepository additionalItems;
     private final AdditionalAttachmentUploadTransactionService additionalTransactions;
-    private final AttachmentCleanupScheduleStore cleanupScheduleStore;
-
-    public void processClaim(AttachmentCleanupScheduleStore.Claim claim) {
-        List<TripAttachment> found = attachments.findAllForObjectCleanupByIds(
-                List.of(claim.attachmentId())
-        );
-
-        if (found.isEmpty()) {
-            cleanupScheduleStore.complete(claim);
-            return;
-        }
-
-        TripAttachment attachment = found.getFirst();
-        if (attachment.getDeletedAt() == null
-                || attachment.getClassificationStatus() == ClassificationStatus.DELETED) {
-            cleanupScheduleStore.complete(claim);
-            return;
-        }
-
-        Instant scheduledAt = attachment.getDeletedAt()
-                .plusDays(30)
-                .atZone(ZoneId.systemDefault())
-                .toInstant();
-        if (scheduledAt.isAfter(Instant.now())) {
-            cleanupScheduleStore.schedule(attachment.getId(), scheduledAt);
-            cleanupScheduleStore.complete(claim);
-            return;
-        }
-
-        cleanup(found, uploadTransactions.databaseTime().minusDays(30));
-        if (attachment.getClassificationStatus() == ClassificationStatus.DELETED) {
-            cleanupScheduleStore.complete(claim);
-        }
-    }
-
-    public void processScheduled() {
-        for (int processed = 0; processed < RETRY_BATCH_SIZE; processed++) {
-            var claim = cleanupScheduleStore.claim(CLEANUP_LEASE);
-            if (claim.isEmpty()) {
-                return;
-            }
-
-            try {
-                processClaim(claim.get());
-            } catch (RuntimeException failure) {
-                log.warn("예약된 사진 정리에 실패했습니다. attachmentId={}",
-                        claim.get().attachmentId(), failure);
-            }
-        }
-    }
-
-    public void recoverSchedules() {
-        long afterId = 0L;
-
-        while (true) {
-            var targets = attachments.findCleanupScheduleTargets(
-                    afterId,
-                    PageRequest.of(0, RETRY_BATCH_SIZE)
-            );
-
-            if (targets.isEmpty()) {
-                return;
-            }
-
-            for (var target : targets) {
-                Instant scheduledAt = target.deletedAt()
-                        .plusDays(30)
-                        .atZone(ZoneId.systemDefault())
-                        .toInstant();
-
-                cleanupScheduleStore.scheduleIfAbsent(
-                        target.attachmentId(),
-                        scheduledAt
-                );
-            }
-
-            afterId = targets.getLast().attachmentId();
-
-            if (targets.size() < RETRY_BATCH_SIZE) {
-                return;
-            }
-        }
-    }
 
     public void retryPending() {
         LocalDateTime before = uploadTransactions.databaseTime().minusDays(30);
+        cleanup(attachments.findExpiredPendingCleanup(
+                LocalDateTime.now().minusDays(30),
+                PageRequest.of(0, RETRY_BATCH_SIZE)
+        ), before);
         for (var item : additionalItems.findPendingCleanup(before, PageRequest.of(0, RETRY_BATCH_SIZE))) {
             for (var object : additionalTransactions.cleanupObjects(item)) {
                 if (!object.deleted() && object.startedAt() != null && !object.startedAt().isAfter(before)

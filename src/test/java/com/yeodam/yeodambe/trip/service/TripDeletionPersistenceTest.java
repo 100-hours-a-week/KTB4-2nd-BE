@@ -12,7 +12,6 @@ import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.trip.repository.AttachmentCleanupTarget;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
@@ -39,7 +38,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -57,8 +55,6 @@ import static org.mockito.Mockito.*;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripDeletionPersistenceTest {
     @MockitoBean
-    private AttachmentCleanupScheduleStore cleanupSchedule;
-    @MockitoBean
     private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     @TestConfiguration
     static class MeterRegistryTestConfiguration {
@@ -71,8 +67,6 @@ class TripDeletionPersistenceTest {
     @Autowired
 
     private TripDeletionService service;
-    @Autowired
-    private TripObjectCleanupService cleanup;
     @Autowired
     private UserRepository users;
     @Autowired
@@ -110,22 +104,11 @@ class TripDeletionPersistenceTest {
                 LocalDateTime.now(), LocalDateTime.now(), "target-preview"));
         TripAttachment deletedAttachment = attachment(owner, target, place.getId(), "target");
         TripAttachment remainingAttachment = attachment(owner, remaining, null, "remaining");
-        TripAttachment previouslyDeleted = attachment(owner, target, null, "previously-deleted");
-        LocalDateTime previousDeletedAt = LocalDateTime.now().minusDays(10).truncatedTo(ChronoUnit.MICROS);
-        previouslyDeleted.softDelete(previousDeletedAt);
-        attachments.saveAndFlush(previouslyDeleted);
-        StoredFile previousFile = files.findById(previouslyDeleted.getFileId()).orElseThrow();
-        previousFile.softDelete(previousDeletedAt);
-        files.saveAndFlush(previousFile);
 
         service.delete(target.getId(), owner.getUserId());
 
         LocalDateTime deletedAt = trips.findById(target.getId()).orElseThrow().getDeletedAt();
         assertThat(deletedAt).isNotNull();
-        verify(cleanupSchedule).scheduleAfterCommit(List.of(deletedAttachment.getId()),
-                deletedAt.plusDays(30).atZone(ZoneId.systemDefault()).toInstant());
-        assertThat(attachments.findById(previouslyDeleted.getId()).orElseThrow().getDeletedAt())
-                .isEqualTo(previousDeletedAt);
         assertThat(regions.findById(region.getId()).orElseThrow().getDeletedAt()).isEqualTo(deletedAt);
         assertThat(places.findById(place.getId()).orElseThrow().getDeletedAt()).isEqualTo(deletedAt);
         assertThat(attachments.findById(deletedAttachment.getId()).orElseThrow().getDeletedAt())
@@ -160,7 +143,6 @@ class TripDeletionPersistenceTest {
         assertThat(attachments.findById(targetAttachment.getId()).orElseThrow().getDeletedAt()).isNull();
         assertThat(files.findById(targetAttachment.getFileId()).orElseThrow().getDeletedAt()).isNull();
         verify(storage, never()).delete(anyString());
-        verifyNoInteractions(cleanupSchedule);
     }
 
     @Test
@@ -249,113 +231,6 @@ class TripDeletionPersistenceTest {
                         && found.getClassificationStatus() != ClassificationStatus.DELETED);
         assertThat(result).extracting(TripAttachment::getDisplayStorageKey)
                 .containsExactly("display/pending");
-    }
-
-    @Test
-    void 탈퇴_예약용_ID는_해당_회원의_미삭제_첨부만_반환한다() {
-        User owner = owner("schedule-owner@test.com");
-        User other = owner("schedule-other@test.com");
-        Trip first = completedTrip(owner, "첫여행");
-        Trip second = completedTrip(owner, "둘째여행");
-        Trip otherTrip = completedTrip(other, "타인여행");
-        TripAttachment firstPhoto = attachment(owner, first, null, "schedule-first");
-        TripAttachment secondPhoto = attachment(owner, second, null, "schedule-second");
-        TripAttachment deleted = attachment(owner, first, null, "schedule-deleted");
-        deleted.softDelete(LocalDateTime.now().minusDays(10));
-        attachments.saveAndFlush(deleted);
-        attachment(other, otherTrip, null, "schedule-other");
-
-        assertThat(attachments.findAllActiveIdsByUserId(owner.getUserId()))
-                .containsExactlyInAnyOrder(firstPhoto.getId(), secondPhoto.getId());
-        assertThat(attachments.findAllActiveIdsByUserId(-1L)).isEmpty();
-    }
-
-    @Test
-    void 예약_ID_조회는_삭제상태와_무관하게_첨부와_파일을_함께_반환한다() {
-        User owner = owner("scheduled-lookup@test.com");
-        Trip trip = completedTrip(owner, "예약조회");
-        TripAttachment expired = attachment(owner, trip, null, "scheduled-expired");
-        expired.softDelete(LocalDateTime.now().minusDays(31));
-        attachments.saveAndFlush(expired);
-        TripAttachment recent = attachment(owner, trip, null, "scheduled-recent");
-        recent.softDelete(LocalDateTime.now().minusDays(1));
-        attachments.saveAndFlush(recent);
-        TripAttachment completed = attachment(owner, trip, null, "scheduled-completed");
-        completed.softDelete(LocalDateTime.now().minusDays(31));
-        completed.markObjectCleanupCompleted();
-        attachments.saveAndFlush(completed);
-        TripAttachment active = attachment(owner, trip, null, "scheduled-active");
-        TripAttachment unrelated = attachment(owner, trip, null, "scheduled-unrelated");
-
-        var result = attachments.findAllForObjectCleanupByIds(List.of(
-                expired.getId(), recent.getId(), completed.getId(), active.getId(), Long.MAX_VALUE));
-
-        assertThat(result).extracting(TripAttachment::getId)
-                .containsExactlyInAnyOrder(expired.getId(), recent.getId(), completed.getId(), active.getId())
-                .doesNotContain(unrelated.getId());
-        assertThat(result).allSatisfy(found -> {
-            assertThat(org.hibernate.Hibernate.isInitialized(found.getFile())).isTrue();
-            assertThat(found.getFile().getObjectKey()).startsWith("original/scheduled-");
-        });
-    }
-
-    @Test
-    void 예약_ID가_DB에_없으면_빈_목록을_반환한다() {
-        assertThat(attachments.findAllForObjectCleanupByIds(List.of(Long.MAX_VALUE))).isEmpty();
-    }
-
-    @Test
-    void 선점_완료_호출_시점에는_DB_정리_기록이_커밋되어_있다() {
-        User owner = owner("cleanup-commit@test.com");
-        Trip trip = completedTrip(owner, "정리커밋");
-        TripAttachment photo = attachment(owner, trip, null, "cleanup-commit");
-        LocalDateTime deletedAt = LocalDateTime.now().minusDays(31);
-        photo.softDelete(deletedAt);
-        attachments.saveAndFlush(photo);
-        StoredFile file = files.findById(photo.getFileId()).orElseThrow();
-        file.softDelete(deletedAt);
-        files.saveAndFlush(file);
-        when(uploadTransactions.databaseTime()).thenReturn(LocalDateTime.now());
-        var claim = new AttachmentCleanupScheduleStore.Claim(photo.getId(), "commit-token");
-        when(cleanupSchedule.complete(claim)).thenAnswer(call -> {
-            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
-                    .isActualTransactionActive()).isFalse();
-            assertThat(attachments.findById(photo.getId()).orElseThrow().getClassificationStatus())
-                    .isEqualTo(ClassificationStatus.DELETED);
-            return true;
-        });
-
-        cleanup.processClaim(claim);
-
-        verify(cleanupSchedule).complete(claim);
-        verify(storage).delete("original/cleanup-commit");
-    }
-
-    @Test
-    void 예약_복구는_미정리_삭제_첨부의_ID와_삭제시각을_ID순으로_나눠_조회한다() {
-        User owner = owner("cleanup-recovery@test.com");
-        Trip trip = completedTrip(owner, "예약복구");
-        TripAttachment sentinel = attachment(owner, trip, null, "recovery-sentinel");
-        LocalDateTime oldDeletedAt = LocalDateTime.now().minusDays(31).truncatedTo(ChronoUnit.MICROS);
-        LocalDateTime recentDeletedAt = oldDeletedAt.plusDays(30);
-        TripAttachment old = attachment(owner, trip, null, "recovery-old");
-        old.softDelete(oldDeletedAt);
-        attachments.saveAndFlush(old);
-        TripAttachment recent = attachment(owner, trip, null, "recovery-recent");
-        recent.softDelete(recentDeletedAt);
-        attachments.saveAndFlush(recent);
-        TripAttachment completed = attachment(owner, trip, null, "recovery-completed");
-        completed.softDelete(oldDeletedAt);
-        completed.markObjectCleanupCompleted();
-        attachments.saveAndFlush(completed);
-        attachment(owner, trip, null, "recovery-active");
-
-        assertThat(attachments.findCleanupScheduleTargets(sentinel.getId(), PageRequest.of(0, 1)))
-                .containsExactly(new AttachmentCleanupTarget(old.getId(), oldDeletedAt));
-        assertThat(attachments.findCleanupScheduleTargets(old.getId(), PageRequest.of(0, 1)))
-                .containsExactly(new AttachmentCleanupTarget(recent.getId(), recentDeletedAt));
-        assertThat(attachments.findCleanupScheduleTargets(recent.getId(), PageRequest.of(0, 100)))
-                .isEmpty();
     }
 
     private User owner(String email) {

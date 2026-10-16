@@ -10,10 +10,7 @@ import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.LongStream;
@@ -29,9 +26,8 @@ class TripAttachmentDeletionServiceTest {
     private final TripAttachmentRepository tripAttachmentRepository = mock(TripAttachmentRepository.class);
     private final UserStatsService userStats = mock(UserStatsService.class);
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
-    private final AttachmentCleanupScheduleStore cleanupSchedule = mock(AttachmentCleanupScheduleStore.class);
     private final TripAttachmentDeletionService service =
-            new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), tripAttachmentRepository, userStats, mapCache, cleanupSchedule);
+            new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), tripAttachmentRepository, userStats, mapCache);
 
     @Test
     void 첨부_200개는_일괄_삭제할_수_있다() {
@@ -41,7 +37,6 @@ class TripAttachmentDeletionServiceTest {
         List<TripAttachment> attachments = ids.stream().map(id -> {
             TripAttachment attachment = mock(TripAttachment.class);
             StoredFile file = mock(StoredFile.class);
-            when(attachment.getId()).thenReturn(id);
             when(attachment.getTrip()).thenReturn(trip);
             when(attachment.getFile()).thenReturn(file);
             return attachment;
@@ -59,10 +54,6 @@ class TripAttachmentDeletionServiceTest {
         verify(tripAttachmentRepository).flush();
         verify(userStats).refreshFromActiveTrips(1L);
         verify(mapCache).evictAfterCommit(1L);
-        var deletedAt = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(attachments.getFirst()).softDelete(deletedAt.capture());
-        verify(cleanupSchedule).scheduleAfterCommit(ids,
-                deletedAt.getValue().plusDays(30).atZone(ZoneId.systemDefault()).toInstant());
     }
 
     @Test
@@ -74,7 +65,6 @@ class TripAttachmentDeletionServiceTest {
 
         verifyNoInteractions(tripAttachmentRepository, userStats);
         verifyNoInteractions(mapCache);
-        verifyNoInteractions(cleanupSchedule);
     }
 
     @Test
@@ -83,7 +73,6 @@ class TripAttachmentDeletionServiceTest {
                 .isInstanceOf(InvalidAttachmentIdsException.class);
 
         verifyNoInteractions(tripAttachmentRepository);
-        verifyNoInteractions(cleanupSchedule);
     }
 
     @Test
@@ -101,7 +90,6 @@ class TripAttachmentDeletionServiceTest {
         verify(attachment, never()).softDelete(any());
         verify(tripAttachmentRepository, never()).flush();
         verifyNoInteractions(mapCache);
-        verifyNoInteractions(cleanupSchedule);
     }
 
     @Test
@@ -139,10 +127,6 @@ class TripAttachmentDeletionServiceTest {
         verify(deletedFile).softDelete(any());
         verify(userStats).refreshFromActiveTrips(1L);
         verify(mapCache).evictAfterCommit(1L);
-        var deletedAt = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(deletedAttachment).softDelete(deletedAt.capture());
-        verify(cleanupSchedule).scheduleAfterCommit(List.of(11L),
-                deletedAt.getValue().plusDays(30).atZone(ZoneId.systemDefault()).toInstant());
     }
 
     @Test
@@ -150,7 +134,6 @@ class TripAttachmentDeletionServiceTest {
         assertThatThrownBy(() -> service.deleteOne(1L, 11L))
                 .isInstanceOf(com.yeodam.yeodambe.common.exception.AttachmentNotFoundException.class);
         verifyNoInteractions(mapCache);
-        verifyNoInteractions(cleanupSchedule);
     }
 
     @Test
@@ -168,6 +151,5 @@ class TripAttachmentDeletionServiceTest {
         assertThatThrownBy(() -> service.deleteOne(1L, 11L))
                 .isInstanceOf(IllegalStateException.class);
         verifyNoInteractions(mapCache);
-        verifyNoInteractions(cleanupSchedule);
     }
 }

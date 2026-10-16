@@ -14,14 +14,11 @@ import com.yeodam.yeodambe.user.service.UserStatsService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,7 +37,6 @@ class TripDeletionServiceTest {
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
-    private final AttachmentCleanupScheduleStore cleanupSchedule = mock(AttachmentCleanupScheduleStore.class);
     private TripDeletionService service;
 
     @BeforeEach
@@ -48,7 +44,7 @@ class TripDeletionServiceTest {
         when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
         service = new TripDeletionService(
                 mock(AdditionalAttachmentModificationGuard.class),
-                trips, regions, places, attachments, files, userStats, transactionManager, meterRegistry, mapCache, cleanupSchedule);
+                trips, regions, places, attachments, files, userStats, transactionManager, meterRegistry, mapCache);
     }
 
     @Test
@@ -57,7 +53,6 @@ class TripDeletionServiceTest {
         verify(trips).findOwnedActiveForUpdate(7L, 1L);
         verifyNoInteractions(userStats);
         verifyNoInteractions(mapCache);
-        verifyNoInteractions(cleanupSchedule);
         assertEquals(1, meterRegistry.find("yeodam.trip.stage")
                 .tags("stage", "trip_delete", "outcome", "failure")
                 .timer()
@@ -72,7 +67,6 @@ class TripDeletionServiceTest {
         assertThrows(TripDeletionNotAllowedException.class, () -> service.delete(7L, 1L));
         verifyNoInteractions(userStats);
         verifyNoInteractions(mapCache);
-        verifyNoInteractions(cleanupSchedule);
     }
 
     @Test
@@ -89,10 +83,6 @@ class TripDeletionServiceTest {
         verify(userStats).refreshFromActiveTrips(1L);
         verify(mapCache).evictAfterCommit(1L);
         verify(files).softDeleteByIds(eq(List.of(20L)), any());
-        var deletedAt = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(attachments).softDeleteByTripId(eq(7L), deletedAt.capture());
-        verify(cleanupSchedule).scheduleAfterCommit(List.of(30L),
-                deletedAt.getValue().plusDays(30).atZone(ZoneId.systemDefault()).toInstant());
         assertEquals(1, meterRegistry.find("yeodam.trip.stage")
                 .tags("stage", "trip_delete", "outcome", "success")
                 .timer()
@@ -142,7 +132,6 @@ class TripDeletionServiceTest {
         verify(transactionManager).rollback(any());
         verify(transactionManager, never()).commit(any());
         verifyNoInteractions(mapCache);
-        verifyNoInteractions(cleanupSchedule);
     }
 
     private Trip trip(ProcessingStatus status) {

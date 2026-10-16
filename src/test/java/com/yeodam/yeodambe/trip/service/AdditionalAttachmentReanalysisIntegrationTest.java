@@ -43,7 +43,6 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     @Autowired private TripProcessingStatusService processingStatus;
     @Autowired private TripWithdrawalService tripWithdrawal;
     @Autowired private TripObjectCleanupService objectCleanup;
-    @Autowired private AttachmentCleanupScheduleStore cleanupSchedule;
     @Autowired private AdditionalAttachmentUploadItemRepository additionalItems;
     @Autowired private AdditionalAttachmentUploadUrlService urls;
     @Autowired private AdditionalAttachmentUploadCompletionService completion;
@@ -246,15 +245,12 @@ class AdditionalAttachmentReanalysisIntegrationTest {
                 applicationMapper.writeValueAsString(aged), expired, item.getId());
         jdbc.update("UPDATE trip_attachments SET deleted_at = ? WHERE trip_attachment_id = ?", expired, item.getTripAttachmentId());
         objectCleanup.retryPending();
-        cleanupSchedule.schedule(item.getTripAttachmentId(), Instant.EPOCH);
-        objectCleanup.processScheduled();
         for (var object : objects) verify(storage, atLeastOnce()).delete(object.key());
         verify(storage, never()).delete(files.findById(attachments.findById(oldPhotoId).orElseThrow().getFileId()).orElseThrow().getObjectKey());
         assertThat(additionalItems.findById(item.getId()).orElseThrow().getCleanupStartedAt()).isNull();
         assertThat(attachments.findById(item.getTripAttachmentId()).orElseThrow().getClassificationStatus()).isEqualTo(ClassificationStatus.DELETED);
         clearInvocations(storage);
         objectCleanup.retryPending();
-        objectCleanup.processScheduled();
         for (var object : objects) verify(storage, never()).delete(object.key());
     }
 

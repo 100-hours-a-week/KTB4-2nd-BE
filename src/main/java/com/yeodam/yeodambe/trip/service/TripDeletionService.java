@@ -20,7 +20,6 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 
 @Service
@@ -36,7 +35,6 @@ public class TripDeletionService {
     private final PlatformTransactionManager transactionManager;
     private final MeterRegistry meterRegistry;
     private final TripMapCacheStore tripMapCacheStore;
-    private final AttachmentCleanupScheduleStore cleanupScheduleStore;
 
     public void delete(
             Long tripId,
@@ -95,13 +93,5 @@ public class TripDeletionService {
 
         userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
-        cleanupScheduleStore.scheduleAfterCommit(
-                tripAttachments.stream()
-                        .map(TripAttachment::getId)
-                        .toList(),
-                deletedAt.plusDays(30)
-                        .atZone(ZoneId.systemDefault())
-                        .toInstant()
-        );
     }
 }

@@ -10,8 +10,8 @@ import java.util.List;
 public class StoryValidator {
 
     public void validateBlockCount(List<BlockDetail> blocks) {
-        if (blocks.size() > 10) {
-            throw new StoryDataIntegrityException("블록 개수: 최대 10개를 초과했습니다.");
+        if (blocks.size() > 30) {
+            throw new StoryDataIntegrityException("블록 개수: 최대 30개를 초과했습니다.");
         }
     }
 
@@ -42,8 +42,8 @@ public class StoryValidator {
         if (!tripId.equals(block.getPlace().getTripId())) {
             throw new StoryDataIntegrityException("표시 조건: 다른 여행의 장소입니다.");
         }
-        if (block.getPlace().getStartedAt() == null) {
-            throw new StoryDataIntegrityException("표시 조건: 장소 시작일이 없습니다.");
+        if (block.getBlock().getSourceDate() == null) {
+            throw new StoryDataIntegrityException("표시 조건: 스토리 날짜가 없습니다.");
         }
         String key = block.getAttachment().getPreviewStorageKey();
         if (key == null || key.isBlank()) {

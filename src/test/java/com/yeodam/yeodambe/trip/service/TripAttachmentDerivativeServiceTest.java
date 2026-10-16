@@ -2,16 +2,23 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
+import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
+import org.slf4j.MDC;
+import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
-import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -20,35 +27,44 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
-import java.util.List;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Answers.RETURNS_SELF;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
-import static org.mockito.Mockito.withSettings;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 class TripAttachmentDerivativeServiceTest {
     private TripAttachmentStorageClient storage;
     private TripAttachmentDerivativeService service;
+    private InitialAttachmentUploadTransactionService transactions;
     private SimpleMeterRegistry meterRegistry;
     private TripDerivativeScheduler scheduler;
 
@@ -57,12 +73,100 @@ class TripAttachmentDerivativeServiceTest {
         storage = mock(TripAttachmentStorageClient.class);
         meterRegistry = new SimpleMeterRegistry();
         scheduler = new TripDerivativeScheduler(1, 1, 10, 20, meterRegistry);
-        service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler);
+        transactions = mock(InitialAttachmentUploadTransactionService.class);
+        service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler,
+                transactions);
     }
 
     @AfterEach
     void tearDown() {
         scheduler.stop();
+        service.stopLeaseScheduler();
+    }
+
+    @Test
+    void 변환_시작_선점의_DB_일시_실패는_영구_실패로_분류하지_않는다() {
+        var photo = new InitialAttachmentUploadBatchSnapshot.Photo(
+                1L, "photo.jpg", "image/jpeg", 12L, "original", 0, null, null);
+        var claim = new InitialAttachmentUploadBatchSnapshot(
+                1L, "upload", "execution", 7L, 1L, 1, 1, true,
+                InitialAttachmentUploadStatus.CONVERTING, "token", List.of(photo));
+        when(transactions.claimBatch()).thenReturn(Optional.of(claim));
+        when(transactions.renewLease(claim))
+                .thenThrow(new TransientDataAccessResourceException("DB 일시 장애"));
+
+        service.processPendingBatches();
+
+        verify(transactions).retryBatch(claim, photo.itemId(), false);
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 즉시_제출은_워커를_시작하고_이미지_처리_완료를_기다리지_않는다() throws Exception {
+        var photo = new InitialAttachmentUploadBatchSnapshot.Photo(
+                1L, "photo.jpg", "image/jpeg", 12L, "original", 0, null, null);
+        var claim = new InitialAttachmentUploadBatchSnapshot(
+                1L, "upload", "execution", 7L, 1L, 1, 1, true,
+                InitialAttachmentUploadStatus.CONVERTING, "token", List.of(photo));
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
+        when(transactions.renewLease(claim)).thenReturn(true);
+        when(transactions.startPhotoAttempt(claim, photo.itemId())).thenReturn(List.of("analyze", "preview"));
+        when(storage.open("original")).thenAnswer(invocation -> {
+            started.countDown();
+            if (!release.await(10, TimeUnit.SECONDS)) {
+                throw new IOException("원본 읽기 대기 시간 초과");
+            }
+            throw new IOException("일시적인 원본 읽기 실패");
+        });
+
+        try {
+            assertTimeoutPreemptively(Duration.ofSeconds(5),
+                    () -> service.processAcceptedBatch(7L, 1L, "upload"));
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            verify(transactions, never()).savePhotoSuccess(any(), any(), any());
+        } finally {
+            release.countDown();
+        }
+
+        verify(transactions, Mockito.timeout(5000)).retryBatch(claim, photo.itemId(), false);
+    }
+
+    @Test
+    void 즉시_제출한_배치도_포화되면_DB_대기로_돌리고_원본을_읽지_않는다() {
+        var photo = new InitialAttachmentUploadBatchSnapshot.Photo(
+                1L, "photo.jpg", "image/jpeg", 12L, "original", 0, null, null);
+        var claim = new InitialAttachmentUploadBatchSnapshot(
+                1L, "upload", "execution", 7L, 1L, 1, 1, true,
+                InitialAttachmentUploadStatus.CONVERTING, "token", List.of(photo));
+        var saturatedScheduler = mock(TripDerivativeScheduler.class);
+        var immediate = new TripAttachmentDerivativeService(
+                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions);
+        when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
+        when(saturatedScheduler.submit(eq("execution"), any(), any()))
+                .thenThrow(new RejectedExecutionException("queue full"));
+
+        try {
+            immediate.processAcceptedBatch(7L, 1L, "upload");
+
+            verify(transactions).releaseSaturatedBatch(claim);
+            verify(transactions, never()).startPhotoAttempt(any(), any());
+            verifyNoInteractions(storage);
+        } finally {
+            immediate.stopLeaseScheduler();
+        }
+    }
+
+    @Test
+    void 즉시_선점에_실패해도_접수_응답을_실패로_바꾸지_않는다() {
+        when(transactions.claimBatch(7L, 1L, "upload"))
+                .thenThrow(new TransientDataAccessResourceException("DB unavailable"));
+
+        assertDoesNotThrow(
+                () -> service.processAcceptedBatch(7L, 1L, "upload"));
+
+        verifyNoInteractions(storage);
     }
 
     @Test
@@ -184,8 +288,12 @@ class TripAttachmentDerivativeServiceTest {
             ObjectMapper json = new ObjectMapper();
             var sourceMetadata = json.readTree(command("exiftool", "-j", "-n",
                     "-DateTimeOriginal", "-OffsetTimeOriginal", original.toString())).get(0);
-            if (date != null) assertEquals(date, sourceMetadata.path("DateTimeOriginal").asString());
-            if (offset != null) assertEquals(offset, sourceMetadata.path("OffsetTimeOriginal").asString());
+            if (date != null) {
+                assertEquals(date, sourceMetadata.path("DateTimeOriginal").asString());
+            }
+            if (offset != null) {
+                assertEquals(offset, sourceMetadata.path("OffsetTimeOriginal").asString());
+            }
             byte[] source = Files.readAllBytes(original);
             when(storage.open("original/camera")).thenReturn(new ByteArrayInputStream(source));
             when(storage.storeDerived(eq("run-camera"), any(Path.class), any(String.class)))
@@ -219,7 +327,7 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"image/jpeg", "image/heic"})
+    @ValueSource(strings = {"image/jpeg", "image/heic"})
     void Worker에_요청_ID를_전달하고_작업_종료_후_비운다(String mime) {
         AtomicReference<String> firstRequestId = new AtomicReference<>();
         AtomicReference<String> secondRequestId = new AtomicReference<>();
@@ -227,19 +335,19 @@ class TripAttachmentDerivativeServiceTest {
         when(storage.open("original/key"))
                 .thenAnswer(invocation -> {
                     if (firstRequestId.get() == null) {
-                        firstRequestId.set(org.slf4j.MDC.get("request_id"));
+                        firstRequestId.set(MDC.get("request_id"));
                     } else {
-                        secondRequestId.set(org.slf4j.MDC.get("request_id"));
+                        secondRequestId.set(MDC.get("request_id"));
                     }
                     throw new IllegalStateException("테스트에서 작업을 중단합니다.");
                 });
 
-        org.slf4j.MDC.put("request_id", "request-789");
+        MDC.put("request_id", "request-789");
         assertThrows(CompletionException.class,
                 () -> service.createAll(
                         "run-1", List.of("original/key"), List.of(mime)).join());
 
-        org.slf4j.MDC.clear();
+        MDC.clear();
         assertThrows(CompletionException.class,
                 () -> service.createAll(
                         "run-2", List.of("original/key"), List.of(mime)).join());
@@ -319,7 +427,7 @@ class TripAttachmentDerivativeServiceTest {
 
         assertNull(result.displayKey());
         verify(storage, never()).storeDerived(eq("run-jpeg"),
-                org.mockito.ArgumentMatchers.argThat(path -> path.getFileName().toString().equals("display.jpg")),
+                ArgumentMatchers.argThat(path -> path.getFileName().toString().equals("display.jpg")),
                 eq("image/jpeg"));
     }
 
@@ -332,7 +440,7 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @Test
-    void 표시본_저장에_실패하면_앞서_저장한_파생객체도_삭제한다() throws Exception {
+    void 표시본_저장에_실패하면_파생객체의_정리_의도를_기록한다() throws Exception {
         byte[] heic = Files.readAllBytes(Path.of(
                 "src/test/resources/images/heic/oriented-with-exif.heic"));
         when(storage.open("original/heic")).thenReturn(new ByteArrayInputStream(heic));
@@ -347,9 +455,12 @@ class TripAttachmentDerivativeServiceTest {
         assertThrows(RuntimeException.class, () -> service.createAll(
                 "run-fail", List.of("original/heic"), List.of("image/heic")).join());
 
-        verify(storage).delete("derived/analyze.jpg");
-        verify(storage).delete("derived/preview.webp");
-        verify(storage).delete("derived/display-failed.jpg");
+        verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
+                ArgumentMatchers.argThat(keys -> keys.contains("derived/analyze.jpg")), eq("CONVERSION_COMPENSATION"));
+        verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
+                ArgumentMatchers.argThat(keys -> keys.contains("derived/preview.webp")), eq("CONVERSION_COMPENSATION"));
+        verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
+                ArgumentMatchers.argThat(keys -> keys.contains("derived/display-failed.jpg")), eq("CONVERSION_COMPENSATION"));
         assertEquals(1, meterRegistry.find("yeodam.trip.stage")
                 .tags("stage", "image_derivative", "outcome", "failure")
                 .timer()
@@ -465,17 +576,19 @@ class TripAttachmentDerivativeServiceTest {
                 });
         assertThrows(CompletionException.class, () -> service.createAll("run-batch-fail",
                 List.of("original/good", "original/bad"), List.of("image/jpeg", "image/jpeg")).join());
-        verify(storage).delete("derived/analyze.jpg");
-        verify(storage).delete("derived/preview.webp");
+        verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
+                ArgumentMatchers.argThat(keys -> keys.contains("derived/analyze.jpg")), eq("CONVERSION_COMPENSATION"));
+        verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
+                ArgumentMatchers.argThat(keys -> keys.contains("derived/preview.webp")), eq("CONVERSION_COMPENSATION"));
         assertFalse(Files.exists(directory.get()));
-        verify(storage, org.mockito.Mockito.times(2)).storeDerived(eq("run-batch-fail"), any(Path.class), any(String.class));
+        verify(storage, Mockito.times(2)).storeDerived(eq("run-batch-fail"), any(Path.class), any(String.class));
     }
 
     @Test
     void 다른_워커_실패_뒤_늦은_PUT과_실패키까지_정리한_후_실패한다() throws Exception {
-        var putStarted = new java.util.concurrent.CountDownLatch(1);
-        var heavyFailed = new java.util.concurrent.CountDownLatch(1);
-        var release = new java.util.concurrent.CountDownLatch(1);
+        var putStarted = new CountDownLatch(1);
+        var heavyFailed = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
         when(storage.open("light")).thenReturn(new ByteArrayInputStream(jpeg()));
         when(storage.open("heavy")).thenAnswer(invocation -> {
             assertTrue(putStarted.await(5, TimeUnit.SECONDS));
@@ -495,25 +608,33 @@ class TripAttachmentDerivativeServiceTest {
             assertFalse(future.isDone());
             verify(storage, never()).delete(any());
             release.countDown();
-            assertThrows(java.util.concurrent.ExecutionException.class, () -> future.get(5, TimeUnit.SECONDS));
-            verify(storage).delete("late/analyze");
-            verify(storage).delete("late/failed-preview");
+            assertThrows(ExecutionException.class, () -> future.get(5, TimeUnit.SECONDS));
+            verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
+                ArgumentMatchers.argThat(keys -> keys.contains("late/analyze")), eq("CONVERSION_COMPENSATION"));
+            verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
+                ArgumentMatchers.argThat(keys -> keys.contains("late/failed-preview")), eq("CONVERSION_COMPENSATION"));
             verify(storage, never()).delete("other-batch/key");
-        } finally { release.countDown(); }
+        } finally {
+            release.countDown();
+        }
     }
 
     @Test
     void 외부_Future가_취소돼도_실행중_PUT_정착_후_파일을_보상한다() throws Exception {
-        var entered = new java.util.concurrent.CountDownLatch(1);
-        var release = new java.util.concurrent.CountDownLatch(1);
-        var cleaned = new java.util.concurrent.CountDownLatch(2);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var cleaned = new CountDownLatch(1);
         when(storage.open("cancel-original")).thenReturn(new ByteArrayInputStream(jpeg()));
         when(storage.storeDerived(eq("cancel-run"), any(Path.class), any(String.class))).thenAnswer(invocation -> {
             entered.countDown();
             assertTrue(release.await(5, TimeUnit.SECONDS));
             return "cancel/" + ((Path) invocation.getArgument(1)).getFileName();
         });
-        org.mockito.Mockito.doAnswer(invocation -> { cleaned.countDown(); return null; }).when(storage).delete(any());
+        Mockito.doAnswer(invocation -> {
+            cleaned.countDown();
+            return null;
+        })
+                .when(transactions).scheduleCleanupKeys(any(), any(), any());
         try {
             var future = service.createAll("cancel-run", List.of("cancel-original"), List.of("image/jpeg"));
             assertTrue(entered.await(5, TimeUnit.SECONDS));
@@ -521,9 +642,13 @@ class TripAttachmentDerivativeServiceTest {
             verify(storage, never()).delete(any());
             release.countDown();
             assertTrue(cleaned.await(5, TimeUnit.SECONDS));
-            verify(storage).delete("cancel/analyze.jpg");
-            verify(storage).delete("cancel/preview.webp");
-        } finally { release.countDown(); }
+            verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
+                ArgumentMatchers.argThat(keys -> keys.contains("cancel/analyze.jpg")), eq("CONVERSION_COMPENSATION"));
+            verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
+                ArgumentMatchers.argThat(keys -> keys.contains("cancel/preview.webp")), eq("CONVERSION_COMPENSATION"));
+        } finally {
+            release.countDown();
+        }
     }
 
     @Test
@@ -538,7 +663,7 @@ class TripAttachmentDerivativeServiceTest {
         });
         var success = service.createAll("same-run", List.of("mix-heavy", "mix-light"), List.of("image/heic", "image/jpeg"));
         var failed = service.createAll("same-run", List.of("other-bad"), List.of("image/png"));
-        assertThrows(java.util.concurrent.ExecutionException.class, () -> failed.get(5, TimeUnit.SECONDS));
+        assertThrows(ExecutionException.class, () -> failed.get(5, TimeUnit.SECONDS));
         var photos = success.get(5, TimeUnit.SECONDS);
         assertEquals(List.of("mix-heavy", "mix-light"), photos.stream().map(DerivedPhotoKeys::originalKey).toList());
         assertTrue(photos.getFirst().displayKey().endsWith("display.jpg"));
@@ -554,20 +679,26 @@ class TripAttachmentDerivativeServiceTest {
     void interrupt된_변환_프로세스가_종료된_후에만_호출이_끝난다() throws Exception {
         Path pidFile = Files.createTempFile("derivative-process", ".pid");
         AtomicReference<Throwable> failure = new AtomicReference<>();
-        java.util.concurrent.atomic.AtomicBoolean interrupted = new java.util.concurrent.atomic.AtomicBoolean();
+        AtomicBoolean interrupted = new AtomicBoolean();
         Thread worker = new Thread(() -> {
             try {
-                org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "run", (Object) new String[]{
+                ReflectionTestUtils.invokeMethod(service, "run", (Object) new String[]{
                         "/bin/sh", "-c", "echo $$ > '" + pidFile + "'; exec sleep 30"});
-            } catch (Throwable cause) { failure.set(cause); }
-            finally { interrupted.set(Thread.currentThread().isInterrupted()); }
+            } catch (Throwable cause) {
+                failure.set(cause);
+            }
+            finally {
+                interrupted.set(Thread.currentThread().isInterrupted());
+            }
         });
         worker.setDaemon(true);
         ProcessHandle process = null;
         try {
             worker.start();
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (Files.size(pidFile) == 0 && System.nanoTime() < deadline) Thread.onSpinWait();
+            while (Files.size(pidFile) == 0 && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
             assertTrue(Files.size(pidFile) > 0);
             process = ProcessHandle.of(Long.parseLong(Files.readString(pidFile).trim())).orElseThrow();
             worker.interrupt();
@@ -577,7 +708,9 @@ class TripAttachmentDerivativeServiceTest {
             assertTrue(interrupted.get());
             assertFalse(process.isAlive(), "Future 정착 이후 자식 프로세스가 남으면 안 됩니다.");
         } finally {
-            if (process != null && process.isAlive()) process.destroyForcibly();
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
             worker.interrupt();
             worker.join(5000);
             Files.deleteIfExists(pidFile);
@@ -591,8 +724,11 @@ class TripAttachmentDerivativeServiceTest {
         assertEquals(0, new ProcessBuilder("mkfifo", source.toString()).start().waitFor());
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Thread worker = new Thread(() -> {
-            try { org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "metadata", source); }
-            catch (Throwable cause) { failure.set(cause); }
+            try {
+                ReflectionTestUtils.invokeMethod(service, "metadata", source);
+            } catch (Throwable cause) {
+                failure.set(cause);
+            }
         });
         worker.setDaemon(true);
         ProcessHandle process = null;
@@ -613,7 +749,9 @@ class TripAttachmentDerivativeServiceTest {
             assertFalse(process.isAlive());
             assertFalse(Files.exists(directory.resolve("metadata.json")));
         } finally {
-            if (process != null && process.isAlive()) process.destroyForcibly();
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
             worker.interrupt();
             worker.join(5000);
             Files.deleteIfExists(directory.resolve("metadata.json"));
@@ -622,7 +760,10 @@ class TripAttachmentDerivativeServiceTest {
         }
     }
 
-    private Map<String, byte[]> deriveOutputs(byte[] original, String mimeType) {
+    private Map<String, byte[]> deriveOutputs(
+            byte[] original,
+            String mimeType
+    ) {
         Map<String, byte[]> outputs = new HashMap<>();
         AtomicReference<Path> directory = new AtomicReference<>();
         // 이 입력은 한 번만 열 수 있다. 같은 테스트에서 여러 입력을 처리할 때도 각각 새 stream을 제공한다.
@@ -636,13 +777,20 @@ class TripAttachmentDerivativeServiceTest {
                 });
         DerivedPhotoKeys result = service.createAll("run-output",
                 List.of("original/test"), List.of(mimeType)).join().getFirst();
-        if (!mimeType.equals("image/heic")) assertNull(result.displayKey());
+        if (!mimeType.equals("image/heic")) {
+            assertNull(result.displayKey());
+        }
         assertFalse(Files.exists(directory.get()));
         return outputs;
     }
 
-    private static BufferedImage decodeOutput(byte[] bytes, String name) throws Exception {
-        if (!name.endsWith(".webp")) return ImageIO.read(new ByteArrayInputStream(bytes));
+    private static BufferedImage decodeOutput(
+            byte[] bytes,
+            String name
+    ) throws Exception {
+        if (!name.endsWith(".webp")) {
+            return ImageIO.read(new ByteArrayInputStream(bytes));
+        }
         Path source = Files.createTempFile("preview-decode", ".webp");
         Path decoded = Files.createTempFile("preview-decode", ".png");
         try {

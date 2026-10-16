@@ -3,8 +3,8 @@ package com.yeodam.yeodambe.trip.client;
 
 import java.io.InputStream;
 import java.nio.file.Path;
-import java.util.List;
 import java.time.Duration;
+import java.util.List;
 
 public interface TripAttachmentStorageClient {
     void delete(String objectKey);
@@ -13,7 +13,11 @@ public interface TripAttachmentStorageClient {
 
     InputStream open(String objectKey);
 
+    InputStream openHeader(String objectKey);
+
     String storeDerived(String executionId, Path file, String mimeType);
+
+    String storeDerivedTo(String objectKey, Path file, String mimeType);
 
     void retain(List<String> objectKeys);
 

@@ -1,6 +1,5 @@
 package com.yeodam.yeodambe.integration;
 
-import com.yeodam.yeodambe.integration.config.MskKafkaConfiguration;
 import com.yeodam.yeodambe.integration.config.KafkaEventConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
@@ -10,6 +9,9 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration;
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties;
@@ -44,11 +46,44 @@ class KafkaEnvironmentTest {
             assertThat(application).hasNotFailed().hasSingleBean(KafkaTemplate.class);
             var properties = application.getBean(KafkaProperties.class);
             var producer = properties.buildProducerProperties();
+            KafkaTemplate<?, ?> template = application.getBean(KafkaTemplate.class);
             assertThat(properties.getBootstrapServers()).containsExactly("localhost:9092");
             assertThat(producer).containsEntry(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "PLAINTEXT");
             assertThat(producer).containsEntry(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+            assertThat(template.getProducerFactory().getConfigurationProperties())
+                    .containsEntry(ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4");
             assertThat(producer).doesNotContainKey(SaslConfigs.SASL_JAAS_CONFIG);
         });
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "trip-create-request, KAFKA_TRIP_CREATE_REQUEST_DLT_TOPIC, test.trip-create.request-dlt",
+            "trip-create-result, KAFKA_TRIP_CREATE_RESULT_DLT_TOPIC, test.trip-create.result-dlt",
+            "trip-update-request, KAFKA_TRIP_UPDATE_REQUEST_DLT_TOPIC, test.trip-update.request-dlt",
+            "trip-update-result, KAFKA_TRIP_UPDATE_RESULT_DLT_TOPIC, test.trip-update.result-dlt",
+            "story-create-request, KAFKA_STORY_CREATE_REQUEST_DLT_TOPIC, test.story-create.request-dlt",
+            "story-create-result, KAFKA_STORY_CREATE_RESULT_DLT_TOPIC, test.story-create.result-dlt"
+    })
+    void 모든_DLT는_업무_토픽에서_도출하고_환경변수로_변경한다(
+            String topicKey,
+            String environmentVariable,
+            String defaultTopic
+    ) {
+        String property = "app.kafka.dead-letter-topics." + topicKey;
+
+        context("local").run(application -> {
+            assertThat(application).hasNotFailed();
+            assertThat(application.getEnvironment().getProperty(property)).isEqualTo(defaultTopic);
+        });
+
+        context("local")
+                .withPropertyValues(environmentVariable + "=staging.custom-topic-dlt")
+                .run(application -> {
+                    assertThat(application).hasNotFailed();
+                    assertThat(application.getEnvironment().getProperty(property))
+                            .isEqualTo("staging.custom-topic-dlt");
+                });
     }
 
     @Test
@@ -66,39 +101,45 @@ class KafkaEnvironmentTest {
         });
     }
 
-    @Test
-    void MSK_프로필은_모든_클라이언트에_IAM과_TLS를_적용한다() {
-        context("test,msk")
-                .withPropertyValues("KAFKA_BOOTSTRAP_SERVERS=broker-a.example:9098,broker-b.example:9098")
-                .run(application -> {
-                    assertThat(application).hasNotFailed();
-                    var properties = application.getBean(KafkaProperties.class);
-                    assertThat(properties.getBootstrapServers())
-                            .containsExactly("broker-a.example:9098", "broker-b.example:9098");
-                    var producer = properties.buildProducerProperties();
-                    var consumer = properties.buildConsumerProperties();
-                    var admin = properties.buildAdminProperties();
-                    List.of(producer, consumer, admin).forEach(client -> {
-                        assertThat(client).containsEntry(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
-                        assertThat(client).containsEntry(SaslConfigs.SASL_MECHANISM, "AWS_MSK_IAM");
-                        assertThat(client).containsEntry(SaslConfigs.SASL_JAAS_CONFIG,
-                                "software.amazon.msk.auth.iam.IAMLoginModule required;");
-                        assertThat(client).containsEntry(SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS,
-                                "software.amazon.msk.auth.iam.IAMClientCallbackHandler");
+    @ParameterizedTest
+    @ValueSource(strings = {"staging", "prod"})
+    void 서버_주소와_업무_토픽만_주입해_PLAINTEXT로_연결한다(String environment) {
+        Map<String, String> topics = Map.of(
+                "trip-create-request", "trip-create.request",
+                "trip-create-result", "trip-create.result",
+                "trip-update-request", "trip-update.request",
+                "trip-update-result", "trip-update.result",
+                "story-create-request", "story-create.request",
+                "story-create-result", "story-create.result"
+        );
+        String[] topicProperties = topics.entrySet().stream()
+                .map(topic -> "KAFKA_" + topic.getKey().replace('-', '_').toUpperCase(java.util.Locale.ROOT)
+                        + "_TOPIC=" + environment + ".yeodam." + topic.getValue())
+                .toArray(String[]::new);
+        var runner = context("local")
+                .withPropertyValues("KAFKA_BOOTSTRAP_SERVERS=kafka." + environment + ".internal:9092")
+                .withPropertyValues(topicProperties);
+        runner.run(application -> {
+            assertThat(application).hasNotFailed();
+            var properties = application.getBean(KafkaProperties.class);
+            assertThat(properties.getBootstrapServers()).containsExactly("kafka." + environment + ".internal:9092");
+            List.of(properties.buildProducerProperties(), properties.buildConsumerProperties(),
+                    properties.buildAdminProperties()).forEach(client -> {
+                        assertThat(client).containsEntry(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "PLAINTEXT");
+                        assertThat(client).doesNotContainKeys(SaslConfigs.SASL_MECHANISM,
+                                SaslConfigs.SASL_JAAS_CONFIG, SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS);
                     });
-                    assertThat(Class.forName("software.amazon.msk.auth.iam.IAMClientCallbackHandler")).isNotNull();
-                });
-    }
-
-    @Test
-    void MSK_주소가_없으면_로컬_주소로_대체하지_않고_시작을_거부한다() {
-        context("test,msk").run(application -> assertThat(application).hasFailed());
-    }
-
-    @Test
-    void MSK_주소가_공백이면_시작을_거부한다() {
-        context("test,msk").withPropertyValues("KAFKA_BOOTSTRAP_SERVERS= ")
-                .run(application -> assertThat(application).hasFailed());
+            topics.forEach((key, suffix) -> {
+                String topic = environment + ".yeodam." + suffix;
+                assertThat(application.getEnvironment().getProperty("app.kafka.topics." + key)).isEqualTo(topic);
+                assertThat(application.getEnvironment().getProperty("app.kafka.dead-letter-topics." + key))
+                        .isEqualTo(topic + "-dlt");
+            });
+            assertThat(application.getEnvironment().getProperty("app.trip.result-consumer-group"))
+                    .isEqualTo("yeodam-trip-results");
+            assertThat(application.getEnvironment().getProperty("app.story.result-consumer-group"))
+                    .isEqualTo("yeodam-story-results");
+        });
     }
 
     private ApplicationContextRunner context(String profiles) {
@@ -114,7 +155,7 @@ class KafkaEnvironmentTest {
                     new ConfigDataApplicationContextInitializer().initialize(application);
                 })
                 .withConfiguration(AutoConfigurations.of(KafkaAutoConfiguration.class))
-                .withUserConfiguration(MskKafkaConfiguration.class, KafkaEventConfiguration.class)
+                .withUserConfiguration(KafkaEventConfiguration.class)
                 .withPropertyValues(
                         "KAFKA_TRIP_CREATE_REQUEST_TOPIC=test.trip-create.request",
                         "KAFKA_TRIP_CREATE_RESULT_TOPIC=test.trip-create.result",

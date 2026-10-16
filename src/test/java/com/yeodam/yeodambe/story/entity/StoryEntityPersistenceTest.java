@@ -42,7 +42,8 @@ class StoryEntityPersistenceTest {
         em.persist(attachment);
         Story story = new Story(trip.getId(), Story.Mood.PLAIN, "요약");
         em.persist(story);
-        StoryBlock block = new StoryBlock(story.getId(), attachment.getId(), 1, "첫째 날", "장소", null);
+        StoryBlock block = new StoryBlock(story.getId(), attachment.getId(), place.getId(),
+                place.getStartedAt().toLocalDate(), 1, "첫째 날", "장소", null);
         StorySelectedPlace selected = new StorySelectedPlace(story.getId(), place.getId());
         story.addBlock(block);
         story.addSelectedPlace(selected);
@@ -56,6 +57,8 @@ class StoryEntityPersistenceTest {
         StoryBlock foundBlock = found.getBlocks().getFirst();
         assertThat(foundBlock.getStory()).isSameAs(found);
         assertThat(foundBlock.getStoryId()).isEqualTo(found.getId());
+        assertThat(foundBlock.getSourceTripPlaceId()).isEqualTo(place.getId());
+        assertThat(foundBlock.getSourceDate()).isEqualTo(place.getStartedAt().toLocalDate());
         assertThat(Hibernate.isInitialized(foundBlock.getAttachment())).isFalse();
         StorySelectedPlace foundPlace = found.getSelectedPlaces().getFirst();
         assertThat(foundPlace.getStory()).isSameAs(found);

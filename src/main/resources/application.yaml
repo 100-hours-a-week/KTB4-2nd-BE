@@ -10,6 +10,7 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      compression-type: lz4
       acks: all
       properties:
         "[enable.idempotence]": true
@@ -21,6 +22,10 @@ spring:
         "[allow.auto.create.topics]": false
     listener:
       ack-mode: record
+  task:
+    scheduling:
+      pool:
+        size: 4
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -72,15 +77,28 @@ auth:
     access-token-ttl: 30m
 
 app:
+  outbox:
+    receipt-consumer-group: ${KAFKA_OUTBOX_RECEIPT_CONSUMER_GROUP:yeodam-outbox-receipts}
   public-api-prefix: /api
+  story:
+    status-polling-enabled: ${STORY_STATUS_POLLING_ENABLED:true}
+    result-listener-enabled: ${STORY_RESULT_LISTENER_ENABLED:true}
+    result-consumer-group: ${KAFKA_STORY_RESULT_CONSUMER_GROUP:yeodam-story-results}
   kafka:
     topics:
-      trip-create-request: ${KAFKA_TRIP_CREATE_REQUEST_TOPIC:}
-      trip-create-result: ${KAFKA_TRIP_CREATE_RESULT_TOPIC:}
-      trip-update-request: ${KAFKA_TRIP_UPDATE_REQUEST_TOPIC:}
-      trip-update-result: ${KAFKA_TRIP_UPDATE_RESULT_TOPIC:}
-      story-create-request: ${KAFKA_STORY_CREATE_REQUEST_TOPIC:}
-      story-create-result: ${KAFKA_STORY_CREATE_RESULT_TOPIC:}
+      trip-create-request: ${KAFKA_TRIP_CREATE_REQUEST_TOPIC:local.yeodam.trip-create.request}
+      trip-create-result: ${KAFKA_TRIP_CREATE_RESULT_TOPIC:local.yeodam.trip-create.result}
+      trip-update-request: ${KAFKA_TRIP_UPDATE_REQUEST_TOPIC:local.yeodam.trip-update.request}
+      trip-update-result: ${KAFKA_TRIP_UPDATE_RESULT_TOPIC:local.yeodam.trip-update.result}
+      story-create-request: ${KAFKA_STORY_CREATE_REQUEST_TOPIC:local.yeodam.story-create.request}
+      story-create-result: ${KAFKA_STORY_CREATE_RESULT_TOPIC:local.yeodam.story-create.result}
+    dead-letter-topics:
+      trip-create-request: ${KAFKA_TRIP_CREATE_REQUEST_DLT_TOPIC:${app.kafka.topics.trip-create-request}-dlt}
+      trip-create-result: ${KAFKA_TRIP_CREATE_RESULT_DLT_TOPIC:${app.kafka.topics.trip-create-result}-dlt}
+      trip-update-request: ${KAFKA_TRIP_UPDATE_REQUEST_DLT_TOPIC:${app.kafka.topics.trip-update-request}-dlt}
+      trip-update-result: ${KAFKA_TRIP_UPDATE_RESULT_DLT_TOPIC:${app.kafka.topics.trip-update-result}-dlt}
+      story-create-request: ${KAFKA_STORY_CREATE_REQUEST_DLT_TOPIC:${app.kafka.topics.story-create-request}-dlt}
+      story-create-result: ${KAFKA_STORY_CREATE_RESULT_DLT_TOPIC:${app.kafka.topics.story-create-result}-dlt}
 
 aws:
   region: ${AWS_REGION:ap-northeast-2}
@@ -89,8 +107,8 @@ attachment:
   derivative:
     heic-workers: ${ATTACHMENT_DERIVATIVE_HEIC_WORKERS:1}
     light-workers: ${ATTACHMENT_DERIVATIVE_LIGHT_WORKERS:1}
-    heic-max-inflight-photos: ${ATTACHMENT_DERIVATIVE_HEIC_MAX_INFLIGHT_PHOTOS:10}
-    light-max-inflight-photos: ${ATTACHMENT_DERIVATIVE_LIGHT_MAX_INFLIGHT_PHOTOS:20}
+    heic-max-inflight-photos: ${ATTACHMENT_DERIVATIVE_HEIC_MAX_INFLIGHT_PHOTOS:50}
+    light-max-inflight-photos: ${ATTACHMENT_DERIVATIVE_LIGHT_MAX_INFLIGHT_PHOTOS:100}
   s3:
     bucket: ${ATTACHMENT_S3_BUCKET}
     read-url-ttl: ${ATTACHMENT_S3_READ_URL_TTL:10m}
@@ -106,6 +124,8 @@ ai:
     analysis_timeout: ${AI_ANALYSIS_READ_TIMEOUT:30m}
     query-connection-timeout: ${AI_QUERY_CONNECTION_TIMEOUT:5s}
     query-read-timeout: ${AI_QUERY_READ_TIMEOUT:30s}
+    story-connection-timeout: ${AI_STORY_CONNECTION_TIMEOUT:5s}
+    story-read-timeout: ${AI_STORY_READ_TIMEOUT:5s}
     health-connection-timeout: ${AI_HEALTH_CONNECTION_TIMEOUT:5s}
     health_read_timeout: ${AI_HEALTH_READ_TIMEOUT:5s}
 
@@ -148,6 +168,9 @@ auth:
     secret: ${JWT_SECRET:local-development-jwt-secret-key-32-bytes}
     issuer: ${JWT_ISSUER:http://localhost:8080}
 app:
+  trip:
+    result-listener-enabled: ${KAFKA_TRIP_RESULT_LISTENER_ENABLED:true}
+    result-consumer-group: ${KAFKA_TRIP_RESULT_CONSUMER_GROUP:yeodam-trip-results}
   cors:
     allowed-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
 ---
@@ -243,6 +266,8 @@ auth:
     secret: ${JWT_SECRET}
     issuer: ${JWT_ISSUER}
 app:
+  outbox:
+    receipt-consumer-group: ${KAFKA_OUTBOX_RECEIPT_CONSUMER_GROUP:yeodam-outbox-receipts}
   public-api-prefix: /api
   cors:
     allowed-origin: ${FRONTEND_ORIGIN}
@@ -282,8 +307,16 @@ auth:
     secret: test-jwt-secret-key-must-be-at-least-32-bytes
     issuer: https://api.yeodam.test
 app:
+  outbox:
+    receipt-listener-enabled: false
   cors:
     allowed-origin: https://app.yeodam.test
+  trip:
+    worker-initial-delay-ms: 3600000
+    result-listener-enabled: false
+  story:
+    status-polling-enabled: false
+    result-listener-enabled: false
   kafka:
     topics:
       trip-create-request: test.yeodam.trip-create.request

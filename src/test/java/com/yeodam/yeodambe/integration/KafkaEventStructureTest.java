@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
@@ -89,12 +90,12 @@ class KafkaEventStructureTest {
     @Test
     void 각_도메인_이벤트가_자신의_타입을_반환한다() {
         List<EventPayload> events = List.of(
-                new TripCreateRequestEvent(),
-                new TripCreateResultEvent(),
+                new TripCreateRequestEvent("photos_ready", 1L, "execution", 1, null, null, null, null, new ObjectMapper().createArrayNode()),
+                new TripCreateResultEvent("process_result", 1L, "execution", TripCreateResultEvent.Status.CANCELED, null, null),
                 new TripUpdateRequestEvent(),
                 new TripUpdateResultEvent(),
                 new StoryCreateRequestEvent(),
-                new StoryCreateResultEvent()
+                new StoryCreateResultEvent("story_result", 77L, "execution-1", null, null, null)
         );
 
         assertThat(events).extracting(EventPayload::eventType)

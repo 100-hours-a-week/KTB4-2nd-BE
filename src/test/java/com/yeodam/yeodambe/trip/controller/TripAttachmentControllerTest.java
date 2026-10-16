@@ -1,39 +1,43 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
+import com.yeodam.yeodambe.common.exception.InvalidAttachmentIssueException;
+import com.yeodam.yeodambe.common.exception.InvalidCursorException;
+import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
+import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
 import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.response.AttachmentRestoreResponse;
+import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
-import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
-import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
-import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
-import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
-import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
-import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.user.service.UserStatsService;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
-import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
-import com.yeodam.yeodambe.common.exception.InvalidAttachmentIssueException;
-import com.yeodam.yeodambe.common.exception.InvalidCursorException;
-import com.yeodam.yeodambe.common.exception.TripNotFoundException;
-import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
-import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
 import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
+import com.yeodam.yeodambe.user.service.UserStatsService;
+import org.hamcrest.Matchers;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
@@ -44,26 +48,28 @@ import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class TripAttachmentControllerTest {
-    private final com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService uploadCompletion =
-            mock(com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService.class);
     private final TripAttachmentListService listService = mock(TripAttachmentListService.class);
     private final TripAttachmentDetailService detailService = mock(TripAttachmentDetailService.class);
     private final TripAttachmentDeletionService deletionService = mock(TripAttachmentDeletionService.class);
     private final TripAttachmentDownloadService downloadService = mock(TripAttachmentDownloadService.class);
     private final BulkAttachmentDownloadService bulkDownloadService = mock(BulkAttachmentDownloadService.class);
     private final InitialAttachmentUploadUrlService uploadUrlService = mock(InitialAttachmentUploadUrlService.class);
+    private final AdditionalAttachmentUploadUrlService additionalUploadUrlService = mock(AdditionalAttachmentUploadUrlService.class);
     private final UnclassifiedFolderListService unclassifiedFolderListService =
             mock(UnclassifiedFolderListService.class);
     private final TripAttachmentRestoreService restoreService =
             mock(TripAttachmentRestoreService.class);
+    private final com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService additionalUploadCompletion =
+            mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService.class);
+    private final InitialAttachmentUploadCompletionService uploadCompletion =
+            mock(InitialAttachmentUploadCompletionService.class);
     private final TripAttachmentController controller = new TripAttachmentController(
             listService,
             detailService,
@@ -72,24 +78,28 @@ class TripAttachmentControllerTest {
             bulkDownloadService,
             uploadUrlService,
             uploadCompletion,
+            additionalUploadUrlService,
+            additionalUploadCompletion,
             unclassifiedFolderListService,
             restoreService
     );
 
     @Test
-    void 기존_multipart_업로드를_거부하고_JSON_완료_처리를_호출하지_않는다() throws Exception {
+    void additionalUploadCompletionReturnsAcceptedAndBatchCount() throws Exception {
+        var request = new com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadCompleteRequest("upload-id");
+        when(additionalUploadCompletion.complete(7L, 1L, request)).thenReturn(
+                new com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse(7L, "QUEUED", 10));
         MockMvcBuilders.standaloneSetup(controller)
-                .setCustomArgumentResolvers(authenticationPrincipalResolver())
-                .setControllerAdvice(new GlobalExceptionHandler())
-                .build()
-                .perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .multipart("/api/trips/7/initial-attachments")
-                        .contextPath("/api")
-                        .servletPath("/trips/7/initial-attachments")
-                        .file("attachments[]", new byte[]{1, 2, 3}))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("INVALID_ATTACHMENT_UPLOAD"));
-        verifyNoInteractions(uploadCompletion);
+                .setCustomArgumentResolvers(authenticationPrincipalResolver()).build()
+                .perform(post("/api/trips/7/attachments").contextPath("/api")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_ADD_ACCEPTED"))
+                .andExpect(jsonPath("$.data.tripId").value(7))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"))
+                .andExpect(jsonPath("$.data.totalAttachments").value(10));
+        verify(additionalUploadCompletion).complete(7L, 1L, request);
     }
 
     @Test
@@ -124,7 +134,7 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.data.items[0].issue").value("BLURRY"))
                 .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(31))
                 .andExpect(jsonPath("$.data.hasNext").value(false))
-                .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data.nextCursor").value(Matchers.nullValue()));
 
         verify(unclassifiedFolderListService).findAttachments(1L, 7L, "BLURRY", "cursor");
     }
@@ -151,7 +161,7 @@ class TripAttachmentControllerTest {
                 .build()
                 .perform(get("/trips/7/unclassified-folders/UNCLEAR_LOCATION/attachments"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.items[0].restoreTripPlaceId").value(Matchers.nullValue()))
                 .andExpect(jsonPath("$.data.hasNext").value(true))
                 .andExpect(jsonPath("$.data.nextCursor").value("next-cursor"));
     }
@@ -177,7 +187,7 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.data.attachmentCount").value(0))
                 .andExpect(jsonPath("$.data.items").isEmpty())
                 .andExpect(jsonPath("$.data.hasNext").value(false))
-                .andExpect(jsonPath("$.data.nextCursor").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data.nextCursor").value(Matchers.nullValue()));
     }
 
     @ParameterizedTest
@@ -206,7 +216,7 @@ class TripAttachmentControllerTest {
                 .perform(get("/trips/7/unclassified-folders/BLURRY/attachments"))
                 .andExpect(status().is(statusCode))
                 .andExpect(jsonPath("$.message").value(message))
-                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data").value(Matchers.nullValue()));
     }
 
     @Test
@@ -354,16 +364,19 @@ class TripAttachmentControllerTest {
         TripAttachmentRepository repository = mock(TripAttachmentRepository.class);
         UserStatsService stats = mock(UserStatsService.class);
         TripAttachmentDeletionService realDeletionService =
-                new TripAttachmentDeletionService(repository, stats);
+                new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), repository, stats,
+                        mock(com.yeodam.yeodambe.trip.service.TripMapCacheStore.class));
         TripAttachmentController realController = new TripAttachmentController(
-                listService,
+                    listService,
                 detailService,
                 realDeletionService,
                 downloadService,
                 bulkDownloadService,
                 uploadUrlService,
                 uploadCompletion,
-                mock(com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService.class),
+                additionalUploadUrlService,
+            additionalUploadCompletion,
+                mock(UnclassifiedFolderListService.class),
                 restoreService
         );
         String ids = LongStream.rangeClosed(1, 201)
@@ -507,7 +520,7 @@ class TripAttachmentControllerTest {
 
             @Override
             public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer container,
-                                          NativeWebRequest request, org.springframework.web.bind.support.WebDataBinderFactory binderFactory) {
+                                          NativeWebRequest request, WebDataBinderFactory binderFactory) {
                 return jwt();
             }
         };

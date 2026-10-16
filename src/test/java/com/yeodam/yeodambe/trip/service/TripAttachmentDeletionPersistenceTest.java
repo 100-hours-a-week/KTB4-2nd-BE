@@ -21,10 +21,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -38,18 +38,35 @@ import static org.mockito.Mockito.verifyNoInteractions;
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop"
 })
-@Import({TripAttachmentDeletionService.class, TripObjectCleanupService.class, UserStatsService.class})
+@Import({AdditionalAttachmentModificationGuard.class, TripAttachmentDeletionService.class, TripObjectCleanupService.class, UserStatsService.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripAttachmentDeletionPersistenceTest {
-    @Autowired private TripAttachmentDeletionService service;
-    @Autowired private UserRepository users;
-    @Autowired private UserStatsRepository stats;
-    @Autowired private TripRepository trips;
-    @Autowired private TripDetailPlaceRepository places;
-    @Autowired private StoredFileRepository files;
-    @Autowired private TripAttachmentRepository attachments;
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
+    @Autowired
+    private TripAttachmentDeletionService service;
+    @Autowired
+    private UserRepository users;
+    @Autowired
+    private UserStatsRepository stats;
+    @Autowired
+    private TripRepository trips;
+    @Autowired
+    private TripDetailPlaceRepository places;
+    @Autowired
+    private StoredFileRepository files;
+    @Autowired
+    private TripAttachmentRepository attachments;
 
-    @MockitoBean private TripAttachmentStorageClient storage;
+    @MockitoBean
+    private InitialAttachmentUploadTransactionService uploadTransactions;
+
+    @MockitoBean
+    private AdditionalAttachmentUploadTransactionService additionalTransactions;
+
+    @MockitoBean
+
+    private TripAttachmentStorageClient storage;
 
     @Test
     void 대표사진을_삭제하면_남은_사진중_최고평가_사진키를_저장한다() {
@@ -75,7 +92,7 @@ class TripAttachmentDeletionPersistenceTest {
         assertThat(attachments.findById(old.getId()).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(files.findById(old.getFileId()).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getStorageUsedBytes())
-                .isEqualTo(80L);
+                .isEqualTo(20L);
         verifyNoInteractions(storage);
     }
 
@@ -117,7 +134,10 @@ class TripAttachmentDeletionPersistenceTest {
                 .isEqualTo(replacement.getPreviewStorageKey());
     }
 
-    private TripDetailPlace savePlace(Long tripId, String thumbnailKey) {
+    private TripDetailPlace savePlace(
+            Long tripId,
+            String thumbnailKey
+    ) {
         return places.saveAndFlush(TripDetailPlace.fromAnalysis(
                 tripId,
                 1,

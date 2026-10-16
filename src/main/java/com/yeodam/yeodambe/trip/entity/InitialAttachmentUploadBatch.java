@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "initial_attachment_upload_batches")
@@ -59,6 +60,43 @@ public class InitialAttachmentUploadBatch {
             updatable = false
     )
     private LocalDateTime updatedAt;
+
+    @Column(name = "accepted_at")
+    private LocalDateTime acceptedAt;
+
+    @Column(name = "claim_token", length = 36)
+    private String claimToken;
+
+    @Column(name = "lease_until")
+    private LocalDateTime leaseUntil;
+
+    @Column(name = "next_attempt_at")
+    private LocalDateTime nextAttemptAt;
+
+    @Column(name = "outbox_id", length = 36)
+    private String outboxId;
+
+    @Column(name = "outbox_payload", columnDefinition = "LONGTEXT")
+    private String outboxPayload;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "delivery_status", nullable = false, length = 20)
+    private InitialAttachmentDeliveryStatus deliveryStatus = InitialAttachmentDeliveryStatus.PENDING;
+
+    @Column(name = "delivery_attempts", nullable = false)
+    private int deliveryAttempts;
+
+    @Column(name = "delivery_claim_token", length = 36)
+    private String deliveryClaimToken;
+
+    @Column(name = "delivery_lease_until")
+    private LocalDateTime deliveryLeaseUntil;
+
+    @Column(name = "delivery_next_attempt_at")
+    private LocalDateTime deliveryNextAttemptAt;
+
+    @Column(name = "delivered_at")
+    private LocalDateTime deliveredAt;
 
     public InitialAttachmentUploadBatch(
             String uploadId,
@@ -123,5 +161,44 @@ public class InitialAttachmentUploadBatch {
             throw new TripInitialAttachmentUploadNotAllowedException();
         }
         status = InitialAttachmentUploadStatus.FAILED;
+    }
+    public void accept(LocalDateTime now) {
+        status = InitialAttachmentUploadStatus.ACCEPTED;
+        acceptedAt = now;
+    }
+
+    public void claim(
+            String token,
+            LocalDateTime until
+    ) {
+        status = InitialAttachmentUploadStatus.CONVERTING;
+        claimToken = token;
+        leaseUntil = until;
+    }
+
+    public void renew(LocalDateTime until) {
+        leaseUntil = until;
+    }
+
+    public void retry(LocalDateTime next) {
+        status = InitialAttachmentUploadStatus.ACCEPTED;
+        claimToken = null;
+        leaseUntil = null;
+        nextAttemptAt = next;
+    }
+
+    public void ready(String payload) {
+        status = InitialAttachmentUploadStatus.READY;
+        claimToken = null;
+        leaseUntil = null;
+        outboxId = UUID.randomUUID().toString();
+        outboxPayload = payload;
+    }
+
+    public void deliverySent(LocalDateTime now) {
+        deliveryStatus = InitialAttachmentDeliveryStatus.SENT;
+        deliveredAt = now;
+        deliveryClaimToken = null;
+        deliveryLeaseUntil = null;
     }
 }

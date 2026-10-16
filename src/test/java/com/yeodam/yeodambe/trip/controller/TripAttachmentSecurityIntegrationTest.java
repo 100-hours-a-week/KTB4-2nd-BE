@@ -1,19 +1,25 @@
 package com.yeodam.yeodambe.trip.controller;
 
-import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
+import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse;
+import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
+import com.yeodam.yeodambe.trip.service.TripAttachmentRestoreService;
+import com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService;
+import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
-import org.springframework.http.MediaType;
-import java.time.OffsetDateTime;
-import java.util.List;
-import java.util.Map;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse;
 import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenGenerator;
@@ -24,40 +30,41 @@ import com.yeodam.yeodambe.user.security.jwt.ActiveLoginSessionValidator;
 import com.yeodam.yeodambe.user.security.jwt.ApiAuthenticationEntryPoint;
 import com.yeodam.yeodambe.user.security.jwt.CookieAccessTokenResolver;
 import com.yeodam.yeodambe.user.security.jwt.JwtConfig;
-import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
-import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
 import com.yeodam.yeodambe.user.security.jwt.JwtProperties;
 import jakarta.servlet.http.Cookie;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
-import java.util.Optional;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -73,6 +80,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         RedisCsrfTokenRepository.class
 })
 class TripAttachmentSecurityIntegrationTest {
+
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadCompletionService additionalUploadCompletion;
 
     @MockitoBean
     private TripAttachmentRestoreService restoreService;
@@ -108,6 +118,9 @@ class TripAttachmentSecurityIntegrationTest {
     private InitialAttachmentUploadUrlService uploadUrlService;
 
     @MockitoBean
+    private AdditionalAttachmentUploadUrlService additionalUploadUrlService;
+
+    @MockitoBean
     private com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService uploadCompletion;
 
     @MockitoBean
@@ -120,7 +133,24 @@ class TripAttachmentSecurityIntegrationTest {
     private CsrfTokenGenerator csrfTokenGenerator;
 
     @MockitoBean
-    private com.yeodam.yeodambe.trip.service.UnclassifiedFolderListService unclassifiedFolderListService;
+    private UnclassifiedFolderListService unclassifiedFolderListService;
+
+    @Test
+    void 초기_multipart_업로드는_지원하지_않는다() throws Exception {
+        given(csrfTokenStore.find("multipart-removal-browser")).willReturn("csrf-token");
+
+        mockMvc.perform(multipart("/trips/7/initial-attachments")
+                        .file("attachments[]", jpeg())
+                        .param("batchNo", "1")
+                        .param("totalAttachmentCount", "1")
+                        .param("complete", "true")
+                        .cookie(
+                                new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")),
+                                new Cookie("CSRF_CONTEXT", "multipart-removal-browser")
+                        )
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnsupportedMediaType());
+    }
 
     @Test
     void 미분류_사진_목록을_쿠키_인증으로_CSRF없이_조회한다() throws Exception {
@@ -159,7 +189,7 @@ class TripAttachmentSecurityIntegrationTest {
                         .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42"))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data").value(Matchers.nullValue()));
 
         then(unclassifiedFolderListService).shouldHaveNoInteractions();
     }
@@ -183,19 +213,19 @@ class TripAttachmentSecurityIntegrationTest {
         mockMvc.perform(request)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("UNAUTHORIZED"))
-                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.data").value(Matchers.nullValue()));
 
         then(unclassifiedFolderListService).shouldHaveNoInteractions();
     }
 
     @Test
     void 미분류_폴더를_쿠키_인증으로_CSRF없이_조회한다() throws Exception {
-        var folder = new com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse.Folder(
-                com.yeodam.yeodambe.trip.entity.AttachmentIssue.BLURRY, "흐릿한 첨부", 2L,
-                new com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse.RepresentativeAttachment(
+        var folder = new UnclassifiedFolderListResponse.Folder(
+                AttachmentIssue.BLURRY, "흐릿한 첨부", 2L,
+                new UnclassifiedFolderListResponse.RepresentativeAttachment(
                         503L, "https://example.test/preview"));
         given(unclassifiedFolderListService.findFolders(42L, 7L)).willReturn(
-                new com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse(List.of(folder)));
+                new UnclassifiedFolderListResponse(List.of(folder)));
         mockMvc.perform(get("/api/trips/7/unclassified-folders")
                         .contextPath("/api").servletPath("/trips/7/unclassified-folders")
                         .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42"))))
@@ -220,7 +250,7 @@ class TripAttachmentSecurityIntegrationTest {
     @Test
     void 미분류_폴더의_접근불가_여행은_404이다() throws Exception {
         given(unclassifiedFolderListService.findFolders(42L, 7L))
-                .willThrow(new com.yeodam.yeodambe.common.exception.TripNotFoundException());
+                .willThrow(new TripNotFoundException());
         mockMvc.perform(get("/api/trips/7/unclassified-folders")
                         .contextPath("/api").servletPath("/trips/7/unclassified-folders")
                         .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42"))))
@@ -232,6 +262,87 @@ class TripAttachmentSecurityIntegrationTest {
     void allowSessionValidation() {
         given(activeLoginSessionValidator.validate(any(Jwt.class)))
                 .willReturn(OAuth2TokenValidatorResult.success());
+    }
+
+    @Test
+    void 추가_업로드_URL은_JSON과_JWT_사용자_ID로_요청하고_명세_응답을_반환한다() throws Exception {
+        String token = accessTokenIssuer.issue(42L, "sid-42");
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        var request = new AdditionalAttachmentUploadUrlRequest(
+                "550e8400-e29b-41d4-a716-446655440000", 1, 1, true,
+                List.of(new AdditionalAttachmentUploadUrlRequest.Attachment("photo.jpg", "image/jpeg", 1024L)));
+        given(additionalUploadUrlService.issueUploadUrls(7L, 42L, request)).willReturn(
+                new AdditionalAttachmentUploadUrlResponse("upload-id", List.of(
+                        new AdditionalAttachmentUploadUrlResponse.Attachment(
+                                "photo.jpg", "https://example.test/additional-upload", "PUT",
+                                Map.of("Content-Type", "image/jpeg", "If-None-Match", "*"),
+                                OffsetDateTime.parse("2026-10-07T09:10:00Z")))));
+
+        mockMvc.perform(post("/api/trips/7/attachments/upload-urls")
+                        .contextPath("/api").servletPath("/trips/7/attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(additionalUploadUrlBody())
+                        .cookie(new Cookie("accessToken", token), new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_UPLOAD_URLS_ISSUED"))
+                .andExpect(jsonPath("$.data.uploadId").value("upload-id"))
+                .andExpect(jsonPath("$.data.attachments[0].fileName").value("photo.jpg"))
+                .andExpect(jsonPath("$.data.attachments[0].uploadUrl").value("https://example.test/additional-upload"))
+                .andExpect(jsonPath("$.data.attachments[0].method").value("PUT"))
+                .andExpect(jsonPath("$.data.attachments[0].headers['Content-Type']").value("image/jpeg"))
+                .andExpect(jsonPath("$.data.attachments[0].headers['If-None-Match']").value("*"))
+                .andExpect(jsonPath("$.data.attachments[0].expiresAt").isNotEmpty());
+        then(additionalUploadUrlService).should().issueUploadUrls(7L, 42L, request);
+    }
+
+    @Test
+    void 추가_업로드_URL_요청에_인증이_없으면_401이며_서비스를_호출하지_않는다() throws Exception {
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        mockMvc.perform(post("/api/trips/7/attachments/upload-urls")
+                        .contextPath("/api").servletPath("/trips/7/attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(additionalUploadUrlBody())
+                        .cookie(new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+        then(additionalUploadUrlService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void 추가_업로드_URL_요청의_CSRF가_틀리면_403이며_서비스를_호출하지_않는다() throws Exception {
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        mockMvc.perform(post("/api/trips/7/attachments/upload-urls")
+                        .contextPath("/api").servletPath("/trips/7/attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(additionalUploadUrlBody())
+                        .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")),
+                                new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "wrong-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+        then(additionalUploadUrlService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void 추가_업로드_URL_접수가_허용되지_않으면_409를_반환한다() throws Exception {
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        given(additionalUploadUrlService.issueUploadUrls(eq(7L), eq(42L), any()))
+                .willThrow(new com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException());
+        mockMvc.perform(post("/api/trips/7/attachments/upload-urls")
+                        .contextPath("/api").servletPath("/trips/7/attachments/upload-urls")
+                        .contentType(MediaType.APPLICATION_JSON).content(additionalUploadUrlBody())
+                        .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")),
+                                new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_ADD_NOT_ALLOWED"));
+    }
+
+    private String additionalUploadUrlBody() {
+        return """
+                {"additionId":"550e8400-e29b-41d4-a716-446655440000",
+                 "batchNo":1,"totalAttachmentCount":1,"complete":true,
+                 "attachments":[{"fileName":"photo.jpg","contentType":"image/jpeg","sizeBytes":1024}]}
+                """;
     }
 
     @Test
@@ -295,18 +406,18 @@ class TripAttachmentSecurityIntegrationTest {
     }
 
     @Test
-    void JSON_중간_배치_완료는_인증_사용자_ID로_처리하고_204_빈_본문을_반환한다() throws Exception {
+    void JSON_중간_배치_접수는_202_PROCESSING을_반환한다() throws Exception {
         String token = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
-        var request = new com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest("upload-id");
-        given(uploadCompletion.complete(7L, 42L, request)).willReturn(Optional.empty());
+        var request = new InitialAttachmentUploadCompleteRequest("upload-id");
+        given(uploadCompletion.complete(7L, 42L, request)).willReturn(new TripProcessingStatusResponse(7L, TripProcessingStatusResponse.Status.PROCESSING, null, null, null, null));
         mockMvc.perform(post("/api/trips/7/initial-attachments").contextPath("/api")
                         .servletPath("/trips/7/initial-attachments")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"uploadId\":\"upload-id\"}")
                         .cookie(new Cookie("accessToken", token), new Cookie("CSRF_CONTEXT", "upload-browser"))
                         .header("X-CSRF-TOKEN", "csrf-token"))
-                .andExpect(status().isNoContent())
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(""));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.status").value("PROCESSING"));
         then(uploadCompletion).should().complete(7L, 42L, request);
     }
 
@@ -314,10 +425,10 @@ class TripAttachmentSecurityIntegrationTest {
     void JSON_마지막_배치_완료는_기존_200_응답_구조를_유지한다() throws Exception {
         String token = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
-        given(uploadCompletion.complete(eq(7L), eq(42L), any())).willReturn(Optional.of(
+        given(uploadCompletion.complete(eq(7L), eq(42L), any())).willReturn(
                 new TripProcessingStatusResponse(7L, TripProcessingStatusResponse.Status.COMPLETED,
                         new TripProcessingStatusResponse.Progress(2, 2), null,
-                        new TripProcessingStatusResponse.Result(7L, 1, 2, 0), null)));
+                        new TripProcessingStatusResponse.Result(7L, 1, 2, 0), null));
         mockMvc.perform(post("/trips/7/initial-attachments").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"uploadId\":\"upload-id\"}")
                         .cookie(new Cookie("accessToken", token), new Cookie("CSRF_CONTEXT", "upload-browser"))
@@ -345,70 +456,37 @@ class TripAttachmentSecurityIntegrationTest {
         then(uploadCompletion).shouldHaveNoInteractions();
     }
 
+    @Test
+    void additionalCompletionRequiresAuthenticationAndCsrfAndReturnsAccepted() throws Exception {
+        given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
+        mockMvc.perform(post("/trips/7/attachments").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}")
+                        .cookie(new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isUnauthorized());
+        String access = accessTokenIssuer.issue(42L, "sid-42");
+        mockMvc.perform(post("/trips/7/attachments").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}")
+                        .cookie(new Cookie("accessToken", access), new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "wrong-token"))
+                .andExpect(status().isForbidden());
+        then(additionalUploadCompletion).shouldHaveNoInteractions();
+        given(additionalUploadCompletion.complete(eq(7L), eq(42L), any())).willReturn(
+                new com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse(7L, "QUEUED", 10));
+        mockMvc.perform(post("/trips/7/attachments").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"uploadId\":\"upload-id\"}")
+                        .cookie(new Cookie("accessToken", access), new Cookie("CSRF_CONTEXT", "upload-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_ADD_ACCEPTED"))
+                .andExpect(jsonPath("$.data.totalAttachments").value(10));
+    }
+
     private String uploadUrlBody() {
         return """
                 {"batchNo":1,"totalAttachmentCount":1,"complete":true,
                  "attachments":[{"fileName":"photo.jpg","contentType":"image/jpeg","sizeBytes":1024}]}
                 """;
-    }
-
-    @Test
-    void 유효한_쿠키_Jwt와_CSRF로_첨부_서비스를_호출한다() throws Exception {
-        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
-        given(csrfTokenStore.find("attachment-browser")).willReturn("csrf-token");
-        given(uploadCompletion.complete(eq(7L), eq(42L), any()))
-                .willReturn(Optional.of(completed()));
-
-                mockMvc.perform(post("/trips/7/initial-attachments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"uploadId\":\"upload-id\"}")
-                        .cookie(
-                                new Cookie("accessToken", accessToken),
-                                new Cookie("CSRF_CONTEXT", "attachment-browser")
-                        )
-                        .header("X-CSRF-TOKEN", "csrf-token"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("TRIP_PROCESSING_STATUS_FOUND"))
-                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
-
-        then(uploadCompletion).should()
-                .complete(eq(7L), eq(42L), any());
-    }
-
-    @Test
-    void CSRF가_일치하지_않으면_403이고_첨부_서비스를_호출하지_않는다() throws Exception {
-        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
-        given(csrfTokenStore.find("invalid-attachment-browser")).willReturn("csrf-token");
-
-                mockMvc.perform(post("/trips/7/initial-attachments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"uploadId\":\"upload-id\"}")
-                        .cookie(
-                                new Cookie("accessToken", accessToken),
-                                new Cookie("CSRF_CONTEXT", "invalid-attachment-browser")
-                        )
-                        .header("X-CSRF-TOKEN", "wrong-token"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
-
-        then(uploadCompletion).should(never())
-                .complete(any(), any(), any());
-    }
-
-    @Test
-    void 인증_쿠키가_없으면_401이고_첨부_서비스를_호출하지_않는다() throws Exception {
-        given(csrfTokenStore.find("unauthorized-attachment-browser")).willReturn("csrf-token");
-
-                mockMvc.perform(post("/trips/7/initial-attachments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"uploadId\":\"upload-id\"}")
-                        .cookie(new Cookie("CSRF_CONTEXT", "unauthorized-attachment-browser"))
-                        .header("X-CSRF-TOKEN", "csrf-token"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
-
-        then(uploadCompletion).should(never())
-                .complete(any(), any(), any());
     }
 
     @Test
@@ -444,7 +522,7 @@ class TripAttachmentSecurityIntegrationTest {
         given(csrfTokenStore.find("attachment-bulk-download-browser"))
                 .willReturn("csrf-token");
 
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+        mockMvc.perform(MockMvcRequestBuilders
                         .post("/attachments/bulk-download")
                         .cookie(
                                 new Cookie("accessToken", accessToken),
@@ -456,7 +534,7 @@ class TripAttachmentSecurityIntegrationTest {
                 .andExpect(status().isOk());
 
         then(bulkAttachmentDownloadService).should()
-                .issueDownloadUrl(42L, java.util.List.of(11L, 12L));
+                .issueDownloadUrl(42L, List.of(11L, 12L));
     }
 
     @Test
@@ -501,16 +579,8 @@ class TripAttachmentSecurityIntegrationTest {
         then(restoreService).should().restoreBulk(eq(42L), any());
     }
 
-
-
-    private TripProcessingStatusResponse completed() {
-        return new TripProcessingStatusResponse(
-                7L,
-                TripProcessingStatusResponse.Status.COMPLETED,
-                new TripProcessingStatusResponse.Progress(1, 1),
-                null,
-                new TripProcessingStatusResponse.Result(7L, 1, 1, 0),
-                null
-        );
+    private byte[] jpeg() {
+        return new byte[]{(byte) 0xff, (byte) 0xd8, (byte) 0xff, (byte) 0xd9};
     }
+
 }

@@ -1,6 +1,5 @@
 package com.yeodam.yeodambe.search.service.response;
 
-import java.time.LocalDate;
 import java.util.List;
 
 public record SearchResponse(
@@ -12,12 +11,11 @@ public record SearchResponse(
 ) {
     public record Folder(
             Long tripId,
+            Long tripPlaceId,
             String tripName,
-            LocalDate startDate,
-            LocalDate endDate,
-            List<String> regionNames,
-            long attachmentCount,
+            String placeName,
             String thumbnailUrl,
+            long attachmentCount,
             double score
     ) {
     }

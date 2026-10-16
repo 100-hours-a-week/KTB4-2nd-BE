@@ -26,10 +26,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Import(TestcontainersConfiguration.class)
 class AttachmentStorageSizePersistenceTest {
     @Autowired private UserRepository users;
+    @Autowired private com.yeodam.yeodambe.user.repository.UserStatsRepository stats;
     @Autowired private TripRepository trips;
     @Autowired private StoredFileRepository files;
     @Autowired private TripAttachmentRepository attachments;
-    @Autowired private InitialAttachmentUploadUrlService uploads;
     @Autowired private InitialAttachmentUploadTransactionService transactions;
     @Autowired private InitialAttachmentUploadItemRepository uploadItems;
 
@@ -38,22 +38,28 @@ class AttachmentStorageSizePersistenceTest {
     void 첨부_저장_트랜잭션_종료_후_실제_용량을_다시_조회한다(boolean hasDisplay) {
         String suffix = hasDisplay ? "heic" : "jpeg";
         User user = users.saveAndFlush(new User("size-" + suffix + "@yeodam.test", "용량검증"));
+        stats.saveAndFlush(new com.yeodam.yeodambe.user.entity.UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(user.getUserId(), "용량검증", LocalDate.now(), LocalDate.now()));
         String mime = hasDisplay ? "image/heic" : "image/jpeg";
-        var batch = uploads.prepareBatch(trip.getId(), user.getUserId(),
+        var batch = transactions.prepareBatch(trip.getId(), user.getUserId(),
                 new InitialAttachmentUploadUrlRequest(
                         1, 1, true, List.of(new InitialAttachmentUploadUrlRequest.Attachment(
                                 "photo." + suffix, mime, 4L))));
-        String originalKey = uploadItems.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()).getFirst().getObjectKey();
-        transactions.startProcessing(trip.getId(), user.getUserId(), batch.getUploadId());
-        var photo = new DerivedPhotoKeys(originalKey, "analyze/" + suffix,
-                "preview/" + suffix, hasDisplay ? "display/" + suffix : null,
+        String originalKey = batch.photos().getFirst().objectKey();
+        transactions.startProcessing(trip.getId(), user.getUserId(), batch.uploadId());
+        var claim = transactions.claimBatch().orElseThrow();
+        Long itemId = batch.photos().getFirst().itemId();
+        List<String> keys = transactions.startPhotoAttempt(claim, itemId);
+        var photo = new DerivedPhotoKeys(originalKey, keys.get(0),
+                keys.get(1), hasDisplay ? keys.get(2) : null,
                 null, null, null, null, 4L, 100L, 50L, hasDisplay ? 200L : null);
 
-        var saved = transactions.saveAttachments(trip.getId(), user.getUserId(), batch.getUploadId(), List.of(photo));
-
-        var original = files.findById(saved.getFirst().getFileId()).orElseThrow();
-        var attachment = attachments.findById(saved.getFirst().getId()).orElseThrow();
+        transactions.savePhotoSuccess(claim, itemId, photo);
+        transactions.completeBatch(claim);
+        var savedItem = uploadItems.findById(itemId).orElseThrow();
+        var attachment = attachments.findById(savedItem.getTripAttachmentId()).orElseThrow();
+        var original = files.findById(attachment.getFileId()).orElseThrow();
+        transactions.failExecution(batch.executionId(), "TEST_FINISHED");
         assertThat(original.getOriginalSizeBytes()).isEqualTo(4L);
         assertThat(attachment.getAnalyzeSizeBytes()).isEqualTo(100L);
         assertThat(attachment.getPreviewSizeBytes()).isEqualTo(50L);

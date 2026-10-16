@@ -136,6 +136,7 @@ class OAuthTokenClaimTest {
         var admin = (LettuceConnectionFactory) redis.getConnectionFactory();
         var configuration = new RedisStandaloneConfiguration(
                 admin.getHostName(), admin.getPort());
+        configuration.setDatabase(admin.getDatabase());
         configuration.setUsername(username);
         configuration.setPassword(password);
         var factory = new LettuceConnectionFactory(configuration);
@@ -151,6 +152,7 @@ class OAuthTokenClaimTest {
             var ticketStore = new LoginTicketStore(operations, hasher, "yeodam:test:auth:");
             String token = UUID.randomUUID().toString();
             profileStore.save(token, identity);
+            assertThat(profiles.find(token)).contains(identity);
             assertThat(profileStore.claim(token, "owner")).isPresent();
             profileStore.release(token, "owner");
             assertThat(profileStore.claim(token, "next")).isPresent();

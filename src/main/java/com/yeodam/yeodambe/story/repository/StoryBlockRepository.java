@@ -15,7 +15,7 @@ public interface StoryBlockRepository extends JpaRepository<StoryBlock, Long> {
             FROM StoryBlock b
             LEFT JOIN b.attachment a
             LEFT JOIN a.file f
-            LEFT JOIN a.tripPlace p
+            LEFT JOIN TripDetailPlace p ON p.id = b.sourceTripPlaceId
             WHERE b.storyId = :storyId AND b.deletedAt IS NULL
             ORDER BY b.orderNumber ASC, b.id ASC
             """)

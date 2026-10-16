@@ -1,9 +1,13 @@
 package com.yeodam.yeodambe.trip.service;
 
-import com.yeodam.yeodambe.story.repository.StoryRepository;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
-import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
@@ -15,21 +19,15 @@ import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.RegionCatalog;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
-import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
-import com.yeodam.yeodambe.trip.exception.TripCreationMetadataMissingException;
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,6 +45,8 @@ class TripServiceTest {
     private RegionCatalog regionCatalog;
     private TripAccessService tripAccessService;
     private TripService tripService;
+    private TripMapCacheStore mapCache;
+    private TripMapCacheLock mapLock;
     private final Logger logger = (Logger) LoggerFactory.getLogger(TripService.class);
     private ListAppender<ILoggingEvent> logAppender;
 
@@ -66,59 +66,36 @@ class TripServiceTest {
         tripAttachmentStorageClient = mock(TripAttachmentStorageClient.class);
         regionCatalog = mock(RegionCatalog.class);
         tripAccessService = mock(TripAccessService.class);
-        tripService = new TripService(
+        mapCache = mock(TripMapCacheStore.class);
+        mapLock = mock(TripMapCacheLock.class);
+        when(mapLock.tryAcquire(eq(1L), eq("v1"), anyString())).thenReturn(true);
+        when(mapCache.version(1L)).thenReturn(Optional.of("v1"));
+        tripService = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
                 tripRepository,
                 tripRegionRepository,
                 regionCatalog,
                 tripAttachmentRepository,
                 tripAttachmentStorageClient,
                 tripAccessService,
-                new tools.jackson.databind.ObjectMapper(),
-                mock(StoryRepository.class)
+                new ObjectMapper(),
+                mock(StoryRepository.class),
+                mapCache,
+                mapLock
         );
     }
 
     @Test
-    void 직접_생성도_정보가_없으면_조회와_저장_전에_거절한다() {
-        var request = new TripCreateRequest(
-                "여행", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 2),
-                List.of("50110"), List.of(new TripAttachmentMetadataRequest(null, null, null))
-        );
+    void 메타데이터_없이_여행과_지역을_저장한다() {
+        givenRegion();
+        givenSavedTrip();
 
-        assertThrows(TripCreationMetadataMissingException.class,
-                () -> tripService.createTrip(1L, request));
-        verifyNoInteractions(tripRepository, tripRegionRepository, regionCatalog,
-                tripAttachmentRepository, tripAttachmentStorageClient);
-    }
+        var response = tripService.createTrip(1L,
+                request(LocalDate.now(), LocalDate.now(), List.of("50110")));
 
-    @Test
-    void 모든_사진에_정보가_없으면_저장소_접근_없이_생성을_거절한다() {
-        var result = tripService.validateCreation(List.of(
-                new TripAttachmentMetadataRequest(null, null, null),
-                new TripAttachmentMetadataRequest(null, null, null)
-        ));
-
-        assertThat(result.canCreate()).isFalse();
-        assertThat(result.reasonCode()).isEqualTo("ALL_PHOTOS_METADATA_MISSING");
-        verifyNoInteractions(tripRepository, tripRegionRepository, regionCatalog,
-                tripAttachmentRepository, tripAttachmentStorageClient, tripAccessService);
-    }
-
-    @Test
-    void 촬영시각이나_GPS가_한장에라도_있으면_저장소_접근_없이_허용한다() {
-        var missing = new TripAttachmentMetadataRequest(null, null, null);
-        var timestamp = new TripAttachmentMetadataRequest(
-                OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null);
-        var gps = new TripAttachmentMetadataRequest(null, BigDecimal.ZERO, BigDecimal.ZERO);
-
-        for (var metadata : List.of(List.of(timestamp), List.of(gps),
-                List.of(missing, timestamp), List.of(gps, missing))) {
-            var result = tripService.validateCreation(metadata);
-            assertThat(result.canCreate()).isTrue();
-            assertThat(result.reasonCode()).isNull();
-        }
-        verifyNoInteractions(tripRepository, tripRegionRepository, regionCatalog,
-                tripAttachmentRepository, tripAttachmentStorageClient, tripAccessService);
+        assertThat(response.tripId()).isEqualTo(7L);
+        assertThat(response.status()).isEqualTo(ProcessingStatus.PROCESSING);
+        verify(tripRegionRepository).saveAll(anyList());
+        verifyNoInteractions(tripAttachmentRepository, tripAttachmentStorageClient);
     }
 
     @Test
@@ -292,125 +269,201 @@ class TripServiceTest {
     }
 
     @Test
-    void 같은_지역의_완료_여행을_하나의_마커로_묶는다() {
-        Trip firstTrip = mapTrip(1L, "첫 여행");
-        Trip secondTrip = mapTrip(2L, "두 번째 여행");
-        TripRegion firstRegion = mapRegion(firstTrip);
-        TripRegion secondRegion = mapRegion(secondTrip);
-        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
-                .thenReturn(List.of(firstRegion, secondRegion));
-
+    void sameCoordinatesRemainSeparateMarkersForEachTrip() {
+        when(tripAttachmentRepository.findMapRepresentatives(1L))
+                .thenReturn(List.of(mapRepresentative(1L, "first-preview"), mapRepresentative(2L, "second-preview")));
         var response = tripService.findMap(1L);
-
-        assertThat(response.markers()).hasSize(1);
-        var marker = response.markers().getFirst();
-        assertThat(marker.regionCode()).isEqualTo("50110");
-        assertThat(marker.regionName()).isEqualTo("제주특별자치도 제주시");
-        assertThat(marker.latitude()).isEqualByComparingTo("33.4996");
-        assertThat(marker.longitude()).isEqualByComparingTo("126.5312");
-        assertThat(marker.tripCount()).isEqualTo(2);
-        assertThat(marker.trips())
-                .extracting(trip -> trip.tripId())
-                .containsExactly(1L, 2L);
+        assertThat(response.markers()).hasSize(2);
+        assertThat(response.markers()).extracting(marker -> marker.tripId()).containsExactly(1L, 2L);
+        assertThat(response.markers()).allSatisfy(marker -> {
+            assertThat(marker.latitude()).isEqualByComparingTo("33.4996");
+            assertThat(marker.longitude()).isEqualByComparingTo("126.5312");
+        });
+        verifyNoInteractions(tripRegionRepository, tripRepository);
     }
 
     @Test
-    void 여행별_미삭제_첨부_개수를_반환한다() {
-        Trip trip = mapTrip(1L, "제주 여행");
-        TripRegion region = mapRegion(trip);
-        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
-                .thenReturn(List.of(region));
+    void returnsExistingAttachmentCountDirectlyOnMarker() {
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of(mapRepresentative(1L, "preview")));
         when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(1L)))
                 .thenReturn(List.of(new TripAttachmentCount(1L, 3L)));
-
         var response = tripService.findMap(1L);
-
-        assertThat(response.markers().getFirst().trips().getFirst().attachmentCount())
-                .isEqualTo(3L);
+        assertThat(response.markers().getFirst().attachmentCount()).isEqualTo(3L);
     }
 
     @Test
-    void 썸네일_키가_있으면_조회_URL을_반환한다() {
-        Trip trip = mapTrip(1L, "제주 여행");
-        TripRegion region = mapRegion(trip);
-        when(trip.getThumbnailKey()).thenReturn("trip-uploads/first/preview.webp");
-        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
-                .thenReturn(List.of(region));
-        when(tripAttachmentStorageClient.createReadUrl("trip-uploads/first/preview.webp"))
-                .thenReturn("https://example.com/presigned-thumbnail");
-
+    void usesSelectedPhotoPreviewWithoutReadingOrChangingTripThumbnail() {
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of(mapRepresentative(1L, "selected-preview")));
+        when(tripAttachmentStorageClient.createReadUrl("selected-preview")).thenReturn("https://example.test/selected");
         var response = tripService.findMap(1L);
-
-        assertThat(response.markers().getFirst().trips().getFirst().thumbnailUrl())
-                .isEqualTo("https://example.com/presigned-thumbnail");
+        assertThat(response.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/selected");
+        verify(tripAttachmentStorageClient).createReadUrl("selected-preview");
+        verifyNoInteractions(tripRepository, tripRegionRepository);
     }
 
     @Test
-    void 썸네일_키가_없으면_조회_URL을_만들지_않는다() {
-        Trip trip = mapTrip(1L, "제주 여행");
-        TripRegion region = mapRegion(trip);
-        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
-                .thenReturn(List.of(region));
-
-        var response = tripService.findMap(1L);
-
-        assertThat(response.markers().getFirst().trips().getFirst().thumbnailUrl())
-                .isNull();
-        verifyNoInteractions(tripAttachmentStorageClient);
+    void returnsEmptyMarkersWithoutCountOrUrlCallsWhenNoCoordinateCandidatesExist() {
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+        verify(tripAttachmentRepository, never()).countNotDeletedByTripIds(anyList());
+        verifyNoInteractions(tripAttachmentStorageClient, tripRegionRepository);
     }
 
     @Test
-    void 같은_여행이_여러_지역에_연결되면_각_마커에_포함한다() {
-        Trip trip = mapTrip(1L, "전국 여행");
-        TripRegion jeju = mapRegion(
-                trip,
-                "50110",
-                "제주특별자치도 제주시",
-                "33.4996",
-                "126.5312"
-        );
-        TripRegion busan = mapRegion(
-                trip,
-                "26110",
-                "부산광역시 중구",
-                "35.1060",
-                "129.0323"
-        );
-        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
-                .thenReturn(List.of(busan, jeju));
+    void cachedMapSkipsDatabaseAndCreatesFreshUrlsOnEachRequest() {
+        var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of(
+                new com.yeodam.yeodambe.trip.service.response.TripMapCacheData.Marker(
+                        7L, "cached-trip", BigDecimal.ONE, BigDecimal.TEN, "preview-key", 3L)));
+        when(mapCache.find(1L, "v1")).thenReturn(Optional.of(cached));
+        when(tripAttachmentStorageClient.createReadUrl("preview-key"))
+                .thenReturn("https://example.test/first", "https://example.test/second");
 
-        var response = tripService.findMap(1L);
+        var first = tripService.findMap(1L);
+        var second = tripService.findMap(1L);
 
-        assertThat(response.markers()).hasSize(2);
-        assertThat(response.markers())
-                .extracting(marker -> marker.regionCode())
-                .containsExactly("26110", "50110");
-        assertThat(response.markers())
-                .allSatisfy(marker -> assertThat(marker.trips())
-                        .extracting(summary -> summary.tripId())
-                        .containsExactly(1L));
-    }
-
-    @Test
-    void 표시할_여행이_없으면_첨부_개수를_조회하지_않는다() {
-        when(tripRegionRepository.findAllForMap(1L, ProcessingStatus.COMPLETED))
-                .thenReturn(List.of());
-
-        var response = tripService.findMap(1L);
-
-        assertThat(response.markers()).isEmpty();
+        assertThat(first.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/first");
+        assertThat(second.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/second");
+        assertThat(first.markers().getFirst().attachmentCount()).isEqualTo(3);
         verifyNoInteractions(tripAttachmentRepository);
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
     }
 
-    private void assertInvalid(LocalDate start, LocalDate end, List<String> codes) {
+    @Test
+    void cacheMissLoadsDatabaseAndStoresObjectKeyInsteadOfSignedUrl() {
+        when(mapCache.find(1L, "v1")).thenReturn(Optional.empty());
+        when(tripAttachmentRepository.findMapRepresentatives(1L))
+                .thenReturn(List.of(mapRepresentative(7L, "preview-key")));
+        when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(7L)))
+                .thenReturn(List.of(new TripAttachmentCount(7L, 3L)));
+        when(tripAttachmentStorageClient.createReadUrl("preview-key"))
+                .thenReturn("https://example.test/signed");
+
+        var response = tripService.findMap(1L);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                com.yeodam.yeodambe.trip.service.response.TripMapCacheData.class);
+        verify(mapCache).save(eq(1L), eq("v1"), captor.capture());
+        assertThat(captor.getValue().markers().getFirst().previewStorageKey()).isEqualTo("preview-key");
+        assertThat(captor.getValue().markers().getFirst().attachmentCount()).isEqualTo(3);
+        assertThat(response.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/signed");
+    }
+
+    @Test
+    void emptyMapIsAlsoCached() {
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+        verify(mapCache).save(eq(1L), eq("v1"), eq(
+                new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of())));
+    }
+
+    @Test
+    void unavailableVersionBypassesCacheAndReadsDatabase() {
+        when(mapCache.version(1L)).thenReturn(Optional.empty());
+        when(tripAttachmentRepository.findMapRepresentatives(1L))
+                .thenReturn(List.of(mapRepresentative(7L, "preview")));
+        var response = tripService.findMap(1L);
+        assertThat(response.markers()).hasSize(1);
+        verify(mapCache, never()).find(anyLong(), anyString());
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+        verify(tripAttachmentRepository).findMapRepresentatives(1L);
+    }
+
+    @Test
+    void lockOwnerLoadsAndSavesBeforeReleasingTheSameOwner() {
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
+
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+
+        var owner = org.mockito.ArgumentCaptor.forClass(String.class);
+        var order = inOrder(mapLock, mapCache, tripAttachmentRepository);
+        order.verify(mapCache).version(1L);
+        order.verify(mapCache).find(1L, "v1");
+        order.verify(mapLock).tryAcquire(eq(1L), eq("v1"), owner.capture());
+        order.verify(mapCache).find(1L, "v1");
+        order.verify(tripAttachmentRepository).findMapRepresentatives(1L);
+        order.verify(mapCache).save(eq(1L), eq("v1"), any());
+        order.verify(mapLock).release(1L, "v1", owner.getValue());
+        assertThat(java.util.UUID.fromString(owner.getValue())).isNotNull();
+    }
+
+    @Test
+    void waitingRequestUsesCacheFilledByAnotherRequest() {
+        var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of());
+        when(mapCache.find(1L, "v1")).thenReturn(Optional.empty(), Optional.of(cached));
+        when(mapLock.tryAcquire(eq(1L), eq("v1"), anyString())).thenReturn(false);
+
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+
+        verify(mapCache, times(2)).find(1L, "v1");
+        verifyNoInteractions(tripAttachmentRepository);
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+        verify(mapLock, never()).release(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void cacheIsRecheckedAfterAcquiringLock() {
+        var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of());
+        when(mapCache.find(1L, "v1")).thenReturn(Optional.empty(), Optional.of(cached));
+
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+
+        verifyNoInteractions(tripAttachmentRepository);
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+        verify(mapLock).release(eq(1L), eq("v1"), anyString());
+    }
+
+    @Test
+    void redisLockFailureFallsBackToDatabaseWithoutSavingCache() {
+        when(mapLock.tryAcquire(eq(1L), eq("v1"), anyString()))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("redis unavailable"));
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
+
+        assertThat(tripService.findMap(1L).markers()).isEmpty();
+
+        verify(tripAttachmentRepository).findMapRepresentatives(1L);
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+        verify(mapLock, never()).release(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void databaseFailureStillReleasesAcquiredLock() {
+        var failure = new org.springframework.dao.DataAccessResourceFailureException("database unavailable");
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenThrow(failure);
+
+        assertThat(assertThrows(org.springframework.dao.DataAccessResourceFailureException.class,
+                () -> tripService.findMap(1L))).isSameAs(failure);
+
+        var owner = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(mapLock).tryAcquire(eq(1L), eq("v1"), owner.capture());
+        verify(mapLock).release(1L, "v1", owner.getValue());
+        verify(mapCache, never()).save(anyLong(), anyString(), any());
+    }
+
+    private com.yeodam.yeodambe.trip.repository.TripMapRepresentative mapRepresentative(Long tripId, String previewKey) {
+        return new com.yeodam.yeodambe.trip.repository.TripMapRepresentative(tripId, "trip-" + tripId,
+                new BigDecimal("33.4996"), new BigDecimal("126.5312"), previewKey);
+    }
+
+    private void assertInvalid(
+            LocalDate start,
+            LocalDate end,
+            List<String> codes
+    ) {
         assertThrows(InvalidTripRequestException.class,
                 () -> tripService.createTrip(1L, request(start, end, codes)));
     }
 
-    private TripCreateRequest request(LocalDate start, LocalDate end, List<String> codes) {
-        return new TripCreateRequest("여행", start, end, codes,
-                List.of(new TripAttachmentMetadataRequest(
-                        OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)));
+    private TripCreateRequest request(
+            LocalDate start,
+            LocalDate end,
+            List<String> codes
+    ) {
+        return new TripCreateRequest(
+                "여행",
+                start,
+                end,
+                codes
+        );
     }
 
     private void givenRegion() {
@@ -426,39 +479,6 @@ class TripServiceTest {
         });
     }
 
-    private Trip mapTrip(Long tripId, String tripName) {
-        Trip trip = mock(Trip.class);
-        when(trip.getId()).thenReturn(tripId);
-        when(trip.getTripName()).thenReturn(tripName);
-        return trip;
-    }
-
-    private TripRegion mapRegion(Trip trip) {
-        return mapRegion(
-                trip,
-                "50110",
-                "제주특별자치도 제주시",
-                "33.4996",
-                "126.5312"
-        );
-    }
-
-    private TripRegion mapRegion(
-            Trip trip,
-            String regionCode,
-            String regionName,
-            String latitude,
-            String longitude
-    ) {
-        TripRegion region = mock(TripRegion.class);
-        when(region.getTrip()).thenReturn(trip);
-        when(region.getRegionCode()).thenReturn(regionCode);
-        when(region.getRegionName()).thenReturn(regionName);
-        when(region.getLatitude()).thenReturn(new BigDecimal(latitude));
-        when(region.getLongitude()).thenReturn(new BigDecimal(longitude));
-        return region;
-    }
-
     private void startLogAppender() {
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -466,7 +486,10 @@ class TripServiceTest {
         logAppender = appender;
     }
 
-    private Object keyValue(ILoggingEvent event, String key) {
+    private Object keyValue(
+            ILoggingEvent event,
+            String key
+    ) {
         return event.getKeyValuePairs().stream()
                 .filter(pair -> key.equals(pair.key))
                 .map(pair -> pair.value)

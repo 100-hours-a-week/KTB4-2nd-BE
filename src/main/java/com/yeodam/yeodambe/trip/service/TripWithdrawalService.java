@@ -20,14 +20,25 @@ public class TripWithdrawalService {
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final StoredFileRepository storedFileRepository;
+    private final InitialAttachmentUploadTransactionService uploadTransactions;
+    private final AdditionalAttachmentUploadTransactionService additionalTransactions;
+    private final TripMapCacheStore tripMapCacheStore;
 
     @Transactional
-    public void withdrawAll(Long userId, LocalDateTime withdrawnAt) {
-        tripRepository.findAllOwnedActiveForUpdate(userId);
+    public void withdrawAll(
+            Long userId,
+            LocalDateTime withdrawnAt
+    ) {
+        tripRepository.findAllOwnedActiveForUpdate(userId)
+                .forEach(trip -> {
+                    uploadTransactions.cancelExecution(trip.getId(), userId);
+                    additionalTransactions.cancelForWithdrawal(trip.getId(), userId);
+                });
         tripRegionRepository.softDeleteByUserId(userId, withdrawnAt);
         tripDetailPlaceRepository.softDeleteByUserId(userId, withdrawnAt);
         tripAttachmentRepository.softDeleteByUserId(userId, withdrawnAt);
         storedFileRepository.softDeleteByUserId(userId, withdrawnAt);
         tripRepository.softDeleteByUserId(userId, withdrawnAt);
+        tripMapCacheStore.evictAfterCommit(userId);
     }
 }

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.entity;
 
+import org.springframework.util.Assert;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -29,6 +30,18 @@ public class StoryGenerationOutbox {
     @Column(name = "request_id", nullable = false, length = 128)
     private String requestId;
 
+    @Column(name = "trip_id", updatable = false)
+    private Long tripId;
+
+    @Column(name = "topic", updatable = false)
+    private String topic;
+
+    @Column(name = "event_source", nullable = false, updatable = false)
+    private String eventSource = "story_generation_outbox";
+
+    @Column(name = "cdc_managed", nullable = false, updatable = false)
+    private boolean cdcManaged;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private Status status = Status.PENDING;
@@ -56,21 +69,20 @@ public class StoryGenerationOutbox {
         this.requestId = requestId;
     }
 
-    public void beginPublishing() {
-        this.status = Status.PUBLISHING;
-        this.attemptCount++;
-        this.lastError = null;
+    public void enableCdc(Long tripId, String topic) {
+        Assert.notNull(tripId, "Outbox tripId is required");
+        Assert.hasText(topic, "Outbox topic is required");
+        this.tripId = tripId;
+        this.topic = topic;
+        this.cdcManaged = true;
     }
 
     public void publicationSucceeded(LocalDateTime publishedAt) {
         this.status = Status.PUBLISHED;
-        this.publishedAt = publishedAt;
+        if (this.publishedAt == null) {
+            this.publishedAt = publishedAt;
+        }
         this.lastError = null;
-    }
-
-    public void publicationFailed(String error) {
-        this.status = Status.PENDING;
-        this.lastError = error;
     }
 
     public enum Status {

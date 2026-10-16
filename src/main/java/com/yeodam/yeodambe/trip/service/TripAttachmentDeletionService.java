@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -21,6 +22,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class TripAttachmentDeletionService {
+    private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
+    private final jakarta.persistence.EntityManager entityManager;
     private static final int MAX_DELETE_COUNT = 200;
 
     private static final Comparator<TripAttachment> THUMBNAIL_ORDER = Comparator.comparing(
@@ -31,9 +34,13 @@ public class TripAttachmentDeletionService {
 
     private final TripAttachmentRepository tripAttachmentRepository;
     private final UserStatsService userStats;
+    private final TripMapCacheStore tripMapCacheStore;
 
-    @Transactional
-    public void deleteOne(Long userId, Long tripAttachmentId) {
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void deleteOne(
+            Long userId,
+            Long tripAttachmentId
+    ) {
         TripAttachment attachment = tripAttachmentRepository
                 .findAccessibleById(tripAttachmentId, userId)
                 .orElseThrow(AttachmentNotFoundException::new);
@@ -41,8 +48,11 @@ public class TripAttachmentDeletionService {
         softDelete(List.of(attachment), userId);
     }
 
-    @Transactional
-    public void deleteBulk(Long userId, List<Long> tripAttachmentIds) {
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void deleteBulk(
+            Long userId,
+            List<Long> tripAttachmentIds
+    ) {
         validateIds(tripAttachmentIds);
 
         List<TripAttachment> attachments = tripAttachmentRepository
@@ -73,6 +83,13 @@ public class TripAttachmentDeletionService {
     }
 
     private void softDelete(List<TripAttachment> attachments, Long userId) {
+        attachments.stream().map(TripAttachment::getTripId).distinct().sorted()
+                .forEach(tripId -> additionalAttachmentModificationGuard.check(tripId, userId));
+        attachments.forEach(entityManager::refresh);
+        if (attachments.stream().anyMatch(attachment -> attachment.getDeletedAt() != null
+                || attachment.getFile().getDeletedAt() != null)) {
+            throw new InvalidAttachmentIdsException();
+        }
         LocalDateTime deletedAt = LocalDateTime.now();
 
         List<TripDetailPlace> affectedPlaces = attachments.stream()
@@ -99,6 +116,7 @@ public class TripAttachmentDeletionService {
         affectedPlaces.forEach(this::refreshThumbnail);
         affectedTrips.forEach(this::refreshThumbnail);
         userStats.refreshFromActiveTrips(userId);
+        tripMapCacheStore.evictAfterCommit(userId);
     }
 
     private void refreshThumbnail(TripDetailPlace place) {

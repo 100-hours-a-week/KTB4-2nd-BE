@@ -26,7 +26,6 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-kafka'
-    implementation 'software.amazon.msk:aws-msk-iam-auth:2.3.8'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-restclient'
@@ -49,8 +48,12 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testImplementation 'org.testcontainers:testcontainers-mysql'
+    testImplementation 'org.testcontainers:testcontainers-kafka'
+    testRuntimeOnly 'org.apache.groovy:groovy-jsr223:4.0.24'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+    systemProperty 'spring.test.context.cache.maxSize', '8'
+    systemProperty 'spring.datasource.hikari.maximum-pool-size', '3'
 }

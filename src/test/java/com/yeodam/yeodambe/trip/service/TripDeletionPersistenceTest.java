@@ -1,7 +1,5 @@
 package com.yeodam.yeodambe.trip.service;
 
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
@@ -23,12 +21,14 @@ import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Bean;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -50,10 +50,12 @@ import static org.mockito.Mockito.*;
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop"
 })
-@Import({TripDeletionService.class, TripObjectCleanupService.class, UserStatsService.class,
+@Import({AdditionalAttachmentModificationGuard.class, TripDeletionService.class, TripObjectCleanupService.class, UserStatsService.class,
         TripDeletionPersistenceTest.MeterRegistryTestConfiguration.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripDeletionPersistenceTest {
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     @TestConfiguration
     static class MeterRegistryTestConfiguration {
         @Bean
@@ -62,16 +64,33 @@ class TripDeletionPersistenceTest {
         }
     }
 
-    @Autowired private TripDeletionService service;
-    @Autowired private UserRepository users;
-    @Autowired private UserStatsRepository stats;
-    @Autowired private TripRepository trips;
-    @Autowired private TripRegionRepository regions;
-    @Autowired private TripDetailPlaceRepository places;
-    @Autowired private StoredFileRepository files;
-    @Autowired private TripAttachmentRepository attachments;
+    @Autowired
 
-    @MockitoBean private TripAttachmentStorageClient storage;
+    private TripDeletionService service;
+    @Autowired
+    private UserRepository users;
+    @Autowired
+    private UserStatsRepository stats;
+    @Autowired
+    private TripRepository trips;
+    @Autowired
+    private TripRegionRepository regions;
+    @Autowired
+    private TripDetailPlaceRepository places;
+    @Autowired
+    private StoredFileRepository files;
+    @Autowired
+    private TripAttachmentRepository attachments;
+
+    @MockitoBean
+    private InitialAttachmentUploadTransactionService uploadTransactions;
+
+    @MockitoBean
+    private AdditionalAttachmentUploadTransactionService additionalTransactions;
+
+    @MockitoBean
+
+    private TripAttachmentStorageClient storage;
 
     @Test
     void 여행과_연관_데이터를_같은_시각에_삭제하고_남은_통계를_저장한다() {
@@ -100,7 +119,7 @@ class TripDeletionPersistenceTest {
         UserStats refreshed = stats.findByUser_UserId(owner.getUserId()).orElseThrow();
         assertThat(refreshed.getTripCount()).isOne();
         assertThat(refreshed.getAttachmentCount()).isOne();
-        assertThat(refreshed.getStorageUsedBytes()).isEqualTo(40L);
+        assertThat(refreshed.getStorageUsedBytes()).isEqualTo(10L);
         assertThat(files.findById(remainingAttachment.getFileId()).orElseThrow().getDeletedAt())
                 .isNull();
         verify(storage, never()).size(anyString());
@@ -114,7 +133,7 @@ class TripDeletionPersistenceTest {
         TripAttachment targetAttachment = attachment(owner, target, null, "target");
         TripAttachment missingSize = attachment(owner, remaining, null, "remaining");
         StoredFile missingFile = files.findById(missingSize.getFileId()).orElseThrow();
-        org.springframework.test.util.ReflectionTestUtils.setField(missingFile, "originalSizeBytes", null);
+        ReflectionTestUtils.setField(missingFile, "originalSizeBytes", null);
         files.saveAndFlush(missingFile);
 
         assertThrows(IllegalStateException.class,
@@ -220,13 +239,21 @@ class TripDeletionPersistenceTest {
         return owner;
     }
 
-    private Trip completedTrip(User owner, String name) {
+    private Trip completedTrip(
+            User owner,
+            String name
+    ) {
         Trip trip = new Trip(owner.getUserId(), name, LocalDate.now(), LocalDate.now());
         ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
         return trips.saveAndFlush(trip);
     }
 
-    private TripAttachment attachment(User owner, Trip trip, Long placeId, String key) {
+    private TripAttachment attachment(
+            User owner,
+            Trip trip,
+            Long placeId,
+            String key
+    ) {
         StoredFile file = StoredFile.uploaded(
                 owner.getUserId(), key + ".jpg", "original/" + key, "image/jpeg");
         file.storageSize(10L);

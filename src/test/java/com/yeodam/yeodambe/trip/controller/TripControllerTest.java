@@ -1,28 +1,31 @@
 package com.yeodam.yeodambe.trip.controller;
 
-import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
+import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
+import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.trip.controller.TripController;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
-import com.yeodam.yeodambe.trip.service.TripService;
-import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
-import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
-import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripDeletionService;
+import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
+import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
+import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
+import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import com.yeodam.yeodambe.trip.service.request.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
+import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.ObjectMapper;
-import com.yeodam.yeodambe.trip.service.request.TripListCursor;
-import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.validation.BindingResult;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,9 +46,29 @@ class TripControllerTest {
             tripService, processingStatusService, cancellationService, placeFolderListService,
             deletionService, objectMapper);
     private final TripCreateRequest request = new TripCreateRequest(
-            "여행", LocalDate.now(), LocalDate.now(), List.of("50110"),
-            List.of(new TripAttachmentMetadataRequest(
-                    OffsetDateTime.parse("2026-10-11T10:30:00+09:00"), null, null)));
+            "여행",
+            LocalDate.now(),
+            LocalDate.now(),
+            List.of("50110")
+    );
+
+    @Test
+    void mapResponseContainsTripMarkersWithoutRegionGroupingFields() {
+        var data = new com.yeodam.yeodambe.trip.service.response.TripMapResponse(List.of(
+                new com.yeodam.yeodambe.trip.service.response.TripMapResponse.Marker(7L, "trip",
+                        new java.math.BigDecimal("37.5"), new java.math.BigDecimal("127.2"), "https://example.test/preview", 3L)));
+        when(tripService.findMap(1L)).thenReturn(data);
+        var response = controller.findMap(jwt());
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        var root = objectMapper.valueToTree(response.getBody());
+        assertThat(root.path("message").asString()).isEqualTo("TRIP_MAP_FOUND");
+        var marker = root.path("data").path("markers").get(0);
+        assertThat(marker.propertyNames()).containsExactlyInAnyOrder(
+                "tripId", "tripName", "latitude", "longitude", "thumbnailUrl", "attachmentCount");
+        assertThat(marker.path("tripId").asLong()).isEqualTo(7L);
+        assertThat(marker.path("thumbnailUrl").asString()).isEqualTo("https://example.test/preview");
+        verify(tripService).findMap(1L);
+    }
 
     @Test
     void 인증된_사용자의_여행을_생성하면_처리중으로_응답한다() {
@@ -101,11 +124,11 @@ class TripControllerTest {
 
     @Test
     void 수정_요청은_JWT_회원_ID로_전달하고_성공_응답을_감싼다() {
-        var request = new com.yeodam.yeodambe.trip.service.request.TripUpdateRequest(
+        var request = new TripUpdateRequest(
                 "수정 여행", null, null, null);
-        var data = new com.yeodam.yeodambe.trip.service.response.TripUpdateResponse(
+        var data = new TripUpdateResponse(
                 7L, "수정 여행", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 3), List.of());
-        var binding = mock(org.springframework.validation.BindingResult.class);
+        var binding = mock(BindingResult.class);
         when(tripService.updateTrip(7L, 1L, request)).thenReturn(data);
         var response = controller.updateTrip(7L, request, binding, jwt());
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -116,12 +139,12 @@ class TripControllerTest {
 
     @Test
     void 수정_DTO_검증에_실패하면_서비스를_호출하지_않는다() {
-        var binding = mock(org.springframework.validation.BindingResult.class);
+        var binding = mock(BindingResult.class);
         when(binding.hasErrors()).thenReturn(true);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.updateTrip(
-                7L, new com.yeodam.yeodambe.trip.service.request.TripUpdateRequest(
+        Assertions.assertThatThrownBy(() -> controller.updateTrip(
+                7L, new TripUpdateRequest(
                         null, null, null, null), binding, jwt()))
-                .isInstanceOf(com.yeodam.yeodambe.common.exception.InvalidTripRequestException.class);
+                .isInstanceOf(InvalidTripRequestException.class);
         verifyNoInteractions(tripService);
     }
 

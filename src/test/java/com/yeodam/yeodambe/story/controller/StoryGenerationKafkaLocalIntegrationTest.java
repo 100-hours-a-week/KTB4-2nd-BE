@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.controller;
 
+import com.yeodam.yeodambe.SharedTestKafka;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
@@ -16,12 +17,13 @@ import com.yeodam.yeodambe.user.security.jwt.ActiveLoginSessionValidator;
 import jakarta.servlet.http.Cookie;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -30,6 +32,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
@@ -41,6 +45,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -48,15 +53,23 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@EnabledIfEnvironmentVariable(named = "YEODAM_KAFKA_INTEGRATION", matches = "true")
-@SpringBootTest(properties = {
-        "spring.kafka.bootstrap-servers=localhost:9092",
-        "app.kafka.topics.story-create-request=ai-jobs"
-})
+@SpringBootTest
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
 class StoryGenerationKafkaLocalIntegrationTest {
+
+    private static final String BOOTSTRAP_SERVERS = SharedTestKafka.bootstrapServers();
+
+    private static final String REQUEST_TOPIC = "story-request-" + UUID.randomUUID();
+
+    @DynamicPropertySource
+    static void configureKafka(DynamicPropertyRegistry registry) throws Exception {
+        SharedTestKafka.registerBootstrapServers(registry);
+        SharedTestKafka.createTopics(REQUEST_TOPIC);
+        registry.add("app.kafka.topics.story-create-request", () -> REQUEST_TOPIC);
+    }
+
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper mapper;
     @Autowired private AccessTokenIssuer issuer;
@@ -110,39 +123,49 @@ class StoryGenerationKafkaLocalIntegrationTest {
     }
 
     @Test
-    void apiCommitsOutboxPublishesExactJsonAndReturnsAccepted() throws Exception {
+    void apiCommitsCdcOutboxAndReturnsAcceptedWithExactRequestJson() throws Exception {
         Map<String, Object> config = Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092",
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS,
                 ConsumerConfig.GROUP_ID_CONFIG, "local-story-verification-" + UUID.randomUUID(),
                 ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false,
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
                 ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class
         );
         try (var consumer = new KafkaConsumer<String, String>(config)) {
-            var partition = new TopicPartition("ai-jobs", 0);
-            consumer.assign(List.of(partition));
-            consumer.seekToEnd(List.of(partition));
-            consumer.position(partition);
+            var partitions = consumer.partitionsFor(REQUEST_TOPIC).stream()
+                    .map(partition -> new TopicPartition(partition.topic(), partition.partition()))
+                    .toList();
+            consumer.assign(partitions);
+            consumer.seekToEnd(partitions);
+            partitions.forEach(consumer::position);
             String path = "/trips/" + trip.getId() + "/story-generations";
             String requestId = "local-kafka-" + UUID.randomUUID();
 
-            var started = mvc.perform(post("/api" + path).contextPath("/api").servletPath(path)
+            var response = mvc.perform(post("/api" + path).contextPath("/api").servletPath(path)
                             .cookie(new Cookie("accessToken", issuer.issue(owner.getUserId(), "test-session")),
                                     new Cookie("CSRF_CONTEXT", "kafka-test-browser"))
                             .header("X-CSRF-TOKEN", "csrf-test").header("X-Request-ID", requestId)
                             .contentType("application/json")
                             .content("{\"mood\":\"EMOTIONAL\",\"tripPlaceIds\":[" + folder.getId() + "]}"))
-                    .andExpect(request().asyncStarted()).andReturn();
-            var response = mvc.perform(asyncDispatch(started)).andExpect(status().isAccepted())
+                    .andExpect(request().asyncNotStarted()).andExpect(status().isAccepted())
                     .andExpect(jsonPath("$.message").value("STORY_GENERATION_ACCEPTED"))
                     .andExpect(jsonPath("$.data.status").value("QUEUED")).andReturn();
             Long generationId = mapper.readTree(response.getResponse().getContentAsString())
                     .path("data").path("generationId").asLong();
             var job = jobs.findById(generationId).orElseThrow();
             var outbox = outboxes.findByGenerationId(generationId).orElseThrow();
-            assertThat(outbox.getStatus()).isEqualTo(StoryGenerationOutbox.Status.PUBLISHED);
-            assertThat(outbox.getPublishedAt()).isNotNull();
-            assertThat(outbox.getAttemptCount()).isEqualTo(1);
+            assertThat(outbox.getStatus()).isEqualTo(StoryGenerationOutbox.Status.PENDING);
+            assertThat(outbox.getPublishedAt()).isNull();
+            assertThat(outbox.isCdcManaged()).isTrue();
+            assertThat(consumer.poll(Duration.ofMillis(300))).isEmpty();
+            // Simulate CDC delivery at the Kafka boundary; actual Connector behavior has a separate test.
+            try (var producer = new KafkaProducer<String, String>(Map.of(
+                    "bootstrap.servers", BOOTSTRAP_SERVERS,
+                    "key.serializer", "org.apache.kafka.common.serialization.StringSerializer",
+                    "value.serializer", "org.apache.kafka.common.serialization.StringSerializer"))) {
+                producer.send(new ProducerRecord<>(
+                        outbox.getTopic(), trip.getId().toString(), outbox.getPayload())).get(10, TimeUnit.SECONDS);
+            }
             assertThat(outbox.getRequestId()).isEqualTo(requestId);
 
             String received = null;
@@ -151,7 +174,7 @@ class StoryGenerationKafkaLocalIntegrationTest {
                 for (var record : consumer.poll(Duration.ofSeconds(1))) {
                     if (mapper.readTree(record.value()).path("execution_id").asString().equals(job.getExecutionId())) {
                         received = record.value();
-                        assertThat(record.key()).isNull();
+                        assertThat(record.key()).isEqualTo(trip.getId().toString());
                         break;
                     }
                 }

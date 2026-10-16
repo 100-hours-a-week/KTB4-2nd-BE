@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 
 import java.time.LocalDateTime;
 
@@ -66,7 +67,66 @@ public class StoryGenerationJob {
         this.mood = mood;
     }
 
+    public boolean isFinished() {
+        return status == Status.COMPLETED
+                || status == Status.FAILED
+                || status == Status.CANCELED;
+    }
+
+    public boolean failIfTimedOut(LocalDateTime publishedAt, LocalDateTime now) {
+        if (isFinished() || publishedAt == null || publishedAt.plusHours(1).isAfter(now)) {
+            return false;
+        }
+        fail("STORY_GENERATION_TIMEOUT");
+        return true;
+    }
+
+    public void updateProcessing(int progress) {
+        if (isFinished()) {
+            return;
+        }
+
+        if (progress < 0 || progress > 100) {
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.JOB_PROGRESS_INVALID.message()
+            );
+        }
+
+        this.status = Status.PROCESSING;
+        this.progress = Math.max(this.progress, progress);
+    }
+
+    public void complete(Long storyId) {
+        if (isFinished()) {
+            return;
+        }
+
+        if (storyId == null || storyId <= 0) {
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.JOB_STORY_ID_REQUIRED.message()
+            );
+        }
+
+        this.status = Status.COMPLETED;
+        this.progress = 100;
+        this.storyId = storyId;
+        this.errorCode = null;
+    }
+
+    public void cancel() {
+        if (isFinished()) {
+            return;
+        }
+
+        this.status = Status.CANCELED;
+        this.errorCode = null;
+    }
+
     public void fail(String errorCode) {
+        if (isFinished()) {
+            return;
+        }
+
         this.status = Status.FAILED;
         this.errorCode = errorCode;
     }

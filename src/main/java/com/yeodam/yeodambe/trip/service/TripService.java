@@ -1,68 +1,74 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
-import com.yeodam.yeodambe.story.repository.StoryRepository;
-import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
 import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
-import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripUpdateNotAllowedException;
-import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
-import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
-import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
-import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.story.repository.StoryRepository;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
+import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripRegionName;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.repository.TripRegionName;
+import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
+import com.yeodam.yeodambe.trip.service.request.AttachmentCursor;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
-import com.yeodam.yeodambe.trip.service.request.TripAttachmentMetadataRequest;
-import com.yeodam.yeodambe.trip.exception.TripCreationMetadataMissingException;
-import com.yeodam.yeodambe.trip.service.response.TripCreationValidationResponse;
 import com.yeodam.yeodambe.trip.service.request.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
+import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
+import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
+import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
+import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
+import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
+import com.yeodam.yeodambe.trip.service.response.TripMapCacheData;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
+import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
+import org.springframework.dao.DataAccessException;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.spi.LoggingEventBuilder;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.data.domain.PageRequest;
-import org.slf4j.spi.LoggingEventBuilder;
-import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
-import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
-import com.yeodam.yeodambe.common.response.ErrorMessage;
-import com.yeodam.yeodambe.trip.entity.TripAttachment;
-import com.yeodam.yeodambe.trip.service.request.AttachmentCursor;
-import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
-import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import tools.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
 
-
-import java.util.Collection;
-import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.util.Optional;
+import java.util.UUID;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.HashSet;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class TripService {
+    private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
     private static final int TRIP_LIST_SIZE = 7;
     private static final int TRIP_LIST_FETCH_SIZE = TRIP_LIST_SIZE + 1;
     private static final int EDIT_ATTACHMENT_PAGE_SIZE = 18;
@@ -75,9 +81,14 @@ public class TripService {
     private final TripAccessService tripAccessService;
     private final ObjectMapper objectMapper;
     private final StoryRepository storyRepository;
+    private final TripMapCacheStore tripMapCacheStore;
+    private final TripMapCacheLock tripMapCacheLock;
 
     @Transactional(readOnly = true)
-    public List<Long> findSearchCandidateIds(Long userId, TripSearchCondition condition) {
+    public List<TripSearchCandidateResponse> findSearchCandidates(
+            Long userId,
+            TripSearchCondition condition
+    ) {
         List<String> regionNames = condition.regionNames() == null
                 ? List.of() : condition.regionNames();
         boolean filterRegions = !regionNames.isEmpty();
@@ -86,14 +97,17 @@ public class TripService {
         LocalDateTime takenBefore = condition.dateTo() == null
                 ? null : condition.dateTo().plusDays(1).atStartOfDay();
 
-        return tripAttachmentRepository.findSearchCandidateIds(
+        return tripAttachmentRepository.findSearchCandidates(
                 userId, takenFrom, takenBefore, filterRegions,
                 filterRegions ? regionNames : List.of("")
         );
     }
 
     @Transactional(readOnly = true)
-    public TripSearchResultResponse findSearchResults(Long userId, Collection<Long> attachmentIds) {
+    public TripSearchResultResponse findSearchResults(
+            Long userId,
+            Collection<Long> attachmentIds
+    ) {
         if (attachmentIds.isEmpty()) {
             return new TripSearchResultResponse(List.of(), List.of());
         }
@@ -103,61 +117,48 @@ public class TripService {
             return new TripSearchResultResponse(List.of(), List.of());
         }
 
-        Map<Long, Trip> trips = attachments.stream()
-                .collect(Collectors.toMap(TripAttachment::getTripId, TripAttachment::getTrip,
-                        (first, duplicate) -> first, LinkedHashMap::new));
-
-        List<Long> tripIds = List.copyOf(trips.keySet());
-
-        Map<Long, List<String>> regionNames = tripRegionRepository.findNamesByTripIds(tripIds).stream()
-                .collect(Collectors.groupingBy(TripRegionName::tripId,
-                        Collectors.mapping(TripRegionName::regionName, Collectors.toList())));
-
-        Map<Long, Long> counts = tripAttachmentRepository.countActiveByTripIds(tripIds).stream()
-                .collect(Collectors.toMap(TripAttachmentCount::tripId, TripAttachmentCount::attachmentCount));
-
         List<TripSearchResultResponse.Attachment> photos = attachments.stream()
                 .map(attachment -> new TripSearchResultResponse.Attachment(
                         attachment.getId(), attachment.getTripId(), attachment.getTripPlaceId(),
                         tripAttachmentStorageClient.createReadUrl(attachment.getPreviewStorageKey())))
                 .toList();
 
-        List<TripSearchResultResponse.Folder> folders = trips.values().stream()
-                .map(trip -> new TripSearchResultResponse.Folder(
-                        trip.getId(), trip.getTripName(), trip.getStartDate(), trip.getEndDate(),
-                        regionNames.getOrDefault(trip.getId(), List.of()).stream().limit(3).toList(),
-                        counts.getOrDefault(trip.getId(), 0L), createThumbnailUrl(trip)))
-                .toList();
+        List<TripSearchResultResponse.Folder> folders = buildSearchFolders(attachments);
 
         return new TripSearchResultResponse(photos, folders);
     }
 
-    public TripCreationValidationResponse validateCreation(List<TripAttachmentMetadataRequest> metadata) {
-        boolean canCreate = !allAttachmentsLackMetadata(metadata);
-        return new TripCreationValidationResponse(canCreate,
-                canCreate ? null : ErrorMessage.ALL_PHOTOS_METADATA_MISSING.name());
-    }
-
-    private boolean allAttachmentsLackMetadata(List<TripAttachmentMetadataRequest> metadata) {
-        return metadata.stream()
-                .allMatch(
-                        photo -> photo.takenAt() == null
-                                && photo.latitude() == null && photo.longitude() == null
-                );
-    }
-
-    private void validateCreationMetadata(List<TripAttachmentMetadataRequest> metadata) {
-        if (allAttachmentsLackMetadata(metadata)) {
-            log.atInfo()
-                    .addKeyValue("errorCode", ErrorMessage.ALL_PHOTOS_METADATA_MISSING)
-                    .log("사진 메타데이터가 없어 여행 생성을 거절했습니다.");
-            throw new TripCreationMetadataMissingException();
+    private List<TripSearchResultResponse.Folder> buildSearchFolders(List<TripAttachment> attachments) {
+        Map<Long, TripDetailPlace> places = attachments.stream()
+                .map(TripAttachment::getTripPlace)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(TripDetailPlace::getId, place -> place,
+                        (first, duplicate) -> first, LinkedHashMap::new));
+        if (places.isEmpty()) {
+            return List.of();
         }
+
+        Map<Long, Long> counts = tripAttachmentRepository.countActiveByTripPlaceIds(places.keySet()).stream()
+                .collect(Collectors.toMap(PlaceFolderAttachmentCount::tripPlaceId,
+                        PlaceFolderAttachmentCount::attachmentCount));
+        Map<Long, String> tripNames = attachments.stream()
+                .collect(Collectors.toMap(TripAttachment::getTripId,
+                        attachment -> attachment.getTrip().getTripName(), (first, duplicate) -> first));
+
+        return places.values().stream()
+                .map(place -> new TripSearchResultResponse.Folder(
+                        place.getTripId(), place.getId(), tripNames.get(place.getTripId()), place.getPlaceName(),
+                        place.getThumbnailKey() == null ? null
+                                : tripAttachmentStorageClient.createReadUrl(place.getThumbnailKey()),
+                        counts.getOrDefault(place.getId(), 0L)))
+                .toList();
     }
 
     @Transactional
-    public TripCreateResponse createTrip(Long userId, TripCreateRequest request) {
-        validateCreationMetadata(request.attachmentMetadata());
+    public TripCreateResponse createTrip(
+            Long userId,
+            TripCreateRequest request
+    ) {
         validateTrip(
                 request.startDate(),
                 request.endDate(),
@@ -208,6 +209,12 @@ public class TripService {
             throw new TripUpdateNotAllowedException();
         }
 
+        try {
+            additionalAttachmentModificationGuard.check(tripId, userId);
+        } catch (com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException e) {
+            throw new TripUpdateNotAllowedException();
+        }
+
         List<TripRegion> existingRegions = tripRegionRepository
                 .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId);
 
@@ -249,6 +256,8 @@ public class TripService {
                         region.getRegionName()
                 ))
                 .toList();
+
+        tripMapCacheStore.evictAfterCommit(userId);
 
         return new TripUpdateResponse(
                 trip.getId(),
@@ -322,13 +331,16 @@ public class TripService {
                 trip.getStartDate(),
                 trip.getEndDate(),
                 regions,
-                tripAttachmentRepository.countForEditByTripId(tripId),
+                tripAttachmentRepository.countVisibleForEditByTripId(tripId),
                 new TripAttachmentListResponse(items, hasNext, nextCursor)
         );
     }
 
     @Transactional
-    public TripFavoriteResponse registerFavorite(Long tripId, Long userId) {
+    public TripFavoriteResponse registerFavorite(
+            Long tripId,
+            Long userId
+    ) {
         Trip trip = tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
                         tripId, userId, ProcessingStatus.COMPLETED)
                 .orElseThrow(TripNotFoundException::new);
@@ -338,7 +350,10 @@ public class TripService {
     }
 
     @Transactional(readOnly = true)
-    public TripDetailResponse findTripDetail(Long tripId, Long userId) {
+    public TripDetailResponse findTripDetail(
+            Long tripId,
+            Long userId
+    ) {
         long startedAt = System.nanoTime();
 
         log.atInfo()
@@ -422,7 +437,10 @@ public class TripService {
     }
 
     @Transactional
-    public void removeFavorite(Long tripId, Long userId) {
+    public void removeFavorite(
+            Long tripId,
+            Long userId
+    ) {
         Trip trip = tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
                         tripId, userId, ProcessingStatus.COMPLETED)
                 .orElseThrow(TripNotFoundException::new);
@@ -432,78 +450,123 @@ public class TripService {
 
     @Transactional(readOnly = true)
     public TripMapResponse findMap(Long userId) {
-        List<TripRegion> regions = tripRegionRepository.findAllForMap(
-                userId,
-                ProcessingStatus.COMPLETED
-        );
+        var version = tripMapCacheStore.version(userId);
 
-        if (regions.isEmpty()) {
-            return new TripMapResponse(List.of());
+        TripMapCacheData data;
+        if (version.isEmpty()) {
+            data = loadMapData(userId);
+        } else {
+            data = findOrFillMapCache(userId, version.get());
         }
 
-        List<Long> tripIds = regions.stream()
-                .map(region -> region.getTrip().getId())
-                .distinct()
+        List<TripMapResponse.Marker> markers = data.markers().stream()
+                .map(marker -> new TripMapResponse.Marker(
+                        marker.tripId(),
+                        marker.tripName(),
+                        marker.latitude(),
+                        marker.longitude(),
+                        tripAttachmentStorageClient.createReadUrl(marker.previewStorageKey()),
+                        marker.attachmentCount()
+                ))
                 .toList();
-
-        List<TripAttachmentCount> attachmentCountResults =
-                tripAttachmentRepository.countNotDeletedByTripIds(tripIds);
-
-        Map<Long, Long> attachmentCounts = new HashMap<>();
-
-        for (TripAttachmentCount result : attachmentCountResults) {
-            attachmentCounts.put(
-                    result.tripId(),
-                    result.attachmentCount()
-            );
-        }
-
-        Map<String, List<TripRegion>> regionsByCode = new LinkedHashMap<>();
-
-        for (TripRegion region : regions) {
-            String regionCode = region.getRegionCode();
-
-            if (!regionsByCode.containsKey(regionCode)) {
-                regionsByCode.put(regionCode, new ArrayList<>());
-            }
-
-            List<TripRegion> groupedRegions = regionsByCode.get(regionCode);
-            groupedRegions.add(region);
-        }
-
-        List<TripMapResponse.Marker> markers = new ArrayList<>();
-
-        for (List<TripRegion> groupedRegions : regionsByCode.values()) {
-            TripRegion representativeRegion = groupedRegions.getFirst();
-
-            List<TripMapResponse.TripSummary> trips = new ArrayList<>();
-
-            for (TripRegion region : groupedRegions) {
-                Trip trip = region.getTrip();
-
-                trips.add(new TripMapResponse.TripSummary(
-                        trip.getId(),
-                        trip.getTripName(),
-                        createThumbnailUrl(trip),
-                        attachmentCounts.getOrDefault(trip.getId(), 0L)
-                ));
-            }
-
-            markers.add(new TripMapResponse.Marker(
-                    representativeRegion.getRegionCode(),
-                    representativeRegion.getRegionName(),
-                    representativeRegion.getLatitude(),
-                    representativeRegion.getLongitude(),
-                    trips.size(),
-                    trips
-            ));
-        }
-
         return new TripMapResponse(markers);
     }
 
+    private TripMapCacheData findOrFillMapCache(
+            Long userId,
+            String version
+    ) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+
+        while (true) {
+            var cached = tripMapCacheStore.find(userId, version);
+            if (cached.isPresent()) {
+                return cached.get();
+            }
+
+            var filled = tryFillMapCache(userId, version);
+            if (filled.isPresent()) {
+                return filled.get();
+            }
+
+            if (System.nanoTime() >= deadline) {
+                log.warn("메인 지도 캐시 대기 시간이 초과됐습니다. userId={}",
+                        userId);
+                return loadMapData(userId);
+            }
+
+            try {
+                TimeUnit.MILLISECONDS.sleep(50);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return loadMapData(userId);
+            }
+        }
+    }
+
+    private Optional<TripMapCacheData> tryFillMapCache(
+            Long userId,
+            String version
+    ) {
+        String owner = UUID.randomUUID().toString();
+
+        boolean acquired;
+        try {
+            acquired = tripMapCacheLock.tryAcquire(userId, version, owner);
+        } catch (DataAccessException exception) {
+            log.warn("메인 지도 캐시 잠금 획득에 실패했습니다. userId={}",
+                    userId, exception);
+            return Optional.of(loadMapData(userId));
+        }
+
+        if (!acquired) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(
+                    tripMapCacheStore.find(userId, version)
+                            .orElseGet(() -> {
+                                TripMapCacheData loaded = loadMapData(userId);
+                                tripMapCacheStore.save(userId, version, loaded);
+                                return loaded;
+                            })
+            );
+        } finally {
+            tripMapCacheLock.release(userId, version, owner);
+        }
+    }
+
+    private TripMapCacheData loadMapData(Long userId) {
+        var representatives = tripAttachmentRepository.findMapRepresentatives(userId);
+        if (representatives.isEmpty()) {
+            return new TripMapCacheData(List.of());
+        }
+
+        List<Long> tripIds = representatives.stream()
+                .map(representative -> representative.tripId())
+                .toList();
+        Map<Long, Long> attachmentCounts = tripAttachmentRepository.countNotDeletedByTripIds(tripIds)
+                .stream().collect(Collectors.toMap(TripAttachmentCount::tripId, TripAttachmentCount::attachmentCount));
+
+        List<TripMapCacheData.Marker> markers = representatives.stream()
+                .map(representative -> new TripMapCacheData.Marker(
+                        representative.tripId(),
+                        representative.tripName(),
+                        representative.latitude(),
+                        representative.longitude(),
+                        representative.previewStorageKey(),
+                        attachmentCounts.getOrDefault(representative.tripId(), 0L)
+                ))
+                .toList();
+        return new TripMapCacheData(markers);
+    }
+
     @Transactional(readOnly = true)
-    public TripListResponse findTrips(Long userId, TripListRequest request) {
+    public TripListResponse findTrips(
+            Long userId,
+            TripListRequest request
+    ) {
         List<Trip> fetched = findTripPage(userId, request);
         boolean hasNext = fetched.size() > TRIP_LIST_SIZE;
         List<Trip> page = hasNext ? fetched.subList(0, TRIP_LIST_SIZE) : fetched;
@@ -558,7 +621,10 @@ public class TripService {
         return new TripListResponse(items, hasNext, nextCursor);
     }
 
-    private List<Trip> findTripPage(Long userId, TripListRequest request) {
+    private List<Trip> findTripPage(
+            Long userId,
+            TripListRequest request
+    ) {
         TripListCursor cursor = request.cursor();
         if (!request.favorite()) {
             return findGroup(userId, request.sort(), null, cursor, TRIP_LIST_FETCH_SIZE);

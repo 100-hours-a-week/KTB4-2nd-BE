@@ -54,17 +54,19 @@ class StoryValidatorTest {
         attachment.classify((long)day, RegionOrigin.EXIF, place.getStartedAt(), BigDecimal.ZERO, BigDecimal.ZERO, 1);
         ReflectionTestUtils.setField(attachment, "id", (long)order);
         StoredFile file = StoredFile.uploaded(42L, "사진.jpg", "원본", "image/jpeg");
-        StoryBlock block = new StoryBlock(1L, (long)order, order, label, "문구"+order, memo);
+        StoryBlock block = new StoryBlock(1L, (long)order, place.getId(), place.getStartedAt().toLocalDate(),
+                order, label, "문구"+order, memo);
         ReflectionTestUtils.setField(block, "id", (long)order);
         return new Row(block, attachment, file, place);
     }
 
     @Test
-    void 전체_블록은_삭제필터_전_최대_10개다() {
+    void 전체_블록은_삭제필터_전_최대_30개다() {
         validator.validateBlockCount(List.of());
-        validator.validateBlockCount(Collections.nCopies(10, row(1, 7, "날", null)));
-        assertThatThrownBy(() -> validator.validateBlockCount(Collections.nCopies(11, row(1, 7, "날", null))))
-                .isInstanceOf(StoryDataIntegrityException.class);
+        validator.validateBlockCount(Collections.nCopies(30, row(1, 7, "날", null)));
+        assertThatThrownBy(() -> validator.validateBlockCount(Collections.nCopies(31, row(1, 7, "날", null))))
+                .isInstanceOf(StoryDataIntegrityException.class)
+                .hasMessage("블록 개수: 최대 30개를 초과했습니다.");
     }
 
     @Test
@@ -78,16 +80,16 @@ class StoryValidatorTest {
     }
 
     @Test
-    void 표시_장소의_존재_소속_시작일과_미리보기키를_검증한다() {
+    void 표시_장소의_존재_소속_보존날짜와_미리보기키를_검증한다() {
         Row valid = row(1, 7, "날", null);
         validator.validateDisplayBlocks(7L, List.of(valid));
         invalidDisplay(new Row(valid.block(), valid.attachment(), valid.file(), null));
         ReflectionTestUtils.setField(valid.place(), "tripId", 8L);
         invalidDisplay(valid);
         ReflectionTestUtils.setField(valid.place(), "tripId", 7L);
-        ReflectionTestUtils.setField(valid.place(), "startedAt", null);
+        ReflectionTestUtils.setField(valid.block(), "sourceDate", null);
         invalidDisplay(valid);
-        ReflectionTestUtils.setField(valid.place(), "startedAt", LocalDateTime.now());
+        ReflectionTestUtils.setField(valid.block(), "sourceDate", java.time.LocalDate.of(2026, 10, 7));
         for (String key : new String[]{null, "", " "}) {
             ReflectionTestUtils.setField(valid.attachment(), "previewStorageKey", key);
             invalidDisplay(valid);

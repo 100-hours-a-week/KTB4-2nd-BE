@@ -3,15 +3,18 @@ package com.yeodam.yeodambe.integration.client;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import org.slf4j.LoggerFactory;
 import com.sun.net.httpserver.HttpServer;
 import com.yeodam.yeodambe.common.exception.AiQueryUnavailableException;
+import com.yeodam.yeodambe.common.exception.AiQueryTimeoutException;
 import com.yeodam.yeodambe.integration.service.request.AiQueryParseRequest;
 import com.yeodam.yeodambe.integration.service.request.AiQuerySearchRequest;
 import com.yeodam.yeodambe.integration.service.response.AiQueryParseResponse.Intent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
@@ -19,9 +22,11 @@ import tools.jackson.databind.ObjectMapper;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.*;
@@ -88,10 +93,10 @@ class AiQueryClientTest {
     void HTTP_1_1로_스네이크_케이스_요청과_인증_토큰과_요청_ID를_전송한다() {
         response = """
                 {"intent":"QUESTION","date_from":"2024-02-29","date_to":null,
-                 "region_names":["제주특별자치도"],"visual_query":"바다"}
+                 "region_names":["제주특별자치도"],"visual_query":"바다","parsed":true}
                 """;
         MDC.put("request_id", "search-request-1");
-        assertThat(client.parse(new AiQueryParseRequest("제주 바다", null)).dateFrom())
+        assertThat(client.parse(new AiQueryParseRequest("제주 바다", LocalDate.of(2026, 10, 12))).dateFrom())
                 .hasToString("2024-02-29");
         assertThat(method.get()).isEqualTo("POST /query/parse");
         assertThat(authorization.get()).isEqualTo("Bearer secret-key");
@@ -99,25 +104,36 @@ class AiQueryClientTest {
         assertThat(protocol.get()).isEqualTo("HTTP/1.1");
         var json = new ObjectMapper().readTree(body.get());
         assertThat(json.path("query").asString()).isEqualTo("제주 바다");
-        assertThat(json.has("trip_id")).isTrue();
-        assertThat(json.path("trip_id").isNull()).isTrue();
+        assertThat(json.has("trip_id")).isFalse();
+        assertThat(json.path("reference_date").asString()).isEqualTo("2026-10-12");
         response = """
                 {"attachments":[{"trip_attachment_id":7,"score":0.8}],
                  "answer":null,"answer_error":"ANSWER_FAILED"}
                 """;
-        var result = client.search(new AiQuerySearchRequest(Intent.QUESTION, "바다", List.of(7L), 30));
+        var result = client.search(new AiQuerySearchRequest("제주 바다", Intent.QUESTION, "바다",
+                List.of(new AiQuerySearchRequest.Candidate(7L, "trips/1/analyze/7.jpg",
+                        OffsetDateTime.parse("2026-10-12T00:30:00+09:00"), "해변", "제주 여행"),
+                        new AiQuerySearchRequest.Candidate(8L, "trips/1/analyze/8.jpg", null, null, null)), 30));
         assertThat(result.attachments().getFirst().tripAttachmentId()).isEqualTo(7L);
         assertThat(result.answerError()).isEqualTo("ANSWER_FAILED");
         assertThat(method.get()).isEqualTo("POST /query/search");
         json = new ObjectMapper().readTree(body.get());
-        assertThat(json.path("candidate_attachment_ids").toString()).isEqualTo("[7]");
+        assertThat(json.has("candidate_attachment_ids")).isFalse();
+        assertThat(json.path("candidates").get(0).path("trip_attachment_id").asLong()).isEqualTo(7L);
+        assertThat(json.path("query").asString()).isEqualTo("제주 바다");
+        var candidate = json.path("candidates").get(0);
+        assertThat(candidate.path("analyze_storage_key").asString()).isEqualTo("trips/1/analyze/7.jpg");
+        assertThat(candidate.path("taken_at").asString()).isEqualTo("2026-10-12T00:30:00+09:00");
+        assertThat(candidate.path("place_name").asString()).isEqualTo("해변");
+        assertThat(candidate.path("trip_name").asString()).isEqualTo("제주 여행");
+        assertThat(json.path("candidates").get(1).path("taken_at").isNull()).isTrue();
         assertThat(json.path("limit").asInt()).isEqualTo(30);
         assertThat(json.path("visual_query").asString()).isEqualTo("바다");
     }
 
     @Test
     void HTTP_실패와_잘못된_응답_계약을_내부_정보_노출_없이_거부한다() {
-        for (int code : List.of(400, 500)) {
+        for (int code : List.of(400, 422, 500, 503)) {
             status = code;
             response = "secret-key private-query";
             assertThatThrownBy(() -> client.parse(new AiQueryParseRequest("private-query", null)))
@@ -149,12 +165,64 @@ class AiQueryClientTest {
     }
 
     @Test
-    void 읽기_시간_초과와_연결_거부를_검색_서비스_예외로_변환한다() {
-        delayMillis = 500;
-        assertThatThrownBy(() -> client.parse(new AiQueryParseRequest("바다 사진", null)))
-                .isInstanceOf(AiQueryUnavailableException.class).hasCause(null);
+    void 연결_거부는_검색_서비스_불가_예외로_변환한다() {
         server.stop(0);
         assertThatThrownBy(() -> client.parse(new AiQueryParseRequest("바다 사진", null)))
                 .isInstanceOf(AiQueryUnavailableException.class).hasCause(null);
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parse", "search"})
+    void AI의_504는_민감정보_없이_시간_초과_예외로_구분한다(String stage) {
+        status = 504;
+        response = "secret-key private-query";
+        assertThatThrownBy(() -> request(stage))
+                .hasMessage(null)
+                .hasCause(null)
+                .isExactlyInstanceOf(AiQueryTimeoutException.class);
+        assertSafeFailureLogs(stage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parse", "search"})
+    void 읽기_시간_초과는_민감정보_없이_시간_초과_예외로_구분한다(String stage) {
+        delayMillis = 500;
+        assertThatThrownBy(() -> request(stage))
+                .hasMessage(null)
+                .hasCause(null)
+                .isExactlyInstanceOf(AiQueryTimeoutException.class);
+        assertSafeFailureLogs(stage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parse", "search"})
+    void 모델이나_벡터_DB를_사용할_수_없으면_서비스_불가_예외로_구분한다(String stage) {
+        status = 503;
+        response = "secret-key private-query";
+        assertThatThrownBy(() -> request(stage))
+                .isExactlyInstanceOf(AiQueryUnavailableException.class)
+                .hasMessage(null)
+                .hasCause(null);
+        assertSafeFailureLogs(stage);
+    }
+
+    private void request(String stage) {
+        if ("parse".equals(stage)) {
+            client.parse(new AiQueryParseRequest("private-query", null));
+        } else {
+            client.search(new AiQuerySearchRequest(
+                    "private-query", Intent.QUESTION, "바다", List.of(), 30));
+        }
+    }
+
+    private void assertSafeFailureLogs(String stage) {
+        assertThat(logs.list).isNotEmpty();
+        for (ILoggingEvent event : logs.list) {
+            assertThat(event.getThrowableProxy()).isNull();
+            assertThat(event.getFormattedMessage()).doesNotContain("secret-key", "private-query", baseUrl());
+            assertThat(event.getKeyValuePairs().toString()).contains(stage)
+                    .doesNotContain("secret-key", "private-query", baseUrl());
+        }
+    }
+
 }

@@ -29,5 +29,27 @@ services:
       retries: 12
       start_period: 30s
 
+  kafka-init:
+    image: apache/kafka:3.9.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/opt/yeodam/init-topics.sh"]
+    command:
+      - ${KAFKA_TRIP_CREATE_REQUEST_TOPIC:-local.yeodam.trip-create.request}
+      - ${KAFKA_TRIP_CREATE_REQUEST_DLT_TOPIC:-${KAFKA_TRIP_CREATE_REQUEST_TOPIC:-local.yeodam.trip-create.request}-dlt}
+      - ${KAFKA_TRIP_CREATE_RESULT_TOPIC:-local.yeodam.trip-create.result}
+      - ${KAFKA_TRIP_CREATE_RESULT_DLT_TOPIC:-${KAFKA_TRIP_CREATE_RESULT_TOPIC:-local.yeodam.trip-create.result}-dlt}
+      - ${KAFKA_TRIP_UPDATE_REQUEST_TOPIC:-local.yeodam.trip-update.request}
+      - ${KAFKA_TRIP_UPDATE_REQUEST_DLT_TOPIC:-${KAFKA_TRIP_UPDATE_REQUEST_TOPIC:-local.yeodam.trip-update.request}-dlt}
+      - ${KAFKA_TRIP_UPDATE_RESULT_TOPIC:-local.yeodam.trip-update.result}
+      - ${KAFKA_TRIP_UPDATE_RESULT_DLT_TOPIC:-${KAFKA_TRIP_UPDATE_RESULT_TOPIC:-local.yeodam.trip-update.result}-dlt}
+      - ${KAFKA_STORY_CREATE_REQUEST_TOPIC:-local.yeodam.story-create.request}
+      - ${KAFKA_STORY_CREATE_REQUEST_DLT_TOPIC:-${KAFKA_STORY_CREATE_REQUEST_TOPIC:-local.yeodam.story-create.request}-dlt}
+      - ${KAFKA_STORY_CREATE_RESULT_TOPIC:-local.yeodam.story-create.result}
+      - ${KAFKA_STORY_CREATE_RESULT_DLT_TOPIC:-${KAFKA_STORY_CREATE_RESULT_TOPIC:-local.yeodam.story-create.result}-dlt}
+    volumes:
+      - ./kafka/init-topics.sh:/opt/yeodam/init-topics.sh:ro
+
 volumes:
   kafka-data:

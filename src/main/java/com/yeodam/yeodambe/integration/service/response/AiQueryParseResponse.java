@@ -9,7 +9,8 @@ public record AiQueryParseResponse(
         @JsonProperty("date_from") LocalDate dateFrom,
         @JsonProperty("date_to") LocalDate dateTo,
         @JsonProperty("region_names") List<String> regionNames,
-        @JsonProperty("visual_query") String visualQuery
+        @JsonProperty("visual_query") String visualQuery,
+        Boolean parsed
 ) {
     public enum Intent {
         SEARCH,

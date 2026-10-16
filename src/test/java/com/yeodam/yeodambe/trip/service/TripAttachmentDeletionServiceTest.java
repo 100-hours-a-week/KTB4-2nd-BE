@@ -25,8 +25,9 @@ class TripAttachmentDeletionServiceTest {
 
     private final TripAttachmentRepository tripAttachmentRepository = mock(TripAttachmentRepository.class);
     private final UserStatsService userStats = mock(UserStatsService.class);
+    private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private final TripAttachmentDeletionService service =
-            new TripAttachmentDeletionService(tripAttachmentRepository, userStats);
+            new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), tripAttachmentRepository, userStats, mapCache);
 
     @Test
     void 첨부_200개는_일괄_삭제할_수_있다() {
@@ -52,6 +53,7 @@ class TripAttachmentDeletionServiceTest {
         }
         verify(tripAttachmentRepository).flush();
         verify(userStats).refreshFromActiveTrips(1L);
+        verify(mapCache).evictAfterCommit(1L);
     }
 
     @Test
@@ -62,6 +64,7 @@ class TripAttachmentDeletionServiceTest {
                 .isInstanceOf(InvalidAttachmentIdsException.class);
 
         verifyNoInteractions(tripAttachmentRepository, userStats);
+        verifyNoInteractions(mapCache);
     }
 
     @Test
@@ -86,6 +89,7 @@ class TripAttachmentDeletionServiceTest {
 
         verify(attachment, never()).softDelete(any());
         verify(tripAttachmentRepository, never()).flush();
+        verifyNoInteractions(mapCache);
     }
 
     @Test
@@ -122,5 +126,30 @@ class TripAttachmentDeletionServiceTest {
         verify(deletedAttachment).softDelete(any());
         verify(deletedFile).softDelete(any());
         verify(userStats).refreshFromActiveTrips(1L);
+        verify(mapCache).evictAfterCommit(1L);
+    }
+
+    @Test
+    void 없는_단일_첨부는_무효화를_예약하지_않는다() {
+        assertThatThrownBy(() -> service.deleteOne(1L, 11L))
+                .isInstanceOf(com.yeodam.yeodambe.common.exception.AttachmentNotFoundException.class);
+        verifyNoInteractions(mapCache);
+    }
+
+    @Test
+    void 통계_갱신에_실패하면_무효화를_예약하지_않는다() {
+        TripAttachment attachment = mock(TripAttachment.class);
+        StoredFile file = mock(StoredFile.class);
+        Trip trip = mock(Trip.class);
+        when(attachment.getTrip()).thenReturn(trip);
+        when(attachment.getFile()).thenReturn(file);
+        when(tripAttachmentRepository.findAccessibleById(11L, 1L))
+                .thenReturn(Optional.of(attachment));
+        doThrow(new IllegalStateException("stats failed"))
+                .when(userStats).refreshFromActiveTrips(1L);
+
+        assertThatThrownBy(() -> service.deleteOne(1L, 11L))
+                .isInstanceOf(IllegalStateException.class);
+        verifyNoInteractions(mapCache);
     }
 }

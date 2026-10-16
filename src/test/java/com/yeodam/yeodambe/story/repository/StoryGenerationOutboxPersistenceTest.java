@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -82,7 +83,8 @@ class StoryGenerationOutboxPersistenceTest {
     @Test
     void persistsPublicationStartAndSuccessWithoutChangingPayload() {
         var outbox = outboxes.saveAndFlush(new StoryGenerationOutbox(job.getId(), "{}", "request-1"));
-        outbox.beginPublishing();
+        ReflectionTestUtils.setField(outbox, "status", StoryGenerationOutbox.Status.PUBLISHING);
+        ReflectionTestUtils.setField(outbox, "attemptCount", 1);
         entityManager.flush();
         entityManager.clear();
 
@@ -92,6 +94,7 @@ class StoryGenerationOutboxPersistenceTest {
         assertThat(publishing.getPublishedAt()).isNull();
         LocalDateTime time = LocalDateTime.of(2026, 10, 11, 17, 0);
         publishing.publicationSucceeded(time);
+        publishing.publicationSucceeded(time.plusMinutes(1));
         entityManager.flush();
         entityManager.clear();
 
@@ -107,8 +110,9 @@ class StoryGenerationOutboxPersistenceTest {
     @Test
     void persistsFailureReasonAndLeavesMessageUnpublished() {
         var outbox = outboxes.saveAndFlush(new StoryGenerationOutbox(job.getId(), "{}", "request-1"));
-        outbox.beginPublishing();
-        outbox.publicationFailed("broker unavailable");
+        ReflectionTestUtils.setField(outbox, "attemptCount", 1);
+        ReflectionTestUtils.setField(outbox, "status", StoryGenerationOutbox.Status.PENDING);
+        ReflectionTestUtils.setField(outbox, "lastError", "broker unavailable");
         entityManager.flush();
         entityManager.clear();
 

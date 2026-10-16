@@ -2,15 +2,18 @@ package com.yeodam.yeodambe.trip.repository;
 
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.trip.entity.*;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,8 +50,8 @@ class TripSearchRepositoryTest {
         List<Long> all = List.of(valid.getId(), foreignPhoto.getId(), processingPhoto.getId(),
                 deletedTripPhoto.getId(), unclassified.getId(), removed.getId(), deletedFile.getId());
         em.clear();
-        assertThat(repository.findSearchCandidateIds(owner.getUserId(), null, null, false, List.of("")))
-                .containsExactly(valid.getId());
+        assertThat(repository.findSearchCandidates(owner.getUserId(), null, null, false, List.of("")))
+                .extracting(TripSearchCandidateResponse::tripAttachmentId).containsExactly(valid.getId());
         assertThat(repository.findSearchResults(owner.getUserId(), all))
                 .extracting(TripAttachment::getId).containsExactly(valid.getId());
         assertThat(repository.countActiveByTripIds(List.of(active.getId())))
@@ -69,16 +72,86 @@ class TripSearchRepositoryTest {
         photo(active, owner, null, true);
         em.flush();
         em.clear();
-        assertThat(repository.findSearchCandidateIds(owner.getUserId(),
+        assertThat(repository.findSearchCandidates(owner.getUserId(),
                 LocalDate.of(2024, 2, 29).atStartOfDay(), LocalDate.of(2024, 3, 1).atStartOfDay(),
-                true, List.of("제주"))).containsExactly(last.getId());
-        assertThat(repository.findSearchCandidateIds(owner.getUserId(), null, null,
+                true, List.of("제주"))).extracting(TripSearchCandidateResponse::tripAttachmentId).containsExactly(last.getId());
+        assertThat(repository.findSearchCandidates(owner.getUserId(), null, null,
                 true, List.of("속초"))).isEmpty();
-        assertThat(repository.findSearchCandidateIds(owner.getUserId(), null, null,
+        assertThat(repository.findSearchCandidates(owner.getUserId(), null, null,
                 true, List.of("제주"))).hasSize(3).doesNotHaveDuplicates();
-        assertThat(repository.findSearchCandidateIds(owner.getUserId(), null,
+        assertThat(repository.findSearchCandidates(owner.getUserId(), null,
                 LocalDate.of(2024, 3, 1).atStartOfDay(), false, List.of("")))
-                .containsExactly(last.getId());
+                .extracting(TripSearchCandidateResponse::tripAttachmentId).containsExactly(last.getId());
+    }
+
+    @Test
+    void 삭제되거나_다른_여행에_속한_장소의_사진은_후보와_결과에서_제외한다() {
+        User owner = user("placeOwn");
+        Trip own = trip(owner, "own", true);
+        Trip other = trip(user("placeOther"), "other", true);
+        TripDetailPlace deleted = place(own, "삭제 장소");
+        ReflectionTestUtils.setField(deleted, "deletedAt", LocalDateTime.now());
+        TripDetailPlace foreign = place(other, "다른 여행 장소");
+        TripAttachment deletedPhoto = photo(own, owner, null, true);
+        TripAttachment foreignPhoto = photo(own, owner, null, true);
+        deletedPhoto.classify(deleted.getId(), RegionOrigin.EXIF, null, null, null, 80);
+        foreignPhoto.classify(foreign.getId(), RegionOrigin.EXIF, null, null, null, 80);
+        em.flush();
+        em.clear();
+
+        assertThat(repository.findSearchCandidates(owner.getUserId(), null, null, false, List.of("")))
+                .isEmpty();
+        assertThat(repository.findSearchResults(owner.getUserId(), List.of(deletedPhoto.getId(), foreignPhoto.getId())))
+                .isEmpty();
+    }
+
+    @Test
+    void 보정된_촬영일로_필터하고_KST_자정_하한을_포함한다() {
+        User owner = user("corrected");
+        Trip own = trip(owner, "corrected", true);
+        TripAttachment corrected = photo(own, owner, null, true);
+        corrected.originalMetadata(OffsetDateTime.parse("2026-10-11T23:30:00+09:00"),
+                null, null, "camera");
+        corrected.classify(null, RegionOrigin.UNKNOWN, LocalDateTime.of(2026, 10, 12, 0, 0),
+                null, null, 80);
+        photo(own, owner, LocalDateTime.of(2026, 10, 13, 0, 0), true);
+        photo(own, owner, null, true);
+        em.flush();
+        em.clear();
+
+        assertThat(repository.findSearchCandidates(owner.getUserId(),
+                LocalDateTime.of(2026, 10, 12, 0, 0), LocalDateTime.of(2026, 10, 13, 0, 0),
+                false, List.of("")))
+                .extracting(TripSearchCandidateResponse::tripAttachmentId).containsExactly(corrected.getId());
+        assertThat(repository.findSearchCandidates(owner.getUserId(),
+                LocalDateTime.of(2026, 10, 12, 0, 0), null, false, List.of("")))
+                .hasSize(2);
+    }
+
+    @Test
+    void 장소_사진_수에_다른_여행에서_잘못_연결된_사진을_포함하지_않는다() {
+        User owner = user("countOwn");
+        Trip own = trip(owner, "countOwn", true);
+        User otherUser = user("countOther");
+        Trip other = trip(otherUser, "countOther", true);
+        TripDetailPlace place = place(own, "장소");
+        TripAttachment valid = photo(own, owner, null, true);
+        TripAttachment invalid = photo(other, otherUser, null, true);
+        valid.classify(place.getId(), RegionOrigin.EXIF, null, null, null, 80);
+        invalid.classify(place.getId(), RegionOrigin.EXIF, null, null, null, 80);
+        em.flush();
+        em.clear();
+
+        assertThat(repository.countActiveByTripPlaceIds(List.of(place.getId())))
+                .containsExactly(new PlaceFolderAttachmentCount(place.getId(), 1L));
+    }
+
+    private TripDetailPlace place(Trip trip, String name) {
+        TripDetailPlace place = TripDetailPlace.fromAnalysis(trip.getId(), 1, name,
+                BigDecimal.ZERO, BigDecimal.ZERO, LocalDateTime.of(2026, 10, 12, 0, 0),
+                LocalDateTime.of(2026, 10, 12, 1, 0), "place-preview");
+        em.persist(place);
+        return place;
     }
 
     private User user(String name) {

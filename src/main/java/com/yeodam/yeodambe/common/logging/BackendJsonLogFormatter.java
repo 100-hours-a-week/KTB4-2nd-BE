@@ -24,13 +24,21 @@ public class BackendJsonLogFormatter
     ) {
         members.add("timestamp", event -> event.getInstant().toString());
         members.add("level", event -> event.getLevel().toString());
-        members.add("service", "backend");
+        members.add("service", event -> isKafkaDltEvent(event) ? "be" : "backend");
         members.add("logger", ILoggingEvent::getLoggerName);
         members.add("message", ILoggingEvent::getFormattedMessage);
         members.add("event", event -> contextValue(event, "event"));
         members.add("result", event -> contextValue(event, "result"));
         members.add("request_id", event -> contextValue(event, "request_id"));
-        members.add("trip_id", event -> numberValue(contextValue(event, "trip_id")));
+        members.add("run_id", event -> contextValue(event, "run_id"));
+        members.add("commit_result", event -> contextValue(event, "commit_result"));
+        members.add("trip_id", event -> isKafkaDltEvent(event)
+                ? contextValue(event, "trip_id")
+                : numberValue(contextValue(event, "trip_id")));
+        members.add("dlt_topic", event -> contextValue(event, "dlt_topic"));
+        members.add("source_topic", event -> contextValue(event, "source_topic"));
+        members.add("failure", event -> contextValue(event, "failure"));
+        members.add("attempts", event -> numberValue(contextValue(event, "attempts")));
         members.add("job_id", event -> contextValue(event, "job_id"));
         members.add("duration_ms", event -> numberValue(contextValue(event, "duration_ms")));
         members.add("failure_stage", event -> contextValue(event, "failure_stage"));
@@ -41,6 +49,10 @@ public class BackendJsonLogFormatter
         members.add("stack_trace", event -> event.getThrowableProxy() == null
                 ? null
                 : throwableProxyConverter.convert(event));
+    }
+
+    private static boolean isKafkaDltEvent(ILoggingEvent event) {
+        return "kafka_dlt_published".equals(contextValue(event, "event"));
     }
 
     private static Object contextValue(ILoggingEvent event, String key) {

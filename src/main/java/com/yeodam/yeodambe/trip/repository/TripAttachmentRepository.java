@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.repository;
 import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Modifying;
@@ -15,6 +16,45 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface TripAttachmentRepository extends JpaRepository<TripAttachment, Long> {
+    @Query("""
+            select new com.yeodam.yeodambe.trip.repository.TripMapRepresentative(
+                trip.id, trip.tripName, attachment.latitude, attachment.longitude,
+                attachment.previewStorageKey
+            )
+            from TripAttachment attachment
+            join attachment.trip trip
+            join attachment.file file
+            where trip.userId = :userId
+              and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
+              and trip.deletedAt is null
+              and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+              and attachment.latitude is not null
+              and attachment.longitude is not null
+              and not exists (
+                  select better.id from TripAttachment better
+                  join better.file betterFile
+                  where better.tripId = trip.id
+                    and better.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+                    and better.deletedAt is null
+                    and betterFile.deletedAt is null
+                    and better.latitude is not null
+                    and better.longitude is not null
+                    and (
+                        (better.evaluation is not null and attachment.evaluation is null)
+                        or better.evaluation > attachment.evaluation
+                        or (
+                            (better.evaluation = attachment.evaluation
+                                or (better.evaluation is null and attachment.evaluation is null))
+                            and better.id < attachment.id
+                        )
+                    )
+              )
+            order by trip.id
+            """)
+    List<TripMapRepresentative> findMapRepresentatives(@Param("userId") Long userId);
+
     @Modifying(flushAutomatically = true)
     @Query("""
             update TripAttachment attachment
@@ -55,15 +95,20 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     );
 
     @Query("""
-            select attachment.id
+            select new com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse(
+                    attachment.id, attachment.analyzeStorageKey, attachment.takenAt,
+                    place.placeName, trip.tripName
+            )
             from TripAttachment attachment
             join attachment.trip trip
             join attachment.file file
+            left join attachment.tripPlace place
             where trip.userId = :userId
               and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
               and trip.deletedAt is null
               and attachment.deletedAt is null
               and file.deletedAt is null
+              and (attachment.tripPlaceId is null or (place.deletedAt is null and place.tripId = trip.id))
               and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
               and (:takenFrom is null or attachment.takenAt >= :takenFrom)
               and (:takenBefore is null or attachment.takenAt < :takenBefore)
@@ -75,7 +120,7 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
               ))
             order by attachment.id
             """)
-    List<Long> findSearchCandidateIds(
+    List<TripSearchCandidateResponse> findSearchCandidates(
             @Param("userId") Long userId,
             @Param("takenFrom") LocalDateTime takenFrom,
             @Param("takenBefore") LocalDateTime takenBefore,
@@ -88,12 +133,14 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             from TripAttachment attachment
             join fetch attachment.trip trip
             join fetch attachment.file file
+            left join fetch attachment.tripPlace place
             where attachment.id in :attachmentIds
               and trip.userId = :userId
               and trip.processingStatus = com.yeodam.yeodambe.trip.entity.ProcessingStatus.COMPLETED
               and trip.deletedAt is null
               and attachment.deletedAt is null
               and file.deletedAt is null
+              and (attachment.tripPlaceId is null or (place.deletedAt is null and place.tripId = trip.id))
               and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
             """)
     List<TripAttachment> findSearchResults(
@@ -122,7 +169,10 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             )
             from TripAttachment attachment
             join attachment.file file
+            join attachment.tripPlace place
             where attachment.tripPlaceId in :tripPlaceIds
+              and attachment.tripId = place.tripId
+              and place.deletedAt is null
               and attachment.classificationStatus = com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
               and attachment.deletedAt is null
               and file.deletedAt is null
@@ -182,6 +232,12 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
                     and attachment.id < :cursorId
                 )
           )
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
         order by attachment.createdAt desc, attachment.id desc
         """)
     List<TripAttachment> findForEditWithCursor(
@@ -201,7 +257,30 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
         """)
     long countForEditByTripId(@Param("tripId") Long tripId);
 
+    @Query("""
+        select count(attachment) from TripAttachment attachment
+        join attachment.file file
+        where attachment.tripId = :tripId and attachment.deletedAt is null and file.deletedAt is null
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
+        """)
+    long countVisibleForEditByTripId(@Param("tripId") Long tripId);
+
     List<TripAttachment> findAllByTripId(Long tripId);
+
+    @Query("""
+            select attachment from TripAttachment attachment
+            join fetch attachment.file file
+            where attachment.tripId = :tripId
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+            order by attachment.id
+            """)
+    List<TripAttachment> findAllForReanalysis(@Param("tripId") Long tripId);
 
     List<TripAttachment> findAllByTripIdAndDeletedAtIsNull(Long tripId);
 
@@ -268,6 +347,12 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
         FROM TripAttachment attachment
         WHERE attachment.tripId IN :tripIds
           AND attachment.deletedAt IS NULL
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
         GROUP BY attachment.tripId
         """)
     List<TripAttachmentCount> countNotDeletedByTripIds(
@@ -326,6 +411,12 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
           and attachment.deletedAt is null
           and trip.deletedAt is null
           and file.deletedAt is null
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
         """)
     Optional<TripAttachment> findAccessibleById(
             @Param("tripAttachmentId") Long tripAttachmentId,
@@ -341,6 +432,12 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
           and attachment.deletedAt is null
           and trip.deletedAt is null
           and file.deletedAt is null
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
         """)
     List<TripAttachment> findAllActiveWithTripAndFileByIds(
             @Param("tripAttachmentIds") Collection<Long> tripAttachmentIds

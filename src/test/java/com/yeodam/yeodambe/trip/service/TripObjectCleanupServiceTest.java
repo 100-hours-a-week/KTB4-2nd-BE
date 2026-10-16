@@ -55,8 +55,6 @@ class TripObjectCleanupServiceTest {
         attachment.softDelete(LocalDateTime.now().minusDays(31));
         ReflectionTestUtils.setField(attachment, "id", 30L);
         ReflectionTestUtils.setField(attachment, "file", file);
-        when(attachments.findExpiredPendingCleanup(any(LocalDateTime.class), any()))
-                .thenReturn(List.of(attachment));
         when(attachments.findAllForObjectCleanupByIds(List.of(30L))).thenReturn(List.of(attachment));
     }
 
@@ -124,7 +122,9 @@ class TripObjectCleanupServiceTest {
 
     @Test
     void 삼십일이_지난_참조되지_않은_네_객체를_삭제하고_첨부를_DELETED로_표시한다() {
-        service.retryPending();
+        when(cleanupSchedule.claim(any())).thenReturn(Optional.of(claim), Optional.empty());
+
+        service.processScheduled();
 
         verify(storage).delete("original");
         verify(storage).delete("analyze");
@@ -150,7 +150,7 @@ class TripObjectCleanupServiceTest {
                     .thenReturn(true);
         }
 
-        service.retryPending();
+        service.processClaim(claim);
 
         verify(storage, never()).delete("original");
         verify(storage).delete("analyze");
@@ -164,7 +164,7 @@ class TripObjectCleanupServiceTest {
         doThrow(new IllegalStateException("S3"))
                 .when(storage).delete("display");
 
-        service.retryPending();
+        service.processClaim(claim);
 
         assertThat(attachment.getClassificationStatus()).isNotEqualTo(ClassificationStatus.DELETED);
     }
@@ -176,10 +176,10 @@ class TripObjectCleanupServiceTest {
                 7L, 21L, "legacy-analyze", "legacy-preview");
         legacy.softDelete(LocalDateTime.now().minusDays(31));
         ReflectionTestUtils.setField(legacy, "file", file);
-        when(attachments.findExpiredPendingCleanup(any(LocalDateTime.class), any()))
+        when(attachments.findAllForObjectCleanupByIds(List.of(30L)))
                 .thenReturn(List.of(legacy));
 
-        service.retryPending();
+        service.processClaim(claim);
 
         verify(storage).delete("legacy-original");
         verify(storage).delete("legacy-analyze");
@@ -192,7 +192,6 @@ class TripObjectCleanupServiceTest {
     void 정리_기록은_삼십일_전_보존하고_경계부터_삭제한다() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 12, 12, 0);
         when(uploadTransactions.databaseTime()).thenReturn(now);
-        when(attachments.findExpiredPendingCleanup(any(), any())).thenReturn(List.of());
         var item = mock(InitialAttachmentUploadItem.class);
         when(item.getId()).thenReturn(41L);
         when(uploadItems.findPendingCleanup(any(), any())).thenReturn(List.of(item));
@@ -212,6 +211,14 @@ class TripObjectCleanupServiceTest {
     }
 
     @Test
+    void 업로드_실패_객체_정리는_일반_첨부_대상을_DB에서_탐색하지_않는다() {
+        service.retryPending();
+
+        verify(uploadItems).findPendingCleanup(any(), eq(PageRequest.of(0, 100)));
+        verifyNoInteractions(attachments, cleanupSchedule, storage);
+    }
+
+    @Test
     void 첨부_삭제_시각보다_DB_정리_기록의_삼십일_보존을_우선한다() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 12, 12, 0);
         when(uploadTransactions.databaseTime()).thenReturn(now);
@@ -221,7 +228,7 @@ class TripObjectCleanupServiceTest {
                 new InitialAttachmentUploadTransactionService.CleanupObject(
                         "original", now.minusDays(30).plusSeconds(1), "FAILED", false)));
 
-        service.retryPending();
+        service.processClaim(claim);
 
         verifyNoInteractions(storage);
         assertThat(attachment.getClassificationStatus()).isNotEqualTo(ClassificationStatus.DELETED);

@@ -128,10 +128,6 @@ public class TripObjectCleanupService {
 
     public void retryPending() {
         LocalDateTime before = uploadTransactions.databaseTime().minusDays(30);
-        cleanup(attachments.findExpiredPendingCleanup(
-                LocalDateTime.now().minusDays(30),
-                PageRequest.of(0, RETRY_BATCH_SIZE)
-        ), before);
         for (var item : additionalItems.findPendingCleanup(before, PageRequest.of(0, RETRY_BATCH_SIZE))) {
             for (var object : additionalTransactions.cleanupObjects(item)) {
                 if (!object.deleted() && object.startedAt() != null && !object.startedAt().isAfter(before)

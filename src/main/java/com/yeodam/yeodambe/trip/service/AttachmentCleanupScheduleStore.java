@@ -27,6 +27,10 @@ public class AttachmentCleanupScheduleStore {
             new ClassPathResource("redis/claim-attachment-cleanup.lua"),
             String.class
     );
+    private static final RedisScript<Long> COMPLETE_SCRIPT = RedisScript.of(
+            new ClassPathResource("redis/complete-attachment-cleanup.lua"),
+            Long.class
+    );
 
     private final StringRedisTemplate redisTemplate;
 
@@ -45,6 +49,17 @@ public class AttachmentCleanupScheduleStore {
         }
 
         return Optional.of(new Claim(Long.valueOf(attachmentId), token));
+    }
+
+    public boolean complete(Claim claim) {
+        Long result = redisTemplate.execute(
+                COMPLETE_SCRIPT,
+                List.of(PROCESSING_KEY, OWNER_KEY),
+                claim.attachmentId().toString(),
+                claim.token()
+        );
+
+        return Long.valueOf(1L).equals(result);
     }
 
     public record Claim(Long attachmentId, String token) {

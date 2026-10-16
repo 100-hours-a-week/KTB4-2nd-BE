@@ -171,4 +171,55 @@ class AttachmentCleanupScheduleStoreTest {
         assertThat(redis.opsForZSet().score(KEY, "10")).isNotNull();
         assertThat(redis.hasKey(PROCESSING_KEY)).isFalse();
     }
+
+    @Test
+    void 현재_선점자로_완료하면_처리중_정보만_지우고_새_예약은_보존한다() {
+        store.schedule(10L, Instant.EPOCH);
+        var claim = store.claim(Duration.ofMinutes(1)).orElseThrow();
+        Instant future = Instant.now().plus(Duration.ofDays(30));
+        store.schedule(10L, future);
+
+        assertThat(store.complete(claim)).isTrue();
+
+        assertThat(redis.opsForZSet().score(PROCESSING_KEY, "10")).isNull();
+        assertThat(redis.opsForHash().get(OWNER_KEY, "10")).isNull();
+        assertThat(redis.opsForZSet().score(KEY, "10")).isEqualTo((double) future.toEpochMilli());
+        assertThat(store.complete(claim)).isFalse();
+    }
+
+    @Test
+    void 다른_토큰으로_완료하면_현재_선점을_제거하지_않는다() {
+        store.schedule(10L, Instant.EPOCH);
+        var claim = store.claim(Duration.ofMinutes(1)).orElseThrow();
+
+        assertThat(store.complete(new AttachmentCleanupScheduleStore.Claim(10L, "wrong-token"))).isFalse();
+
+        assertThat(redis.opsForZSet().score(PROCESSING_KEY, "10")).isNotNull();
+        assertThat(redis.opsForHash().get(OWNER_KEY, "10")).isEqualTo(claim.token());
+    }
+
+    @Test
+    void 같은_토큰이라도_선점이_만료되면_완료를_거부한다() {
+        store.schedule(10L, Instant.EPOCH);
+        var claim = store.claim(Duration.ofMinutes(1)).orElseThrow();
+        redis.opsForZSet().add(PROCESSING_KEY, "10", 0);
+
+        assertThat(store.complete(claim)).isFalse();
+
+        assertThat(redis.opsForZSet().score(PROCESSING_KEY, "10")).isEqualTo(0.0);
+        assertThat(redis.opsForHash().get(OWNER_KEY, "10")).isEqualTo(claim.token());
+    }
+
+    @Test
+    void 재선점_후_이전_작업이_완료해도_새_작업의_선점을_지우지_않는다() {
+        store.schedule(10L, Instant.EPOCH);
+        var first = store.claim(Duration.ofMinutes(1)).orElseThrow();
+        redis.opsForZSet().add(PROCESSING_KEY, "10", 0);
+        var second = store.claim(Duration.ofMinutes(1)).orElseThrow();
+
+        assertThat(store.complete(first)).isFalse();
+        assertThat(redis.opsForHash().get(OWNER_KEY, "10")).isEqualTo(second.token());
+        assertThat(store.complete(second)).isTrue();
+    }
+
 }

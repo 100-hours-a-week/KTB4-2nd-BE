@@ -3,21 +3,52 @@ package com.yeodam.yeodambe.trip.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class AttachmentCleanupScheduleStore {
     private static final String KEY = "trip:attachment:cleanup:scheduled";
+    private static final String PROCESSING_KEY = "trip:attachment:cleanup:processing";
+    private static final String OWNER_KEY = "trip:attachment:cleanup:owners";
+    private static final RedisScript<String> CLAIM_SCRIPT = RedisScript.of(
+            new ClassPathResource("redis/claim-attachment-cleanup.lua"),
+            String.class
+    );
 
     private final StringRedisTemplate redisTemplate;
+
+    public Optional<Claim> claim(Duration leaseDuration) {
+        String token = UUID.randomUUID().toString();
+
+        String attachmentId = redisTemplate.execute(
+                CLAIM_SCRIPT,
+                List.of(KEY, PROCESSING_KEY, OWNER_KEY),
+                token,
+                Long.toString(leaseDuration.toMillis())
+        );
+
+        if (attachmentId == null) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new Claim(Long.valueOf(attachmentId), token));
+    }
+
+    public record Claim(Long attachmentId, String token) {
+    }
 
     public void scheduleAfterCommit(List<Long> attachmentIds, Instant scheduledAt) {
         List<Long> ids = List.copyOf(attachmentIds);

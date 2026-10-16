@@ -267,6 +267,40 @@ class TripDeletionPersistenceTest {
         assertThat(attachments.findAllActiveIdsByUserId(-1L)).isEmpty();
     }
 
+    @Test
+    void 예약_ID_조회는_삭제상태와_무관하게_첨부와_파일을_함께_반환한다() {
+        User owner = owner("scheduled-lookup@test.com");
+        Trip trip = completedTrip(owner, "예약조회");
+        TripAttachment expired = attachment(owner, trip, null, "scheduled-expired");
+        expired.softDelete(LocalDateTime.now().minusDays(31));
+        attachments.saveAndFlush(expired);
+        TripAttachment recent = attachment(owner, trip, null, "scheduled-recent");
+        recent.softDelete(LocalDateTime.now().minusDays(1));
+        attachments.saveAndFlush(recent);
+        TripAttachment completed = attachment(owner, trip, null, "scheduled-completed");
+        completed.softDelete(LocalDateTime.now().minusDays(31));
+        completed.markObjectCleanupCompleted();
+        attachments.saveAndFlush(completed);
+        TripAttachment active = attachment(owner, trip, null, "scheduled-active");
+        TripAttachment unrelated = attachment(owner, trip, null, "scheduled-unrelated");
+
+        var result = attachments.findAllForObjectCleanupByIds(List.of(
+                expired.getId(), recent.getId(), completed.getId(), active.getId(), Long.MAX_VALUE));
+
+        assertThat(result).extracting(TripAttachment::getId)
+                .containsExactlyInAnyOrder(expired.getId(), recent.getId(), completed.getId(), active.getId())
+                .doesNotContain(unrelated.getId());
+        assertThat(result).allSatisfy(found -> {
+            assertThat(org.hibernate.Hibernate.isInitialized(found.getFile())).isTrue();
+            assertThat(found.getFile().getObjectKey()).startsWith("original/scheduled-");
+        });
+    }
+
+    @Test
+    void 예약_ID가_DB에_없으면_빈_목록을_반환한다() {
+        assertThat(attachments.findAllForObjectCleanupByIds(List.of(Long.MAX_VALUE))).isEmpty();
+    }
+
     private User owner(String email) {
         User owner = users.saveAndFlush(new User(email, "소유자"));
         stats.saveAndFlush(new UserStats(owner));

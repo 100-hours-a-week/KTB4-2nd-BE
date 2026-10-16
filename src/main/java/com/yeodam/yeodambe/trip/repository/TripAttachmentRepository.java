@@ -298,6 +298,16 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             Pageable pageable
     );
 
+    @Query("""
+            select attachment
+            from TripAttachment attachment
+            join fetch attachment.file
+            where attachment.id in :attachmentIds
+            """)
+    List<TripAttachment> findAllForObjectCleanupByIds(
+            @Param("attachmentIds") Collection<Long> attachmentIds
+    );
+
     boolean existsByFileIdAndDeletedAtIsNull(Long fileId);
 
     boolean existsByAnalyzeStorageKeyAndDeletedAtIsNull(String analyzeStorageKey);

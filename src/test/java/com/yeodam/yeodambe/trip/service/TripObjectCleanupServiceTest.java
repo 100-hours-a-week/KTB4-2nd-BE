@@ -17,6 +17,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
@@ -266,6 +267,53 @@ class TripObjectCleanupServiceTest {
 
         verifyNoInteractions(storage);
         verify(cleanupSchedule, never()).complete(any());
+    }
+
+    @Test
+    void 예약이_없으면_DB와_S3를_호출하지_않는다() {
+        when(cleanupSchedule.claim(any())).thenReturn(Optional.empty());
+
+        service.processScheduled();
+
+        verify(cleanupSchedule).claim(Duration.ofMinutes(5));
+        verifyNoInteractions(attachments, files, trips, places, storage, uploadTransactions, uploadItems);
+    }
+
+    @Test
+    void 한_사진의_DB_처리가_실패해도_다음_선점을_처리한다() {
+        var next = new AttachmentCleanupScheduleStore.Claim(31L, "next-token");
+        when(cleanupSchedule.claim(any())).thenReturn(Optional.of(claim), Optional.of(next), Optional.empty());
+        when(attachments.findAllForObjectCleanupByIds(List.of(30L)))
+                .thenThrow(new IllegalStateException("DB unavailable"));
+
+        service.processScheduled();
+
+        verify(cleanupSchedule, never()).complete(claim);
+        verify(cleanupSchedule).complete(next);
+        verify(cleanupSchedule, times(3)).claim(Duration.ofMinutes(5));
+    }
+
+    @Test
+    void 작업이_계속_있어도_한번에_백개까지만_처리한다() {
+        when(cleanupSchedule.claim(any())).thenReturn(Optional.of(claim));
+        when(attachments.findAllForObjectCleanupByIds(List.of(30L))).thenReturn(List.of());
+
+        service.processScheduled();
+
+        verify(cleanupSchedule, times(100)).claim(Duration.ofMinutes(5));
+        verify(attachments, times(100)).findAllForObjectCleanupByIds(List.of(30L));
+        verify(cleanupSchedule, times(100)).complete(claim);
+    }
+
+    @Test
+    void Redis_선점_장애를_빈_큐로_숨기지_않는다() {
+        when(cleanupSchedule.claim(any())).thenThrow(
+                new org.springframework.dao.DataAccessResourceFailureException("Redis unavailable"));
+
+        assertThatThrownBy(service::processScheduled)
+                .isInstanceOf(org.springframework.dao.DataAccessException.class);
+
+        verifyNoInteractions(attachments, storage);
     }
 
     private enum ActiveReference {

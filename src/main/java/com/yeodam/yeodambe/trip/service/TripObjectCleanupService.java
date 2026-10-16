@@ -17,6 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.HashMap;
@@ -30,6 +31,7 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class TripObjectCleanupService {
     private static final int RETRY_BATCH_SIZE = 100;
+    private static final Duration CLEANUP_LEASE = Duration.ofMinutes(5);
 
     private final TripAttachmentRepository attachments;
     private final StoredFileRepository files;
@@ -72,6 +74,22 @@ public class TripObjectCleanupService {
         cleanup(found, uploadTransactions.databaseTime().minusDays(30));
         if (attachment.getClassificationStatus() == ClassificationStatus.DELETED) {
             cleanupScheduleStore.complete(claim);
+        }
+    }
+
+    public void processScheduled() {
+        for (int processed = 0; processed < RETRY_BATCH_SIZE; processed++) {
+            var claim = cleanupScheduleStore.claim(CLEANUP_LEASE);
+            if (claim.isEmpty()) {
+                return;
+            }
+
+            try {
+                processClaim(claim.get());
+            } catch (RuntimeException failure) {
+                log.warn("예약된 사진 정리에 실패했습니다. attachmentId={}",
+                        claim.get().attachmentId(), failure);
+            }
         }
     }
 

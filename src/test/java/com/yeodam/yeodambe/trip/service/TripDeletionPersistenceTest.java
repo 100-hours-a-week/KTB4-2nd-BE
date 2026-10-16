@@ -38,6 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -54,6 +55,8 @@ import static org.mockito.Mockito.*;
         TripDeletionPersistenceTest.MeterRegistryTestConfiguration.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripDeletionPersistenceTest {
+    @MockitoBean
+    private AttachmentCleanupScheduleStore cleanupSchedule;
     @MockitoBean
     private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     @TestConfiguration
@@ -104,11 +107,22 @@ class TripDeletionPersistenceTest {
                 LocalDateTime.now(), LocalDateTime.now(), "target-preview"));
         TripAttachment deletedAttachment = attachment(owner, target, place.getId(), "target");
         TripAttachment remainingAttachment = attachment(owner, remaining, null, "remaining");
+        TripAttachment previouslyDeleted = attachment(owner, target, null, "previously-deleted");
+        LocalDateTime previousDeletedAt = LocalDateTime.now().minusDays(10).truncatedTo(ChronoUnit.MICROS);
+        previouslyDeleted.softDelete(previousDeletedAt);
+        attachments.saveAndFlush(previouslyDeleted);
+        StoredFile previousFile = files.findById(previouslyDeleted.getFileId()).orElseThrow();
+        previousFile.softDelete(previousDeletedAt);
+        files.saveAndFlush(previousFile);
 
         service.delete(target.getId(), owner.getUserId());
 
         LocalDateTime deletedAt = trips.findById(target.getId()).orElseThrow().getDeletedAt();
         assertThat(deletedAt).isNotNull();
+        verify(cleanupSchedule).scheduleAfterCommit(List.of(deletedAttachment.getId()),
+                deletedAt.plusDays(30).atZone(ZoneId.systemDefault()).toInstant());
+        assertThat(attachments.findById(previouslyDeleted.getId()).orElseThrow().getDeletedAt())
+                .isEqualTo(previousDeletedAt);
         assertThat(regions.findById(region.getId()).orElseThrow().getDeletedAt()).isEqualTo(deletedAt);
         assertThat(places.findById(place.getId()).orElseThrow().getDeletedAt()).isEqualTo(deletedAt);
         assertThat(attachments.findById(deletedAttachment.getId()).orElseThrow().getDeletedAt())
@@ -143,6 +157,7 @@ class TripDeletionPersistenceTest {
         assertThat(attachments.findById(targetAttachment.getId()).orElseThrow().getDeletedAt()).isNull();
         assertThat(files.findById(targetAttachment.getFileId()).orElseThrow().getDeletedAt()).isNull();
         verify(storage, never()).delete(anyString());
+        verifyNoInteractions(cleanupSchedule);
     }
 
     @Test

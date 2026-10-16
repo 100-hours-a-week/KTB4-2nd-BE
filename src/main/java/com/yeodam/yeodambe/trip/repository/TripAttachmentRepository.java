@@ -387,6 +387,15 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     long countByTripIdAndDeletedAtIsNullAndClassificationStatus(
             Long tripId, ClassificationStatus classificationStatus);
 
+    @Query("""
+            select attachment.id
+            from TripAttachment attachment
+            join attachment.trip trip
+            where trip.userId = :userId
+              and attachment.deletedAt is null
+            """)
+    List<Long> findAllActiveIdsByUserId(@Param("userId") Long userId);
+
     @Modifying
     @Query("""
             update TripAttachment attachment

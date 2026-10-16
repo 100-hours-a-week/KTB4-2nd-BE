@@ -248,6 +248,25 @@ class TripDeletionPersistenceTest {
                 .containsExactly("display/pending");
     }
 
+    @Test
+    void 탈퇴_예약용_ID는_해당_회원의_미삭제_첨부만_반환한다() {
+        User owner = owner("schedule-owner@test.com");
+        User other = owner("schedule-other@test.com");
+        Trip first = completedTrip(owner, "첫여행");
+        Trip second = completedTrip(owner, "둘째여행");
+        Trip otherTrip = completedTrip(other, "타인여행");
+        TripAttachment firstPhoto = attachment(owner, first, null, "schedule-first");
+        TripAttachment secondPhoto = attachment(owner, second, null, "schedule-second");
+        TripAttachment deleted = attachment(owner, first, null, "schedule-deleted");
+        deleted.softDelete(LocalDateTime.now().minusDays(10));
+        attachments.saveAndFlush(deleted);
+        attachment(other, otherTrip, null, "schedule-other");
+
+        assertThat(attachments.findAllActiveIdsByUserId(owner.getUserId()))
+                .containsExactlyInAnyOrder(firstPhoto.getId(), secondPhoto.getId());
+        assertThat(attachments.findAllActiveIdsByUserId(-1L)).isEmpty();
+    }
+
     private User owner(String email) {
         User owner = users.saveAndFlush(new User(email, "소유자"));
         stats.saveAndFlush(new UserStats(owner));

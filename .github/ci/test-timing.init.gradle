@@ -1,0 +1,36 @@
+import groovy.json.JsonOutput
+import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.testing.TestDescriptor
+import org.gradle.api.tasks.testing.TestListener
+import org.gradle.api.tasks.testing.TestResult
+
+// Applied only by PR measurement; application build/test settings stay in build.gradle.
+gradle.projectsEvaluated {
+    allprojects {
+        tasks.withType(Test).configureEach { testTask ->
+            systemProperty 'logging.level.org.springframework.test.context.cache', 'DEBUG'
+            def destination = layout.buildDirectory.file("ci-timing/${testTask.name}-classes.jsonl").get().asFile
+            doFirst {
+                destination.parentFile.mkdirs()
+                destination.text = ''
+            }
+            addTestListener(new TestListener() {
+                void beforeSuite(TestDescriptor suite) {}
+                void beforeTest(TestDescriptor test) {}
+                void afterTest(TestDescriptor test, TestResult result) {}
+                void afterSuite(TestDescriptor suite, TestResult result) {
+                    // Parameterized method suites share their parent className.
+                    if (suite.className != null && suite.className != suite.parent?.className) {
+                        destination.append(JsonOutput.toJson([
+                            task: testTask.path, className: suite.className,
+                            startMs: result.startTime, endMs: result.endTime,
+                            elapsedSeconds: (result.endTime - result.startTime) / 1000.0,
+                            testsIncludingNested: result.testCount, failuresIncludingNested: result.failedTestCount,
+                            skipped: result.skippedTestCount, outcome: result.resultType.name()
+                        ]) + '\n', 'UTF-8')
+                    }
+                }
+            })
+        }
+    }
+}

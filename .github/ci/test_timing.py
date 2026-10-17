@@ -14,6 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from resource_usage import ResourceMonitor
+from context_cache import (
+    analyze as analyze_contexts,
+    attach_timings,
+    markdown as context_markdown,
+)
 
 OUTPUT = Path("build/ci-timing")
 SAFE_CLASS = re.compile(r"^[A-Za-z_$][\w.$]*$")
@@ -32,7 +37,7 @@ def save(path, value):
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
 
 
-def collect_observations(text, observations, worker="unknown"):
+def collect_observations(text, observations, worker="unknown", test_class=None):
     # Retain numeric evidence only. Context counters are cumulative: take maxima per ID.
     for cache_id, size, limit, hits, misses in CACHE.findall(text):
         current = observations["contextCaches"].setdefault(
@@ -67,6 +72,8 @@ def collect_observations(text, observations, worker="unknown"):
         observations["springStarts"].append(
             {"worker": worker, "className": name, "seconds": float(seconds)}
         )
+        if test_class is not None:
+            observations["springStarts"][-1]["sourceTestClass"] = test_class
 
 
 def summarize(root):
@@ -106,7 +113,10 @@ def summarize(root):
                 methods.append(float(case.get("time", 0)))
             for node in suite.findall("system-out") + suite.findall("system-err"):
                 collect_observations(
-                    node.text or "", observations, class_workers.get(name, "unknown")
+                    node.text or "",
+                    observations,
+                    class_workers.get(name, "unknown"),
+                    name,
                 )
         except (ET.ParseError, ValueError, KeyError):
             errors.append("unreadable or unexpected JUnit XML")
@@ -143,6 +153,9 @@ def run():
     forks = os.environ.get("BE_TEST_MAX_FORKS", "1")
     if forks not in ("1", "2"):
         raise ValueError("BE_TEST_MAX_FORKS must be 1 or 2")
+    context_probe = os.environ.get("BE_CONTEXT_DIAGNOSTICS", "false")
+    if context_probe not in ("true", "false"):
+        raise ValueError("BE_CONTEXT_DIAGNOSTICS must be true or false")
     hashes = {}
     for name in [
         "build.gradle",
@@ -151,6 +164,9 @@ def run():
         ".github/ci/test-timing.init.gradle",
         ".github/ci/test_timing.py",
         ".github/ci/resource_usage.py",
+        ".github/ci/context_cache.py",
+        ".github/ci/context/ci/context/ContextCacheObserver.java",
+        ".github/ci/context-resources/META-INF/spring.factories",
     ]:
         hashes[name] = hashlib.sha256(Path(name).read_bytes()).hexdigest()
     metadata = {
@@ -175,6 +191,7 @@ def run():
             "logicalCpu": os.cpu_count(),
             "machine": platform.machine(),
             "requestedTestForks": int(forks),
+            "contextDiagnostics": context_probe == "true",
             "fileHashes": hashes,
         }
     )
@@ -200,6 +217,7 @@ def run():
         "-I",
         ".github/ci/test-timing.init.gradle",
         f"-PciTestForks={forks}",
+        f"-PciContextProbe={context_probe}",
     ]
     metadata.update(
         {"command": command, "startedAt": datetime.now(timezone.utc).isoformat()}
@@ -227,7 +245,6 @@ def run():
 def report():
     start = time.monotonic()
     data = summarize(Path("build"))
-    data["reportGenerationSeconds"] = time.monotonic() - start
     command_path = OUTPUT / "command.json"
     command = json.loads(command_path.read_text()) if command_path.exists() else {}
     resource_path = OUTPUT / "resources-summary.json"
@@ -240,9 +257,29 @@ def report():
     data["testSettings"] = (
         json.loads(settings_path.read_text()) if settings_path.exists() else {}
     )
+    if command.get("contextDiagnostics"):
+        expected_misses = sum(
+            c["misses"] for c in data["observations"]["contextCaches"].values()
+        )
+        data["contextAnalysis"] = {
+            "enabled": True,
+            **analyze_contexts(OUTPUT, expected_misses),
+        }
+        attach_timings(
+            data["contextAnalysis"],
+            data["classWallIntervals"],
+            data["observations"]["springStarts"],
+        )
+        save(OUTPUT / "context-summary.json", data["contextAnalysis"])
+    else:
+        data["contextAnalysis"] = {"enabled": False, "complete": True}
+    data["reportGenerationSeconds"] = time.monotonic() - start
     data["complete"] = (
         data["complete"]
         and data["resources"]["complete"]
+        and data["contextAnalysis"]["complete"]
+        and data["testSettings"].get("contextDiagnostics")
+        == command.get("contextDiagnostics")
         and data["testSettings"].get("maxParallelForks")
         == command.get("requestedTestForks")
     )
@@ -275,6 +312,8 @@ def report():
         *["- " + item for item in data["limits"]],
     ]
     markdown = "\n".join(lines) + "\n"
+    if data["contextAnalysis"]["enabled"]:
+        markdown += "\n" + context_markdown(data["contextAnalysis"])
     (OUTPUT / "summary.md").write_text(markdown)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:

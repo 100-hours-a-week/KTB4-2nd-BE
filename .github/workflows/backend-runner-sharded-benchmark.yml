@@ -1,0 +1,124 @@
+name: BE Runner sharded benchmark
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-runner-sharded-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Backend tests (${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java
+        id: java
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Install image processing tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends imagemagick libimage-exiftool-perl
+
+      - name: Check measurement parser
+        run: python3 -m unittest discover -s .github/ci -p 'test_*.py'
+
+      - name: Run tests, including MySQL migrations
+        env:
+          BE_TEST_MAX_FORKS: '1'
+          BE_TEST_RUNNERS: '2'
+          BE_TEST_SHARD: ${{ matrix.shard }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GRADLE_CACHE_HIT: ${{ steps.java.outputs.cache-hit }}
+        run: python3 .github/ci/test_timing.py run
+
+      - name: Summarize test measurement
+        if: always()
+        run: python3 .github/ci/test_timing.py report
+
+      - name: Upload test measurement
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: be-runner-sharded-${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            build/ci-timing/
+            build/reports/profile/
+
+  image-build:
+    name: Backend image build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build without pushing
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
+
+  backend-ci-gate:
+    name: backend-runner-sharded-gate
+    if: always()
+    needs: [tests, image-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both checks
+        env:
+          TESTS_RESULT: ${{ needs.tests.result }}
+          IMAGE_BUILD_RESULT: ${{ needs['image-build'].result }}
+        run: |
+          if [[ "$TESTS_RESULT" != success || "$IMAGE_BUILD_RESULT" != success ]]; then
+            echo "Backend tests: $TESTS_RESULT; image build: $IMAGE_BUILD_RESULT" >&2
+            exit 1
+          fi
+
+      - name: Checkout for coverage validation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download shard reports
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: be-runner-sharded-${{ github.run_id }}-${{ github.run_attempt }}-shard-*
+          path: build/shard-downloads
+
+      - name: Validate test partition and coverage
+        run: >-
+          python3 .github/ci/test_shards.py aggregate
+          --root build/shard-downloads --count 2
+          --output build/coverage/aggregate.json
+
+      - name: Upload combined coverage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: be-coverage-sharded-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/coverage/aggregate.json
+          retention-days: 7
+          if-no-files-found: error

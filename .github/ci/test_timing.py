@@ -13,6 +13,8 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
+from resource_usage import ResourceMonitor
+
 OUTPUT = Path("build/ci-timing")
 SAFE_CLASS = re.compile(r"^[A-Za-z_$][\w.$]*$")
 CACHE = re.compile(
@@ -30,11 +32,11 @@ def save(path, value):
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
 
 
-def collect_observations(text, observations):
+def collect_observations(text, observations, worker="unknown"):
     # Retain numeric evidence only. Context counters are cumulative: take maxima per ID.
     for cache_id, size, limit, hits, misses in CACHE.findall(text):
         current = observations["contextCaches"].setdefault(
-            cache_id,
+            f"{worker}:{cache_id}",
             {"maxObservedSize": 0, "limit": int(limit), "hits": 0, "misses": 0},
         )
         current["maxObservedSize"] = max(current["maxObservedSize"], int(size))
@@ -44,17 +46,26 @@ def collect_observations(text, observations):
         # Testcontainers logger may include arbitrary image text; restrict published identifiers.
         if re.fullmatch(r"[\w./:@-]+", image):
             observations["containerStarts"].append(
-                {"image": image, "seconds": int(minutes or 0) * 60 + float(seconds)}
+                {
+                    "worker": worker,
+                    "image": image,
+                    "seconds": int(minutes or 0) * 60 + float(seconds),
+                }
             )
     for action, count, duration in FLYWAY.findall(text):
         parts = [float(value) for value in duration.split(":")]
         seconds = sum(value * 60**index for index, value in enumerate(reversed(parts)))
         observations["flyway"].append(
-            {"action": action, "migrations": int(count), "seconds": seconds}
+            {
+                "worker": worker,
+                "action": action,
+                "migrations": int(count),
+                "seconds": seconds,
+            }
         )
     for name, seconds in BOOT.findall(text):
         observations["springStarts"].append(
-            {"className": name, "seconds": float(seconds)}
+            {"worker": worker, "className": name, "seconds": float(seconds)}
         )
 
 
@@ -66,6 +77,17 @@ def summarize(root):
         "springStarts": [],
     }
     classes, methods, errors = [], [], []
+    walls = []
+    for path in sorted((root / "ci-timing").glob("*-classes.jsonl")):
+        for line in path.read_text().splitlines():
+            try:
+                entry = json.loads(line)
+                if not SAFE_CLASS.fullmatch(entry["className"]):
+                    raise ValueError("unexpected class identifier")
+                walls.append(entry)
+            except (ValueError, KeyError):
+                errors.append("invalid class timing record")
+    class_workers = {row["className"]: row.get("worker", "unknown") for row in walls}
     xml_files = sorted((root / "test-results/test").glob("TEST-*.xml"))
     totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
     for path in xml_files:
@@ -83,19 +105,11 @@ def summarize(root):
                 # Parameterized display names may carry tokens/data; publish only class timings.
                 methods.append(float(case.get("time", 0)))
             for node in suite.findall("system-out") + suite.findall("system-err"):
-                collect_observations(node.text or "", observations)
+                collect_observations(
+                    node.text or "", observations, class_workers.get(name, "unknown")
+                )
         except (ET.ParseError, ValueError, KeyError):
             errors.append("unreadable or unexpected JUnit XML")
-    walls = []
-    for path in sorted((root / "ci-timing").glob("*-classes.jsonl")):
-        for line in path.read_text().splitlines():
-            try:
-                entry = json.loads(line)
-                if not SAFE_CLASS.fullmatch(entry["className"]):
-                    raise ValueError("unexpected class identifier")
-                walls.append(entry)
-            except (ValueError, KeyError):
-                errors.append("invalid class timing record")
     profiles = sorted((root / "reports/profile").glob("*.html"))
     if {row["className"] for row in classes} - {row["className"] for row in walls}:
         errors.append("JUnit classes missing from listener timing")
@@ -117,7 +131,7 @@ def summarize(root):
         "limits": [
             "Class/JUnit/Context/container/Flyway intervals overlap; do not add them to elapsed time.",
             "Log observations can be absent or repeated; absence is unknown, not zero startup.",
-            "Context counters are maxima per cache ID within one command, not sums of log lines.",
+            "Context counters are maxima per worker/cache ID, not sums of log lines. Parallel worker intervals overlap.",
             "DEBUG logging and profile/listener recording add overhead; compare under the same instrumentation.",
             "A completed report may contain failing/skipped tests; read command exit and totals too.",
         ],
@@ -126,6 +140,9 @@ def summarize(root):
 
 def run():
     OUTPUT.mkdir(parents=True, exist_ok=True)
+    forks = os.environ.get("BE_TEST_MAX_FORKS", "1")
+    if forks not in ("1", "2"):
+        raise ValueError("BE_TEST_MAX_FORKS must be 1 or 2")
     hashes = {}
     for name in [
         "build.gradle",
@@ -133,6 +150,7 @@ def run():
         ".github/workflows/backend-pr-gate.yml",
         ".github/ci/test-timing.init.gradle",
         ".github/ci/test_timing.py",
+        ".github/ci/resource_usage.py",
     ]:
         hashes[name] = hashlib.sha256(Path(name).read_bytes()).hexdigest()
     metadata = {
@@ -156,6 +174,7 @@ def run():
             ).strip(),
             "logicalCpu": os.cpu_count(),
             "machine": platform.machine(),
+            "requestedTestForks": int(forks),
             "fileHashes": hashes,
         }
     )
@@ -163,6 +182,11 @@ def run():
         metadata["memoryTotalKiB"] = int(
             re.search(r"MemTotal:\s+(\d+)", Path("/proc/meminfo").read_text()).group(1)
         )
+    if Path("/proc/cpuinfo").exists():
+        model = re.search(
+            r"model name\s*:\s*([^\n]+)", Path("/proc/cpuinfo").read_text()
+        )
+        metadata["cpuModel"] = model.group(1) if model else None
     java = subprocess.run(
         ["java", "-version"], text=True, capture_output=True, check=True
     )
@@ -175,16 +199,23 @@ def run():
         "--profile",
         "-I",
         ".github/ci/test-timing.init.gradle",
+        f"-PciTestForks={forks}",
     ]
     metadata.update(
         {"command": command, "startedAt": datetime.now(timezone.utc).isoformat()}
     )
     save(OUTPUT / "command.json", metadata)
+    monitor = ResourceMonitor(OUTPUT)
+    monitor.start()
     start = time.monotonic()
-    result = subprocess.run(command, check=False)
+    try:
+        result = subprocess.run(command, check=False)
+    finally:
+        elapsed = time.monotonic() - start
+        monitor.stop()
     metadata.update(
         {
-            "elapsedSeconds": time.monotonic() - start,
+            "elapsedSeconds": elapsed,
             "exitCode": result.returncode,
             "endedAt": datetime.now(timezone.utc).isoformat(),
         }
@@ -197,9 +228,25 @@ def report():
     start = time.monotonic()
     data = summarize(Path("build"))
     data["reportGenerationSeconds"] = time.monotonic() - start
-    save(OUTPUT / "summary.json", data)
     command_path = OUTPUT / "command.json"
     command = json.loads(command_path.read_text()) if command_path.exists() else {}
+    resource_path = OUTPUT / "resources-summary.json"
+    settings_path = OUTPUT / "test-settings.json"
+    data["resources"] = (
+        json.loads(resource_path.read_text())
+        if resource_path.exists()
+        else {"complete": False}
+    )
+    data["testSettings"] = (
+        json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    )
+    data["complete"] = (
+        data["complete"]
+        and data["resources"]["complete"]
+        and data["testSettings"].get("maxParallelForks")
+        == command.get("requestedTestForks")
+    )
+    save(OUTPUT / "summary.json", data)
     lines = [
         "## BE test measurement",
         "",
@@ -217,6 +264,10 @@ def report():
     lines += [
         "",
         "### Observations",
+        "",
+        f"- Test settings: {json.dumps(data['testSettings'])}",
+        f"- Host CPU mean: {data['resources'].get('hostCpuMeanPercent')}%; sampled memory peak: {data['resources'].get('hostSampledPeakUsedKiB')} KiB",
+        f"- Worker JVMs observed: {data['resources'].get('workerProcessesObserved')}; containers observed: {data['resources'].get('containersObserved')}",
         "",
         f"- Context caches: {json.dumps(data['observations']['contextCaches'])}",
         f"- Container starts: {len(data['observations']['containerStarts'])}; Flyway entries: {len(data['observations']['flyway'])}; Spring starts: {len(data['observations']['springStarts'])}",

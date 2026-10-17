@@ -8,11 +8,21 @@ import org.gradle.api.tasks.testing.TestResult
 gradle.projectsEvaluated {
     allprojects {
         tasks.withType(Test).configureEach { testTask ->
+            def forkCount = providers.gradleProperty('ciTestForks').orElse('1').get()
+            if (!(forkCount in ['1', '2'])) throw new GradleException('ciTestForks must be 1 or 2')
+            maxParallelForks = Integer.parseInt(forkCount)
             systemProperty 'logging.level.org.springframework.test.context.cache', 'DEBUG'
             def destination = layout.buildDirectory.file("ci-timing/${testTask.name}-classes.jsonl").get().asFile
             doFirst {
                 destination.parentFile.mkdirs()
                 destination.text = ''
+                new File(destination.parentFile, 'test-settings.json').text = JsonOutput.toJson([
+                    maxParallelForks: testTask.maxParallelForks, forkEvery: testTask.forkEvery,
+                    minHeapSize: testTask.minHeapSize, maxHeapSize: testTask.maxHeapSize,
+                    contextCacheMaxSize: testTask.systemProperties['spring.test.context.cache.maxSize'],
+                    hikariMaximumPoolSize: testTask.systemProperties['spring.datasource.hikari.maximum-pool-size'],
+                    junitParallel: testTask.systemProperties['junit.jupiter.execution.parallel.enabled']
+                ])
             }
             addTestListener(new TestListener() {
                 void beforeSuite(TestDescriptor suite) {}
@@ -21,13 +31,18 @@ gradle.projectsEvaluated {
                 void afterSuite(TestDescriptor suite, TestResult result) {
                     // Parameterized method suites share their parent className.
                     if (suite.className != null && suite.className != suite.parent?.className) {
-                        destination.append(JsonOutput.toJson([
-                            task: testTask.path, className: suite.className,
-                            startMs: result.startTime, endMs: result.endTime,
-                            elapsedSeconds: (result.endTime - result.startTime) / 1000.0,
-                            testsIncludingNested: result.testCount, failuresIncludingNested: result.failedTestCount,
-                            skipped: result.skippedTestCount, outcome: result.resultType.name()
-                        ]) + '\n', 'UTF-8')
+                        def ancestor = suite.parent
+                        while (ancestor != null && !(ancestor.name ==~ /Gradle Test Executor \d+/)) ancestor = ancestor.parent
+                        synchronized(destination) {
+                            destination.append(JsonOutput.toJson([
+                                worker: ancestor?.name ?: 'unknown',
+                                task: testTask.path, className: suite.className,
+                                startMs: result.startTime, endMs: result.endTime,
+                                elapsedSeconds: (result.endTime - result.startTime) / 1000.0,
+                                testsIncludingNested: result.testCount, failuresIncludingNested: result.failedTestCount,
+                                skipped: result.skippedTestCount, outcome: result.resultType.name()
+                            ]) + '\n', 'UTF-8')
+                        }
                     }
                 }
             })

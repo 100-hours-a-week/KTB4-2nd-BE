@@ -28,8 +28,8 @@ class MeasurementTest(unittest.TestCase):
             ]
         )
         timing.collect_observations(log, values)
-        self.assertEqual(values["contextCaches"]["abc"]["hits"], 23)
-        self.assertEqual(values["contextCaches"]["abc"]["misses"], 3)
+        self.assertEqual(values["contextCaches"]["unknown:abc"]["hits"], 23)
+        self.assertEqual(values["contextCaches"]["unknown:abc"]["misses"], 3)
         self.assertEqual(values["containerStarts"][0]["seconds"], 4.25)
         self.assertEqual(values["containerStarts"][1]["seconds"], 62.5)
         self.assertEqual(values["flyway"][0]["seconds"], 1.234)
@@ -85,6 +85,7 @@ class MeasurementTest(unittest.TestCase):
             output = Path(directory)
             with (
                 patch.object(timing, "OUTPUT", output),
+                patch.object(timing, "ResourceMonitor"),
                 patch.object(timing, "save") as save,
                 patch.object(
                     timing.subprocess, "check_output", return_value="checkout\n"

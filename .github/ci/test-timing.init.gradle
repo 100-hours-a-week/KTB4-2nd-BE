@@ -3,11 +3,30 @@ import org.gradle.api.tasks.testing.Test
 import org.gradle.api.tasks.testing.TestDescriptor
 import org.gradle.api.tasks.testing.TestListener
 import org.gradle.api.tasks.testing.TestResult
+import org.gradle.api.tasks.compile.JavaCompile
 
 // Applied only by PR measurement; application build/test settings stay in build.gradle.
 gradle.projectsEvaluated {
     allprojects {
+        def probeValue = providers.gradleProperty('ciContextProbe').orElse('false').get()
+        if (!(probeValue in ['true', 'false'])) throw new GradleException('ciContextProbe must be true or false')
+        def contextProbe = probeValue == 'true'
+        def observerClasses = layout.buildDirectory.dir('ci-context-observer')
+        def compileObserver = null
+        if (contextProbe) {
+            compileObserver = tasks.register('compileCiContextObserver', JavaCompile) {
+                source fileTree('.github/ci/context') { include '**/*.java' }
+                classpath = sourceSets.test.compileClasspath
+                destinationDirectory = observerClasses
+                javaCompiler = tasks.named('compileTestJava', JavaCompile).get().javaCompiler
+            }
+        }
         tasks.withType(Test).configureEach { testTask ->
+            if (contextProbe) {
+                dependsOn compileObserver
+                classpath += files(observerClasses, '.github/ci/context-resources')
+                systemProperty 'ci.context.output', layout.buildDirectory.dir('ci-timing').get().asFile.absolutePath
+            }
             def forkCount = providers.gradleProperty('ciTestForks').orElse('1').get()
             if (!(forkCount in ['1', '2'])) throw new GradleException('ciTestForks must be 1 or 2')
             maxParallelForks = Integer.parseInt(forkCount)
@@ -16,8 +35,12 @@ gradle.projectsEvaluated {
             doFirst {
                 destination.parentFile.mkdirs()
                 destination.text = ''
+                fileTree(destination.parentFile) {
+                    include 'context-events-*.jsonl', 'context-summary.json'
+                }.each { it.delete() }
                 new File(destination.parentFile, 'test-settings.json').text = JsonOutput.toJson([
                     maxParallelForks: testTask.maxParallelForks, forkEvery: testTask.forkEvery,
+                    contextDiagnostics: contextProbe,
                     minHeapSize: testTask.minHeapSize, maxHeapSize: testTask.maxHeapSize,
                     contextCacheMaxSize: testTask.systemProperties['spring.test.context.cache.maxSize'],
                     hikariMaximumPoolSize: testTask.systemProperties['spring.datasource.hikari.maximum-pool-size'],

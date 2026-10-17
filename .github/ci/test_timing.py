@@ -84,6 +84,7 @@ def summarize(root):
         "springStarts": [],
     }
     classes, methods, errors = [], [], []
+    identities = {}
     walls = []
     for path in sorted((root / "ci-timing").glob("*-classes.jsonl")):
         for line in path.read_text().splitlines():
@@ -111,6 +112,12 @@ def summarize(root):
             for case in suite.findall("testcase"):
                 # Parameterized display names may carry tokens/data; publish only class timings.
                 methods.append(float(case.get("time", 0)))
+                # Opaque multiset: retain duplicate names without publishing display values.
+                identity = hashlib.sha256(json.dumps([
+                    name, case.get("classname", name), case.get("name", ""),
+                    case.find("skipped") is not None,
+                ]).encode()).hexdigest()
+                identities[identity] = identities.get(identity, 0) + 1
             for node in suite.findall("system-out") + suite.findall("system-err"):
                 collect_observations(
                     node.text or "",
@@ -129,6 +136,7 @@ def summarize(root):
         "errors": errors,
         "junitFiles": len(xml_files),
         "totals": totals,
+        "testIdentities": dict(sorted(identities.items())),
         "classWallIntervals": sorted(
             walls, key=lambda row: row["elapsedSeconds"], reverse=True
         ),
@@ -156,6 +164,10 @@ def run():
     context_probe = os.environ.get("BE_CONTEXT_DIAGNOSTICS", "false")
     if context_probe not in ("true", "false"):
         raise ValueError("BE_CONTEXT_DIAGNOSTICS must be true or false")
+    runner_count = os.environ.get("BE_TEST_RUNNERS", "1")
+    shard = os.environ.get("BE_TEST_SHARD", "1")
+    if runner_count not in ("1", "2") or shard not in ("1", "2") or int(shard) > int(runner_count):
+        raise ValueError("invalid BE_TEST_RUNNERS/BE_TEST_SHARD")
     hashes = {}
     for name in [
         "build.gradle",
@@ -167,6 +179,8 @@ def run():
         ".github/ci/context_cache.py",
         ".github/ci/context/ci/context/ContextCacheObserver.java",
         ".github/ci/context-resources/META-INF/spring.factories",
+        ".github/ci/test_shards.py",
+        ".github/ci/test-shard-hints.json",
     ]:
         hashes[name] = hashlib.sha256(Path(name).read_bytes()).hexdigest()
     metadata = {
@@ -192,6 +206,8 @@ def run():
             "machine": platform.machine(),
             "requestedTestForks": int(forks),
             "contextDiagnostics": context_probe == "true",
+            "testRunnerCount": int(runner_count),
+            "testShard": int(shard),
             "fileHashes": hashes,
         }
     )
@@ -218,6 +234,8 @@ def run():
         ".github/ci/test-timing.init.gradle",
         f"-PciTestForks={forks}",
         f"-PciContextProbe={context_probe}",
+        f"-PciTestRunners={runner_count}",
+        f"-PciTestShard={shard}",
     ]
     metadata.update(
         {"command": command, "startedAt": datetime.now(timezone.utc).isoformat()}

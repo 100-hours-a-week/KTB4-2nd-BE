@@ -88,6 +88,32 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @Test
+    void 실제_포맷과_요청_MIME이_다르면_파생본을_저장하지_않는다() throws Exception {
+        when(storage.open("disguised")).thenReturn(new ByteArrayInputStream(jpeg()));
+
+        assertThrows(CompletionException.class, () -> service.createAll(
+                "disguised", List.of("disguised"), List.of("image/heic")).join());
+
+        verify(storage, never()).storeDerived(any(), any(Path.class), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {75, 85, 95})
+    void JPEG_분석본은_원본의_품질_추정값을_유지한다(int quality) throws Exception {
+        Path source = Files.createTempFile("jpeg-quality", ".jpg");
+        Path output = Files.createTempFile("jpeg-quality-derived", ".jpg");
+        try {
+            command("convert", "-size", "8x8", "xc:red", "-quality", Integer.toString(quality), source.toString());
+            Map<String, byte[]> outputs = deriveOutputs(Files.readAllBytes(source), "image/jpeg");
+            Files.write(output, outputs.get("analyze.jpg"));
+            assertEquals(Integer.toString(quality), command("identify", "-format", "%Q", output.toString()));
+        } finally {
+            Files.deleteIfExists(source);
+            Files.deleteIfExists(output);
+        }
+    }
+
+    @Test
     void 변환_시작_선점의_DB_일시_실패는_영구_실패로_분류하지_않는다() {
         var photo = new InitialAttachmentUploadBatchSnapshot.Photo(
                 1L, "photo.jpg", "image/jpeg", 12L, "original", 0, null, null);
@@ -453,7 +479,8 @@ class TripAttachmentDerivativeServiceTest {
             assertEquals("95", command("identify", "-format", "%Q", output.toString()));
             var metadata = new ObjectMapper().readTree(command(
                     "exiftool", "-j", "-Orientation", "-GPSLatitude", "-GPSLongitude",
-                    "-DateTimeOriginal", "-Make", "-Model", output.toString())).get(0);
+                    "-DateTimeOriginal", "-Make", "-Model", "-ProfileDescription", output.toString())).get(0);
+            assertEquals("sRGB IEC61966-2.1", metadata.path("ProfileDescription").asString());
             assertFalse(metadata.has("Orientation"));
             assertFalse(metadata.has("GPSLatitude"));
             assertFalse(metadata.has("GPSLongitude"));
@@ -520,9 +547,8 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"1, RGBY", "2, GRYB", "3, YBGR", "4, BYRG",
-            "5, RBGY", "6, BRYG", "7, YGBR", "8, GYRB"})
-    void JPEG와_PNG의_회전과_반전을_두_출력에_적용한다(int orientation, String corners) throws Exception {
+    @ValueSource(ints = {1, 2, 3, 4, 5, 6, 7, 8})
+    void JPEG와_PNG는_EXIF와_관계없이_픽셀_방향을_유지한다(int orientation) throws Exception {
         for (String format : List.of("jpeg", "png")) {
             Path source = Files.createTempFile("oriented-source", "." + format);
             try {
@@ -539,12 +565,12 @@ class TripAttachmentDerivativeServiceTest {
                 assertEquals(2, outputs.size());
                 for (String name : List.of("analyze.jpg", "preview.webp")) {
                     BufferedImage output = decodeOutput(outputs.get(name), name);
-                    assertEquals(orientation <= 4 ? 80 : 40, output.getWidth());
-                    assertEquals(orientation <= 4 ? 40 : 80, output.getHeight());
+                    assertEquals(80, output.getWidth());
+                    assertEquals(40, output.getHeight());
                     for (int i = 0; i < 4; i++) {
                         int x = output.getWidth() * (i % 2 == 0 ? 1 : 3) / 4;
                         int y = output.getHeight() * (i < 2 ? 1 : 3) / 4;
-                        Color expected = switch (corners.charAt(i)) {
+                        Color expected = switch ("RGBY".charAt(i)) {
                             case 'R' -> Color.RED;
                             case 'G' -> Color.GREEN;
                             case 'B' -> Color.BLUE;
@@ -560,6 +586,32 @@ class TripAttachmentDerivativeServiceTest {
                 Files.deleteIfExists(source);
             }
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"rotation-90.heic", "mirror-horizontal.heic"})
+    void HEIC의_내장_회전과_반전을_모든_파생본에서_무시한다(String filename) throws Exception {
+        // 80×40 RGBY 사분면에 ImageMagick -orient RightTop/TopRight로 irot/imir를 기록한 입력이다.
+        Path source = Path.of("src/test/resources/images/heic", filename);
+        byte[] original = Files.readAllBytes(source);
+        Map<String, byte[]> outputs = deriveOutputs(original, "image/heic");
+        assertEquals(3, outputs.size());
+        Color[] corners = {Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW};
+        for (String name : List.of("analyze.jpg", "preview.webp", "display.jpg")) {
+            BufferedImage output = decodeOutput(outputs.get(name), name);
+            assertEquals(80, output.getWidth());
+            assertEquals(40, output.getHeight());
+            for (int index = 0; index < corners.length; index++) {
+                int x = output.getWidth() * (index % 2 == 0 ? 1 : 3) / 4;
+                int y = output.getHeight() * (index < 2 ? 1 : 3) / 4;
+                Color actual = new Color(output.getRGB(x, y));
+                Color expected = corners[index];
+                assertTrue(Math.abs(expected.getRed() - actual.getRed()) < 50);
+                assertTrue(Math.abs(expected.getGreen() - actual.getGreen()) < 50);
+                assertTrue(Math.abs(expected.getBlue() - actual.getBlue()) < 50);
+            }
+        }
+        assertArrayEquals(original, Files.readAllBytes(source));
     }
 
     @Test
@@ -580,7 +632,7 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @Test
-    void 분석본에_선택한_EXIF와_정상_방향을_기록하고_미리보기에서는_제거한다() throws Exception {
+    void 분석본에_촬영정보와_방향1을_기록하고_미리보기에서는_제거한다() throws Exception {
         Path source = Files.createTempFile("selected-exif", ".jpg");
         Path output = Files.createTempFile("selected-exif-output", ".jpg");
         try {
@@ -605,7 +657,9 @@ class TripAttachmentDerivativeServiceTest {
                     assertEquals("NX100", metadata.path("Model").asString());
                 } else {
                     for (String field : List.of("Orientation", "DateTimeOriginal", "GPSLatitude",
-                            "GPSLongitude", "Make", "Model")) assertFalse(metadata.has(field));
+                            "GPSLongitude", "Make", "Model")) {
+                        assertFalse(metadata.has(field));
+                    }
                 }
             }
             assertArrayEquals(original, Files.readAllBytes(source));

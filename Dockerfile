@@ -21,11 +21,12 @@ FROM eclipse-temurin:${JAVA_VERSION}-jre-noble AS runtime
 WORKDIR /app
 
 ENV SERVER_PORT=8080
+ENV VIPS_CONCURRENCY=1
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         curl \
-        imagemagick \
+        libvips42t64 \
         libheif-plugin-libde265 \
         libimage-exiftool-perl \
     && rm -rf /var/lib/apt/lists/* \
@@ -39,4 +40,4 @@ USER spring
 
 EXPOSE 8080
 
-CMD ["java", "-jar", "/app/app.jar"]
+CMD ["java", "--enable-native-access=ALL-UNNAMED", "-jar", "/app/app.jar"]

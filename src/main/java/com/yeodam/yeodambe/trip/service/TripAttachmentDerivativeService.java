@@ -271,7 +271,7 @@ public class TripAttachmentDerivativeService {
         Path display = directory.resolve("display.jpg");
         JsonNode metadata = metadata(original);
         convertDerivatives(original, mimeType, metadata, analyze, preview, display);
-        // 필요한 촬영 정보만 AI용 JPEG에 복사한다. 회전은 이미 픽셀에 반영됐다.
+        // 필요한 촬영 정보만 복사한다. 픽셀 방향은 유지하고 뷰어의 자동 회전은 막는다.
         run("exiftool", "-overwrite_original", "-TagsFromFile", original.toString(),
                 "-DateTimeOriginal", "-SubSecTimeOriginal", "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
                 "-Orientation#=1", analyze.toString());
@@ -327,7 +327,7 @@ public class TripAttachmentDerivativeService {
         Process process = null;
         try {
             process = new ProcessBuilder("exiftool", "-j", "-n",
-                    "-Orientation", "-DateTimeOriginal", "-OffsetTimeOriginal",
+                    "-Orientation", "-JPEGQualityEstimate", "-DateTimeOriginal", "-OffsetTimeOriginal",
                     "-GPSLatitude", "-GPSLongitude",
                     "-Make", "-Model", original.toString())
                     .redirectOutput(output.toFile())
@@ -381,40 +381,8 @@ public class TripAttachmentDerivativeService {
     private void convertDerivatives(
             Path original, String mimeType, JsonNode metadata, Path analyze, Path preview, Path display
     ) {
-        List<String> command = new ArrayList<>();
-        command.add("magick");
-        command.add("-respect-parentheses");
-        command.add(original + "[0]");
-
-        if (!"image/heic".equals(mimeType)) {
-            command.add("-orient");
-            command.add(orientation(metadata));
-            command.add("-auto-orient");
-        }
-        // 표시본은 축소 전에 분기하고 ICC를 보존한다. clone의 품질 설정은 다른 출력에 전파하지 않는다.
-        if ("image/heic".equals(mimeType)) {
-            command.addAll(List.of("(", "+clone", "+profile", "exif", "-quality", "95",
-                    "-write", display.toString(), "+delete", ")"));
-        }
-        // 축소 픽셀은 공유하되 분석본의 흰 배경 처리는 WebP 투명도에 영향을 주지 않는다.
-        command.addAll(List.of("-resize", "1024x1024>", "-strip",
-                "(", "+clone", "-background", "white", "-alpha", "remove", "-alpha", "off",
-                "-write", analyze.toString(), "+delete", ")",
-                "-quality", "75", preview.toString()));
-        run(command.toArray(String[]::new));
-    }
-
-    private String orientation(JsonNode metadata) {
-        return switch (metadata.path("Orientation").asInt(1)) {
-            case 2 -> "TopRight";
-            case 3 -> "BottomRight";
-            case 4 -> "BottomLeft";
-            case 5 -> "LeftTop";
-            case 6 -> "RightTop";
-            case 7 -> "RightBottom";
-            case 8 -> "LeftBottom";
-            default -> "TopLeft";
-        };
+        VipsAttachmentConverter.convert(original, mimeType, analyze, preview, display,
+                metadata.path("JPEGQualityEstimate").asInt(92));
     }
 
     private BigDecimal coordinate(

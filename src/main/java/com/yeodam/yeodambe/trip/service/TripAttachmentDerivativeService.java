@@ -7,7 +7,6 @@ import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSna
 import com.yeodam.yeodambe.trip.service.response.PreparedPhotoDerivative;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -31,9 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
@@ -47,9 +43,7 @@ public class TripAttachmentDerivativeService {
     private final MeterRegistry meterRegistry;
     private final TripDerivativeScheduler scheduler;
     private final InitialAttachmentUploadTransactionService transactions;
-    private final ScheduledThreadPoolExecutor leaseScheduler =
-            new ScheduledThreadPoolExecutor(1,
-                    Thread.ofPlatform().name("initial-photo-lease").daemon(true).factory());
+    private final InitialAttachmentStoragePipeline pipeline;
 
     public CompletableFuture<List<DerivedPhotoKeys>> createAll(
             String executionId, List<String> originalKeys, List<String> mimeTypes
@@ -109,7 +103,7 @@ public class TripAttachmentDerivativeService {
 
     @Scheduled(initialDelayString = "${app.trip.worker-initial-delay-ms:0}", fixedDelayString = "${app.trip.conversion-delay-ms:5000}")
     public void processPendingBatches() {
-        transactions.claimBatch().ifPresent(claim -> convertNextPhoto(claim, 0));
+        transactions.claimBatch().ifPresent(this::startPipeline);
     }
 
     public void processAcceptedBatch(
@@ -119,94 +113,36 @@ public class TripAttachmentDerivativeService {
     ) {
         try {
             transactions.claimBatch(tripId, userId, uploadId)
-                    .ifPresent(claim -> convertNextPhoto(claim, 0));
+                    .ifPresent(this::startPipeline);
         } catch (RuntimeException failure) {
             log.warn("접수한 사진 배치의 즉시 제출 재시도: tripId={}, uploadId={}, stage=conversion_submit, cause={}",
                     tripId, uploadId, failure.getClass().getSimpleName());
         }
     }
 
-    private void convertNextPhoto(
-            InitialAttachmentUploadBatchSnapshot claim,
-            int from
+    private void startPipeline(InitialAttachmentUploadBatchSnapshot claim) {
+        pipeline.start(claim, (photo, keys) -> prepareInitialPhoto(photo.objectKey(), photo.contentType(), keys),
+                this::isTransientConversionFailure);
+    }
+
+    private PreparedPhotoDerivative prepareInitialPhoto(
+            String originalKey,
+            String mimeType,
+            List<String> keys
     ) {
-        int index = from;
-        while (index < claim.photos().size() && claim.photos().get(index).derived() != null) {
-            index++;
-        }
-        if (index == claim.photos().size()) {
-            try {
-                transactions.completeBatch(claim);
-            } catch (RuntimeException failure) {
-                log.warn("사진 배치 저장 재시도: executionId={}, stage=batch_persist, cause={}",
-                        claim.executionId(), failure.getClass().getSimpleName());
-                transactions.releaseSaturatedBatch(claim);
-            }
-            return;
-        }
-        var photo = claim.photos().get(index);
-        if (photo.attempts() >= 3) {
-            transactions.retryBatch(claim, photo.itemId(), true);
-            return;
-        }
-        ScheduledFuture<?> heartbeat = startLeaseHeartbeat(claim);
+        Path directory;
         try {
-            var task = new TripDerivativeScheduler.PhotoTask(
-                    0, photo.contentType(), () -> convertPhoto(claim, photo));
-            int next = index + 1;
-            scheduler.submit(claim.executionId(), List.of(task), () -> transactions.renewLease(claim))
-                    .whenComplete((photos, failure) -> {
-                        heartbeat.cancel(false);
-                        if (failure == null) {
-                            convertNextPhoto(claim, next);
-                        } else {
-                            log.warn("사진 변환 재시도: executionId={}, itemId={}, stage=image_conversion, cause={}",
-                                    claim.executionId(), photo.itemId(), failure.getClass().getSimpleName());
-                            transactions.retryBatch(claim, photo.itemId(), !isTransientConversionFailure(failure));
-                        }
-                    });
-        } catch (RejectedExecutionException saturated) {
-            heartbeat.cancel(false);
-            transactions.releaseSaturatedBatch(claim);
-        } catch (RuntimeException failure) {
-            heartbeat.cancel(false);
-            log.warn("사진 변환 시작 재시도: executionId={}, itemId={}, cause={}",
-                    claim.executionId(), photo.itemId(), failure.getClass().getSimpleName());
-            transactions.retryBatch(claim, photo.itemId(), !isTransientConversionFailure(failure));
+            directory = Files.createTempDirectory("initial-photo-");
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
         }
-    }
-
-    private ScheduledFuture<?> startLeaseHeartbeat(InitialAttachmentUploadBatchSnapshot claim) {
-        return leaseScheduler.scheduleAtFixedRate(() -> {
-            try {
-                if (!transactions.renewLease(claim)) {
-                    scheduler.cancelExecution(claim.executionId());
-                }
-            } catch (RuntimeException failure) {
-                log.warn("사진 변환 선점 갱신 실패: executionId={}, cause={}",
-                        claim.executionId(), failure.getClass().getSimpleName());
-                scheduler.cancelExecution(claim.executionId());
-            }
-        }, 30, 30, TimeUnit.SECONDS);
-    }
-
-    private DerivedPhotoKeys convertPhoto(
-            InitialAttachmentUploadBatchSnapshot claim,
-            InitialAttachmentUploadBatchSnapshot.Photo photo
-    ) {
-        List<String> keys = transactions.startPhotoAttempt(claim, photo.itemId());
-        DerivedPhotoKeys derived = generateOne(
-                claim.executionId(), photo.objectKey(), photo.contentType(), new ArrayList<>(), keys);
-        List<String> retained = new ArrayList<>(keys);
-        retained.add(photo.objectKey());
-        storage.retain(retained);
-        transactions.savePhotoSuccess(claim, photo.itemId(), derived);
-        return derived;
-    }
-
-    @PreDestroy
-    void stopLeaseScheduler() {
-        leaseScheduler.shutdownNow();
+        try {
+            downloadOriginal(originalKey, directory.resolve("original"));
+            return prepareLocal(originalKey, mimeType, keys, directory);
+        } catch (IOException | RuntimeException failure) {
+            PreparedPhotoDerivative.cleanup(directory);
+            throw new IllegalStateException(TripInternalErrorMessage.DERIVED_ATTACHMENT_CREATE_FAILED.message(), failure);
+        }
     }
 
     public boolean isTransientConversionFailure(Throwable failure) {
@@ -227,6 +163,7 @@ public class TripAttachmentDerivativeService {
     }
 
     public void cancelExecution(String executionId) {
+        pipeline.cancelExecution(executionId);
         scheduler.cancelExecution(executionId);
     }
 

@@ -1,27 +1,37 @@
 package com.yeodam.yeodambe.trip.client;
 
+import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
-import org.mockito.ArgumentCaptor;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 class S3TripAttachmentStorageClientTest {
     private static final String ACCESS_KEY_PROPERTY = "aws.accessKeyId";
@@ -162,6 +172,84 @@ class S3TripAttachmentStorageClientTest {
         assertThat(client.size("object-key")).isEqualTo(123L);
         assertThat(request.getValue().bucket()).isEqualTo("test-bucket");
         assertThat(request.getValue().key()).isEqualTo("object-key");
+    }
+
+    @Test
+    void 비동기_파생본은_전송_완료까지_대기하고_실패한_키를_보존한다(
+            @TempDir Path directory
+    ) throws Exception {
+        S3AsyncClient async = mock(S3AsyncClient.class);
+        CompletableFuture<PutObjectResponse> upload = new CompletableFuture<>();
+        when(async.putObject(any(PutObjectRequest.class),
+                any(AsyncRequestBody.class))).thenReturn(upload);
+        Path file = Files.write(directory.resolve("analyze.jpg"), new byte[]{1, 2});
+        S3TripAttachmentStorageClient client = new S3TripAttachmentStorageClient(
+                mock(S3Client.class), async, "test-bucket", mock(S3Presigner.class),
+                Duration.ofMinutes(10), meterRegistry);
+
+        CompletableFuture<String> result =
+                client.storeDerivedToAsync("planned/analyze.jpg", file, "image/jpeg");
+
+        assertThat(result).isNotDone();
+        ArgumentCaptor<PutObjectRequest> request =
+                ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(async).putObject(request.capture(),
+                any(AsyncRequestBody.class));
+        assertThat(request.getValue().key()).isEqualTo("planned/analyze.jpg");
+        assertThat(request.getValue().tagging()).isEqualTo("status=retained");
+        upload.completeExceptionally(new IOException("network"));
+        assertThatThrownBy(result::join).hasCauseInstanceOf(AttachmentStorageException.class);
+        assertThat(((AttachmentStorageException) result.handle((key, error) -> error.getCause()).join())
+                .getObjectKey()).isEqualTo("planned/analyze.jpg");
+    }
+
+    @Test
+    void 비동기_파생본_성공은_예정한_키를_반환한다(
+            @TempDir Path directory
+    ) throws Exception {
+        S3AsyncClient async = mock(S3AsyncClient.class);
+        when(async.putObject(any(PutObjectRequest.class),
+                any(AsyncRequestBody.class)))
+                .thenReturn(CompletableFuture.completedFuture(
+                        PutObjectResponse.builder().build()));
+        S3TripAttachmentStorageClient client = new S3TripAttachmentStorageClient(
+                mock(S3Client.class), async, "test-bucket", mock(S3Presigner.class),
+                Duration.ofMinutes(10), meterRegistry);
+        Path file = Files.write(directory.resolve("preview.webp"), new byte[]{1});
+
+        assertThat(client.storeDerivedToAsync("planned/preview.webp", file, "image/webp").join())
+                .isEqualTo("planned/preview.webp");
+        assertThatThrownBy(() -> client.storeDerivedToAsync("planned/file", file, "text/plain"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void SDK_호출이_즉시_실패해도_실패한_Future와_키를_반환하고_파일을_보존한다(
+            @TempDir Path directory
+    ) throws Exception {
+        S3AsyncClient async = mock(S3AsyncClient.class);
+        IllegalStateException failure = new IllegalStateException("client closed");
+        when(async.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
+                .thenThrow(failure);
+        S3TripAttachmentStorageClient client = new S3TripAttachmentStorageClient(
+                mock(S3Client.class), async, "test-bucket", mock(S3Presigner.class),
+                Duration.ofMinutes(10), meterRegistry);
+        Path file = Files.write(directory.resolve("analyze.jpg"), new byte[]{1, 2});
+
+        try {
+            CompletableFuture<String> result = client.storeDerivedToAsync(
+                    "planned/analyze.jpg", file, "image/jpeg");
+
+            assertThatThrownBy(result::join).hasCauseInstanceOf(AttachmentStorageException.class);
+            Throwable storageFailure = result.handle((key, error) -> error).join();
+            assertThat(storageFailure).isInstanceOf(AttachmentStorageException.class);
+            assertThat(((AttachmentStorageException) storageFailure).getObjectKey())
+                    .isEqualTo("planned/analyze.jpg");
+            assertThat(storageFailure).hasCause(failure);
+            assertThat(file).exists();
+        } finally {
+            client.close();
+        }
     }
 
     private void restoreSystemProperty(String name, String previousValue) {

@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
+import com.yeodam.yeodambe.trip.service.response.PreparedPhotoDerivative;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PreDestroy;
@@ -299,48 +300,18 @@ public class TripAttachmentDerivativeService {
             List<String> plannedKeys,
             Path directory
     ) {
-        Path original = directory.resolve("original");
-        Path analyze = directory.resolve("analyze.jpg");
-        Path preview = directory.resolve("preview.webp");
-        Path display = directory.resolve("display.jpg");
         Timer.Sample derivativeSample = Timer.start(meterRegistry);
         String derivativeOutcome = "success";
 
         try {
-            JsonNode metadata = metadata(original);
-            convertDerivatives(original, mimeType, metadata, analyze, preview, display);
-
-            // 필요한 촬영 정보만 AI용 JPEG에 복사한다. 회전은 이미 픽셀에 반영됐다.
-            run("exiftool", "-overwrite_original",
-                    "-TagsFromFile", original.toString(),
-                    "-DateTimeOriginal", "-SubSecTimeOriginal",
-                    "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
-                    "-Orientation#=1", analyze.toString());
-
-            String analyzeKey = storeTrackedDerivative(
-                    executionId, analyze, "image/jpeg", plannedKeys, 0, uploadedKeys);
-            String previewKey = storeTrackedDerivative(
-                    executionId, preview, "image/webp", plannedKeys, 1, uploadedKeys);
-            String displayKey = null;
-            if ("image/heic".equals(mimeType)) {
-                displayKey = storeTrackedDerivative(
-                        executionId, display, "image/jpeg", plannedKeys, 2, uploadedKeys);
+            PreparedPhotoDerivative prepared = prepareLocal(originalKey, mimeType, plannedKeys, directory);
+            List<String> stored = new ArrayList<>();
+            for (int index = 0; index < prepared.outputs().size(); index++) {
+                PreparedPhotoDerivative.Output output = prepared.outputs().get(index);
+                stored.add(storeTrackedDerivative(executionId, output.file(), output.mimeType(),
+                        plannedKeys, index, uploadedKeys));
             }
-
-            return new DerivedPhotoKeys(
-                    originalKey,
-                    analyzeKey,
-                    previewKey,
-                    displayKey,
-                    takenAt(metadata),
-                    coordinate(metadata, "GPSLatitude", 90),
-                    coordinate(metadata, "GPSLongitude", 180),
-                    deviceModel(metadata),
-                    fileSize(original),
-                    fileSize(analyze),
-                    fileSize(preview),
-                    displayKey == null ? null : fileSize(display)
-            );
+            return prepared.storedKeys(stored);
         } catch (RuntimeException failure) {
             derivativeOutcome = "failure";
             throw failure;
@@ -349,6 +320,40 @@ public class TripAttachmentDerivativeService {
                     .tags("stage", "image_derivative", "outcome", derivativeOutcome)
                     .register(meterRegistry));
         }
+    }
+
+    private PreparedPhotoDerivative prepareLocal(
+            String originalKey,
+            String mimeType,
+            List<String> keys,
+            Path directory
+    ) {
+        Path original = directory.resolve("original");
+        Path analyze = directory.resolve("analyze.jpg");
+        Path preview = directory.resolve("preview.webp");
+        Path display = directory.resolve("display.jpg");
+        JsonNode metadata = metadata(original);
+        convertDerivatives(original, mimeType, metadata, analyze, preview, display);
+        // 필요한 촬영 정보만 AI용 JPEG에 복사한다. 회전은 이미 픽셀에 반영됐다.
+        run("exiftool", "-overwrite_original", "-TagsFromFile", original.toString(),
+                "-DateTimeOriginal", "-SubSecTimeOriginal", "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
+                "-Orientation#=1", analyze.toString());
+        boolean heic = "image/heic".equals(mimeType);
+        DerivedPhotoKeys photo = new DerivedPhotoKeys(originalKey, plannedKey(keys, 0), plannedKey(keys, 1),
+                heic ? plannedKey(keys, 2) : null, takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
+                coordinate(metadata, "GPSLongitude", 180), deviceModel(metadata), fileSize(original),
+                fileSize(analyze), fileSize(preview), heic ? fileSize(display) : null);
+        List<PreparedPhotoDerivative.Output> outputs = new ArrayList<>();
+        outputs.add(new PreparedPhotoDerivative.Output(analyze, plannedKey(keys, 0), "image/jpeg"));
+        outputs.add(new PreparedPhotoDerivative.Output(preview, plannedKey(keys, 1), "image/webp"));
+        if (heic) {
+            outputs.add(new PreparedPhotoDerivative.Output(display, plannedKey(keys, 2), "image/jpeg"));
+        }
+        return new PreparedPhotoDerivative(directory, photo, outputs);
+    }
+
+    private String plannedKey(List<String> keys, int index) {
+        return keys == null ? null : keys.get(index);
     }
 
     private String storeTrackedDerivative(

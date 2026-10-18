@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import app.photofox.vipsffm.VImage;
 import app.photofox.vipsffm.Vips;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -16,6 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class VipsAttachmentConverterTest {
+    @BeforeAll
+    static void initializeNativeLibraries() {
+        NativeImageLibraries.initialize();
+    }
+
     @Test
     void 회전을_생략한_HEIC_픽셀에도_원본_ICC_프로필을_전달한다() {
         Vips.run(arena -> {

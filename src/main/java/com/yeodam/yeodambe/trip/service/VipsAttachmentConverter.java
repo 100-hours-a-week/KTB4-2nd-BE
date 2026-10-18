@@ -23,6 +23,7 @@ final class VipsAttachmentConverter {
             Thread.ofPlatform().name("photo-native-deadline").daemon(true).factory());
 
     static {
+        NativeImageLibraries.initialize();
         Vips.disableOperationCache();
         DEADLINES.setRemoveOnCancelPolicy(true);
     }

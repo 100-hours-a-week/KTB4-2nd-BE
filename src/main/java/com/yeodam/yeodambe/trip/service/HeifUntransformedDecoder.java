@@ -23,8 +23,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 final class HeifUntransformedDecoder {
     private static final MemoryLayout ERROR = MemoryLayout.structLayout(JAVA_INT, JAVA_INT, ADDRESS);
     private static final SymbolLookup LIBRARY = SymbolLookup.libraryLookup(
-            System.getProperty("app.photo.libheif.path",
-                    System.getProperty("os.name").startsWith("Mac") ? "libheif.dylib" : "libheif.so.1"),
+            NativeImageLibraries.heifPath(),
             Arena.global());
     private static final MethodHandle INIT = bind("heif_init", ERROR, ADDRESS);
     private static final MethodHandle ALLOC = bind("heif_context_alloc", ADDRESS);

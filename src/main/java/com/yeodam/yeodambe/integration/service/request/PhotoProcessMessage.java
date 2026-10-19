@@ -7,6 +7,7 @@ public record PhotoProcessMessage(
         String type,
         @JsonProperty("trip_id") Long tripId,
         @JsonProperty("execution_id") String executionId,
+        String trigger,
         @JsonProperty("trip_name") String tripName,
         TripPhotoAnalysisRequest.Period period,
         List<TripPhotoAnalysisRequest.Region> regions,
@@ -15,7 +16,15 @@ public record PhotoProcessMessage(
     public static PhotoProcessMessage from(
             Long tripId, String executionId, TripPhotoAnalysisRequest request
     ) {
-        return new PhotoProcessMessage("process", tripId, executionId, request.tripName(),
-                request.period(), List.copyOf(request.regions()), List.copyOf(request.attachments()));
+        return new PhotoProcessMessage(
+                "process",
+                tripId,
+                executionId,
+                "PHOTOS_ADDED",
+                request.tripName(),
+                request.period(),
+                List.copyOf(request.regions()),
+                List.copyOf(request.attachments())
+        );
     }
 }

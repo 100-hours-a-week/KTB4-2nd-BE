@@ -108,6 +108,8 @@ class AdditionalAttachmentCdcIntegrationTest {
         outboxService.recordPublished(event.getId(), receipt(event));
         var process = outboxes.findAll().stream().filter(value -> tripId.equals(value.getTripId())
                 && "process".equals(value.getMessageType())).findFirst().orElseThrow();
+        assertThat(new ObjectMapper().readTree(process.getPayload()).path("trigger").asString())
+                .isEqualTo("PHOTOS_ADDED");
         outboxService.recordPublished(event.getId(), receipt(event));
         assertThat(outboxes.findAll().stream().filter(value -> tripId.equals(value.getTripId()))).hasSize(2);
         var appended = Instant.now().minusSeconds(120).truncatedTo(ChronoUnit.MILLIS);

@@ -11,6 +11,9 @@ import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.migration.MigrationTripMode;
+import com.yeodam.yeodambe.trip.migration.MigrationTripAdmissionService;
+import com.yeodam.yeodambe.trip.migration.MigrationTripAcceptance;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import org.junit.jupiter.api.Test;
@@ -32,9 +35,12 @@ class TripControllerTest {
     private final TripPlaceFolderListService placeFolderListService =
             mock(TripPlaceFolderListService.class);
     private final TripDeletionService deletionService = mock(TripDeletionService.class);
+    private final MigrationTripMode migrationTripMode = mock(MigrationTripMode.class);
+    private final MigrationTripAdmissionService migrationTripAdmissionService =
+            mock(MigrationTripAdmissionService.class);
     private final TripController controller = new TripController(
             tripService, processingStatusService, cancellationService, placeFolderListService,
-            deletionService);
+            deletionService, migrationTripMode, migrationTripAdmissionService);
     private final TripCreateRequest request = new TripCreateRequest(
             "여행", LocalDate.now(), LocalDate.now(), List.of("50110"));
 
@@ -44,13 +50,30 @@ class TripControllerTest {
                 .thenReturn(new TripCreateResponse(7L, ProcessingStatus.PROCESSING));
 
         var response = controller.createTrip(request, Jwt.withTokenValue("token")
-                .header("alg", "HS256").subject("1").build());
+                .header("alg", "HS256").subject("1").build(), null);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody().message()).isEqualTo("TRIP_CREATED");
-        assertThat(response.getBody().data().tripId()).isEqualTo(7L);
-        assertThat(response.getBody().data().status()).isEqualTo(ProcessingStatus.PROCESSING);
+        var created = (TripCreateResponse) response.getBody().data();
+        assertThat(created.tripId()).isEqualTo(7L);
+        assertThat(created.status()).isEqualTo(ProcessingStatus.PROCESSING);
         verify(tripService).createTrip(1L, request);
+    }
+
+    @Test
+    void queue_모드에서는_동기_DB_쓰기_없이_202를_반환한다() {
+        String requestId = "51961261-7761-4587-ae2b-55c0452924bd";
+        when(migrationTripMode.queueEnabled()).thenReturn(true);
+        when(migrationTripAdmissionService.accept(1L, request, requestId))
+                .thenReturn(new MigrationTripAcceptance(requestId));
+
+        var response = controller.createTrip(request, jwt(), requestId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(response.getBody().message()).isEqualTo("TRIP_CREATE_ACCEPTED");
+        assertThat(((MigrationTripAcceptance) response.getBody().data()).requestId())
+                .isEqualTo(requestId);
+        verify(tripService, never()).createTrip(any(), any());
     }
 
     @Test

@@ -374,7 +374,7 @@ public class TripService {
         return tripAttachmentStorageClient.createReadUrl(thumbnailKey);
     }
 
-    private void validateTrip(TripCreateRequest request) {
+    public void validateTrip(TripCreateRequest request) {
         LocalDate today = LocalDate.now();
 
         if (request.endDate().isBefore(request.startDate())

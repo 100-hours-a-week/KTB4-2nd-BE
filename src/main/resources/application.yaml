@@ -1,6 +1,25 @@
 spring:
   application:
     name: yeodam-be
+  kafka:
+    bootstrap-servers: ${MIGRATION_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      auto-create: false
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        "[enable.idempotence]": true
+        "[max.in.flight.requests.per.connection]": 5
+        "[max.block.ms]": 1000
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        "[allow.auto.create.topics]": false
   servlet:
     multipart:
       max-file-size: 15MB
@@ -48,6 +67,14 @@ auth:
 
 app:
   public-api-prefix: /api
+
+# Rehearsal only. The source keeps its existing synchronous path unless a mode file is configured.
+migration:
+  trip:
+    mode-file: ${MIGRATION_TRIP_MODE_FILE:}
+    topic: ${MIGRATION_TRIP_TOPIC:yeodam.migration.trip-requests}
+    consumer-enabled: ${MIGRATION_TRIP_CONSUMER_ENABLED:false}
+    ack-timeout: ${MIGRATION_TRIP_ACK_TIMEOUT:5s}
 
 aws:
   region: ${AWS_REGION:ap-northeast-2}

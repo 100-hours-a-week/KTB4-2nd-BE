@@ -16,6 +16,8 @@ import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
+import com.yeodam.yeodambe.trip.migration.MigrationTripMode;
+import com.yeodam.yeodambe.trip.migration.MigrationTripAdmissionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -28,7 +30,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.net.URI;
 
 @RestController
 @RequiredArgsConstructor
@@ -38,14 +43,24 @@ public class TripController {
     private final TripProcessingCancellationService processingCancellationService;
     private final TripPlaceFolderListService tripPlaceFolderListService;
     private final TripDeletionService tripDeletionService;
+    private final MigrationTripMode migrationTripMode;
+    private final MigrationTripAdmissionService migrationTripAdmissionService;
 
     @PostMapping("/trips")
-    public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(
+    public ResponseEntity<ApiResponse<?>> createTrip(
             @Valid @RequestBody TripCreateRequest request,
-            @AuthenticationPrincipal Jwt jwt
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestHeader(value = "X-Request-ID", required = false) String requestId
     ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+        if (migrationTripMode.queueEnabled()) {
+            var accepted = migrationTripAdmissionService.accept(userId, request, requestId);
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .location(URI.create("/api/migration/trips/requests/" + accepted.requestId()))
+                    .body(new ApiResponse<>(SuccessMessage.TRIP_CREATE_ACCEPTED, accepted));
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(Long.valueOf(jwt.getSubject()), request)));
+                .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(userId, request)));
     }
 
     @PostMapping("/trips/{tripId}/favorite")

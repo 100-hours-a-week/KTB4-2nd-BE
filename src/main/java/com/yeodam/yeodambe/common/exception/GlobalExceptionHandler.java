@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.user.exception.*;
 import com.yeodam.yeodambe.migrationprobe.exception.InvalidMigrationProbeRequestException;
 import com.yeodam.yeodambe.migrationprobe.exception.MigrationProbeHashConflictException;
 import com.yeodam.yeodambe.migrationprobe.exception.MigrationProbeStoreUnavailableException;
+import com.yeodam.yeodambe.trip.migration.MigrationTripAdmissionException;
 import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -30,6 +31,11 @@ import org.slf4j.spi.LoggingEventBuilder;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(MigrationTripAdmissionException.class)
+    ResponseEntity<ApiResponse<Void>> handleMigrationTripAdmission(MigrationTripAdmissionException failure) {
+        return ResponseEntity.status(failure.status()).body(new ApiResponse<>(failure.error(), null));
+    }
 
     @ExceptionHandler(InvalidMigrationProbeRequestException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)

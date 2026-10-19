@@ -21,6 +21,8 @@ import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
+import com.yeodam.yeodambe.trip.migration.MigrationTripMode;
+import com.yeodam.yeodambe.trip.migration.MigrationTripAdmissionService;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
@@ -91,6 +93,12 @@ class TripCreationSecurityIntegrationTest {
 
     @MockitoBean
     private TripService tripService;
+
+    @MockitoBean
+    private MigrationTripMode migrationTripMode;
+
+    @MockitoBean
+    private MigrationTripAdmissionService migrationTripAdmissionService;
 
     @MockitoBean
     private TripProcessingStatusService processingStatusService;

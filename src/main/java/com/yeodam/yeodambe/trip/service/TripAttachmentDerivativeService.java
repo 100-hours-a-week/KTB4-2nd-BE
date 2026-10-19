@@ -271,7 +271,7 @@ public class TripAttachmentDerivativeService {
         Path display = directory.resolve("display.jpg");
         JsonNode metadata = metadata(original);
         convertDerivatives(original, mimeType, metadata, analyze, preview, display);
-        // 필요한 촬영 정보만 복사한다. 픽셀 방향은 유지하고 뷰어의 자동 회전은 막는다.
+        // 필요한 촬영 정보만 복사한다. 방향은 픽셀에 반영했으므로 뷰어의 중복 회전을 막는다.
         run("exiftool", "-overwrite_original", "-TagsFromFile", original.toString(),
                 "-DateTimeOriginal", "-SubSecTimeOriginal", "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
                 "-Orientation#=1", analyze.toString());

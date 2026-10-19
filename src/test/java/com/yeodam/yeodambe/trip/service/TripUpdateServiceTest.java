@@ -26,7 +26,7 @@ class TripUpdateServiceTest {
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private final TripService service = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
-            trips, regions, catalog, attachments, storage, mock(TripAccessService.class),
+            trips, regions, mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class), catalog, attachments, storage, mock(TripAccessService.class),
             new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class), mapCache, mock(TripMapCacheLock.class));
     private Trip trip;
     private TripRegion seoul;

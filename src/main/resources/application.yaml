@@ -126,6 +126,8 @@ ai:
     query-read-timeout: ${AI_QUERY_READ_TIMEOUT:30s}
     story-connection-timeout: ${AI_STORY_CONNECTION_TIMEOUT:5s}
     story-read-timeout: ${AI_STORY_READ_TIMEOUT:5s}
+    runpod-status-connection-timeout: ${AI_RUNPOD_STATUS_CONNECTION_TIMEOUT:10s}
+    runpod-status-read-timeout: ${AI_RUNPOD_STATUS_READ_TIMEOUT:5s}
     health-connection-timeout: ${AI_HEALTH_CONNECTION_TIMEOUT:5s}
     health_read_timeout: ${AI_HEALTH_READ_TIMEOUT:5s}
 

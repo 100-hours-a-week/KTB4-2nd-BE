@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 public record SearchRequest(
         @NotBlank
         @Size(min = 2, max = 100)
-        @Pattern(regexp = "^[가-힣A-Za-z0-9 ]+$")
+        @Pattern(regexp = "^[^\\p{Cc}]+$")
         String query
 ) {
     public SearchRequest {

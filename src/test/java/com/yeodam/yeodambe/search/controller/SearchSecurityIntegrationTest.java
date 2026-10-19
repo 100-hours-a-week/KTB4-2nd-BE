@@ -98,12 +98,31 @@ class SearchSecurityIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", " ", "가", "바다!", "제주\t사진", "바다\n사진", "ㄱㄴ", "éé"})
+    @ValueSource(strings = {"", " ", "가", "제주\t사진", "바다\n사진", "제주\r사진", "제주\u0000사진", "제주\u007F사진"})
     void 유효하지_않은_검색어에_검색_전용_오류를_반환한다(String query) throws Exception {
         mvc.perform(get("/search").param("query", query).cookie(cookie()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_SEARCH_QUERY"));
         verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "제주에서 뭐 먹었지?",
+            "바다! #여행 @제주",
+            "2026-10-19 (제주/서귀포)",
+            "'바다' & \"노을\" + 100%",
+            "바다 🌊",
+            "ㄱㄴ",
+            "éé",
+            "!?"
+    })
+    void 특수문자가_포함된_검색어를_변경하지_않고_전달한다(String query) throws Exception {
+        mvc.perform(get("/search").param("query", "  " + query + "  ").cookie(cookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.query").value(query));
+
+        verify(service).search(42L, query);
     }
 
     @Test

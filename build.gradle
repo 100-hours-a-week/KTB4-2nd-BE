@@ -19,6 +19,7 @@ repositories {
 }
 
 dependencies {
+    implementation 'app.photofox.vips-ffm:vips-ffm-core:1.9.9'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'io.micrometer:micrometer-registry-prometheus'
     implementation 'io.sentry:sentry-spring-boot-4-starter:8.58.0'
@@ -33,6 +34,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
     implementation 'org.flywaydb:flyway-mysql'
     implementation 'software.amazon.awssdk:s3:2.54.18'
+    implementation 'software.amazon.awssdk:netty-nio-client:2.54.18'
     implementation 'software.amazon.awssdk:ec2:2.54.18'
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
@@ -56,4 +58,13 @@ tasks.named('test') {
     useJUnitPlatform()
     systemProperty 'spring.test.context.cache.maxSize', '8'
     systemProperty 'spring.datasource.hikari.maximum-pool-size', '3'
+}
+
+// FFM을 통해 libvips를 호출하는 실행 및 테스트 JVM에 네이티브 접근을 허용한다.
+tasks.withType(JavaExec).configureEach {
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+}
+
+tasks.withType(Test).configureEach {
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
 }

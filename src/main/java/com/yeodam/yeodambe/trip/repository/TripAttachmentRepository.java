@@ -357,6 +357,7 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             Pageable pageable
     );
 
+
     @Modifying
     @Query("""
             update TripAttachment attachment set attachment.deletedAt = :deletedAt

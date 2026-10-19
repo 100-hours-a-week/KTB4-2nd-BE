@@ -68,8 +68,8 @@ class MigrationProbeImageWorkflowTest {
 
     @Test
     void notifyStepRunsOnlyForExplicitReleaseOutputAndUsesSelectedImage() throws Exception {
-        var notify = step("Notify Cloud release manifest");
-        assertThat(notify.get("if")).isEqualTo("${{ steps.image.outputs.notify_release == 'true' }}");
+        var notify = step("Notify Cloud V2 release manifest");
+        assertThat(notify.get("if")).isEqualTo("${{ github.ref == 'refs/heads/main' && steps.image.outputs.notify_release == 'true' }}");
         assertThat(((Map<?, ?>) notify.get("env")).get("IMAGE"))
                 .isEqualTo("${{ steps.image.outputs.image }}");
         assertThat(((Map<?, ?>) step("Build and push").get("with")).get("tags"))

@@ -1,0 +1,109 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.testing.TestDescriptor
+import org.gradle.api.tasks.testing.TestListener
+import org.gradle.api.tasks.testing.TestResult
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Applied only by PR measurement; application build/test settings stay in build.gradle.
+gradle.projectsEvaluated {
+    allprojects {
+        def probeValue = providers.gradleProperty('ciContextProbe').orElse('false').get()
+        if (!(probeValue in ['true', 'false'])) throw new GradleException('ciContextProbe must be true or false')
+        def contextProbe = probeValue == 'true'
+        def observerClasses = layout.buildDirectory.dir('ci-context-observer')
+        def compileObserver = null
+        if (contextProbe) {
+            compileObserver = tasks.register('compileCiContextObserver', JavaCompile) {
+                source fileTree('.github/ci/context') { include '**/*.java' }
+                classpath = sourceSets.test.compileClasspath
+                destinationDirectory = observerClasses
+                javaCompiler = tasks.named('compileTestJava', JavaCompile).get().javaCompiler
+            }
+        }
+        def runnerCount = providers.gradleProperty('ciTestRunners').orElse('1').get()
+        def shard = providers.gradleProperty('ciTestShard').orElse('1').get()
+        if (!(runnerCount in ['1', '2']) || !(shard in ['1', '2']) || shard.toInteger() > runnerCount.toInteger()) {
+            throw new GradleException('invalid CI Runner/shard selection')
+        }
+        def planFile = layout.buildDirectory.file('ci-timing/shard-plan.json')
+        def testClassDirs = sourceSets.test.output.classesDirs
+        def planTask = tasks.register('ciTestShardPlan') {
+            dependsOn tasks.named('testClasses')
+            inputs.files(testClassDirs)
+            inputs.files('.github/ci/test_shards.py', '.github/ci/test-shard-hints.json')
+            inputs.property('runnerCount', runnerCount)
+            outputs.file(planFile)
+            doLast {
+                def args = ['python3', '.github/ci/test_shards.py', 'plan',
+                            '--hints', '.github/ci/test-shard-hints.json',
+                            '--count', runnerCount, '--output', planFile.get().asFile.absolutePath]
+                testClassDirs.files.each { args += ['--classes-dir', it.absolutePath] }
+                providers.exec { commandLine args }.result.get().assertNormalExitValue()
+            }
+        }
+        tasks.named('test', Test).configure { testTask ->
+            testTask.dependsOn planTask
+            testTask.inputs.property('ciTestShard', shard)
+            testTask.inputs.file(planFile)
+            testTask.doFirst {
+                if (runnerCount == '2') {
+                    def plan = new JsonSlurper().parse(planFile.get().asFile)
+                    def selected = plan.owners.findAll { name, owner -> owner == shard.toInteger() }.keySet()
+                    if (selected.empty) throw new GradleException('empty test shard')
+                    // Binary class paths also cover package-private top-level classes.
+                    // Nested class files have the same owner; no method filtering is used.
+                    testTask.setIncludes(selected.collect { it.replace('.', '/') + '.class' } as Set)
+                }
+            }
+            if (contextProbe) {
+                dependsOn compileObserver
+                classpath += files(observerClasses, '.github/ci/context-resources')
+                systemProperty 'ci.context.output', layout.buildDirectory.dir('ci-timing').get().asFile.absolutePath
+            }
+            def forkCount = providers.gradleProperty('ciTestForks').orElse('1').get()
+            if (!(forkCount in ['1', '2'])) throw new GradleException('ciTestForks must be 1 or 2')
+            maxParallelForks = Integer.parseInt(forkCount)
+            systemProperty 'logging.level.org.springframework.test.context.cache', 'DEBUG'
+            def destination = layout.buildDirectory.file("ci-timing/${testTask.name}-classes.jsonl").get().asFile
+            doFirst {
+                destination.parentFile.mkdirs()
+                destination.text = ''
+                fileTree(destination.parentFile) {
+                    include 'context-events-*.jsonl', 'context-summary.json'
+                }.each { it.delete() }
+                new File(destination.parentFile, 'test-settings.json').text = JsonOutput.toJson([
+                    maxParallelForks: testTask.maxParallelForks, forkEvery: testTask.forkEvery,
+                    contextDiagnostics: contextProbe,
+                    minHeapSize: testTask.minHeapSize, maxHeapSize: testTask.maxHeapSize,
+                    contextCacheMaxSize: testTask.systemProperties['spring.test.context.cache.maxSize'],
+                    hikariMaximumPoolSize: testTask.systemProperties['spring.datasource.hikari.maximum-pool-size'],
+                    junitParallel: testTask.systemProperties['junit.jupiter.execution.parallel.enabled']
+                ])
+            }
+            addTestListener(new TestListener() {
+                void beforeSuite(TestDescriptor suite) {}
+                void beforeTest(TestDescriptor test) {}
+                void afterTest(TestDescriptor test, TestResult result) {}
+                void afterSuite(TestDescriptor suite, TestResult result) {
+                    // Parameterized method suites share their parent className.
+                    if (suite.className != null && suite.className != suite.parent?.className) {
+                        def ancestor = suite.parent
+                        while (ancestor != null && !(ancestor.name ==~ /Gradle Test Executor \d+/)) ancestor = ancestor.parent
+                        synchronized(destination) {
+                            destination.append(JsonOutput.toJson([
+                                worker: ancestor?.name ?: 'unknown',
+                                task: testTask.path, className: suite.className,
+                                startMs: result.startTime, endMs: result.endTime,
+                                elapsedSeconds: (result.endTime - result.startTime) / 1000.0,
+                                testsIncludingNested: result.testCount, failuresIncludingNested: result.failedTestCount,
+                                skipped: result.skippedTestCount, outcome: result.resultType.name()
+                            ]) + '\n', 'UTF-8')
+                        }
+                    }
+                }
+            })
+        }
+    }
+}

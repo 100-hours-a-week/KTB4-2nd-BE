@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
@@ -67,6 +68,7 @@ class TripAttachmentDerivativeServiceTest {
     private InitialAttachmentUploadTransactionService transactions;
     private SimpleMeterRegistry meterRegistry;
     private TripDerivativeScheduler scheduler;
+    private InitialAttachmentStoragePipeline pipeline;
 
     @BeforeEach
     void setUp() {
@@ -74,14 +76,41 @@ class TripAttachmentDerivativeServiceTest {
         meterRegistry = new SimpleMeterRegistry();
         scheduler = new TripDerivativeScheduler(1, 1, 10, 20, meterRegistry);
         transactions = mock(InitialAttachmentUploadTransactionService.class);
+        pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meterRegistry, 134217728L);
         service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler,
-                transactions);
+                transactions, pipeline);
     }
 
     @AfterEach
     void tearDown() {
+        pipeline.close();
         scheduler.stop();
-        service.stopLeaseScheduler();
+    }
+
+    @Test
+    void 실제_포맷과_요청_MIME이_다르면_파생본을_저장하지_않는다() throws Exception {
+        when(storage.open("disguised")).thenReturn(new ByteArrayInputStream(jpeg()));
+
+        assertThrows(CompletionException.class, () -> service.createAll(
+                "disguised", List.of("disguised"), List.of("image/heic")).join());
+
+        verify(storage, never()).storeDerived(any(), any(Path.class), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {75, 85, 95})
+    void JPEG_분석본은_원본의_품질_추정값을_유지한다(int quality) throws Exception {
+        Path source = Files.createTempFile("jpeg-quality", ".jpg");
+        Path output = Files.createTempFile("jpeg-quality-derived", ".jpg");
+        try {
+            command("convert", "-size", "8x8", "xc:red", "-quality", Integer.toString(quality), source.toString());
+            Map<String, byte[]> outputs = deriveOutputs(Files.readAllBytes(source), "image/jpeg");
+            Files.write(output, outputs.get("analyze.jpg"));
+            assertEquals(Integer.toString(quality), command("identify", "-format", "%Q", output.toString()));
+        } finally {
+            Files.deleteIfExists(source);
+            Files.deleteIfExists(output);
+        }
     }
 
     @Test
@@ -97,7 +126,7 @@ class TripAttachmentDerivativeServiceTest {
 
         service.processPendingBatches();
 
-        verify(transactions).retryBatch(claim, photo.itemId(), false);
+        verify(transactions, Mockito.timeout(5000)).retryBatch(claim, photo.itemId(), false);
         verifyNoInteractions(storage);
     }
 
@@ -141,20 +170,22 @@ class TripAttachmentDerivativeServiceTest {
                 1L, "upload", "execution", 7L, 1L, 1, 1, true,
                 InitialAttachmentUploadStatus.CONVERTING, "token", List.of(photo));
         var saturatedScheduler = mock(TripDerivativeScheduler.class);
+        var saturatedPipeline = new InitialAttachmentStoragePipeline(
+                storage, transactions, saturatedScheduler, meterRegistry, 134217728L);
         var immediate = new TripAttachmentDerivativeService(
-                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions);
+                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline);
         when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
-        when(saturatedScheduler.submit(eq("execution"), any(), any()))
+        when(saturatedScheduler.submitPrepared(eq("execution"), any(), any(), any()))
                 .thenThrow(new RejectedExecutionException("queue full"));
 
         try {
             immediate.processAcceptedBatch(7L, 1L, "upload");
 
-            verify(transactions).releaseSaturatedBatch(claim);
+            verify(transactions, Mockito.timeout(5000)).releaseSaturatedBatch(claim);
             verify(transactions, never()).startPhotoAttempt(any(), any());
             verifyNoInteractions(storage);
         } finally {
-            immediate.stopLeaseScheduler();
+            saturatedPipeline.close();
         }
     }
 
@@ -167,6 +198,53 @@ class TripAttachmentDerivativeServiceTest {
                 () -> service.processAcceptedBatch(7L, 1L, "upload"));
 
         verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 초기_업로드도_A_저장_중_B를_변환하고_전체_저장_후_배치를_완료한다() throws Exception {
+        byte[] original = jpeg();
+        InitialAttachmentUploadBatchSnapshot.Photo first = new InitialAttachmentUploadBatchSnapshot.Photo(
+                1L, "a.jpg", "image/jpeg", original.length, "original/1", 0, null, null);
+        InitialAttachmentUploadBatchSnapshot.Photo second = new InitialAttachmentUploadBatchSnapshot.Photo(
+                2L, "b.jpg", "image/jpeg", original.length, "original/2", 0, null, null);
+        InitialAttachmentUploadBatchSnapshot claim = new InitialAttachmentUploadBatchSnapshot(
+                1L, "upload", "execution", 7L, 1L, 1, 2, true,
+                InitialAttachmentUploadStatus.CONVERTING, "token", List.of(first, second));
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        CountDownLatch uploadStarted = new CountDownLatch(1);
+        CompletableFuture<String> upload = new CompletableFuture<>();
+        when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
+        when(transactions.renewLease(claim)).thenReturn(true);
+        when(transactions.startPhotoAttempt(eq(claim), any())).thenAnswer(call -> {
+            Long id = call.getArgument(1);
+            return List.of(id + "/analyze", id + "/preview");
+        });
+        when(storage.open("original/1")).thenAnswer(call -> new ByteArrayInputStream(original));
+        when(storage.open("original/2")).thenAnswer(call -> {
+            secondStarted.countDown();
+            return new ByteArrayInputStream(original);
+        });
+        when(storage.storeDerivedToAsync(any(), any(), any())).thenAnswer(call -> {
+            String key = call.getArgument(0);
+            if (key.equals("1/analyze")) {
+                uploadStarted.countDown();
+                return upload;
+            }
+            return CompletableFuture.completedFuture(key);
+        });
+        try {
+            service.processAcceptedBatch(7L, 1L, "upload");
+            assertTrue(uploadStarted.await(5, TimeUnit.SECONDS));
+            assertTrue(secondStarted.await(5, TimeUnit.SECONDS));
+            verify(transactions, never()).completeBatch(claim);
+            upload.complete("1/analyze");
+            verify(transactions, Mockito.timeout(5000)).completeBatch(claim);
+            verify(transactions).savePhotoSuccess(eq(claim), eq(1L), any());
+            verify(transactions).savePhotoSuccess(eq(claim), eq(2L), any());
+            verify(storage, never()).storeDerivedTo(any(), any(), any());
+        } finally {
+            upload.complete("1/analyze");
+        }
     }
 
     @Test
@@ -401,7 +479,8 @@ class TripAttachmentDerivativeServiceTest {
             assertEquals("95", command("identify", "-format", "%Q", output.toString()));
             var metadata = new ObjectMapper().readTree(command(
                     "exiftool", "-j", "-Orientation", "-GPSLatitude", "-GPSLongitude",
-                    "-DateTimeOriginal", "-Make", "-Model", output.toString())).get(0);
+                    "-DateTimeOriginal", "-Make", "-Model", "-ProfileDescription", output.toString())).get(0);
+            assertEquals("sRGB IEC61966-2.1", metadata.path("ProfileDescription").asString());
             assertFalse(metadata.has("Orientation"));
             assertFalse(metadata.has("GPSLatitude"));
             assertFalse(metadata.has("GPSLongitude"));
@@ -468,9 +547,34 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @ParameterizedTest
+    @CsvSource({"jpeg, 1, 3, 2", "jpeg, 6, 2, 3", "png, 1, 3, 2", "png, 6, 2, 3"})
+    void 원본에서_3x2로_표시되는_사진은_변환_후에도_3x2를_유지한다(
+            String format, int orientation, int width, int height
+    ) throws Exception {
+        Path source = Files.createTempFile("landscape-source", "." + format);
+        try {
+            BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            ImageIO.write(image, format, source.toFile());
+            command("exiftool", "-overwrite_original", "-Orientation#=" + orientation, source.toString());
+            byte[] original = Files.readAllBytes(source);
+
+            Map<String, byte[]> outputs = deriveOutputs(original, "image/" + format);
+
+            for (String name : List.of("analyze.jpg", "preview.webp")) {
+                BufferedImage output = decodeOutput(outputs.get(name), name);
+                assertEquals(3, output.getWidth());
+                assertEquals(2, output.getHeight());
+            }
+            assertArrayEquals(original, Files.readAllBytes(source));
+        } finally {
+            Files.deleteIfExists(source);
+        }
+    }
+
+    @ParameterizedTest
     @CsvSource({"1, RGBY", "2, GRYB", "3, YBGR", "4, BYRG",
             "5, RBGY", "6, BRYG", "7, YGBR", "8, GYRB"})
-    void JPEG와_PNG의_회전과_반전을_두_출력에_적용한다(int orientation, String corners) throws Exception {
+    void JPEG와_PNG는_원본의_표시_방향을_유지한다(int orientation, String corners) throws Exception {
         for (String format : List.of("jpeg", "png")) {
             Path source = Files.createTempFile("oriented-source", "." + format);
             try {
@@ -510,6 +614,38 @@ class TripAttachmentDerivativeServiceTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({"rotation-90.heic, 40, 80, BRYG", "mirror-horizontal.heic, 80, 40, GRYB"})
+    void HEIC는_원본의_표시_방향을_모든_파생본에서_유지한다(
+            String filename, int width, int height, String corners
+    ) throws Exception {
+        // 80×40 RGBY 사분면에 ImageMagick -orient RightTop/TopRight로 irot/imir를 기록한 입력이다.
+        Path source = Path.of("src/test/resources/images/heic", filename);
+        byte[] original = Files.readAllBytes(source);
+        Map<String, byte[]> outputs = deriveOutputs(original, "image/heic");
+        assertEquals(3, outputs.size());
+        for (String name : List.of("analyze.jpg", "preview.webp", "display.jpg")) {
+            BufferedImage output = decodeOutput(outputs.get(name), name);
+            assertEquals(width, output.getWidth());
+            assertEquals(height, output.getHeight());
+            for (int index = 0; index < corners.length(); index++) {
+                int x = output.getWidth() * (index % 2 == 0 ? 1 : 3) / 4;
+                int y = output.getHeight() * (index < 2 ? 1 : 3) / 4;
+                Color actual = new Color(output.getRGB(x, y));
+                Color expected = switch (corners.charAt(index)) {
+                    case 'R' -> Color.RED;
+                    case 'G' -> Color.GREEN;
+                    case 'B' -> Color.BLUE;
+                    default -> Color.YELLOW;
+                };
+                assertTrue(Math.abs(expected.getRed() - actual.getRed()) < 50);
+                assertTrue(Math.abs(expected.getGreen() - actual.getGreen()) < 50);
+                assertTrue(Math.abs(expected.getBlue() - actual.getBlue()) < 50);
+            }
+        }
+        assertArrayEquals(original, Files.readAllBytes(source));
+    }
+
     @Test
     void 공통_축소_후_분석본의_흰_배경이_WebP_투명도에_영향을_주지_않는다() throws Exception {
         BufferedImage input = new BufferedImage(1600, 800, BufferedImage.TYPE_INT_ARGB);
@@ -528,7 +664,7 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @Test
-    void 분석본에_선택한_EXIF와_정상_방향을_기록하고_미리보기에서는_제거한다() throws Exception {
+    void 분석본에_촬영정보와_방향1을_기록하고_미리보기에서는_제거한다() throws Exception {
         Path source = Files.createTempFile("selected-exif", ".jpg");
         Path output = Files.createTempFile("selected-exif-output", ".jpg");
         try {
@@ -553,7 +689,9 @@ class TripAttachmentDerivativeServiceTest {
                     assertEquals("NX100", metadata.path("Model").asString());
                 } else {
                     for (String field : List.of("Orientation", "DateTimeOriginal", "GPSLatitude",
-                            "GPSLongitude", "Make", "Model")) assertFalse(metadata.has(field));
+                            "GPSLongitude", "Make", "Model")) {
+                        assertFalse(metadata.has(field));
+                    }
                 }
             }
             assertArrayEquals(original, Files.readAllBytes(source));

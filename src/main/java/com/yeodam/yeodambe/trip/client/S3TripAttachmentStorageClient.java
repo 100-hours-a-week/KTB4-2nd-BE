@@ -3,14 +3,18 @@ package com.yeodam.yeodambe.trip.client;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.core.client.config.SdkAdvancedAsyncClientOption;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
+import software.amazon.awssdk.http.nio.netty.SdkEventLoopGroup;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -22,7 +26,6 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -32,6 +35,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 @Component
 public class S3TripAttachmentStorageClient implements TripAttachmentStorageClient {
@@ -39,6 +46,11 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     private static final String LOCAL_MOCK_ASSET_URL_PREFIX = "http://localhost:8080/api/mock-assets/";
 
     private final S3Client s3;
+    private final S3AsyncClient asyncS3;
+    private final ThreadPoolExecutor asyncCompletions = new ThreadPoolExecutor(
+            1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(4),
+            Thread.ofPlatform().name("s3-upload-completion").daemon(true).factory(),
+            new ThreadPoolExecutor.AbortPolicy());
     private final String bucket;
     private final S3Presigner presigner;
     private final Duration readUrlTtl;
@@ -65,6 +77,17 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
                 .serviceConfiguration(s3Configuration)
                 .overrideConfiguration(config -> config.apiCallTimeout(Duration.ofMinutes(1)));
 
+        S3AsyncClientBuilder asyncBuilder = S3AsyncClient.builder()
+                .asyncConfiguration(config -> config.advancedOption(
+                        SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR, asyncCompletions))
+                .region(Region.of(region))
+                .serviceConfiguration(s3Configuration)
+                .httpClientBuilder(NettyNioAsyncHttpClient.builder()
+                        .maxConcurrency(1)
+                        .maxPendingConnectionAcquires(2)
+                        .eventLoopGroupBuilder(SdkEventLoopGroup.builder().numberOfThreads(1)))
+                .overrideConfiguration(config -> config.apiCallTimeout(Duration.ofMinutes(1)));
+
         var presignerBuilder = S3Presigner.builder()
                 .region(Region.of(region))
                 .serviceConfiguration(s3Configuration);
@@ -72,10 +95,12 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         if (!endpoint.isBlank()) {
             URI endpointUri = URI.create(endpoint);
             s3Builder.endpointOverride(endpointUri);
+            asyncBuilder.endpointOverride(endpointUri);
             presignerBuilder.endpointOverride(endpointUri);
         }
 
         this.s3 = s3Builder.build();
+        this.asyncS3 = asyncBuilder.build();
         this.presigner = presignerBuilder.build();
     }
 
@@ -86,36 +111,23 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
             Duration readUrlTtl,
             MeterRegistry meterRegistry
     ) {
+        this(s3, null, bucket, presigner, readUrlTtl, meterRegistry);
+    }
+
+    S3TripAttachmentStorageClient(
+            S3Client s3,
+            S3AsyncClient asyncS3,
+            String bucket,
+            S3Presigner presigner,
+            Duration readUrlTtl,
+            MeterRegistry meterRegistry
+    ) {
         this.s3 = s3;
+        this.asyncS3 = asyncS3;
         this.bucket = bucket;
         this.presigner = presigner;
         this.readUrlTtl = readUrlTtl;
         this.meterRegistry = meterRegistry;
-    }
-
-    @Override
-    public String store(
-            String executionId,
-            MultipartFile file
-    ) {
-        String key = "trip-uploads/" + executionId + "/original/" + UUID.randomUUID();
-        Timer.Sample sample = Timer.start(meterRegistry);
-        String outcome = "success";
-
-        try (InputStream input = file.getInputStream()) {
-            s3.putObject(
-                    request -> request.bucket(bucket).key(key).tagging("status=temporary"),
-                    RequestBody.fromInputStream(input, file.getSize())
-            );
-            return key;
-        } catch (IOException | RuntimeException failure) {
-            outcome = "failure";
-            throw new AttachmentStorageException(key, failure);
-        } finally {
-            sample.stop(Timer.builder("yeodam.trip.stage")
-                    .tags("stage", "original_s3_upload", "outcome", outcome)
-                    .register(meterRegistry));
-        }
     }
 
     @Override
@@ -284,6 +296,34 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     }
 
     @Override
+    public CompletableFuture<String> storeDerivedToAsync(
+            String objectKey,
+            Path file,
+            String mimeType
+    ) {
+        if (!Set.of("image/jpeg", "image/webp").contains(mimeType)) {
+            throw new IllegalArgumentException(TripInternalErrorMessage.UNSUPPORTED_DERIVED_ATTACHMENT_FORMAT.message());
+        }
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(objectKey)
+                .contentType(mimeType)
+                .tagging("status=retained")
+                .build();
+        try {
+            return asyncS3.putObject(request, AsyncRequestBody.fromFile(file))
+                    .handle((response, failure) -> {
+                        if (failure != null) {
+                            throw new AttachmentStorageException(objectKey, failure);
+                        }
+                        return objectKey;
+                    });
+        } catch (RuntimeException failure) {
+            return CompletableFuture.failedFuture(new AttachmentStorageException(objectKey, failure));
+        }
+    }
+
+    @Override
     public void retain(List<String> objectKeys) {
         Tagging tagging = Tagging.builder()
                 .tagSet(Tag.builder().key("status").value("retained").build())
@@ -295,6 +335,10 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
 
     @PreDestroy
     void close() {
+        if (asyncS3 != null) {
+            asyncS3.close();
+        }
+        asyncCompletions.shutdown();
         s3.close();
         presigner.close();
     }

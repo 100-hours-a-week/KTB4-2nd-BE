@@ -4,9 +4,9 @@ import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
+import com.yeodam.yeodambe.trip.service.response.PreparedPhotoDerivative;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -30,9 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
@@ -46,9 +43,7 @@ public class TripAttachmentDerivativeService {
     private final MeterRegistry meterRegistry;
     private final TripDerivativeScheduler scheduler;
     private final InitialAttachmentUploadTransactionService transactions;
-    private final ScheduledThreadPoolExecutor leaseScheduler =
-            new ScheduledThreadPoolExecutor(1,
-                    Thread.ofPlatform().name("initial-photo-lease").daemon(true).factory());
+    private final InitialAttachmentStoragePipeline pipeline;
 
     public CompletableFuture<List<DerivedPhotoKeys>> createAll(
             String executionId, List<String> originalKeys, List<String> mimeTypes
@@ -108,7 +103,7 @@ public class TripAttachmentDerivativeService {
 
     @Scheduled(initialDelayString = "${app.trip.worker-initial-delay-ms:0}", fixedDelayString = "${app.trip.conversion-delay-ms:5000}")
     public void processPendingBatches() {
-        transactions.claimBatch().ifPresent(claim -> convertNextPhoto(claim, 0));
+        transactions.claimBatch().ifPresent(this::startPipeline);
     }
 
     public void processAcceptedBatch(
@@ -118,94 +113,36 @@ public class TripAttachmentDerivativeService {
     ) {
         try {
             transactions.claimBatch(tripId, userId, uploadId)
-                    .ifPresent(claim -> convertNextPhoto(claim, 0));
+                    .ifPresent(this::startPipeline);
         } catch (RuntimeException failure) {
             log.warn("접수한 사진 배치의 즉시 제출 재시도: tripId={}, uploadId={}, stage=conversion_submit, cause={}",
                     tripId, uploadId, failure.getClass().getSimpleName());
         }
     }
 
-    private void convertNextPhoto(
-            InitialAttachmentUploadBatchSnapshot claim,
-            int from
+    private void startPipeline(InitialAttachmentUploadBatchSnapshot claim) {
+        pipeline.start(claim, (photo, keys) -> prepareInitialPhoto(photo.objectKey(), photo.contentType(), keys),
+                this::isTransientConversionFailure);
+    }
+
+    private PreparedPhotoDerivative prepareInitialPhoto(
+            String originalKey,
+            String mimeType,
+            List<String> keys
     ) {
-        int index = from;
-        while (index < claim.photos().size() && claim.photos().get(index).derived() != null) {
-            index++;
-        }
-        if (index == claim.photos().size()) {
-            try {
-                transactions.completeBatch(claim);
-            } catch (RuntimeException failure) {
-                log.warn("사진 배치 저장 재시도: executionId={}, stage=batch_persist, cause={}",
-                        claim.executionId(), failure.getClass().getSimpleName());
-                transactions.releaseSaturatedBatch(claim);
-            }
-            return;
-        }
-        var photo = claim.photos().get(index);
-        if (photo.attempts() >= 3) {
-            transactions.retryBatch(claim, photo.itemId(), true);
-            return;
-        }
-        ScheduledFuture<?> heartbeat = startLeaseHeartbeat(claim);
+        Path directory;
         try {
-            var task = new TripDerivativeScheduler.PhotoTask(
-                    0, photo.contentType(), () -> convertPhoto(claim, photo));
-            int next = index + 1;
-            scheduler.submit(claim.executionId(), List.of(task), () -> transactions.renewLease(claim))
-                    .whenComplete((photos, failure) -> {
-                        heartbeat.cancel(false);
-                        if (failure == null) {
-                            convertNextPhoto(claim, next);
-                        } else {
-                            log.warn("사진 변환 재시도: executionId={}, itemId={}, stage=image_conversion, cause={}",
-                                    claim.executionId(), photo.itemId(), failure.getClass().getSimpleName());
-                            transactions.retryBatch(claim, photo.itemId(), !isTransientConversionFailure(failure));
-                        }
-                    });
-        } catch (RejectedExecutionException saturated) {
-            heartbeat.cancel(false);
-            transactions.releaseSaturatedBatch(claim);
-        } catch (RuntimeException failure) {
-            heartbeat.cancel(false);
-            log.warn("사진 변환 시작 재시도: executionId={}, itemId={}, cause={}",
-                    claim.executionId(), photo.itemId(), failure.getClass().getSimpleName());
-            transactions.retryBatch(claim, photo.itemId(), !isTransientConversionFailure(failure));
+            directory = Files.createTempDirectory("initial-photo-");
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
         }
-    }
-
-    private ScheduledFuture<?> startLeaseHeartbeat(InitialAttachmentUploadBatchSnapshot claim) {
-        return leaseScheduler.scheduleAtFixedRate(() -> {
-            try {
-                if (!transactions.renewLease(claim)) {
-                    scheduler.cancelExecution(claim.executionId());
-                }
-            } catch (RuntimeException failure) {
-                log.warn("사진 변환 선점 갱신 실패: executionId={}, cause={}",
-                        claim.executionId(), failure.getClass().getSimpleName());
-                scheduler.cancelExecution(claim.executionId());
-            }
-        }, 30, 30, TimeUnit.SECONDS);
-    }
-
-    private DerivedPhotoKeys convertPhoto(
-            InitialAttachmentUploadBatchSnapshot claim,
-            InitialAttachmentUploadBatchSnapshot.Photo photo
-    ) {
-        List<String> keys = transactions.startPhotoAttempt(claim, photo.itemId());
-        DerivedPhotoKeys derived = generateOne(
-                claim.executionId(), photo.objectKey(), photo.contentType(), new ArrayList<>(), keys);
-        List<String> retained = new ArrayList<>(keys);
-        retained.add(photo.objectKey());
-        storage.retain(retained);
-        transactions.savePhotoSuccess(claim, photo.itemId(), derived);
-        return derived;
-    }
-
-    @PreDestroy
-    void stopLeaseScheduler() {
-        leaseScheduler.shutdownNow();
+        try {
+            downloadOriginal(originalKey, directory.resolve("original"));
+            return prepareLocal(originalKey, mimeType, keys, directory);
+        } catch (IOException | RuntimeException failure) {
+            PreparedPhotoDerivative.cleanup(directory);
+            throw new IllegalStateException(TripInternalErrorMessage.DERIVED_ATTACHMENT_CREATE_FAILED.message(), failure);
+        }
     }
 
     public boolean isTransientConversionFailure(Throwable failure) {
@@ -226,6 +163,7 @@ public class TripAttachmentDerivativeService {
     }
 
     public void cancelExecution(String executionId) {
+        pipeline.cancelExecution(executionId);
         scheduler.cancelExecution(executionId);
     }
 
@@ -299,48 +237,18 @@ public class TripAttachmentDerivativeService {
             List<String> plannedKeys,
             Path directory
     ) {
-        Path original = directory.resolve("original");
-        Path analyze = directory.resolve("analyze.jpg");
-        Path preview = directory.resolve("preview.webp");
-        Path display = directory.resolve("display.jpg");
         Timer.Sample derivativeSample = Timer.start(meterRegistry);
         String derivativeOutcome = "success";
 
         try {
-            JsonNode metadata = metadata(original);
-            convertDerivatives(original, mimeType, metadata, analyze, preview, display);
-
-            // 필요한 촬영 정보만 AI용 JPEG에 복사한다. 회전은 이미 픽셀에 반영됐다.
-            run("exiftool", "-overwrite_original",
-                    "-TagsFromFile", original.toString(),
-                    "-DateTimeOriginal", "-SubSecTimeOriginal",
-                    "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
-                    "-Orientation#=1", analyze.toString());
-
-            String analyzeKey = storeTrackedDerivative(
-                    executionId, analyze, "image/jpeg", plannedKeys, 0, uploadedKeys);
-            String previewKey = storeTrackedDerivative(
-                    executionId, preview, "image/webp", plannedKeys, 1, uploadedKeys);
-            String displayKey = null;
-            if ("image/heic".equals(mimeType)) {
-                displayKey = storeTrackedDerivative(
-                        executionId, display, "image/jpeg", plannedKeys, 2, uploadedKeys);
+            PreparedPhotoDerivative prepared = prepareLocal(originalKey, mimeType, plannedKeys, directory);
+            List<String> stored = new ArrayList<>();
+            for (int index = 0; index < prepared.outputs().size(); index++) {
+                PreparedPhotoDerivative.Output output = prepared.outputs().get(index);
+                stored.add(storeTrackedDerivative(executionId, output.file(), output.mimeType(),
+                        plannedKeys, index, uploadedKeys));
             }
-
-            return new DerivedPhotoKeys(
-                    originalKey,
-                    analyzeKey,
-                    previewKey,
-                    displayKey,
-                    takenAt(metadata),
-                    coordinate(metadata, "GPSLatitude", 90),
-                    coordinate(metadata, "GPSLongitude", 180),
-                    deviceModel(metadata),
-                    fileSize(original),
-                    fileSize(analyze),
-                    fileSize(preview),
-                    displayKey == null ? null : fileSize(display)
-            );
+            return prepared.storedKeys(stored);
         } catch (RuntimeException failure) {
             derivativeOutcome = "failure";
             throw failure;
@@ -349,6 +257,40 @@ public class TripAttachmentDerivativeService {
                     .tags("stage", "image_derivative", "outcome", derivativeOutcome)
                     .register(meterRegistry));
         }
+    }
+
+    private PreparedPhotoDerivative prepareLocal(
+            String originalKey,
+            String mimeType,
+            List<String> keys,
+            Path directory
+    ) {
+        Path original = directory.resolve("original");
+        Path analyze = directory.resolve("analyze.jpg");
+        Path preview = directory.resolve("preview.webp");
+        Path display = directory.resolve("display.jpg");
+        JsonNode metadata = metadata(original);
+        convertDerivatives(original, mimeType, metadata, analyze, preview, display);
+        // 필요한 촬영 정보만 복사한다. 방향은 픽셀에 반영했으므로 뷰어의 중복 회전을 막는다.
+        run("exiftool", "-overwrite_original", "-TagsFromFile", original.toString(),
+                "-DateTimeOriginal", "-SubSecTimeOriginal", "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
+                "-Orientation#=1", analyze.toString());
+        boolean heic = "image/heic".equals(mimeType);
+        DerivedPhotoKeys photo = new DerivedPhotoKeys(originalKey, plannedKey(keys, 0), plannedKey(keys, 1),
+                heic ? plannedKey(keys, 2) : null, takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
+                coordinate(metadata, "GPSLongitude", 180), deviceModel(metadata), fileSize(original),
+                fileSize(analyze), fileSize(preview), heic ? fileSize(display) : null);
+        List<PreparedPhotoDerivative.Output> outputs = new ArrayList<>();
+        outputs.add(new PreparedPhotoDerivative.Output(analyze, plannedKey(keys, 0), "image/jpeg"));
+        outputs.add(new PreparedPhotoDerivative.Output(preview, plannedKey(keys, 1), "image/webp"));
+        if (heic) {
+            outputs.add(new PreparedPhotoDerivative.Output(display, plannedKey(keys, 2), "image/jpeg"));
+        }
+        return new PreparedPhotoDerivative(directory, photo, outputs);
+    }
+
+    private String plannedKey(List<String> keys, int index) {
+        return keys == null ? null : keys.get(index);
     }
 
     private String storeTrackedDerivative(
@@ -385,7 +327,7 @@ public class TripAttachmentDerivativeService {
         Process process = null;
         try {
             process = new ProcessBuilder("exiftool", "-j", "-n",
-                    "-Orientation", "-DateTimeOriginal", "-OffsetTimeOriginal",
+                    "-Orientation", "-JPEGQualityEstimate", "-DateTimeOriginal", "-OffsetTimeOriginal",
                     "-GPSLatitude", "-GPSLongitude",
                     "-Make", "-Model", original.toString())
                     .redirectOutput(output.toFile())
@@ -439,40 +381,8 @@ public class TripAttachmentDerivativeService {
     private void convertDerivatives(
             Path original, String mimeType, JsonNode metadata, Path analyze, Path preview, Path display
     ) {
-        List<String> command = new ArrayList<>();
-        command.add("magick");
-        command.add("-respect-parentheses");
-        command.add(original + "[0]");
-
-        if (!"image/heic".equals(mimeType)) {
-            command.add("-orient");
-            command.add(orientation(metadata));
-            command.add("-auto-orient");
-        }
-        // 표시본은 축소 전에 분기하고 ICC를 보존한다. clone의 품질 설정은 다른 출력에 전파하지 않는다.
-        if ("image/heic".equals(mimeType)) {
-            command.addAll(List.of("(", "+clone", "+profile", "exif", "-quality", "95",
-                    "-write", display.toString(), "+delete", ")"));
-        }
-        // 축소 픽셀은 공유하되 분석본의 흰 배경 처리는 WebP 투명도에 영향을 주지 않는다.
-        command.addAll(List.of("-resize", "1024x1024>", "-strip",
-                "(", "+clone", "-background", "white", "-alpha", "remove", "-alpha", "off",
-                "-write", analyze.toString(), "+delete", ")",
-                "-quality", "75", preview.toString()));
-        run(command.toArray(String[]::new));
-    }
-
-    private String orientation(JsonNode metadata) {
-        return switch (metadata.path("Orientation").asInt(1)) {
-            case 2 -> "TopRight";
-            case 3 -> "BottomRight";
-            case 4 -> "BottomLeft";
-            case 5 -> "LeftTop";
-            case 6 -> "RightTop";
-            case 7 -> "RightBottom";
-            case 8 -> "LeftBottom";
-            default -> "TopLeft";
-        };
+        VipsAttachmentConverter.convert(original, mimeType, analyze, preview, display,
+                metadata.path("JPEGQualityEstimate").asInt(92));
     }
 
     private BigDecimal coordinate(

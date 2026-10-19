@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface AdditionalAttachmentExecutionRepository
@@ -29,6 +30,18 @@ public interface AdditionalAttachmentExecutionRepository
     );
 
     boolean existsByTripIdAndEndedAtIsNull(Long tripId);
+
+    @Query("""
+        select distinct execution.tripId
+        from AdditionalAttachmentExecution execution
+        where execution.userId = :userId
+          and execution.tripId in :tripIds
+          and execution.endedAt is null
+        """)
+    List<Long> findActiveTripIds(
+            @Param("userId") Long userId,
+            @Param("tripIds") List<Long> tripIds
+    );
 
     java.util.List<AdditionalAttachmentExecution> findByTripIdAndUserIdAndEndedAtIsNull(Long tripId, Long userId);
 

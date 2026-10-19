@@ -315,7 +315,7 @@ class TripCreationSecurityIntegrationTest {
         given(tripService.findTrips(eq(42L), any(TripListRequest.class)))
                 .willReturn(new TripListResponse(List.of(new TripListItemResponse(
                         7L,
-                        ProcessingStatus.COMPLETED,
+                        TripListItemResponse.Status.COMPLETED,
                         "제주 여행",
                         LocalDate.of(2026, 9, 1),
                         LocalDate.of(2026, 9, 2),
@@ -325,7 +325,7 @@ class TripCreationSecurityIntegrationTest {
                         "https://cdn.test/7"
                 ), new TripListItemResponse(
                         8L,
-                        ProcessingStatus.PROCESSING,
+                        TripListItemResponse.Status.PROCESSING,
                         "부산 여행",
                         LocalDate.of(2026, 9, 3),
                         LocalDate.of(2026, 9, 4),
@@ -350,6 +350,22 @@ class TripCreationSecurityIntegrationTest {
 
         then(tripService).should().findTrips(eq(42L), argThat(request ->
                 request.sort() == TripSort.OLDEST && request.favorite()));
+    }
+
+    @Test
+    void 목록_API는_UPDATING을_JSON_상태로_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(tripService.findTrips(eq(42L), any(TripListRequest.class)))
+                .willReturn(new TripListResponse(List.of(new TripListItemResponse(
+                        7L, TripListItemResponse.Status.UPDATING, "수정 중인 여행",
+                        LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2),
+                        "제주", 3L, false, "https://cdn.test/7"
+                )), false, null));
+
+        mockMvc.perform(get("/trips").cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].status").value("UPDATING"))
+                .andExpect(jsonPath("$.data.items[0].thumbnailUrl").value("https://cdn.test/7"));
     }
 
     @Test

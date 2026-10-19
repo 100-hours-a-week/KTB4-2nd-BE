@@ -10,7 +10,9 @@ import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.user.entity.User;
+import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserRepository;
+import com.yeodam.yeodambe.user.repository.UserStatsRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -38,12 +40,105 @@ import static org.mockito.Mockito.when;
 @Import(TestcontainersConfiguration.class)
 class AttachmentStorageSizeBackfillServiceTest {
     @Autowired private UserRepository users;
+    @Autowired private UserStatsRepository userStats;
     @Autowired private TripRepository trips;
     @Autowired private StoredFileRepository files;
     @Autowired private TripAttachmentRepository attachments;
     @Autowired private AttachmentStorageSizeBackfillService backfill;
     @Autowired private JdbcTemplate jdbc;
     @MockitoBean private TripAttachmentStorageClient storage;
+
+    @Test
+    void 통계_대상은_사용자_ID_순서로_조회하고_탈퇴_사용자는_제외한다() {
+        var first = create(false);
+        var withdrawn = create(false);
+        var next = create(false);
+        jdbc.update("update users set deleted_at = current_timestamp where user_id = ?", withdrawn.userId());
+
+        var userIds = userStats.findActiveUserIdsAfter(first.userId(), PageRequest.of(0, 1));
+
+        assertThat(userIds).containsExactly(next.userId());
+    }
+
+    @Test
+    void S3_조회_중_다른_서버가_채운_값을_덮어쓰지_않는다() {
+        var fixture = create(false);
+        when(storage.size(fixture.originalKey())).thenAnswer(invocation -> {
+            jdbc.update("update files set original_size_bytes = 999 where file_id = ?", fixture.fileId());
+            jdbc.update("update trip_attachments set analyze_size_bytes = 888, preview_size_bytes = 777 where trip_attachment_id = ?", fixture.attachmentId());
+            return 100L;
+        });
+        when(storage.size(fixture.analyzeKey())).thenReturn(40L);
+        when(storage.size(fixture.previewKey())).thenReturn(20L);
+
+        backfill.backfillOne(fixture.attachmentId());
+
+        assertThat(files.findById(fixture.fileId()).orElseThrow().getOriginalSizeBytes()).isEqualTo(999L);
+        var attachment = attachments.findById(fixture.attachmentId()).orElseThrow();
+        assertThat(attachment.getAnalyzeSizeBytes()).isEqualTo(888L);
+        assertThat(attachment.getPreviewSizeBytes()).isEqualTo(777L);
+    }
+
+    @Test
+    void S3_조회_중_삭제된_첨부는_갱신하지_않는다() {
+        var fixture = create(false);
+        when(storage.size(fixture.originalKey())).thenReturn(100L);
+        when(storage.size(fixture.analyzeKey())).thenReturn(40L);
+        when(storage.size(fixture.previewKey())).thenAnswer(invocation -> {
+            jdbc.update("update trip_attachments set deleted_at = current_timestamp where trip_attachment_id = ?", fixture.attachmentId());
+            return 20L;
+        });
+
+        backfill.backfillOne(fixture.attachmentId());
+
+        assertThat(files.findById(fixture.fileId()).orElseThrow().getOriginalSizeBytes()).isNull();
+    }
+
+    @Test
+    void 보정한_원본만_통계에_합산하고_예약량과_스토리수는_유지한다() {
+        var fixture = create(true);
+        when(storage.size(fixture.originalKey())).thenReturn(100L);
+        when(storage.size(fixture.analyzeKey())).thenReturn(40L);
+        when(storage.size(fixture.previewKey())).thenReturn(20L);
+        when(storage.size(fixture.displayKey())).thenReturn(60L);
+        jdbc.update("update user_stats set storage_used_bytes = 999, storage_reserved_bytes = 33, story_count = 2 where user_id = ?", fixture.userId());
+
+        backfill.backfillOne(fixture.attachmentId());
+        backfill.refreshUserStats(fixture.userId());
+
+        var stats = userStats.findByUser_UserId(fixture.userId()).orElseThrow();
+        assertThat(stats.getStorageUsedBytes()).isEqualTo(100L);
+        assertThat(stats.getTripCount()).isEqualTo(1L);
+        assertThat(stats.getAttachmentCount()).isEqualTo(1L);
+        assertThat(stats.getStorageReservedBytes()).isEqualTo(33L);
+        assertThat(stats.getStoryCount()).isEqualTo(2L);
+    }
+
+    @Test
+    void 원본_누락이_남은_사용자의_기존_통계는_보존한다() {
+        var fixture = create(false);
+        jdbc.update("update user_stats set storage_used_bytes = 999 where user_id = ?", fixture.userId());
+
+        assertThatThrownBy(() -> backfill.refreshUserStats(fixture.userId()))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(userStats.findByUser_UserId(fixture.userId()).orElseThrow().getStorageUsedBytes())
+                .isEqualTo(999L);
+    }
+
+    @Test
+    void S3_용량_조회_중에는_DB_트랜잭션을_유지하지_않는다() {
+        var fixture = create(false);
+        when(storage.size(org.mockito.ArgumentMatchers.anyString())).thenAnswer(invocation -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
+                    .isActualTransactionActive()).isFalse();
+            return 100L;
+        });
+
+        backfill.backfillOne(fixture.attachmentId());
+
+        assertThat(files.findById(fixture.fileId()).orElseThrow().getOriginalSizeBytes()).isEqualTo(100L);
+    }
 
     @Test
     void 누락된_크기를_채우고_재시도할_때_S3를_다시_읽지_않는다() {
@@ -154,6 +249,7 @@ class AttachmentStorageSizeBackfillServiceTest {
     private Fixture create(boolean hasDisplay) {
         String suffix = UUID.randomUUID().toString();
         User user = users.saveAndFlush(new User(suffix + "@yeodam.test", "백필검증"));
+        userStats.saveAndFlush(new UserStats(user));
         Trip trip = trips.saveAndFlush(new Trip(user.getUserId(), "백필검증", LocalDate.now(), LocalDate.now()));
         jdbc.update("update trips set processing_status = 'COMPLETED' where trip_id = ?", trip.getId());
         String originalKey = "backfill/" + suffix + "/original";

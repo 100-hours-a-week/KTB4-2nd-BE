@@ -7,6 +7,8 @@ import com.yeodam.yeodambe.user.security.oauth.OAuthStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -70,8 +72,12 @@ class KakaoLoginCallbackServiceTest {
         );
     }
 
-    @Test
-    void 카카오_인증에_성공한_후_로그인_티켓을_발급한다() {
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "http://k.kakaocdn.net/profile-thumb.jpg",
+            "https://k.kakaocdn.net/profile-thumb.jpg"
+    })
+    void 카카오_인증에_성공한_후_HTTPS_프로필로_로그인_티켓을_발급한다(String profileImageUrl) {
         given(stateStore.consume("valid-state", "browser-1"))
                 .willReturn(true);
 
@@ -90,7 +96,7 @@ class KakaoLoginCallbackServiceTest {
                                 true,
                                 "member@example.com",
                                 new KakaoUserResponse.Profile(
-                                        "https://k.kakaocdn.net/profile-thumb.jpg"
+                                        profileImageUrl
                                 )
                         )
                 ));

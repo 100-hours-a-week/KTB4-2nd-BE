@@ -35,10 +35,11 @@ class PhotoQueueMessageTest {
         var input = input();
         var message = PhotoProcessMessage.from(77L, "attempt-new", input);
         var body = json.readTree(json.writeValueAsString(message));
-        assertThat(body.size()).isEqualTo(7);
+        assertThat(body.size()).isEqualTo(8);
         assertThat(body.path("type").asString()).isEqualTo("process");
         assertThat(body.path("trip_id").asLong()).isEqualTo(77L);
         assertThat(body.path("execution_id").asString()).isEqualTo("attempt-new");
+        assertThat(body.path("trigger").asString()).isEqualTo("PHOTOS_ADDED");
         assertThat(body.path("trip_name").asString()).isEqualTo("제주도 가을");
         assertThat(body.path("period").path("start_date").asString()).isEqualTo("2026-10-12");
         assertThat(body.path("regions").get(0).path("latitude").decimalValue()).isEqualByComparingTo("33.4996");

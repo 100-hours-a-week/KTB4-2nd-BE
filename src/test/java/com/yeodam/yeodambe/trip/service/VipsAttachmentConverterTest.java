@@ -23,11 +23,11 @@ class VipsAttachmentConverterTest {
     }
 
     @Test
-    void 회전을_생략한_HEIC_픽셀에도_원본_ICC_프로필을_전달한다() {
+    void 방향을_반영한_HEIC_픽셀에도_원본_ICC_프로필을_전달한다() {
         Vips.run(arena -> {
             var source = Path.of("src/test/resources/images/heic/oriented-with-exif.heic");
             byte[] expected = VImage.heifload(arena, source.toString()).getBlob("icc-profile-data").getBytes();
-            var decoded = HeifUntransformedDecoder.decode(arena, source);
+            var decoded = HeifAttachmentDecoder.decode(arena, source);
             assertArrayEquals(expected, decoded.pixels().getBlob("icc-profile-data").getBytes());
         });
     }

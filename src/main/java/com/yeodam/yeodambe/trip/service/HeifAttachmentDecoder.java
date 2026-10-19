@@ -20,7 +20,7 @@ import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
-final class HeifUntransformedDecoder {
+final class HeifAttachmentDecoder {
     private static final MemoryLayout ERROR = MemoryLayout.structLayout(JAVA_INT, JAVA_INT, ADDRESS);
     private static final SymbolLookup LIBRARY = SymbolLookup.libraryLookup(
             NativeImageLibraries.heifPath(),
@@ -46,16 +46,11 @@ final class HeifUntransformedDecoder {
     private static final MethodHandle PLANE = bind("heif_image_get_plane_readonly", ADDRESS, ADDRESS, JAVA_INT, ADDRESS);
     private static final MethodHandle PROFILE_SIZE = bind("heif_image_handle_get_raw_color_profile_size", JAVA_LONG, ADDRESS);
     private static final MethodHandle PROFILE = bind("heif_image_handle_get_raw_color_profile", ERROR, ADDRESS, ADDRESS);
-    private static final MethodHandle PROPERTIES = bind("heif_item_get_properties_of_type",
-            JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT);
-    private static final MethodHandle CROP = bind("heif_item_get_property_transform_crop_borders", null,
-            ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, ADDRESS, ADDRESS, ADDRESS, ADDRESS);
     private static final int MAXIMUM_WIDTH = 16384;
     private static final int RGB_COLORSPACE = 1;
     private static final int RGB_CHROMA = 10;
     private static final int RGBA_CHROMA = 11;
     private static final int INTERLEAVED_CHANNEL = 10;
-    private static final int CROP_PROPERTY = 0x636c6170;
 
     static {
         try (Arena arena = Arena.ofConfined()) {
@@ -63,7 +58,7 @@ final class HeifUntransformedDecoder {
         }
     }
 
-    private HeifUntransformedDecoder() {
+    private HeifAttachmentDecoder() {
     }
 
     static Decoded decode(Arena arena, Path source) {
@@ -85,14 +80,13 @@ final class HeifUntransformedDecoder {
             check((MemorySegment) call(HANDLE, arena, context, itemId, output));
             handle = requirePointer(output.get(ADDRESS, 0));
             options = requirePointer((MemorySegment) call(OPTIONS));
-            // libheif가 할당한 버전별 구조체의 공통 선두: version, ignore_transformations.
-            options.reinterpret(2).set(JAVA_BYTE, 1, (byte) 1);
+            // 회전·반전·유효 영역은 libheif가 한 번 적용하며 EXIF로 다시 회전하지 않는다.
+            options.reinterpret(2).set(JAVA_BYTE, 1, (byte) 0);
             int bands = (int) call(HAS_ALPHA, handle) == 0 ? 3 : 4;
             check((MemorySegment) call(DECODE, arena, handle, output, RGB_COLORSPACE,
                     bands == 3 ? RGB_CHROMA : RGBA_CHROMA, options));
             image = requirePointer(output.get(ADDRESS, 0));
             VImage pixels = copyPixels(arena, image, bands);
-            pixels = crop(arena, context, itemId, pixels);
             byte[] profile = profile(arena, handle);
             if (profile != null) {
                 MemorySegment data = arena.allocateFrom(JAVA_BYTE, profile);
@@ -128,34 +122,6 @@ final class HeifUntransformedDecoder {
         }
         return VImage.newFromMemory(arena, pixels, width, height, bands, VipsBandFormat.FORMAT_UCHAR.getRawValue())
                 .copy(VipsOption.Enum("interpretation", VipsInterpretation.INTERPRETATION_sRGB));
-    }
-
-    private static VImage crop(Arena arena, MemorySegment context, int itemId, VImage pixels) {
-        int count = (int) call(PROPERTIES, context, itemId, CROP_PROPERTY, MemorySegment.NULL, 0);
-        if (count < 0 || count > 16) {
-            throw new IllegalArgumentException("HEIC의 자르기 속성 수가 허용 범위를 벗어났습니다.");
-        }
-        MemorySegment properties = arena.allocate(JAVA_INT, Math.max(1, count));
-        if ((int) call(PROPERTIES, context, itemId, CROP_PROPERTY, properties, count) != count) {
-            throw new IllegalArgumentException("HEIC의 자르기 속성을 확인할 수 없습니다.");
-        }
-        MemorySegment borders = arena.allocate(JAVA_INT, 4);
-        for (int index = 0; index < count; index++) {
-            call(CROP, context, itemId, properties.getAtIndex(JAVA_INT, index), pixels.getWidth(), pixels.getHeight(),
-                    borders.asSlice(0, 4), borders.asSlice(4, 4), borders.asSlice(8, 4), borders.asSlice(12, 4));
-            int left = borders.getAtIndex(JAVA_INT, 0);
-            int top = borders.getAtIndex(JAVA_INT, 1);
-            int right = borders.getAtIndex(JAVA_INT, 2);
-            int bottom = borders.getAtIndex(JAVA_INT, 3);
-            if (left < 0 || top < 0 || right < 0 || bottom < 0
-                    || (long) left + right >= pixels.getWidth() || (long) top + bottom >= pixels.getHeight()) {
-                throw new IllegalArgumentException("HEIC의 유효 사진 영역이 올바르지 않습니다.");
-            }
-            // 회전·반전은 적용하지 않는다. 코덱 패딩을 제외하는 유효 사진 영역(clap)만 유지한다.
-            pixels = pixels.extractArea(left, top, pixels.getWidth() - left - right,
-                    pixels.getHeight() - top - bottom);
-        }
-        return pixels;
     }
 
     private static byte[] profile(Arena arena, MemorySegment handle) {

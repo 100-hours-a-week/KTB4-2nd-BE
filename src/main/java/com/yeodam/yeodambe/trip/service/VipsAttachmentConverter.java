@@ -38,7 +38,7 @@ final class VipsAttachmentConverter {
                     boolean heic = "image/heic".equals(mimeType);
                     VImage thumbnail;
                     if (heic) {
-                        HeifUntransformedDecoder.Decoded decoded = HeifUntransformedDecoder.decode(arena, original);
+                        HeifAttachmentDecoder.Decoded decoded = HeifAttachmentDecoder.decode(arena, original);
                         VImage pixels = decoded.pixels();
                         deadline.watch(pixels);
                         saveDisplay(pixels, display, decoded.profile());
@@ -57,8 +57,7 @@ final class VipsAttachmentConverter {
                             throw new IllegalArgumentException("사진의 실제 포맷과 크기를 확인할 수 없습니다.");
                         }
                         thumbnail = VImage.thumbnail(arena, original.toString(), 1024,
-                                VipsOption.Enum("size", VipsSize.SIZE_DOWN),
-                                VipsOption.Boolean("no-rotate", true));
+                                VipsOption.Enum("size", VipsSize.SIZE_DOWN));
                     }
                     deadline.watch(thumbnail);
                     thumbnail = thumbnail.copyMemory();

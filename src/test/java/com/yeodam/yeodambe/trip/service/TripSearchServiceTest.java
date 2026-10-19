@@ -66,11 +66,38 @@ class TripSearchServiceTest {
         when(storage.createReadUrl("place-thumbnail")).thenReturn("place-url");
         when(storage.createReadUrl("photo-preview")).thenReturn("photo-url");
         var result = service.findSearchResults(1L, List.of(7L));
+        assertThat(result.attachments().getFirst().tripName()).isEqualTo("제주 여행");
         assertThat(result.attachments().getFirst().thumbnailUrl()).isEqualTo("photo-url");
         assertThat(result.folders().getFirst().attachmentCount()).isEqualTo(50L);
         assertThat(result.folders().getFirst().thumbnailUrl()).isEqualTo("place-url");
         assertThat(result.folders().getFirst().tripPlaceId()).isEqualTo(11L);
         assertThat(result.folders().getFirst().placeName()).isEqualTo("해변");
+        verifyNoInteractions(regions);
+    }
+
+    @Test
+    void 장소_없는_사진도_각각의_현재_여행_이름을_반환한다() {
+        Trip firstTrip = Trip.localMock(1L, "수정된 제주 여행", LocalDate.of(2024, 2, 29),
+                LocalDate.of(2024, 3, 1), "first-thumbnail");
+        Trip secondTrip = Trip.localMock(1L, "부산 여행", LocalDate.of(2024, 2, 29),
+                LocalDate.of(2024, 3, 1), "second-thumbnail");
+        TripAttachment first = mock(TripAttachment.class);
+        TripAttachment second = mock(TripAttachment.class);
+        when(first.getTrip()).thenReturn(firstTrip);
+        when(first.getTripId()).thenReturn(9L);
+        when(first.getId()).thenReturn(7L);
+        when(first.getPreviewStorageKey()).thenReturn("first-preview");
+        when(second.getTrip()).thenReturn(secondTrip);
+        when(second.getTripId()).thenReturn(10L);
+        when(second.getId()).thenReturn(8L);
+        when(second.getPreviewStorageKey()).thenReturn("second-preview");
+        when(attachments.findSearchResults(1L, List.of(7L, 8L))).thenReturn(List.of(first, second));
+
+        var result = service.findSearchResults(1L, List.of(7L, 8L));
+
+        assertThat(result.attachments()).extracting(item -> item.tripName())
+                .containsExactly("수정된 제주 여행", "부산 여행");
+        assertThat(result.folders()).isEmpty();
         verifyNoInteractions(regions);
     }
 }

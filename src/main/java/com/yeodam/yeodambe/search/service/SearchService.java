@@ -102,8 +102,13 @@ public class SearchService {
     ) {
         return current.attachments().stream()
                 .map(attachment -> new SearchResponse.Attachment(
-                        attachment.tripAttachmentId(), attachment.tripId(), attachment.tripPlaceId(),
-                        attachment.thumbnailUrl(), scores.get(attachment.tripAttachmentId())))
+                        attachment.tripAttachmentId(),
+                        attachment.tripId(),
+                        attachment.tripName(),
+                        attachment.tripPlaceId(),
+                        attachment.thumbnailUrl(),
+                        scores.get(attachment.tripAttachmentId())
+                ))
                 .sorted(Comparator.comparingDouble(SearchResponse.Attachment::score).reversed()
                         .thenComparing(SearchResponse.Attachment::tripAttachmentId))
                 .limit(SEARCH_LIMIT)

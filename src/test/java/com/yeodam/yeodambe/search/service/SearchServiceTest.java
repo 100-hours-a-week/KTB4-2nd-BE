@@ -140,9 +140,24 @@ class SearchServiceTest {
     }
 
     @Test
+    void 서로_다른_여행의_사진은_점수순_정렬_후에도_소속_여행_이름을_유지한다() {
+        prepare(List.of(hit(1, .6), hit(2, .9)),
+                List.of(
+                        new TripSearchResultResponse.Attachment(1L, 9L, "제주 여행", 11L, "jeju-url"),
+                        new TripSearchResultResponse.Attachment(2L, 10L, "부산 여행", null, "busan-url")
+                ), List.of(), null, null);
+
+        var result = service.search(1L, "바다 사진");
+
+        assertThat(result.attachments())
+                .extracting(item -> tuple(item.tripAttachmentId(), item.tripId(), item.tripName()))
+                .containsExactly(tuple(2L, 10L, "부산 여행"), tuple(1L, 9L, "제주 여행"));
+    }
+
+    @Test
     void 장소_없는_사진은_사진_탭에만_남긴다() {
         prepare(List.of(hit(1, .8)),
-                List.of(new TripSearchResultResponse.Attachment(1L, 9L, null, "photo-url")),
+                List.of(new TripSearchResultResponse.Attachment(1L, 9L, "여행", null, "photo-url")),
                 List.of(), null, null);
         var result = service.search(1L, "바다 사진");
         assertThat(result.attachments()).hasSize(1);
@@ -186,7 +201,7 @@ class SearchServiceTest {
     }
 
     private TripSearchResultResponse.Attachment photo(long id, long tripPlaceId) {
-        return new TripSearchResultResponse.Attachment(id, 9L, tripPlaceId, "photo-url");
+        return new TripSearchResultResponse.Attachment(id, 9L, "여행", tripPlaceId, "photo-url");
     }
 
     private TripSearchResultResponse.Folder folder(long id) {

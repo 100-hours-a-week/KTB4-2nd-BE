@@ -37,7 +37,7 @@ public class CurrentUserService {
                 user.getUserId(),
                 user.getEmail(),
                 user.getNickname(),
-                user.getProfileImageUrl(),
+                KakaoProfileImageUrl.toHttps(user.getProfileImageUrl()),
                 oauthProvider,
                 oauthAccount.isPresent()
         );

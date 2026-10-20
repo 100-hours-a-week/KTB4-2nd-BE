@@ -28,12 +28,12 @@ public class MigrationAuthApplyService {
 
     @Transactional(readOnly=true)
     public java.util.Optional<MigrationAuthReply> recover(MigrationAuthCommand c) {
-        var rows=jdbc.query("SELECT encrypted_result,created_at FROM migration_auth_request_result WHERE request_id=?",
-            (rs,n)->new Object[]{rs.getString(1),rs.getTimestamp(2).toInstant()},c.requestId());
+        var rows=jdbc.query("SELECT encrypted_result,(created_at>=TIMESTAMPADD(SECOND,?,CURRENT_TIMESTAMP)) FROM migration_auth_request_result WHERE request_id=?",
+            (rs,n)->new Object[]{rs.getString(1),rs.getBoolean(2)},-recoverySeconds,c.requestId());
         if(rows.isEmpty()) return java.util.Optional.empty();
         var row=rows.getFirst();
-        if(c.operation().equals("csrf") && (((java.time.Instant)row[1]).plusSeconds(recoverySeconds).isBefore(java.time.Instant.now()) || !current(c,mapper.readValue(crypto.decrypt((String)row[0],topic+".journal"),MigrationAuthReply.class)))) return java.util.Optional.empty();
-        if(((java.time.Instant)row[1]).plusSeconds(recoverySeconds).isBefore(java.time.Instant.now()))
+        if(c.operation().equals("csrf") && (!(Boolean)row[1] || !current(c,mapper.readValue(crypto.decrypt((String)row[0],topic+".journal"),MigrationAuthReply.class)))) return java.util.Optional.empty();
+        if(!(Boolean)row[1])
             throw new com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException();
         var cached=mapper.readValue(crypto.decrypt((String)row[0],topic+".journal"),MigrationAuthReply.class);
         if(!current(c,cached)) throw new com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException();

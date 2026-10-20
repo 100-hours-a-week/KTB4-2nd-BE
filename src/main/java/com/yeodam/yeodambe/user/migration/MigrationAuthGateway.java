@@ -23,24 +23,35 @@ public class MigrationAuthGateway {
     private final MigrationTripMode mode;
     private final TokenHasher hasher;
     private final String topic;
+    private final MigrationAuthApplyService apply;
+    private final MigrationAuthRedis redis;
     private final ConcurrentMap<String,CompletableFuture<MigrationAuthReply>> waiting = new ConcurrentHashMap<>();
     public MigrationAuthGateway(KafkaTemplate<String,String> kafka, MigrationAuthCrypto crypto,
-            ObjectMapper mapper, MigrationTripMode mode, TokenHasher hasher,
+            ObjectMapper mapper, MigrationTripMode mode, TokenHasher hasher, MigrationAuthApplyService apply, MigrationAuthRedis redis,
             @Value("${migration.auth.topic}") String topic) {
-        this.kafka=kafka;this.crypto=crypto;this.mapper=mapper;this.mode=mode;this.hasher=hasher;this.topic=topic;
+        this.kafka=kafka;this.crypto=crypto;this.mapper=mapper;this.mode=mode;this.hasher=hasher;this.topic=topic;this.apply=apply;this.redis=redis;
     }
     public boolean queueEnabled() { return mode.queueEnabled(); }
     public MigrationAuthReply request(String operation, String credential) {
         if (credential==null || credential.isBlank()) throw new RefreshTokenInvalidOrExpiredException();
         String id=hasher.hash(topic+":"+operation+":"+credential);
+        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(8);
+        var command=new MigrationAuthCommand(id,operation,credential,System.currentTimeMillis());
+        // A lost HTTP response is recovered from the committed result, without queueing behind new work.
+        try {
+            var cached=apply.recover(command);
+            if(cached.isPresent()) {
+                if(!redis.applied(command,cached.get())) throw unavailable();
+                return cached.get();
+            }
+        } catch(RefreshTokenInvalidOrExpiredException e) { throw e;
+        } catch(RuntimeException e) { throw unavailable(); }
         CompletableFuture<MigrationAuthReply> own=new CompletableFuture<>();
         CompletableFuture<MigrationAuthReply> future=waiting.putIfAbsent(id,own);
         if(future==null) future=own;
-        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(8);
         try {
             if(future==own) {
-                var command=new MigrationAuthCommand(id,operation,credential,System.currentTimeMillis());
-                kafka.send(topic,id,crypto.encrypt(mapper.writeValueAsString(command),topic))
+                kafka.send(topic,apply.routingKey(command),crypto.encrypt(mapper.writeValueAsString(command),topic))
                     .get(Math.max(1,deadline-System.nanoTime()),TimeUnit.NANOSECONDS);
             }
             MigrationAuthReply reply=future.get(Math.max(1,deadline-System.nanoTime()),TimeUnit.NANOSECONDS);

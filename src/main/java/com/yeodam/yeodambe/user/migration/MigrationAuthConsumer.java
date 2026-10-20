@@ -22,10 +22,10 @@ public class MigrationAuthConsumer {
     private final TokenHasher hasher;
     private final String topic;
     public MigrationAuthConsumer(MigrationAuthApplyService apply,MigrationAuthCrypto crypto,MigrationAuthRedis redis,
-            KafkaTemplate<String,String> kafka,ObjectMapper mapper,TokenHasher hasher,@Value("${migration.auth.topic}") String topic) {
+            KafkaTemplate<String,String> kafka,ObjectMapper mapper,TokenHasher hasher,@Value("${migration.auth.topic}") String topic ) {
         this.apply=apply;this.crypto=crypto;this.redis=redis;this.kafka=kafka;this.mapper=mapper;this.hasher=hasher;this.topic=topic;
     }
-    @KafkaListener(topics="${migration.auth.topic}",groupId="${migration.auth.consumer-group}",
+    @KafkaListener(id="migrationAuthApply",topics="${migration.auth.topic}",groupId="${migration.auth.consumer-group}",
         containerFactory="migrationAuthListenerFactory",autoStartup="${migration.auth.consumer-enabled:false}")
     public void consume(String value) throws Exception {
         var c=mapper.readValue(crypto.decrypt(value,topic),MigrationAuthCommand.class);

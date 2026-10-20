@@ -23,6 +23,42 @@ public class MigrationAuthApplyService {
             ObjectMapper mapper,MigrationAuthCrypto crypto,com.yeodam.yeodambe.user.security.TokenHasher hasher,@Value("${migration.auth.topic}") String topic) {
         this.jdbc=jdbc;this.refresh=refresh;this.csrf=csrf;this.mapper=mapper;this.crypto=crypto;this.topic=topic;this.hasher=hasher;
     }
+    @Value("${migration.auth.recovery-seconds:120}")
+    private int recoverySeconds = 120;
+
+    @Transactional(readOnly=true)
+    public java.util.Optional<MigrationAuthReply> recover(MigrationAuthCommand c) {
+        var rows=jdbc.query("SELECT encrypted_result,created_at FROM migration_auth_request_result WHERE request_id=?",
+            (rs,n)->new Object[]{rs.getString(1),rs.getTimestamp(2).toInstant()},c.requestId());
+        if(rows.isEmpty()) return java.util.Optional.empty();
+        var row=rows.getFirst();
+        if(c.operation().equals("csrf") && (((java.time.Instant)row[1]).plusSeconds(recoverySeconds).isBefore(java.time.Instant.now()) || !current(c,mapper.readValue(crypto.decrypt((String)row[0],topic+".journal"),MigrationAuthReply.class)))) return java.util.Optional.empty();
+        if(((java.time.Instant)row[1]).plusSeconds(recoverySeconds).isBefore(java.time.Instant.now()))
+            throw new com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException();
+        var cached=mapper.readValue(crypto.decrypt((String)row[0],topic+".journal"),MigrationAuthReply.class);
+        if(!current(c,cached)) throw new com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException();
+        return java.util.Optional.of(cached);
+    }
+
+    @Transactional(readOnly=true)
+    public String routingKey(MigrationAuthCommand c) {
+        if(c.operation().equals("csrf")) return hasher.hash("csrf:"+c.credential());
+        var sids=jdbc.query("SELECT sid FROM login_sessions WHERE refresh_token_hash=? AND expires_at>CURRENT_TIMESTAMP",
+            (rs,n)->rs.getString(1),hasher.hash(c.credential()));
+        if(sids.isEmpty()) {
+            var old=recover(c);
+            if(old.isPresent()) sids=jdbc.query("SELECT sid FROM login_sessions WHERE refresh_token_hash=? AND expires_at>CURRENT_TIMESTAMP",
+                (rs,n)->rs.getString(1),hasher.hash(old.get().refreshToken()));
+        }
+        return hasher.hash("refresh:"+(sids.isEmpty()?c.credential():sids.getFirst()));
+    }
+
+    private boolean current(MigrationAuthCommand c,MigrationAuthReply cached) {
+        return (c.operation().equals("refresh")
+            ? jdbc.queryForObject("SELECT COUNT(*) FROM login_sessions WHERE refresh_token_hash=? AND expires_at>CURRENT_TIMESTAMP",Integer.class,hasher.hash(cached.refreshToken()))
+            : jdbc.queryForObject("SELECT COUNT(*) FROM csrf_tokens WHERE browser_context_hash=? AND token_value=? AND expires_at>CURRENT_TIMESTAMP",Integer.class,hasher.hash(c.credential()),cached.csrfToken()))==1;
+    }
+
     @Transactional
     public MigrationAuthReply apply(MigrationAuthCommand c) {
         var old=jdbc.query("SELECT encrypted_result FROM migration_auth_request_result WHERE request_id=?",

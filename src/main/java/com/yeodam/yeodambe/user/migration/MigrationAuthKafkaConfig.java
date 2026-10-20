@@ -12,7 +12,7 @@ import org.springframework.util.backoff.FixedBackOff;
 public class MigrationAuthKafkaConfig {
     @Bean
     ConcurrentKafkaListenerContainerFactory<String,String> migrationAuthListenerFactory(ConsumerFactory<String,String> cf) {
-        var f=new ConcurrentKafkaListenerContainerFactory<String,String>();f.setConsumerFactory(cf);f.setConcurrency(1);
+        var f=new ConcurrentKafkaListenerContainerFactory<String,String>();f.setConsumerFactory(cf);f.setConcurrency(4);
         f.setMissingTopicsFatal(true);f.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
         f.setCommonErrorHandler(new DefaultErrorHandler(new FixedBackOff(1000L,FixedBackOff.UNLIMITED_ATTEMPTS)));
         return f;

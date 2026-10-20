@@ -27,6 +27,7 @@ public class MigrationTripConsumer {
     }
 
     @KafkaListener(
+            id = "migrationTripApply",
             topics = "${migration.trip.topic}",
             groupId = "${MIGRATION_TRIP_CONSUMER_GROUP:yeodam-migration-trip-apply}",
             containerFactory = "migrationTripListenerFactory",

@@ -20,6 +20,9 @@ import java.time.Duration;
 public class AccessTokenRefreshController {
 
     private final AccessTokenRefreshService service;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.yeodam.yeodambe.user.migration.MigrationAuthGateway migrationAuth;
+
     private final boolean cookieSecure;
     private final CookiePathResolver cookiePathResolver;
 
@@ -41,7 +44,8 @@ public class AccessTokenRefreshController {
             ) String refreshToken
     ) {
         AccessTokenRefreshService.Result result =
-                service.refresh(refreshToken);
+                migrationAuth != null && migrationAuth.queueEnabled()
+                        ? queuedRefresh(refreshToken) : service.refresh(refreshToken);
 
         ResponseCookie accessCookie = cookie(
                 "accessToken",
@@ -71,6 +75,11 @@ public class AccessTokenRefreshController {
                         SuccessMessage.TOKEN_REFRESH_SUCCESS,
                         data
                 ));
+    }
+
+    private AccessTokenRefreshService.Result queuedRefresh(String token) {
+        var reply = migrationAuth.request("refresh", token);
+        return new AccessTokenRefreshService.Result(reply.accessToken(), reply.refreshToken());
     }
 
     private ResponseCookie cookie(

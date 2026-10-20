@@ -12,11 +12,13 @@ import org.springframework.util.backoff.FixedBackOff;
 public class MigrationTripKafkaConfig {
     @Bean
     ConcurrentKafkaListenerContainerFactory<String, String> migrationTripListenerFactory(
-            ConsumerFactory<String, String> consumerFactory
+            ConsumerFactory<String, String> consumerFactory,
+            @org.springframework.beans.factory.annotation.Value("${migration.trip.concurrency:1}") int concurrency
     ) {
         var factory = new ConcurrentKafkaListenerContainerFactory<String, String>();
         factory.setConsumerFactory(consumerFactory);
-        factory.setConcurrency(1);
+        if (concurrency < 1 || concurrency > 4) throw new IllegalArgumentException("Invalid rehearsal concurrency");
+        factory.setConcurrency(concurrency);
         factory.setMissingTopicsFatal(true);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
         factory.setCommonErrorHandler(new DefaultErrorHandler(

@@ -72,4 +72,18 @@ class AccessTokenRefreshControllerTest {
                                 "SameSite=Lax"
                         ));
     }
+    @Test
+    void queuedRefreshKeepsExistingResponseAndCookies() throws Exception {
+        var gateway = org.mockito.Mockito.mock(com.yeodam.yeodambe.user.migration.MigrationAuthGateway.class);
+        var controller = new AccessTokenRefreshController(service, false, new CookiePathResolver("/api"));
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "migrationAuth", gateway);
+        given(gateway.queueEnabled()).willReturn(true);
+        given(gateway.request("refresh", "old")).willReturn(new com.yeodam.yeodambe.user.migration.MigrationAuthReply(
+            "id", "refresh", 200, "new-access", "new-refresh", null));
+        standaloneSetup(controller).build().perform(post("/auth/token/refresh").cookie(new Cookie("refreshToken", "old")))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.expiresIn").value(1800))
+            .andExpect(header().string("Cache-Control", "no-store"));
+        then(service).shouldHaveNoInteractions();
+    }
+
 }

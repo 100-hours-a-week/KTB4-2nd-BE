@@ -75,6 +75,16 @@ migration:
     topic: ${MIGRATION_TRIP_TOPIC:yeodam.migration.trip-requests}
     consumer-enabled: ${MIGRATION_TRIP_CONSUMER_ENABLED:false}
     ack-timeout: ${MIGRATION_TRIP_ACK_TIMEOUT:5s}
+    concurrency: ${MIGRATION_TRIP_CONCURRENCY:1}
+  auth:
+    enabled: ${MIGRATION_AUTH_ENABLED:false}
+    topic: ${MIGRATION_AUTH_TOPIC:yeodam.migration.auth-requests}
+    key-file: ${MIGRATION_AUTH_KEY_FILE:}
+    redis-file: ${MIGRATION_AUTH_REDIS_FILE:}
+    consumer-enabled: ${MIGRATION_AUTH_CONSUMER_ENABLED:false}
+    results-enabled: ${MIGRATION_AUTH_RESULTS_ENABLED:false}
+    consumer-group: ${MIGRATION_AUTH_CONSUMER_GROUP:yeodam-migration-auth-apply}
+    result-group: ${MIGRATION_AUTH_RESULT_GROUP:yeodam-migration-auth-results}
 
 aws:
   region: ${AWS_REGION:ap-northeast-2}

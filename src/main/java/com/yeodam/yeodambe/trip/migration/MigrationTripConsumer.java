@@ -34,7 +34,7 @@ public class MigrationTripConsumer {
     )
     public void consume(String json, @Header(KafkaHeaders.RECEIVED_KEY) String key) {
         MigrationTripCommand command = mapper.readValue(json, MigrationTripCommand.class);
-        if (!command.requestId().equals(key)
+        if (!Long.toString(command.userId()).equals(key)
                 || !admission.hashPayload(command.userId(), command.tripRequest())
                 .equals(command.payloadHash())) {
             // Invalid records stay uncommitted for investigation; silently skipping one would

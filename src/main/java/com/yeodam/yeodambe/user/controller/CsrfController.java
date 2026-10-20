@@ -22,6 +22,9 @@ public class CsrfController {
     private static final String CONTEXT_COOKIE = "CSRF_CONTEXT";
 
     private final CsrfTokenService csrfTokenService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.yeodam.yeodambe.user.migration.MigrationAuthGateway migrationAuth;
+
     private final boolean cookieSecure;
 
     public CsrfController(
@@ -41,7 +44,8 @@ public class CsrfController {
             browserContext = UUID.randomUUID().toString();
         }
 
-        String token = csrfTokenService.issue(browserContext);
+        String token = migrationAuth != null && migrationAuth.queueEnabled()
+                ? migrationAuth.request("csrf", browserContext).csrfToken() : csrfTokenService.issue(browserContext);
         ResponseEntity.BodyBuilder response = ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore());
 

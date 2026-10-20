@@ -57,7 +57,7 @@ public class MigrationTripAdmissionService {
                 requestId, userId, hash, request.tripName(), request.startDate(),
                 request.endDate(), request.regionCodes());
         try {
-            kafka.send(topic, requestId, mapper.writeValueAsString(command))
+            kafka.send(topic, Long.toString(userId), mapper.writeValueAsString(command))
                     .get(ackTimeout.toMillis(), TimeUnit.MILLISECONDS);
             log.info("migration_trip_accepted request_id={}", requestId);
             return new MigrationTripAcceptance(requestId);

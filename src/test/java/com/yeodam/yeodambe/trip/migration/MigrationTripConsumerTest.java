@@ -36,7 +36,7 @@ class MigrationTripConsumerTest {
         when(admission.hashPayload(7L, command.tripRequest())).thenReturn("hash");
         doThrow(new TripNameDuplicatedException()).when(apply).apply(command);
 
-        consumer.consume("json", ID);
+        consumer.consume("json", "7");
 
         verify(apply).recordFailure(command, "TRIP_NAME_DUPLICATED");
     }

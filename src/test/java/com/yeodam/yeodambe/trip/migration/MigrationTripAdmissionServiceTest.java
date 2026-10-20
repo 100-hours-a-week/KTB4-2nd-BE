@@ -33,7 +33,7 @@ class MigrationTripAdmissionServiceTest {
     void broker_ack_확인_뒤에만_수락한다() {
         when(mapper.writeValueAsBytes(any())).thenReturn("canonical".getBytes());
         when(mapper.writeValueAsString(any())).thenReturn("command-json");
-        when(kafka.send("migration-requests", ID, "command-json"))
+        when(kafka.send("migration-requests", "7", "command-json"))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         assertThat(service.accept(7L, request, ID).status()).isEqualTo("ACCEPTED");
@@ -47,7 +47,7 @@ class MigrationTripAdmissionServiceTest {
         when(mapper.writeValueAsString(any())).thenReturn("command-json");
         var failed = new CompletableFuture<org.springframework.kafka.support.SendResult<String, String>>();
         failed.completeExceptionally(new IllegalStateException("broker down"));
-        when(kafka.send("migration-requests", ID, "command-json")).thenReturn(failed);
+        when(kafka.send("migration-requests", "7", "command-json")).thenReturn(failed);
 
         assertThatThrownBy(() -> service.accept(7L, request, ID))
                 .isInstanceOf(MigrationTripAdmissionException.class)

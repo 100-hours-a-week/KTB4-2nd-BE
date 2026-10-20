@@ -32,7 +32,14 @@ public class MigrationAuthApplyService {
             int valid=c.operation().equals("refresh")
                 ? jdbc.queryForObject("SELECT COUNT(*) FROM login_sessions WHERE refresh_token_hash=? AND expires_at>CURRENT_TIMESTAMP",Integer.class,hasher.hash(cached.refreshToken()))
                 : jdbc.queryForObject("SELECT COUNT(*) FROM csrf_tokens WHERE browser_context_hash=? AND token_value=? AND expires_at>CURRENT_TIMESTAMP",Integer.class,hasher.hash(c.credential()),cached.csrfToken());
-            if(valid!=1) throw new com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException();
+            if(valid!=1) {
+                if(!c.operation().equals("csrf")) throw new com.yeodam.yeodambe.user.exception.RefreshTokenInvalidOrExpiredException();
+                // CSRF issuance is public and may legitimately recur after logout/expiry.
+                var renewed=new MigrationAuthReply(c.requestId(),c.operation(),200,null,null,csrf.issue(c.credential()));
+                jdbc.update("UPDATE migration_auth_request_result SET encrypted_result=? WHERE request_id=?",
+                    crypto.encrypt(mapper.writeValueAsString(renewed),topic+".journal"),c.requestId());
+                return renewed;
+            }
             return cached;
         }
         // This claim and the session mutation commit atomically; replay never rotates twice.

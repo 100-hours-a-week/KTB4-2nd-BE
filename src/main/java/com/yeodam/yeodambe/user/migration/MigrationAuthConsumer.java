@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 @Component
 @ConditionalOnProperty(name="migration.auth.enabled", havingValue="true")
 public class MigrationAuthConsumer {
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(MigrationAuthConsumer.class);
     private final MigrationAuthApplyService apply;
     private final MigrationAuthCrypto crypto;
     private final MigrationAuthRedis redis;
@@ -36,6 +37,9 @@ public class MigrationAuthConsumer {
         try { reply=apply.apply(c); }
         catch(RefreshTokenInvalidOrExpiredException invalid) {
             reply=new MigrationAuthReply(c.requestId(),c.operation(),401,null,null,null);
+        } catch(RuntimeException failure) {
+            log.warn("migration_auth_apply_failed operation={} type={}",c.operation(),failure.getClass().getSimpleName());
+            throw failure;
         }
         if(reply.status()==200) {
             long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
@@ -45,5 +49,6 @@ public class MigrationAuthConsumer {
             }
         }
         kafka.send(topic+".results",c.requestId(),crypto.encrypt(mapper.writeValueAsString(reply),topic+".results")).get(5,TimeUnit.SECONDS);
+        log.info("migration_auth_result operation={} status={}",c.operation(),reply.status());
     }
 }

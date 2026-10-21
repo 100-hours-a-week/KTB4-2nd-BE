@@ -14,6 +14,9 @@ import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +43,7 @@ import static org.mockito.Mockito.*;
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class AdditionalAttachmentUploadUrlIntegrationTest {
+    @Autowired private StoryGenerationJobRepository storyJobs;
     @Autowired private AdditionalAttachmentUploadUrlService service;
     @Autowired private AdditionalAttachmentUploadCompletionService completionService;
     @Autowired private AdditionalAttachmentUploadTransactionService transactionService;
@@ -67,6 +71,72 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
         additionId = UUID.randomUUID().toString();
         when(storage.createUploadUrl(anyString(), anyString(), eq(Duration.ofMinutes(10))))
                 .thenAnswer(call -> "https://example.test/" + call.getArgument(0));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"QUEUED", "PROCESSING"})
+    void rejectsActiveStoryBeforeReservingOrIssuingUrls(String status) {
+        var job = new StoryGenerationJob(UUID.randomUUID().toString(), tripId, userId, Story.Mood.PLAIN);
+        if (status.equals("PROCESSING")) job.updateProcessing(10);
+        storyJobs.saveAndFlush(job);
+
+        assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, request()))
+                .isInstanceOf(TripAttachmentAddNotAllowedException.class);
+
+        assertThat(batchCount()).isZero();
+        assertThat(itemCount()).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM additional_attachment_executions WHERE execution_id = ?",
+                Integer.class, additionId)).isZero();
+        verifyNoInteractions(storage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"FAILED", "CANCELED"})
+    void permitsPhotoAdditionAfterStoryJobHasEnded(String status) {
+        var job = new StoryGenerationJob(UUID.randomUUID().toString(), tripId, userId, Story.Mood.PLAIN);
+        if (status.equals("FAILED")) job.fail("TEST_FAILURE");
+        else job.cancel();
+        storyJobs.saveAndFlush(job);
+
+        assertThat(service.issueUploadUrls(tripId, userId, request()).attachments()).hasSize(2);
+        assertThat(batchCount()).isOne();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"QUEUED", "PROCESSING"})
+    void rejectsCompletionBeforeS3VerificationWhenStoryIsActive(String status) {
+        var issued = service.issueUploadUrls(tripId, userId, request());
+        var job = new StoryGenerationJob(UUID.randomUUID().toString(), tripId, userId, Story.Mood.PLAIN);
+        if (status.equals("PROCESSING")) job.updateProcessing(10);
+        storyJobs.saveAndFlush(job);
+        clearInvocations(storage);
+
+        assertThatThrownBy(() -> completionService.complete(tripId, userId,
+                new AdditionalAttachmentUploadCompleteRequest(issued.uploadId())))
+                .isInstanceOf(TripAttachmentAddNotAllowedException.class);
+
+        assertThat(batchStatus(issued.uploadId())).isEqualTo("PENDING");
+        assertThat(tripAttachmentCount()).isZero();
+        verifyNoInteractions(storage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"QUEUED", "PROCESSING"})
+    void rejectsMarkVerifiedWithoutChangingBatchWhenStoryIsActive(String status) {
+        var issued = service.issueUploadUrls(tripId, userId, request());
+        var job = new StoryGenerationJob(UUID.randomUUID().toString(), tripId, userId, Story.Mood.PLAIN);
+        if (status.equals("PROCESSING")) job.updateProcessing(10);
+        storyJobs.saveAndFlush(job);
+
+        assertThatThrownBy(() -> transactionService.markVerified(tripId, userId, issued.uploadId()))
+                .isInstanceOf(TripAttachmentAddNotAllowedException.class);
+
+        assertThat(batchStatus(issued.uploadId())).isEqualTo("PENDING");
+        assertThat(tripAttachmentCount()).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT input_closed FROM additional_attachment_executions WHERE execution_id = ?",
+                Boolean.class, additionId)).isFalse();
     }
 
     @Test

@@ -432,6 +432,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.STORY_GENERATION_IN_PROGRESS, null);
     }
 
+    @ExceptionHandler(StoryGenerationNotAllowedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleStoryGenerationNotAllowed(
+            StoryGenerationNotAllowedException e
+    ) {
+        return new ApiResponse<>(ErrorMessage.STORY_GENERATION_NOT_ALLOWED, null);
+    }
+
     @ExceptionHandler(StoryGenerationForbiddenException.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)
     ApiResponse<Void> handleStoryGenerationForbidden(

@@ -4,6 +4,15 @@ import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import com.yeodam.yeodambe.common.exception.StoryGenerationNotAllowedException;
+import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import com.yeodam.yeodambe.trip.service.TripAccessService;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.util.List;
 
@@ -16,8 +25,18 @@ import static org.mockito.Mockito.when;
 class StorySourceFolderListServiceTest {
     private final TripPlaceFolderListService tripPlaceFolderListService =
             mock(TripPlaceFolderListService.class);
+    private final TripAccessService tripAccessService = mock(TripAccessService.class);
+    private final AdditionalAttachmentExecutionRepository additionalExecutions =
+            mock(AdditionalAttachmentExecutionRepository.class);
+    private final Trip trip = mock(Trip.class);
     private final StorySourceFolderListService service =
-            new StorySourceFolderListService(tripPlaceFolderListService);
+            new StorySourceFolderListService(tripPlaceFolderListService, tripAccessService, additionalExecutions);
+
+    @BeforeEach
+    void prepareCompletedTrip() {
+        when(tripAccessService.requireReadableTrip(7L, 1L)).thenReturn(trip);
+        when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
+    }
 
     @Test
     void 폴더와_페이지정보를_유지하고_선택상태는_false로_반환한다() {
@@ -57,10 +76,29 @@ class StorySourceFolderListServiceTest {
 
     @Test
     void 여행접근실패를_빈목록으로_바꾸지_않는다() {
-        when(tripPlaceFolderListService.findPlaceFolders(1L, 7L, null))
+        when(tripAccessService.requireReadableTrip(7L, 1L))
                 .thenThrow(new TripNotFoundException());
 
         assertThatThrownBy(() -> service.findFolders(1L, 7L, null))
                 .isInstanceOf(TripNotFoundException.class);
     }
+    @ParameterizedTest
+    @EnumSource(value = ProcessingStatus.class, names = {"PROCESSING", "FAILED", "CANCELED"})
+    void 완료되지_않은_여행은_폴더조회_전에_거절한다(ProcessingStatus status) {
+        when(trip.getProcessingStatus()).thenReturn(status);
+
+        assertThatThrownBy(() -> service.findFolders(1L, 7L, null))
+                .isInstanceOf(StoryGenerationNotAllowedException.class);
+        verifyNoInteractions(tripPlaceFolderListService, additionalExecutions);
+    }
+
+    @Test
+    void 사진추가가_진행중이면_폴더조회_전에_거절한다() {
+        when(additionalExecutions.existsByTripIdAndEndedAtIsNull(7L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.findFolders(1L, 7L, null))
+                .isInstanceOf(StoryGenerationNotAllowedException.class);
+        verifyNoInteractions(tripPlaceFolderListService);
+    }
+
 }

@@ -1,6 +1,11 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.exception.StoryGenerationNotAllowedException;
+import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.common.exception.InvalidStoryRequestException;
 import com.yeodam.yeodambe.common.exception.StoryGenerationForbiddenException;
@@ -31,9 +36,10 @@ class StoryGenerationInputServiceTest {
     private final TripRepository tripRepository = mock(TripRepository.class);
     private final TripDetailPlaceRepository tripDetailPlaceRepository = mock(TripDetailPlaceRepository.class);
     private final TripAttachmentRepository tripAttachmentRepository = mock(TripAttachmentRepository.class);
+    private final AdditionalAttachmentExecutionRepository additionalExecutions = mock(AdditionalAttachmentExecutionRepository.class);
     private final StoryGenerationInputService service = new StoryGenerationInputService(
             new StoryGenerationRequestValidator(factory.getValidator()), tripRepository,
-            tripDetailPlaceRepository, tripAttachmentRepository);
+            tripDetailPlaceRepository, tripAttachmentRepository, additionalExecutions);
     private final StoryGenerationRequest request =
             new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(101L));
 
@@ -46,7 +52,8 @@ class StoryGenerationInputServiceTest {
     void returnsOwnedActiveTrip() {
         Trip trip = mock(Trip.class);
         when(trip.getUserId()).thenReturn(2L);
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
+        when(tripRepository.findActiveForUpdate(10L)).thenReturn(Optional.of(trip));
         var folders = List.of(place(10L, null));
         when(tripDetailPlaceRepository.findAllById(List.of(101L)))
                 .thenReturn(folders);
@@ -58,7 +65,7 @@ class StoryGenerationInputServiceTest {
 
     @Test
     void rejectsMissingTrip() {
-        when(tripRepository.findById(10L)).thenReturn(Optional.empty());
+        when(tripRepository.findActiveForUpdate(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.validate(2L, 10L, request))
                 .isInstanceOf(TripNotFoundException.class);
@@ -66,10 +73,7 @@ class StoryGenerationInputServiceTest {
 
     @Test
     void rejectsDeletedTripBeforeOwnershipCheck() {
-        Trip trip = mock(Trip.class);
-        when(trip.getUserId()).thenReturn(3L);
-        when(trip.getDeletedAt()).thenReturn(LocalDateTime.of(2026, 10, 9, 9, 0));
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.findActiveForUpdate(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.validate(2L, 10L, request))
                 .isInstanceOf(TripNotFoundException.class);
@@ -79,7 +83,7 @@ class StoryGenerationInputServiceTest {
     void rejectsOtherUsersActiveTrip() {
         Trip trip = mock(Trip.class);
         when(trip.getUserId()).thenReturn(3L);
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(tripRepository.findActiveForUpdate(10L)).thenReturn(Optional.of(trip));
 
         assertThatThrownBy(() -> service.validate(2L, 10L, request))
                 .isInstanceOf(StoryGenerationForbiddenException.class);
@@ -90,7 +94,7 @@ class StoryGenerationInputServiceTest {
         assertThatThrownBy(() -> service.validate(2L, 10L,
                 new StoryGenerationRequest(Story.Mood.PLAIN, List.of(101L, 101L))))
                 .isInstanceOf(InvalidStoryRequestException.class);
-        verifyNoInteractions(tripRepository, tripDetailPlaceRepository, tripAttachmentRepository);
+        verifyNoInteractions(tripRepository, tripDetailPlaceRepository, tripAttachmentRepository, additionalExecutions);
     }
 
     @Test
@@ -155,10 +159,32 @@ class StoryGenerationInputServiceTest {
                 .isInstanceOf(InvalidStoryRequestException.class);
     }
 
+    @ParameterizedTest
+    @EnumSource(value = ProcessingStatus.class, names = {"PROCESSING", "FAILED", "CANCELED"})
+    void rejectsTripThatIsNotCompleted(ProcessingStatus status) {
+        Trip trip = ownedTrip();
+        when(trip.getProcessingStatus()).thenReturn(status);
+
+        assertThatThrownBy(() -> service.validate(2L, 10L, request))
+                .isInstanceOf(StoryGenerationNotAllowedException.class);
+        verifyNoInteractions(additionalExecutions, tripDetailPlaceRepository, tripAttachmentRepository);
+    }
+
+    @Test
+    void rejectsCompletedTripWithUnfinishedPhotoAddition() {
+        ownedTrip();
+        when(additionalExecutions.existsByTripIdAndEndedAtIsNull(10L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.validate(2L, 10L, request))
+                .isInstanceOf(StoryGenerationNotAllowedException.class);
+        verifyNoInteractions(tripDetailPlaceRepository, tripAttachmentRepository);
+    }
+
     private Trip ownedTrip() {
         Trip trip = mock(Trip.class);
         when(trip.getUserId()).thenReturn(2L);
-        when(tripRepository.findById(10L)).thenReturn(Optional.of(trip));
+        when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
+        when(tripRepository.findActiveForUpdate(10L)).thenReturn(Optional.of(trip));
         return trip;
     }
 

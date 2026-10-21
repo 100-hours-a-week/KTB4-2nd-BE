@@ -11,6 +11,10 @@ import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.response.TripStorySource;
 import org.junit.jupiter.api.Test;
+import com.yeodam.yeodambe.common.exception.StoryGenerationNotAllowedException;
+import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -28,7 +32,10 @@ class TripStorySourceServiceTest {
     private final TripRepository trips = mock(TripRepository.class);
     private final TripDetailPlaceRepository folders = mock(TripDetailPlaceRepository.class);
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
-    private final TripStorySourceService service = new TripStorySourceService(trips, folders, attachments);
+    private final AdditionalAttachmentExecutionRepository additionalExecutions =
+            mock(AdditionalAttachmentExecutionRepository.class);
+    private final TripStorySourceService service =
+            new TripStorySourceService(trips, folders, attachments, additionalExecutions);
     private final LocalDateTime takenAt = LocalDateTime.of(2026, 10, 10, 9, 0);
 
     @Test
@@ -125,9 +132,31 @@ class TripStorySourceServiceTest {
                 .isInstanceOf(InvalidStoryRequestException.class);
     }
 
+    @ParameterizedTest
+    @EnumSource(value = ProcessingStatus.class, names = {"PROCESSING", "FAILED", "CANCELED"})
+    void rejectsUnfinishedTripBeforeReadingFoldersAndPhotos(ProcessingStatus status) {
+        Trip trip = ownedTrip();
+        when(trip.getProcessingStatus()).thenReturn(status);
+
+        assertThatThrownBy(() -> service.read(2L, 100L, List.of(10L)))
+                .isInstanceOf(StoryGenerationNotAllowedException.class);
+        verifyNoInteractions(folders, attachments, additionalExecutions);
+    }
+
+    @Test
+    void rejectsActivePhotoAdditionBeforeReadingFoldersAndPhotos() {
+        ownedTrip();
+        when(additionalExecutions.existsByTripIdAndEndedAtIsNull(100L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.read(2L, 100L, List.of(10L)))
+                .isInstanceOf(StoryGenerationNotAllowedException.class);
+        verifyNoInteractions(folders, attachments);
+    }
+
     private Trip ownedTrip() {
         Trip trip = mock(Trip.class);
         when(trip.getUserId()).thenReturn(2L);
+        when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
         when(trips.findById(100L)).thenReturn(Optional.of(trip));
         return trip;
     }

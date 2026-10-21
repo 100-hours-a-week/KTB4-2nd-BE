@@ -110,6 +110,14 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
+        select trip from Trip trip
+        where trip.id = :tripId
+          and trip.deletedAt is null
+        """)
+    Optional<Trip> findActiveForUpdate(@Param("tripId") Long tripId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
             select trip from Trip trip
             where trip.id = :tripId
               and trip.userId = :userId

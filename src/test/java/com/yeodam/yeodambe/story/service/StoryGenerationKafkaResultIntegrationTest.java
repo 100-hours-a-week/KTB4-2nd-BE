@@ -78,6 +78,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     private static final String DLT = TOPIC + "-story-dlt";
     private static final String GROUP = "test-story-consumer-" + UUID.randomUUID();
     @Autowired private StoryGenerationAcceptanceService acceptance;
+    @Autowired private StoryGenerationCancelService cancellation;
     @Autowired private StoryGenerationTimeoutService timeout;
     @Autowired private StoryGenerationStatusSyncService statusSync;
     @Autowired private StoryGenerationJobRepository jobs;
@@ -170,6 +171,41 @@ class StoryGenerationKafkaResultIntegrationTest {
             files.deleteById(file.getId());
         }
         users.deleteById(owner.getUserId());
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void cancellationPersistsAndLateKafkaResultsCannotCreateStory(boolean taskMissing) throws Exception {
+        if (taskMissing) {
+            org.mockito.Mockito.when(ai.cancel(trip.getId())).thenThrow(
+                    new com.yeodam.yeodambe.story.exception.StoryGenerationAiRequestException(
+                            com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED,
+                            404, "TASK_NOT_FOUND"));
+        } else {
+            org.mockito.Mockito.when(ai.cancel(trip.getId())).thenReturn(new StoryGenerationAiResponse(
+                    trip.getId(), job.getExecutionId(), StoryGenerationAiResponse.Status.CANCELED,
+                    null, null, null, null));
+        }
+
+        cancellation.cancel(owner.getUserId(), job.getId());
+
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.CANCELED);
+        assertThat(jobs.existsByTripIdAndStatusIn(trip.getId(), List.of(
+                StoryGenerationJob.Status.QUEUED, StoryGenerationJob.Status.PROCESSING))).isFalse();
+        long canceled = send(new StoryCreateResultEvent("story_result", trip.getId(),
+                job.getExecutionId(), StoryGenerationAiResponse.Status.CANCELED, null, null));
+        awaitCommitted(canceled);
+        long completed = send(completionEvent(job.getExecutionId()));
+        awaitCommitted(completed);
+
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.CANCELED);
+        assertThat(count("stories")).isZero();
+        var next = acceptance.accept(owner.getUserId(), trip.getId(),
+                new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(folder.getId())), "regeneration-test");
+        assertThat(next.getId()).isNotEqualTo(job.getId());
+        assertThat(next.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
     }
 
     @Test

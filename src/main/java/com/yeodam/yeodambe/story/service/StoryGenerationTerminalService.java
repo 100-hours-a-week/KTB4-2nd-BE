@@ -10,6 +10,8 @@ import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.yeodam.yeodambe.common.exception.StoryGenerationCannotBeCanceledException;
+import com.yeodam.yeodambe.common.exception.StoryGenerationNotFoundException;
 
 @Service
 @RequiredArgsConstructor
@@ -64,6 +66,32 @@ public class StoryGenerationTerminalService {
 
         job.fail(error.code());
         logWorkflowFinished(job, "failure", job.getErrorCode());
+    }
+
+    @Transactional
+    public void confirmCancellation(Long userId, Long generationId) {
+        var job = jobRepository.findByIdForUpdate(generationId)
+                .filter(saved -> saved.getUserId().equals(userId))
+                .orElseThrow(StoryGenerationNotFoundException::new);
+
+        if (job.getStatus() == StoryGenerationJob.Status.CANCELED) {
+            return;
+        }
+
+        if (job.isFinished()) {
+            throw new StoryGenerationCannotBeCanceledException();
+        }
+
+        job.cancel();
+
+        WorkflowLog.finished(
+                "story_generation",
+                job.getTripId(),
+                job.getExecutionId(),
+                job.getCreatedAt(),
+                "canceled",
+                null
+        );
     }
 
     private void logWorkflowFinished(StoryGenerationJob job, String result, String errorCode) {

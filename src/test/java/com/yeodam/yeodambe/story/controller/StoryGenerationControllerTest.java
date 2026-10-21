@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.service.StoryGenerationAcceptanceService;
 import com.yeodam.yeodambe.story.service.StoryGenerationStatusService;
 import com.yeodam.yeodambe.story.service.StoryGenerationCancelService;
+import com.yeodam.yeodambe.story.service.StoryGenerationTerminalService;
 import com.yeodam.yeodambe.story.client.StoryGenerationAiClient;
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.exception.StoryGenerationAiRequestException;
@@ -46,7 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({SecurityConfig.class, JwtConfig.class, AccessTokenIssuer.class,
         CookieAccessTokenResolver.class, ApiAuthenticationEntryPoint.class,
         CsrfAccessDeniedHandler.class, RedisCsrfTokenRepository.class, RequestIdFilter.class,
-        StoryGenerationStatusService.class, StoryGenerationCancelService.class})
+        StoryGenerationStatusService.class, StoryGenerationCancelService.class, StoryGenerationTerminalService.class})
 class StoryGenerationControllerTest {
     @Autowired private MockMvc mvc;
     @Autowired private AccessTokenIssuer issuer;
@@ -203,7 +204,7 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void cancellationReturnsNoContentButWaitsForKafkaToFinishJob() throws Exception {
+    void cancellationReturnsNoContentAfterFinishingJob() throws Exception {
         var saved = prepareCancellationJob(42L);
         when(ai.cancel(100L)).thenReturn(new StoryGenerationAiResponse(100L, "execution-cancel",
                 StoryGenerationAiResponse.Status.CANCELED, null, null, null, null));
@@ -211,7 +212,7 @@ class StoryGenerationControllerTest {
         mvc.perform(authenticatedCancellation()).andExpect(status().isNoContent())
                 .andExpect(content().string(""));
 
-        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.CANCELED);
         verify(ai).cancel(100L);
         verifyNoInteractions(acceptance);
     }
@@ -244,6 +245,21 @@ class StoryGenerationControllerTest {
         mvc.perform(authenticatedCancellation()).andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("STORY_GENERATION_NOT_FOUND"));
         verifyNoInteractions(ai);
+    }
+
+    @Test
+    void aiTaskNotFoundReturnsNoContentAndStatusLookupShowsCanceled() throws Exception {
+        var saved = prepareCancellationJob(42L);
+        when(ai.cancel(100L)).thenThrow(new StoryGenerationAiRequestException(
+                StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 404, "TASK_NOT_FOUND"));
+
+        mvc.perform(authenticatedCancellation()).andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.CANCELED);
+        mvc.perform(statusRequest().cookie(new Cookie("accessToken", issuer.issue(42L, "session"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CANCELED"));
     }
 
     @Test
@@ -286,6 +302,7 @@ class StoryGenerationControllerTest {
     private StoryGenerationJob prepareCancellationJob(Long ownerId) {
         var saved = new StoryGenerationJob("execution-cancel", 100L, ownerId, Story.Mood.EMOTIONAL);
         when(jobs.findById(7L)).thenReturn(Optional.of(saved));
+        when(jobs.findByIdForUpdate(7L)).thenReturn(Optional.of(saved));
         return saved;
     }
 

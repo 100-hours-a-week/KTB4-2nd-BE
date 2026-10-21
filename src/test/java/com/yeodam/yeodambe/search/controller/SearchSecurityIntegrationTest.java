@@ -86,10 +86,12 @@ class SearchSecurityIntegrationTest {
         when(service.search(42L, "바다 사진")).thenReturn(new SearchResponse(
                 "바다 사진", null, null,
                 List.of(new SearchResponse.Folder(1L, 11L, "여행", "해변", "place-url", 12L, .8)),
-                List.of(new SearchResponse.Attachment(7L, 1L, 11L, "photo-url", .8))));
+                List.of(new SearchResponse.Attachment(7L, 1L, "여행", 11L, "photo-url", .8))));
 
         mvc.perform(get("/search").param("query", "바다 사진").cookie(cookie()))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.attachments[0].tripId").value(1))
+                .andExpect(jsonPath("$.data.attachments[0].tripName").value("여행"))
                 .andExpect(jsonPath("$.data.folders[0].tripPlaceId").value(11))
                 .andExpect(jsonPath("$.data.folders[0].placeName").value("해변"))
                 .andExpect(jsonPath("$.data.folders[0].attachmentCount").value(12))
@@ -196,7 +198,7 @@ class SearchSecurityIntegrationTest {
         when(service.search(42L, "바다 사진")).thenReturn(new SearchResponse(
                 "바다 사진", null, answerError,
                 List.of(new SearchResponse.Folder(1L, 11L, "여행", "해변", "place-url", 1L, .8)),
-                List.of(new SearchResponse.Attachment(7L, 1L, 11L, "photo-url", .8))));
+                List.of(new SearchResponse.Attachment(7L, 1L, "여행", 11L, "photo-url", .8))));
 
         mvc.perform(get("/search").param("query", "바다 사진").cookie(cookie()))
                 .andExpect(status().isOk())

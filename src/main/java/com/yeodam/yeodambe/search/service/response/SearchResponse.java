@@ -23,6 +23,7 @@ public record SearchResponse(
     public record Attachment(
             Long tripAttachmentId,
             Long tripId,
+            String tripName,
             Long tripPlaceId,
             String thumbnailUrl,
             double score

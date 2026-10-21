@@ -121,8 +121,14 @@ public class TripService {
 
         List<TripSearchResultResponse.Attachment> photos = attachments.stream()
                 .map(attachment -> new TripSearchResultResponse.Attachment(
-                        attachment.getId(), attachment.getTripId(), attachment.getTripPlaceId(),
-                        tripAttachmentStorageClient.createReadUrl(attachment.getPreviewStorageKey())))
+                        attachment.getId(),
+                        attachment.getTripId(),
+                        attachment.getTrip().getTripName(),
+                        attachment.getTripPlaceId(),
+                        tripAttachmentStorageClient.createReadUrl(
+                                attachment.getPreviewStorageKey()
+                        )
+                ))
                 .toList();
 
         List<TripSearchResultResponse.Folder> folders = buildSearchFolders(attachments);

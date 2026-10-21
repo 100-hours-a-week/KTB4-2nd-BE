@@ -500,6 +500,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.WRITE_PERMISSION_REQUIRED, null);
     }
 
+    @ExceptionHandler(AttachmentDeleteNotAllowedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleAttachmentDeleteNotAllowed(
+            AttachmentDeleteNotAllowedException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.ATTACHMENT_DELETE_NOT_ALLOWED, null);
+    }
+
     @ExceptionHandler(AttachmentNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     ApiResponse<Void> handleAttachmentNotFound(

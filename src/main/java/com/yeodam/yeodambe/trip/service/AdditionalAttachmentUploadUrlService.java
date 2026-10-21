@@ -1,7 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
-
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
@@ -47,6 +48,7 @@ public class AdditionalAttachmentUploadUrlService {
     private final AdditionalAttachmentExecutionRepository executionRepository;
     private final UserStatsService userStatsService;
     private final JdbcTemplate jdbcTemplate;
+    private final StoryGenerationJobRepository storyGenerationJobRepository;
 
     private static final long MAX_ADDITION_BYTES = 3L * 1024 * 1024 * 1024;
     private static final Duration UPLOAD_URL_TTL = Duration.ofMinutes(10);
@@ -352,7 +354,15 @@ public class AdditionalAttachmentUploadUrlService {
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
             throw new TripAttachmentAddNotAllowedException();
         }
-
+        if (storyGenerationJobRepository.existsByTripIdAndStatusIn(
+                tripId,
+                List.of(
+                        StoryGenerationJob.Status.QUEUED,
+                        StoryGenerationJob.Status.PROCESSING
+                )
+        )) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
         return trip;
     }
 

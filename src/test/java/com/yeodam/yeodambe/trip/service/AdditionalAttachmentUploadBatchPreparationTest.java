@@ -21,6 +21,7 @@ import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
@@ -50,7 +51,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private final AdditionalAttachmentUploadUrlService service = new AdditionalAttachmentUploadUrlService(
             tripRepository, batchRepository, itemRepository, attachmentRepository,
-            mock(TripAttachmentStorageClient.class), executionRepository, userStatsService, jdbcTemplate);
+            mock(TripAttachmentStorageClient.class), executionRepository, userStatsService, jdbcTemplate, mock(StoryGenerationJobRepository.class));
     private final Trip trip = mock(Trip.class);
 
     @BeforeEach

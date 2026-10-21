@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.exception.StoryGenerationNotAllowedException;
+import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import com.yeodam.yeodambe.common.exception.InvalidStoryRequestException;
 import com.yeodam.yeodambe.common.exception.StoryGenerationForbiddenException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
@@ -26,6 +29,7 @@ public class TripStorySourceService {
     private final TripRepository tripRepository;
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
+    private final AdditionalAttachmentExecutionRepository additionalExecutionRepository;
 
     public TripStorySource read(
             Long userId,
@@ -38,6 +42,11 @@ public class TripStorySourceService {
 
         if (!trip.getUserId().equals(userId)) {
             throw new StoryGenerationForbiddenException();
+        }
+
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
+                || additionalExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
+            throw new StoryGenerationNotAllowedException();
         }
 
         if (selectedPlaceIds == null || selectedPlaceIds.isEmpty()) {

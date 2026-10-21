@@ -13,6 +13,7 @@ import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionReposito
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.junit.jupiter.api.Test;
+import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 
 import java.util.Collections;
 import java.util.List;
@@ -33,7 +34,8 @@ class AdditionalAttachmentUploadUrlServiceTest {
                     mock(TripAttachmentStorageClient.class),
                     mock(AdditionalAttachmentExecutionRepository.class),
                     mock(UserStatsService.class),
-                    mock(JdbcTemplate.class));
+                    mock(JdbcTemplate.class),
+                    mock(StoryGenerationJobRepository.class));
 
     @Test
     void acceptsSupportedFilesAndReturnsBatchBytes() {

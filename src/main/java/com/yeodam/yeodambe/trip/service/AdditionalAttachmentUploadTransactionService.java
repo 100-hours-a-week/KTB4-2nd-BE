@@ -23,6 +23,8 @@ import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,7 +62,7 @@ public class AdditionalAttachmentUploadTransactionService {
     private final ObjectMapper objectMapper;
     private final AdditionalAttachmentAnalysisPreparationService analysisPreparationService;
     private final AdditionalAttachmentUploadOutboxService outboxService;
-
+    private final StoryGenerationJobRepository storyGenerationJobRepository;
 
     @Transactional
     public void markVerified(Long tripId, Long userId, String uploadId) {
@@ -70,7 +72,15 @@ public class AdditionalAttachmentUploadTransactionService {
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
             throw new TripAttachmentAddNotAllowedException();
         }
-
+        if (storyGenerationJobRepository.existsByTripIdAndStatusIn(
+                tripId,
+                List.of(
+                        StoryGenerationJob.Status.QUEUED,
+                        StoryGenerationJob.Status.PROCESSING
+                )
+        )) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
         var batch = uploadBatchRepository.findForUpdate(uploadId, tripId, userId)
                 .orElseThrow(InvalidAttachmentUploadException::new);
         var execution = executionRepository.findForUpdate(batch.getAdditionId()).orElse(null);
@@ -253,6 +263,16 @@ public class AdditionalAttachmentUploadTransactionService {
                 .orElseThrow(TripNotFoundException::new);
 
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+
+        if (storyGenerationJobRepository.existsByTripIdAndStatusIn(
+                tripId,
+                List.of(
+                        StoryGenerationJob.Status.QUEUED,
+                        StoryGenerationJob.Status.PROCESSING
+                )
+        )) {
             throw new TripAttachmentAddNotAllowedException();
         }
 

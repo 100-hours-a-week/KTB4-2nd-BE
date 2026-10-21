@@ -9,6 +9,9 @@ import com.yeodam.yeodambe.common.exception.InvalidStoryRequestException;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.common.exception.StoryGenerationNotAllowedException;
+import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -17,12 +20,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
+@Transactional
 public class StoryGenerationInputService {
     private final StoryGenerationRequestValidator requestValidator;
     private final TripRepository tripRepository;
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
+    private final AdditionalAttachmentExecutionRepository additionalExecutionRepository;
 
     public Trip validate(
             Long userId,
@@ -31,12 +35,16 @@ public class StoryGenerationInputService {
     ) {
         requestValidator.validate(request);
 
-        Trip trip = tripRepository.findById(tripId)
-                .filter(found -> found.getDeletedAt() == null)
+        Trip trip = tripRepository.findActiveForUpdate(tripId)
                 .orElseThrow(TripNotFoundException::new);
 
         if (!trip.getUserId().equals(userId)) {
             throw new StoryGenerationForbiddenException();
+        }
+
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
+                || additionalExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
+            throw new StoryGenerationNotAllowedException();
         }
 
         List<TripDetailPlace> places =

@@ -137,6 +137,7 @@ class StoryGenerationKafkaResultIntegrationTest {
         owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "스토리회원"));
         trip = trips.save(new Trip(owner.getUserId(), "여행",
                 LocalDate.of(2026, 10, 11), LocalDate.of(2026, 10, 12)));
+        jdbc.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", trip.getId());
         var takenAt = LocalDateTime.of(2026, 10, 11, 10, 0);
         folder = folders.save(TripDetailPlace.fromAnalysis(trip.getId(), 1, "장소",
                 BigDecimal.ZERO, BigDecimal.ZERO, takenAt, takenAt, null));

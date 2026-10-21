@@ -74,6 +74,7 @@ class GlobalExceptionHandlerTest {
     @CsvSource({
             "story-already-exists, 409, STORY_ALREADY_EXISTS",
             "story-generation-in-progress, 409, STORY_GENERATION_IN_PROGRESS",
+            "story-generation-not-allowed, 409, STORY_GENERATION_NOT_ALLOWED",
             "story-generation-not-found, 404, STORY_GENERATION_NOT_FOUND",
             "story-generation-cannot-be-canceled, 409, STORY_GENERATION_CANNOT_BE_CANCELED",
             "invalid-story-request, 400, INVALID_STORY_REQUEST",
@@ -328,6 +329,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/story-generation-in-progress")
         void storyGenerationInProgress() {
             throw new StoryGenerationInProgressException();
+        }
+
+        @GetMapping("/test/story-generation-not-allowed")
+        void storyGenerationNotAllowed() {
+            throw new StoryGenerationNotAllowedException();
         }
 
         @GetMapping("/test/story-already-exists")

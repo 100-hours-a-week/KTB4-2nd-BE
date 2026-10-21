@@ -93,6 +93,7 @@ class GlobalExceptionHandlerTest {
             "unsupported-attachment, 415, UNSUPPORTED_ATTACHMENT_FORMAT",
             "place-folder-not-found, 404, PLACE_FOLDER_NOT_FOUND",
             "attachment-not-found, 404, ATTACHMENT_NOT_FOUND",
+            "attachment-delete-not-allowed, 409, ATTACHMENT_DELETE_NOT_ALLOWED",
             "invalid-cursor, 400, INVALID_CURSOR",
             "invalid-trip-list-filter, 400, INVALID_TRIP_LIST_FILTER",
             "invalid-attachment-issue, 400, INVALID_ATTACHMENT_ISSUE",
@@ -309,6 +310,11 @@ class GlobalExceptionHandlerTest {
 
     @RestController
     static class TestController {
+        @GetMapping("/test/attachment-delete-not-allowed")
+        void attachmentDeleteNotAllowed() {
+            throw new AttachmentDeleteNotAllowedException();
+        }
+
         @GetMapping("/test/story-generation-cannot-be-canceled")
         void storyGenerationCannotBeCanceled() {
             throw new StoryGenerationCannotBeCanceledException();

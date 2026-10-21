@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.exception.AttachmentDeleteNotAllowedException;
 import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
@@ -503,6 +504,32 @@ class TripAttachmentSecurityIntegrationTest {
                 .andExpect(status().isNoContent());
 
         then(tripAttachmentDeletionService).should().deleteOne(42L, 11L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 삭제할_수_없는_여행은_단일과_일괄_API에서_409를_반환한다(boolean bulk) throws Exception {
+        given(csrfTokenStore.find("delete-blocked-browser")).willReturn("csrf-token");
+        org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request;
+        if (bulk) {
+            org.mockito.Mockito.doThrow(new AttachmentDeleteNotAllowedException())
+                    .when(tripAttachmentDeletionService).deleteBulk(42L, java.util.List.of(11L));
+            request = MockMvcRequestBuilders.post("/attachments/bulk-delete")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .content("{\"tripAttachmentIds\":[11]}");
+        } else {
+            org.mockito.Mockito.doThrow(new AttachmentDeleteNotAllowedException())
+                    .when(tripAttachmentDeletionService).deleteOne(42L, 11L);
+            request = delete("/attachments/11");
+        }
+
+        mockMvc.perform(request.cookie(
+                        new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")),
+                        new Cookie("CSRF_CONTEXT", "delete-blocked-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("ATTACHMENT_DELETE_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test

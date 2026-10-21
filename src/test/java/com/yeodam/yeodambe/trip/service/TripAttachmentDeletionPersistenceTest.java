@@ -18,6 +18,10 @@ import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import com.yeodam.yeodambe.common.exception.AttachmentDeleteNotAllowedException;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
@@ -32,6 +36,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 @DataJpaTest(properties = {
@@ -102,6 +107,8 @@ class TripAttachmentDeletionPersistenceTest {
         stats.saveAndFlush(new UserStats(owner));
         Trip trip = trips.saveAndFlush(Trip.localMock(
                 owner.getUserId(), "마지막삭제", LocalDate.now(), LocalDate.now(), "preview-only"));
+        ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
+        trips.saveAndFlush(trip);
         TripDetailPlace place = savePlace(trip.getId(), "preview-only");
         TripAttachment only = saveAttachment(
                 owner.getUserId(), trip.getId(), place.getId(), "only", 100);
@@ -120,6 +127,8 @@ class TripAttachmentDeletionPersistenceTest {
         stats.saveAndFlush(new UserStats(owner));
         Trip trip = trips.saveAndFlush(Trip.localMock(
                 owner.getUserId(), "일괄삭제", LocalDate.now(), LocalDate.now(), "preview-old"));
+        ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
+        trips.saveAndFlush(trip);
         TripDetailPlace place = savePlace(trip.getId(), "preview-old");
         TripAttachment old = saveAttachment(
                 owner.getUserId(), trip.getId(), place.getId(), "old", 100);
@@ -132,6 +141,36 @@ class TripAttachmentDeletionPersistenceTest {
 
         assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo(replacement.getPreviewStorageKey());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProcessingStatus.class, names = {"PROCESSING", "FAILED", "CANCELED"})
+    void 완료되지_않은_여행은_단일과_혼합_일괄_삭제_모두_DB를_변경하지_않는다(ProcessingStatus status) {
+        String prefix = UUID.randomUUID().toString();
+        User owner = users.saveAndFlush(new User(prefix + "@test.com", "삭제차단"));
+        UserStats before = stats.saveAndFlush(new UserStats(owner));
+        Trip blockedTrip = new Trip(owner.getUserId(), "처리중", LocalDate.now(), LocalDate.now());
+        ReflectionTestUtils.setField(blockedTrip, "processingStatus", status);
+        trips.saveAndFlush(blockedTrip);
+        Trip completed = new Trip(owner.getUserId(), "완료", LocalDate.now(), LocalDate.now());
+        ReflectionTestUtils.setField(completed, "processingStatus", ProcessingStatus.COMPLETED);
+        trips.saveAndFlush(completed);
+        var blocked = saveAttachment(owner.getUserId(), blockedTrip.getId(), null, prefix + "-blocked", 70);
+        var allowed = saveAttachment(owner.getUserId(), completed.getId(), null, prefix + "-allowed", 80);
+
+        assertThatThrownBy(() -> service.deleteOne(owner.getUserId(), blocked.getId()))
+                .isInstanceOf(AttachmentDeleteNotAllowedException.class);
+        assertThatThrownBy(() -> service.deleteBulk(owner.getUserId(), List.of(allowed.getId(), blocked.getId())))
+                .isInstanceOf(AttachmentDeleteNotAllowedException.class);
+
+        for (var photo : List.of(blocked, allowed)) {
+            assertThat(attachments.findById(photo.getId()).orElseThrow().getDeletedAt()).isNull();
+            assertThat(files.findById(photo.getFileId()).orElseThrow().getDeletedAt()).isNull();
+        }
+        assertThat(trips.findById(blockedTrip.getId()).orElseThrow().getProcessingStatus()).isEqualTo(status);
+        assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getStorageUsedBytes())
+                .isEqualTo(before.getStorageUsedBytes());
+        verifyNoInteractions(storage);
     }
 
     private TripDetailPlace savePlace(

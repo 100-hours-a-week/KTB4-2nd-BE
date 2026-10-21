@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.exception.AttachmentDeleteNotAllowedException;
+import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
 import com.yeodam.yeodambe.common.exception.WritePermissionRequiredException;
@@ -85,6 +87,16 @@ public class TripAttachmentDeletionService {
     private void softDelete(List<TripAttachment> attachments, Long userId) {
         attachments.stream().map(TripAttachment::getTripId).distinct().sorted()
                 .forEach(tripId -> additionalAttachmentModificationGuard.check(tripId, userId));
+        attachments.stream()
+                .map(TripAttachment::getTrip)
+                .distinct()
+                .forEach(trip -> {
+                    entityManager.refresh(trip);
+
+                    if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+                        throw new AttachmentDeleteNotAllowedException();
+                    }
+                });
         attachments.forEach(entityManager::refresh);
         if (attachments.stream().anyMatch(attachment -> attachment.getDeletedAt() != null
                 || attachment.getFile().getDeletedAt() != null)) {

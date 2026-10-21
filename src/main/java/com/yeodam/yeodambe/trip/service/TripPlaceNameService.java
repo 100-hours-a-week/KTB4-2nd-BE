@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
+
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 
 import com.yeodam.yeodambe.trip.client.KakaoLocalClient;
@@ -51,36 +54,47 @@ public class TripPlaceNameService {
     public Map<String, String> resolve(
             Long tripId, String executionId, JsonNode result, BooleanSupplier currentExecution
     ) {
-        List<Place> places = validate(result);
+        try (var scope = openGeocodingLoggingScope(tripId, executionId);
+             var timing = startReverseGeocodingLogging()) {
+            List<Place> places = validate(result);
 
-        LinkedHashMap<Coordinate, Place> unique = new LinkedHashMap<>();
-        for (Place place : places) unique.putIfAbsent(place.coordinate(), place);
+            LinkedHashMap<Coordinate, Place> unique = new LinkedHashMap<>();
+            for (Place place : places) {
+                unique.putIfAbsent(place.coordinate(), place);
+            }
 
-        Map<Coordinate, KakaoLocalClient.LookupResult> lookups = lookupAll(
-                tripId, executionId, new ArrayList<>(unique.entrySet()), currentExecution);
-        List<String> bases = new ArrayList<>(places.size());
+            Map<Coordinate, KakaoLocalClient.LookupResult> lookups = lookupAll(
+                    tripId, executionId, new ArrayList<>(unique.entrySet()), currentExecution);
+            List<String> bases = new ArrayList<>(places.size());
 
-        for (Place place : places) {
-            KakaoLocalClient.LookupResult lookup = lookups.get(place.coordinate());
-            String name = lookup == null ? null : firstText(lookup.buildingName(), lookup.regionName());
-            if (name == null) name = "장소 " + place.order();
-            bases.add(name);
+            for (Place place : places) {
+                KakaoLocalClient.LookupResult lookup = lookups.get(place.coordinate());
+                String name = lookup == null ? null : firstText(lookup.buildingName(), lookup.regionName());
+                if (name == null) {
+                    name = "장소 " + place.order();
+                }
+                bases.add(name);
+            }
+
+            Map<String, Integer> counts = new HashMap<>();
+
+            for (String name : bases) {
+                counts.merge(name, 1, Integer::sum);
+            }
+
+            LinkedHashMap<String, String> names = new LinkedHashMap<>();
+            Map<String, Integer> seen = new HashMap<>();
+
+            for (int i = 0; i < places.size(); i++) {
+                String base = bases.get(i);
+                String suffix = counts.get(base) > 1 ? " " + seen.merge(base, 1, Integer::sum) : "";
+                names.put(places.get(i).id(), truncate(base, MAX_NAME_LENGTH - codePointCount(suffix)) + suffix);
+            }
+
+            logReverseGeocodingCompleted(timing, places, unique.size(), lookups);
+            return Collections.unmodifiableMap(names);
+
         }
-
-        Map<String, Integer> counts = new HashMap<>();
-
-        for (String name : bases) counts.merge(name, 1, Integer::sum);
-
-        LinkedHashMap<String, String> names = new LinkedHashMap<>();
-        Map<String, Integer> seen = new HashMap<>();
-
-        for (int i = 0; i < places.size(); i++) {
-            String base = bases.get(i);
-            String suffix = counts.get(base) > 1 ? " " + seen.merge(base, 1, Integer::sum) : "";
-            names.put(places.get(i).id(), truncate(base, MAX_NAME_LENGTH - codePointCount(suffix)) + suffix);
-        }
-
-        return Collections.unmodifiableMap(names);
     }
 
     private Map<Coordinate, KakaoLocalClient.LookupResult> lookupAll(
@@ -102,12 +116,8 @@ public class TripPlaceNameService {
                         from, Math.min(from + maxConcurrency, coordinates.size()));
                 List<Future<KakaoLocalClient.LookupResult>> futures = chunk.stream()
                         .map(entry -> executor.submit(() -> {
-                            if (callerMdc == null) MDC.clear();
-                            else MDC.setContextMap(callerMdc);
-                            try {
+                            try (var scope = WorkflowMdcScope.open(callerMdc)) {
                                 return lookup(tripId, executionId, entry.getValue());
-                            } finally {
-                                MDC.clear();
                             }
                         }))
                         .toList();
@@ -123,32 +133,25 @@ public class TripPlaceNameService {
     }
 
     private KakaoLocalClient.LookupResult lookup(Long tripId, String executionId, Place place) {
-        int attempts = 1;
+        try (var timing = startLookupLogging()) {
+            int attempts = 1;
 
-        KakaoLocalClient.LookupResult result = client.lookup(place.latitude(), place.longitude());
+            KakaoLocalClient.LookupResult result = client.lookup(place.latitude(), place.longitude());
 
-        if (result.failure() == KakaoLocalClient.Failure.RETRYABLE) {
-            try {
-                Thread.sleep(300);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(TripInternalErrorMessage.KAKAO_PLACE_LOOKUP_INTERRUPTED.message(), e);
+            if (result.failure() == KakaoLocalClient.Failure.RETRYABLE) {
+                try {
+                    Thread.sleep(300);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(TripInternalErrorMessage.KAKAO_PLACE_LOOKUP_INTERRUPTED.message(), e);
+                }
+                attempts++;
+                result = client.lookup(place.latitude(), place.longitude());
             }
-            attempts++;
-            result = client.lookup(place.latitude(), place.longitude());
-        }
 
-        if (result.failure() != KakaoLocalClient.Failure.NONE) {
-            if (result.failure() == KakaoLocalClient.Failure.AUTH) {
-                log.error("Kakao 장소명 인증 실패: tripId={}, executionId={}, placeId={}, attempts={}",
-                        tripId, executionId, place.id(), attempts);
-
-            } else {
-                log.warn("Kakao 장소명 조회 실패: tripId={}, executionId={}, placeId={}, attempts={}, failure={}",
-                        tripId, executionId, place.id(), attempts, result.failure());
-            }
+            logLookupCompleted(timing, tripId, executionId, place, attempts, result);
+            return result;
         }
-        return result;
     }
 
     private KakaoLocalClient.LookupResult await(Future<KakaoLocalClient.LookupResult> future) {
@@ -160,7 +163,9 @@ public class TripPlaceNameService {
             throw new IllegalStateException(TripInternalErrorMessage.KAKAO_PLACE_LOOKUP_INTERRUPTED.message(), e);
 
         } catch (ExecutionException e) {
-            if (e.getCause() instanceof RuntimeException failure) throw failure;
+            if (e.getCause() instanceof RuntimeException failure) {
+                throw failure;
+            }
 
             throw new IllegalStateException(TripInternalErrorMessage.KAKAO_PLACE_LOOKUP_FAILED.message(), e.getCause());
         }
@@ -168,7 +173,9 @@ public class TripPlaceNameService {
 
     private List<Place> validate(JsonNode result) {
         JsonNode nodes = result == null ? null : result.path("places");
-        if (nodes == null || !nodes.isArray()) throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_RESULT_INVALID.message());
+        if (nodes == null || !nodes.isArray()) {
+            throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_RESULT_INVALID.message());
+        }
 
         List<Place> places = new ArrayList<>();
         Map<String, Boolean> ids = new HashMap<>();
@@ -194,7 +201,9 @@ public class TripPlaceNameService {
     private BigDecimal coordinate(JsonNode node, String field, int minimum, int maximum) {
         JsonNode value = node.path(field);
 
-        if (!value.isNumber()) throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_COORDINATE_INVALID.message());
+        if (!value.isNumber()) {
+            throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_COORDINATE_INVALID.message());
+        }
 
         BigDecimal coordinate = value.decimalValue();
 
@@ -211,19 +220,81 @@ public class TripPlaceNameService {
     }
 
     private String firstText(String first, String second) {
-        if (first != null && !first.isBlank()) return first.trim();
-        if (second != null && !second.isBlank()) return second.trim();
+        if (first != null && !first.isBlank()) {
+            return first.trim();
+        }
+        if (second != null && !second.isBlank()) {
+            return second.trim();
+        }
         return null;
     }
 
     private String truncate(String value, int maximum) {
-        if (codePointCount(value) <= maximum) return value;
+        if (codePointCount(value) <= maximum) {
+            return value;
+        }
         int end = value.offsetByCodePoints(0, maximum);
         return value.substring(0, end);
     }
 
     private int codePointCount(String value) {
         return value.codePointCount(0, value.length());
+    }
+
+    private void logReverseGeocodingCompleted(
+            WorkflowLog.Stage timing,
+            List<Place> places,
+            int uniqueCoordinateCount,
+            Map<Coordinate, KakaoLocalClient.LookupResult> lookups
+    ) {
+        long lookupFailureCount = lookups.values().stream()
+                .filter(value -> value.failure() != KakaoLocalClient.Failure.NONE)
+                .count();
+        long fallbackCount = places.stream()
+                .filter(place -> {
+                    var lookup = lookups.get(place.coordinate());
+                    return lookup == null || firstText(lookup.buildingName(), lookup.regionName()) == null;
+                })
+                .count();
+        timing.field("place_count", places.size())
+                .field("unique_coordinate_count", uniqueCoordinateCount)
+                .field("lookup_failure_count", lookupFailureCount)
+                .field("fallback_count", fallbackCount)
+                .success();
+    }
+
+    private void logLookupCompleted(
+            WorkflowLog.Stage timing,
+            Long tripId,
+            String executionId,
+            Place place,
+            int attempts,
+            KakaoLocalClient.LookupResult result
+    ) {
+        if (result.failure() != KakaoLocalClient.Failure.NONE) {
+            if (result.failure() == KakaoLocalClient.Failure.AUTH) {
+                log.error("Kakao 장소명 인증 실패: tripId={}, executionId={}, placeId={}, attempts={}",
+                        tripId, executionId, place.id(), attempts);
+
+            } else {
+                log.warn("Kakao 장소명 조회 실패: tripId={}, executionId={}, placeId={}, attempts={}, failure={}",
+                        tripId, executionId, place.id(), attempts, result.failure());
+            }
+        }
+        timing.field("attempts", attempts).field("failure", result.failure().name()).success();
+    }
+
+    private WorkflowLog.Stage startLookupLogging() {
+        return WorkflowLog.stage("reverse_geocoding_lookup").debug();
+    }
+
+    private WorkflowLog.Stage startReverseGeocodingLogging() {
+        return WorkflowLog.stage("reverse_geocoding");
+    }
+
+    private WorkflowMdcScope openGeocodingLoggingScope(Long tripId, String executionId) {
+        String workflow = MDC.get("workflow");
+        return WorkflowMdcScope.job(workflow == null ? "trip_creation" : workflow, tripId, executionId);
     }
 
     private record Place(

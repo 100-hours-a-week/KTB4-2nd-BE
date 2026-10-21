@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
+
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,19 +25,20 @@ public class TripAnalysisResultWorker {
         }
         var claim = pending.get();
         boolean validated = false;
-        try {
+        try (var scope = WorkflowMdcScope.job("trip_creation", claim.tripId(), claim.executionId())) {
             if (!results.startResultAttempt(claim)) {
                 return;
             }
-            var result = results.validateForApplication(claim);
-            validated = true;
-            var names = placeNames.resolve(claim.tripId(), claim.executionId(), result,
-                    () -> results.renewResultLease(claim));
-            results.saveKafkaCompleted(claim, result, names);
+            try (var timing = startResultApplicationLogging(claim.attempt())) {
+                var result = results.validateForApplication(claim);
+                validated = true;
+                var names = placeNames.resolve(claim.tripId(), claim.executionId(), result,
+                        () -> results.renewResultLease(claim));
+                results.saveKafkaCompleted(claim, result, names);
+                timing.success();
+            }
         } catch (RuntimeException failure) {
-            log.warn("사진 정리 결과 반영 실패: executionId={}, stage={}, attempt={}, cause={}",
-                    claim.executionId(), validated ? "result_persist" : "result_validate",
-                    claim.attempt(), failure.getClass().getSimpleName());
+            logResultApplicationFailure(claim.tripId(), claim.executionId(), claim.attempt(), validated, failure);
             boolean permanent = !validated && !(failure instanceof DataAccessException);
             String reason = permanent && failure instanceof IllegalStateException
                     ? failure.getMessage() : failure.getClass().getSimpleName();
@@ -43,5 +47,26 @@ public class TripAnalysisResultWorker {
             }
             results.failResult(claim, permanent, reason);
         }
+    }
+
+    private void logResultApplicationFailure(
+            Long tripId,
+            String executionId,
+            int attempts,
+            boolean validated,
+            RuntimeException failure
+    ) {
+        log.atWarn().addKeyValue("workflow", "trip_creation")
+                .addKeyValue("event", "result_application_retry")
+                .addKeyValue("result", "failure")
+                .addKeyValue("trip_id", tripId).addKeyValue("job_id", executionId)
+                .addKeyValue("attempts", attempts)
+                .addKeyValue("failure_stage", validated ? "result_persist" : "result_validate")
+                .addKeyValue("failure", failure.getClass().getSimpleName())
+                .log("사진 정리 결과 반영을 완료하지 못했습니다.");
+    }
+
+    private WorkflowLog.Stage startResultApplicationLogging(int attempts) {
+        return WorkflowLog.stage("result_application").field("attempts", attempts);
     }
 }

@@ -17,7 +17,7 @@ public class MigrationTripKafkaConfig {
     ) {
         var factory = new ConcurrentKafkaListenerContainerFactory<String, String>();
         factory.setConsumerFactory(consumerFactory);
-        if (concurrency < 1 || concurrency > 4) throw new IllegalArgumentException("Invalid rehearsal concurrency");
+        if (concurrency < 1 || concurrency > 8) throw new IllegalArgumentException("Invalid rehearsal concurrency");
         factory.setConcurrency(concurrency);
         factory.setMissingTopicsFatal(true);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);

@@ -37,6 +37,8 @@ public enum TripInternalErrorMessage {
     DERIVED_ATTACHMENT_CREATE_FAILED("파생 사진 생성에 실패했습니다."),
     EXIF_EXTRACTION_FAILED("EXIF 추출에 실패했습니다."),
     EXIF_RESULT_MISSING("EXIF 결과가 없습니다."),
+    EXIF_COMMAND_ARGUMENT_INVALID("EXIF 명령 인자가 올바르지 않습니다."),
+    EXIF_COMMAND_RESPONSE_INVALID("EXIF 명령 응답이 올바르지 않습니다."),
     EXIF_TOOL_EXECUTION_FAILED("EXIF 추출 도구를 실행할 수 없습니다."),
     EXIF_EXTRACTION_INTERRUPTED("EXIF 추출이 중단됐습니다."),
     COMMAND_TIMEOUT("%s 실행 시간 초과"),

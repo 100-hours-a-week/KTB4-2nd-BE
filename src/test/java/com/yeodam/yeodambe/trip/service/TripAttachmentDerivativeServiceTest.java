@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import javax.imageio.ImageIO;
@@ -40,7 +41,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -51,16 +51,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Answers.RETURNS_SELF;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.withSettings;
 
 class TripAttachmentDerivativeServiceTest {
     private TripAttachmentStorageClient storage;
@@ -69,6 +66,7 @@ class TripAttachmentDerivativeServiceTest {
     private SimpleMeterRegistry meterRegistry;
     private TripDerivativeScheduler scheduler;
     private InitialAttachmentStoragePipeline pipeline;
+    private ExifToolProcess exifTool;
 
     @BeforeEach
     void setUp() {
@@ -77,14 +75,16 @@ class TripAttachmentDerivativeServiceTest {
         scheduler = new TripDerivativeScheduler(1, 1, 10, 20, meterRegistry);
         transactions = mock(InitialAttachmentUploadTransactionService.class);
         pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meterRegistry, 134217728L);
+        exifTool = new ExifToolProcess();
         service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler,
-                transactions, pipeline);
+                transactions, pipeline, exifTool);
     }
 
     @AfterEach
     void tearDown() {
         pipeline.close();
         scheduler.stop();
+        exifTool.close();
     }
 
     @Test
@@ -173,7 +173,7 @@ class TripAttachmentDerivativeServiceTest {
         var saturatedPipeline = new InitialAttachmentStoragePipeline(
                 storage, transactions, saturatedScheduler, meterRegistry, 134217728L);
         var immediate = new TripAttachmentDerivativeService(
-                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline);
+                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline, exifTool);
         when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
         when(saturatedScheduler.submitPrepared(eq("execution"), any(), any(), any()))
                 .thenThrow(new RejectedExecutionException("queue full"));
@@ -248,50 +248,52 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @Test
-    void ImageMagick_7을_사용할_수_있으면_convert로_대체하지_않는다() throws Exception {
-        Process process = mock(Process.class);
-        try (var builders = mockConstruction(ProcessBuilder.class,
-                withSettings().defaultAnswer(RETURNS_SELF),
-                (builder, context) -> when(builder.start()).thenReturn(process))) {
-            Process result = ReflectionTestUtils.invokeMethod(service, "startProcess",
-                    (Object) new String[]{"magick", "input.heic", "output.jpg"});
+    void EXIF_읽기_실패_상태는_메타데이터_추출_오류로_처리한다() {
+        ExifToolProcess runner = mock(ExifToolProcess.class);
+        var target = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry,
+                scheduler, transactions, pipeline, runner);
+        when(runner.execute(any())).thenReturn(new ExifToolProcess.Result("[]", 1));
 
-            assertEquals(process, result);
-            verify(builders.constructed().getFirst(), never()).command(any(String[].class));
-        }
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> ReflectionTestUtils.invokeMethod(target, "metadata", Path.of("photo.jpg")));
+
+        assertEquals(TripInternalErrorMessage
+                .EXIF_EXTRACTION_FAILED.message(), failure.getMessage());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "{}", "[]"})
+    void EXIF_응답에_메타데이터_배열이_없으면_실패한다(String output) {
+        ExifToolProcess runner = mock(ExifToolProcess.class);
+        var target = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry,
+                scheduler, transactions, pipeline, runner);
+        when(runner.execute(any())).thenReturn(new ExifToolProcess.Result(output, 0));
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> ReflectionTestUtils.invokeMethod(target, "metadata", Path.of("photo.jpg")));
+
+        assertEquals(TripInternalErrorMessage
+                .EXIF_RESULT_MISSING.message(), failure.getMessage());
     }
 
     @Test
-    void magick을_시작할_수_없으면_같은_인자로_convert를_사용한다() throws Exception {
-        Process process = mock(Process.class);
-        try (var builders = mockConstruction(ProcessBuilder.class,
-                withSettings().defaultAnswer(RETURNS_SELF),
-                (builder, context) -> when(builder.start())
-                        .thenThrow(new IOException("magick unavailable"))
-                        .thenReturn(process))) {
-            Process result = ReflectionTestUtils.invokeMethod(service, "startProcess",
-                    (Object) new String[]{"magick", "input.heic", "output.jpg"});
+    void EXIF_복사에_실패하면_파생본을_저장하지_않는다() throws Exception {
+        ExifToolProcess runner = mock(ExifToolProcess.class);
+        var target = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry,
+                scheduler, transactions, pipeline, runner);
+        when(storage.open("original")).thenReturn(new ByteArrayInputStream(jpeg()));
+        when(runner.execute(any()))
+                .thenReturn(new ExifToolProcess.Result("[{}]", 0))
+                .thenReturn(new ExifToolProcess.Result("copy failed", 1));
 
-            assertEquals(process, result);
-            verify(builders.constructed().getFirst())
-                    .command(new String[]{"convert", "input.heic", "output.jpg"});
-        }
-    }
+        CompletionException failure = assertThrows(CompletionException.class,
+                () -> target.createAll("copy-failure", List.of("original"), List.of("image/jpeg")).join());
 
-    @Test
-    void magick_변환에_실패하면_convert로_재시도하지_않는다() throws Exception {
-        Process process = mock(Process.class);
-        when(process.waitFor(120, TimeUnit.SECONDS)).thenReturn(true);
-        when(process.exitValue()).thenReturn(1);
-        try (var builders = mockConstruction(ProcessBuilder.class,
-                withSettings().defaultAnswer(RETURNS_SELF),
-                (builder, context) -> when(builder.start()).thenReturn(process))) {
-            assertThrows(IllegalStateException.class,
-                    () -> ReflectionTestUtils.invokeMethod(service, "run",
-                            (Object) new String[]{"magick", "input.heic", "output.jpg"}));
-
-            verify(builders.constructed().getFirst(), never()).command(any(String[].class));
-        }
+        assertEquals(TripInternalErrorMessage.DERIVED_ATTACHMENT_CREATE_FAILED.message(),
+                failure.getCause().getMessage());
+        assertEquals(TripInternalErrorMessage.COMMAND_FAILED.message().formatted("exiftool"),
+                failure.getCause().getCause().getMessage());
+        verify(storage, never()).storeDerived(any(), any(Path.class), any());
     }
 
     @Test
@@ -814,49 +816,7 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @Test
-    void interrupt된_변환_프로세스가_종료된_후에만_호출이_끝난다() throws Exception {
-        Path pidFile = Files.createTempFile("derivative-process", ".pid");
-        AtomicReference<Throwable> failure = new AtomicReference<>();
-        AtomicBoolean interrupted = new AtomicBoolean();
-        Thread worker = new Thread(() -> {
-            try {
-                ReflectionTestUtils.invokeMethod(service, "run", (Object) new String[]{
-                        "/bin/sh", "-c", "echo $$ > '" + pidFile + "'; exec sleep 30"});
-            } catch (Throwable cause) {
-                failure.set(cause);
-            }
-            finally {
-                interrupted.set(Thread.currentThread().isInterrupted());
-            }
-        });
-        worker.setDaemon(true);
-        ProcessHandle process = null;
-        try {
-            worker.start();
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (Files.size(pidFile) == 0 && System.nanoTime() < deadline) {
-                Thread.onSpinWait();
-            }
-            assertTrue(Files.size(pidFile) > 0);
-            process = ProcessHandle.of(Long.parseLong(Files.readString(pidFile).trim())).orElseThrow();
-            worker.interrupt();
-            worker.join(5000);
-            assertFalse(worker.isAlive());
-            assertTrue(failure.get() instanceof IllegalStateException);
-            assertTrue(interrupted.get());
-            assertFalse(process.isAlive(), "Future 정착 이후 자식 프로세스가 남으면 안 됩니다.");
-        } finally {
-            if (process != null && process.isAlive()) {
-                process.destroyForcibly();
-            }
-            worker.interrupt();
-            worker.join(5000);
-            Files.deleteIfExists(pidFile);
-        }
-    }
-
-    @Test
-    void EXIF_출력_EOF_대기중에도_interrupt로_프로세스를_종료한다() throws Exception {
+    void EXIF_응답_대기중에도_interrupt로_프로세스를_종료한다() throws Exception {
         Path directory = Files.createTempDirectory("blocked-exif");
         Path source = directory.resolve("input.jpg");
         assertEquals(0, new ProcessBuilder("mkfifo", source.toString()).start().waitFor());
@@ -874,15 +834,16 @@ class TripAttachmentDerivativeServiceTest {
             worker.start();
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
             while (process == null && System.nanoTime() < deadline) {
-                process = ProcessHandle.current().descendants()
-                        .filter(child -> child.info().commandLine().orElse("").contains(source.toString()))
-                        .findFirst().orElse(null);
+                Process child = (Process) ReflectionTestUtils.getField(exifTool, "process");
+                if (child != null && worker.getState() == Thread.State.TIMED_WAITING) {
+                    process = child.toHandle();
+                }
                 Thread.onSpinWait();
             }
             assertTrue(process != null, "exiftool 프로세스가 시작되어야 합니다.");
             worker.interrupt();
             worker.join(2000);
-            assertFalse(worker.isAlive(), "출력 readAllBytes는 interrupt를 막으면 안 됩니다.");
+            assertFalse(worker.isAlive(), "EXIF 응답 대기는 interrupt로 종료되어야 합니다.");
             assertTrue(failure.get() instanceof IllegalStateException);
             assertFalse(process.isAlive());
             assertFalse(Files.exists(directory.resolve("metadata.json")));

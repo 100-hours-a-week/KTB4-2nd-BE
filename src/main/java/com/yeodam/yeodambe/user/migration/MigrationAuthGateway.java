@@ -22,6 +22,8 @@ public class MigrationAuthGateway {
     private final ObjectMapper mapper;
     private final MigrationTripMode mode;
     private final TokenHasher hasher;
+    @Value("${migration.auth.response-timeout-ms:8000}")
+    private long responseTimeoutMs = 8000;
     private final String topic;
     private final MigrationAuthApplyService apply;
     private final MigrationAuthRedis redis;
@@ -35,7 +37,7 @@ public class MigrationAuthGateway {
     public MigrationAuthReply request(String operation, String credential) {
         if (credential==null || credential.isBlank()) throw new RefreshTokenInvalidOrExpiredException();
         String id=hasher.hash(topic+":"+operation+":"+credential);
-        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(8);
+        long deadline=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(responseTimeoutMs);
         var command=new MigrationAuthCommand(id,operation,credential,System.currentTimeMillis());
         // A lost HTTP response is recovered from the committed result, without queueing behind new work.
         try {

@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
+
 import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
@@ -90,7 +93,12 @@ public class AdditionalAttachmentUploadOutboxService {
                             uploadBatchId, messageType, objectMapper.writeValueAsString(message), requestId);
                     var batch = uploadBatchRepository.findById(uploadBatchId).orElseThrow();
                     outbox.enableCdc(batch.getTripId(), topics.topicFor(EventType.TRIP_UPDATE_REQUEST));
-                    return outboxRepository.saveAndFlush(outbox);
+                    try (var scope = WorkflowMdcScope.job("trip_reanalysis", batch.getTripId(), batch.getAdditionId());
+                         var timing = startOutboxPersistenceLogging(messageType, batch.getBatchNo())) {
+                        var saved = outboxRepository.saveAndFlush(outbox);
+                        logAiRequestEnqueued(timing);
+                        return saved;
+                    }
                 });
     }
 
@@ -114,6 +122,7 @@ public class AdditionalAttachmentUploadOutboxService {
         var publishedAt = jdbc.queryForObject("SELECT FROM_UNIXTIME(?)", LocalDateTime.class,
                 BigDecimal.valueOf(receipt.publishedAt().toEpochMilli(), 3));
         outbox.publicationSucceeded(publishedAt);
+        logAiRequestObserved(execution.getTripId(), execution.getExecutionId(), outbox.getMessageType());
         if ("process".equals(outbox.getMessageType())) {
             execution.recordProcessPublished(publishedAt);
         } else if (trip != null && !execution.isTerminal()) {
@@ -157,5 +166,19 @@ public class AdditionalAttachmentUploadOutboxService {
             AdditionalAttachmentUploadOutbox photosReady,
             Optional<AdditionalAttachmentUploadOutbox> process
     ) {
+    }
+
+    private WorkflowLog.Stage startOutboxPersistenceLogging(String messageType, int batchNo) {
+        return WorkflowLog.stage("outbox_persistence")
+                .field("message_type", messageType)
+                .field("batch_no", batchNo);
+    }
+
+    private void logAiRequestObserved(Long tripId, String executionId, String messageType) {
+        WorkflowLog.deliveryObserved("trip_reanalysis", tripId, executionId, messageType);
+    }
+
+    private void logAiRequestEnqueued(WorkflowLog.Stage timing) {
+        timing.committed("ai_request_enqueued");
     }
 }

@@ -4,8 +4,11 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadBatchSnapshot;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
@@ -44,6 +47,53 @@ class AdditionalAttachmentDerivativeWorkerTest {
             verify(transactions, never()).startPhotoAttempt(claim, 1L);
             verify(storage).retain(List.of("analyze", "preview", "original"));
         } finally { worker.shutdown(); scheduler.stop(5, TimeUnit.SECONDS); }
+    }
+
+    @Test
+    void conversionFailurePreservesJobContextAndRestoresCaller() throws Exception {
+        var claim = claim();
+        when(transactions.claimBatch()).thenReturn(Optional.of(claim));
+        when(transactions.renewLease(claim)).thenReturn(true);
+        when(transactions.startPhotoAttempt(claim, 2L)).thenReturn(List.of("analyze", "preview"));
+        AtomicReference<Map<String, String>> conversionContext = new AtomicReference<>();
+        AtomicReference<Map<String, String>> retryContext = new AtomicReference<>();
+        when(derivatives.generateAdditional(anyString(), anyString(), anyString(), anyList()))
+                .thenAnswer(call -> {
+                    conversionContext.set(MDC.getCopyOfContextMap());
+                    throw new IllegalStateException("conversion failed");
+                });
+        CountDownLatch retried = new CountDownLatch(1);
+        doAnswer(call -> {
+            retryContext.set(MDC.getCopyOfContextMap());
+            retried.countDown();
+            return null;
+        }).when(transactions).retryBatch(eq(claim), eq(2L), anyBoolean());
+        var meters = new SimpleMeterRegistry();
+        var scheduler = new TripDerivativeScheduler(1, 1, 1, 1, meters);
+        var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives, scheduler, storage);
+        MDC.put("request_id", "caller");
+        try {
+            worker.processPendingBatches();
+            assertThat(retried.await(5, TimeUnit.SECONDS)).isTrue();
+            Map<String, String> expected = Map.of(
+                    "workflow", "trip_reanalysis",
+                    "trip_id", "7",
+                    "job_id", "execution",
+                    "request_id", "request",
+                    "batch_id", "1"
+            );
+            assertThat(conversionContext.get()).containsAllEntriesOf(expected)
+                    .containsEntry("item_id", "2")
+                    .containsEntry("attempts", "1");
+            assertThat(retryContext.get()).containsAllEntriesOf(expected);
+            assertThat(MDC.getCopyOfContextMap()).containsExactlyEntriesOf(Map.of("request_id", "caller"));
+            verify(transactions, never()).savePhotoSuccess(any(), anyLong(), any());
+        } finally {
+            worker.shutdown();
+            scheduler.stop(5, TimeUnit.SECONDS);
+            meters.close();
+            MDC.clear();
+        }
     }
 
     @Test

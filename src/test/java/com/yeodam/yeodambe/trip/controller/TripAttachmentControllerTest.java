@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.common.exception.InvalidAttachmentIssueException;
 import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.trip.controller.TripAttachmentController;
 import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
@@ -37,6 +38,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -396,6 +398,31 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.data").isEmpty());
 
         verifyNoInteractions(repository, stats);
+    }
+
+    @Test
+    void 사진추가중_단건과_다건복원은_동일한_충돌응답을_반환한다() throws Exception {
+        when(restoreService.restoreOne(eq(1L), eq(11L), any()))
+                .thenThrow(new TripAttachmentAddNotAllowedException());
+        when(restoreService.restoreBulk(eq(1L), any()))
+                .thenThrow(new TripAttachmentAddNotAllowedException());
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        mvc.perform(post("/attachments/11/restore")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tripPlaceId\":3}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_ADD_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.data").isEmpty());
+        mvc.perform(post("/attachments/bulk-restore")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"tripAttachmentId\":11,\"tripPlaceId\":3}]}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("TRIP_ATTACHMENT_ADD_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.data").isEmpty());
     }
 
     @Test

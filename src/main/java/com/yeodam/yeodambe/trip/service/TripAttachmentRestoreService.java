@@ -57,6 +57,7 @@ public class TripAttachmentRestoreService {
     private final EntityManager entityManager;
     private final Validator validator;
     private final TripMapCacheStore tripMapCacheStore;
+    private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public AttachmentRestoreResponse restoreOne(
@@ -209,6 +210,7 @@ public class TripAttachmentRestoreService {
                 throw new AttachmentRestoreNotAllowedException();
             }
 
+            additionalAttachmentModificationGuard.check(tripId, userId);
             trips.add(trip);
         }
         return trips;

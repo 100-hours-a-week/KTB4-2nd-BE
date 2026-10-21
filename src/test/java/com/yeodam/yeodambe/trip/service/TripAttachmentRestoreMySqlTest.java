@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.common.exception.AttachmentRestoreNotAllowedException;
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
 import com.yeodam.yeodambe.common.exception.BulkRestoreFailedException;
+import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.entity.*;
@@ -55,6 +56,9 @@ class TripAttachmentRestoreMySqlTest {
     @Autowired private EntityManager entityManager;
     @Autowired private TransactionOperations transactions;
     @MockitoSpyBean private TripAttachmentRepository attachments;
+
+    @Autowired
+    private AdditionalAttachmentUploadBatchRepository batches;
 
     enum Deletion {
         ATTACHMENT,
@@ -172,6 +176,45 @@ class TripAttachmentRestoreMySqlTest {
         Fixture fixture = fixture();
         overlap(fixture, () -> restore(fixture), () -> delete(fixture, deletion));
         assertDeleted(fixture, deletion);
+    }
+
+    @Test
+    void 사진추가가_여행잠금을_먼저_획득하면_대기한_복원은_거절된다() throws Exception {
+        Fixture fixture = fixture();
+
+        overlap(fixture,
+                () -> startAdditionalUpload(fixture),
+                () -> assertThatThrownBy(() -> restore(fixture))
+                        .isInstanceOf(TripAttachmentAddNotAllowedException.class));
+
+        assertRolledBack(fixture);
+    }
+
+    @Test
+    void 복원이_여행잠금을_먼저_획득하면_복원커밋후_사진추가를_시작한다() throws Exception {
+        Fixture fixture = fixture();
+
+        overlap(fixture,
+                () -> restore(fixture),
+                () -> transactions.executeWithoutResult(status -> startAdditionalUpload(fixture)));
+
+        transactions.executeWithoutResult(status -> {
+            TripAttachment restored = attachments.findById(fixture.first()).orElseThrow();
+            assertThat(restored.getClassificationStatus()).isEqualTo(ClassificationStatus.ACTIVE);
+            assertThat(restored.getIssue()).isEqualTo(AttachmentIssue.NONE);
+            assertThat(batches.existsByTripIdAndStatusIn(
+                    fixture.trip(), List.of(AdditionalAttachmentUploadStatus.PENDING)
+            )).isTrue();
+        });
+    }
+
+    private void startAdditionalUpload(Fixture fixture) {
+        trips.findOwnedActiveForUpdate(fixture.trip(), fixture.user()).orElseThrow();
+        AdditionalAttachmentUploadBatch batch = new AdditionalAttachmentUploadBatch(
+                UUID.randomUUID().toString(), UUID.randomUUID().toString(),
+                fixture.trip(), fixture.user(), 1, 1, true
+        );
+        batches.saveAndFlush(batch);
     }
 
     private void overlap(Fixture fixture, Runnable first, Runnable second) throws Exception {

@@ -29,7 +29,8 @@ class TripAttachmentRestoreServiceTest {
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private final TripAttachmentRestoreService service = new TripAttachmentRestoreService(
             attachments, trips, places, access, entityManager,
-            Validation.buildDefaultValidatorFactory().getValidator(), mapCache
+            Validation.buildDefaultValidatorFactory().getValidator(), mapCache,
+            new AdditionalAttachmentModificationGuard(trips, mock(AdditionalAttachmentUploadBatchRepository.class))
     );
     private Trip trip;
     private TripDetailPlace place;

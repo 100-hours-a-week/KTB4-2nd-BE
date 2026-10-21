@@ -44,8 +44,11 @@ public class CsrfController {
             browserContext = UUID.randomUUID().toString();
         }
 
-        String token = migrationAuth != null && migrationAuth.queueEnabled()
-                ? migrationAuth.request("csrf", browserContext).csrfToken() : csrfTokenService.issue(browserContext);
+        final String context = browserContext;
+        String token = migrationAuth != null
+                ? migrationAuth.directOrQueue(() -> csrfTokenService.issue(context),
+                        () -> migrationAuth.request("csrf", context).csrfToken())
+                : csrfTokenService.issue(context);
         ResponseEntity.BodyBuilder response = ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore());
 

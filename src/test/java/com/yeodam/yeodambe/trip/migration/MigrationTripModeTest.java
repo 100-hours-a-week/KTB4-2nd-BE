@@ -34,4 +34,49 @@ class MigrationTripModeTest {
         assertThatThrownBy(mode::queueEnabled)
                 .isInstanceOf(MigrationTripAdmissionException.class);
     }
+    @Test
+    void source_queue는_여행만_수락하고_인증은_직접_처리한다() throws Exception {
+        Path marker=directory.resolve("mode");Files.writeString(marker,"source-queue");
+        var mode=new MigrationTripMode(marker.toString());
+        assertThat(mode.trip(()->"direct",()->"queued")).isEqualTo("queued");
+        assertThat(mode.auth(()->{assertThat(mode.activeDirect()).isEqualTo(1);return "direct";},()->"queued")).isEqualTo("direct");
+        assertThat(mode.activeDirect()).isZero();
+    }
+    @Test
+    void 전환은_기존_요청을_등록한_채_새_direct_진입을_막는다() throws Exception {
+        var mode=new MigrationTripMode("");
+        var entered=new java.util.concurrent.CountDownLatch(1);
+        var finish=new java.util.concurrent.CountDownLatch(1);
+        try(var workers=java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            var old=workers.submit(()->mode.auth(()->{
+                entered.countDown();
+                try {finish.await();} catch(InterruptedException e) {throw new RuntimeException(e);}
+                return "old completed";
+            },()->"unexpected"));
+            assertThat(entered.await(2,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(mode.beginFence()).isEqualTo(1);
+            assertThat(mode.auth(()->"unsafe direct",()->"queued")).isEqualTo("queued");
+            assertThat(mode.activeDirect()).isEqualTo(1);
+            finish.countDown();assertThat(old.get(2,java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("old completed");
+            assertThat(mode.activeDirect()).isZero();
+        } finally {finish.countDown();}
+    }
+    @Test
+    void 바깥_트랜잭션이_있으면_완료_콜백까지_진행상태를_유지한다() {
+        var mode=new MigrationTripMode("");
+        var manager=org.springframework.transaction.support.TransactionSynchronizationManager.class;
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            mode.auth(()->"done",()->"queued");assertThat(mode.activeDirect()).isEqualTo(1);
+            for(var callback:org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations())
+                callback.afterCompletion(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED);
+            assertThat(mode.activeDirect()).isZero();
+        } finally {org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();}
+    }
+    @Test
+    void 직접_요청이_예외로_끝나도_진행_등록을_해제한다() {
+        var mode=new MigrationTripMode("");
+        assertThatThrownBy(()->mode.auth(()->{throw new IllegalStateException("rollback");},()->"queued")).isInstanceOf(IllegalStateException.class);
+        assertThat(mode.activeDirect()).isZero();
+    }
 }

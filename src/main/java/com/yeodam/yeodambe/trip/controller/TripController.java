@@ -53,14 +53,15 @@ public class TripController {
             @RequestHeader(value = "X-Request-ID", required = false) String requestId
     ) {
         Long userId = Long.valueOf(jwt.getSubject());
-        if (migrationTripMode.queueEnabled()) {
-            var accepted = migrationTripAdmissionService.accept(userId, request, requestId);
-            return ResponseEntity.status(HttpStatus.ACCEPTED)
-                    .location(URI.create("/api/migration/trips/requests/" + accepted.requestId()))
-                    .body(new ApiResponse<>(SuccessMessage.TRIP_CREATE_ACCEPTED, accepted));
-        }
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(userId, request)));
+        return migrationTripMode.trip(
+                () -> ResponseEntity.status(HttpStatus.CREATED)
+                        .body(new ApiResponse<>(SuccessMessage.TRIP_CREATED, tripService.createTrip(userId, request))),
+                () -> {
+                    var accepted = migrationTripAdmissionService.accept(userId, request, requestId);
+                    return ResponseEntity.status(HttpStatus.ACCEPTED)
+                            .location(URI.create("/api/migration/trips/requests/" + accepted.requestId()))
+                            .body(new ApiResponse<>(SuccessMessage.TRIP_CREATE_ACCEPTED, accepted));
+                });
     }
 
     @PostMapping("/trips/{tripId}/favorite")

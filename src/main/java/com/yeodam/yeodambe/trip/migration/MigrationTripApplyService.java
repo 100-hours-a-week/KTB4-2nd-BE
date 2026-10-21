@@ -15,7 +15,7 @@ public class MigrationTripApplyService {
     }
 
     @Transactional
-    public void apply(MigrationTripCommand command) {
+    public boolean apply(MigrationTripCommand command) {
         var existing = results.find(command.requestId());
         if (existing.isPresent()) {
             ensureSameCommand(existing.get(), command);
@@ -23,12 +23,13 @@ public class MigrationTripApplyService {
                     && !"FAILED".equals(existing.get().status())) {
                 throw new IllegalStateException("Migration trip request has unfinished status");
             }
-            return;
+            return false;
         }
 
         results.insertApplying(command);
         Long tripId = trips.createTrip(command.userId(), command.tripRequest()).tripId();
         results.complete(command.requestId(), tripId);
+        return true;
     }
 
     @Transactional

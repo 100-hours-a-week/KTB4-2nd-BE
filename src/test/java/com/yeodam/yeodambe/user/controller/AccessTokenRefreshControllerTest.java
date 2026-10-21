@@ -77,7 +77,7 @@ class AccessTokenRefreshControllerTest {
         var gateway = org.mockito.Mockito.mock(com.yeodam.yeodambe.user.migration.MigrationAuthGateway.class);
         var controller = new AccessTokenRefreshController(service, false, new CookiePathResolver("/api"));
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "migrationAuth", gateway);
-        given(gateway.queueEnabled()).willReturn(true);
+        org.mockito.Mockito.doAnswer(invocation -> ((java.util.function.Supplier<?>)invocation.getArgument(1)).get()).when(gateway).directOrQueue(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any());
         given(gateway.request("refresh", "old")).willReturn(new com.yeodam.yeodambe.user.migration.MigrationAuthReply(
             "id", "refresh", 200, "new-access", "new-refresh", null));
         standaloneSetup(controller).build().perform(post("/auth/token/refresh").cookie(new Cookie("refreshToken", "old")))

@@ -44,8 +44,9 @@ public class AccessTokenRefreshController {
             ) String refreshToken
     ) {
         AccessTokenRefreshService.Result result =
-                migrationAuth != null && migrationAuth.queueEnabled()
-                        ? queuedRefresh(refreshToken) : service.refresh(refreshToken);
+                migrationAuth != null
+                        ? migrationAuth.directOrQueue(() -> service.refresh(refreshToken), () -> queuedRefresh(refreshToken))
+                        : service.refresh(refreshToken);
 
         ResponseCookie accessCookie = cookie(
                 "accessToken",

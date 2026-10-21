@@ -12,6 +12,8 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 @Slf4j
 public class MigrationTripConsumer {
+    @org.springframework.beans.factory.annotation.Value("${migration.trip.apply-role:unknown}")
+    private String applyRole;
     private final ObjectMapper mapper;
     private final MigrationTripAdmissionService admission;
     private final MigrationTripApplyService applyService;
@@ -43,8 +45,11 @@ public class MigrationTripConsumer {
             throw new IllegalStateException("Migration trip record failed integrity check");
         }
         try {
-            applyService.apply(command);
-            log.info("migration_trip_applied request_id={}", command.requestId());
+            boolean created = applyService.apply(command);
+            // The transactional service proxy has committed before this observation.
+            if (created) log.info("migration_trip_completed request_id={} origin={} queued_at_ms={} committed_at_ms={}",
+                    command.requestId(), applyRole, command.queuedAtEpochMs(), System.currentTimeMillis());
+            else log.info("migration_trip_replayed request_id={}", command.requestId());
         } catch (TripNameDuplicatedException duplicate) {
             applyService.recordFailure(command, "TRIP_NAME_DUPLICATED");
         } catch (InvalidTripRequestException invalid) {

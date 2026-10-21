@@ -55,7 +55,7 @@ public class MigrationTripAdmissionService {
         String hash = hashPayload(userId, request);
         MigrationTripCommand command = new MigrationTripCommand(
                 requestId, userId, hash, request.tripName(), request.startDate(),
-                request.endDate(), request.regionCodes());
+                request.endDate(), request.regionCodes(), System.currentTimeMillis());
         try {
             kafka.send(topic, Long.toString(userId), mapper.writeValueAsString(command))
                     .get(ackTimeout.toMillis(), TimeUnit.MILLISECONDS);

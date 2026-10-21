@@ -12,8 +12,13 @@ public record MigrationTripCommand(
         String tripName,
         LocalDate startDate,
         LocalDate endDate,
-        List<String> regionCodes
+        List<String> regionCodes,
+        long queuedAtEpochMs
 ) {
+    public MigrationTripCommand(String requestId,Long userId,String payloadHash,String tripName,
+            LocalDate startDate,LocalDate endDate,List<String> regionCodes) {
+        this(requestId,userId,payloadHash,tripName,startDate,endDate,regionCodes,0);
+    }
     public TripCreateRequest tripRequest() {
         return new TripCreateRequest(tripName, startDate, endDate, regionCodes);
     }

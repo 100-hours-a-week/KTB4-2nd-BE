@@ -21,6 +21,9 @@ public class MigrationTripKafkaConfig {
         factory.setConcurrency(concurrency);
         factory.setMissingTopicsFatal(true);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+        // Finish the current record and commit it; leave fetched but unapplied records
+        // in Kafka for the Target instead of draining an entire poll during cutover.
+        factory.getContainerProperties().setStopImmediate(true);
         factory.setCommonErrorHandler(new DefaultErrorHandler(
                 new FixedBackOff(1000L, FixedBackOff.UNLIMITED_ATTEMPTS)));
         return factory;

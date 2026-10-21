@@ -33,7 +33,10 @@ public class MigrationAuthGateway {
             @Value("${migration.auth.topic}") String topic) {
         this.kafka=kafka;this.crypto=crypto;this.mapper=mapper;this.mode=mode;this.hasher=hasher;this.topic=topic;this.apply=apply;this.redis=redis;
     }
-    public boolean queueEnabled() { return mode.queueEnabled(); }
+    public boolean queueEnabled() { return mode.authQueueEnabled(); }
+    public <T> T directOrQueue(java.util.function.Supplier<T> direct,java.util.function.Supplier<T> queued) {
+        return mode.auth(direct,queued);
+    }
     public MigrationAuthReply request(String operation, String credential) {
         if (credential==null || credential.isBlank()) throw new RefreshTokenInvalidOrExpiredException();
         String id=hasher.hash(topic+":"+operation+":"+credential);

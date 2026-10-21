@@ -92,4 +92,9 @@ public class TripDetailPlace {
     public void changeThumbnailKey(String thumbnailKey) {
         this.thumbnailKey = thumbnailKey;
     }
+
+    public void softDelete(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+        this.thumbnailKey = null;
+    }
 }

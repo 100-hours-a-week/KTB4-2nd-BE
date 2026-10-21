@@ -94,9 +94,8 @@ public class TripAttachmentDeletionService {
 
         List<TripDetailPlace> affectedPlaces = attachments.stream()
                 .filter(attachment -> attachment.getTripPlace() != null)
-                .filter(attachment -> attachment.getPreviewStorageKey()
-                        .equals(attachment.getTripPlace().getThumbnailKey()))
                 .map(TripAttachment::getTripPlace)
+                .distinct()
                 .toList();
         List<Trip> affectedTrips = attachments.stream()
                 .filter(attachment -> attachment.getTrip().getThumbnailKey() != null)
@@ -113,22 +112,31 @@ public class TripAttachmentDeletionService {
 
         tripAttachmentRepository.flush();
 
-        affectedPlaces.forEach(this::refreshThumbnail);
+        affectedPlaces.forEach(place -> refreshThumbnail(place, deletedAt));
         affectedTrips.forEach(this::refreshThumbnail);
         userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
     }
 
-    private void refreshThumbnail(TripDetailPlace place) {
+    private void refreshThumbnail(
+            TripDetailPlace place,
+            LocalDateTime deletedAt
+    ) {
         TripAttachment replacement = tripAttachmentRepository
-                .findAllActiveByTripPlaceId(place.getId(), ClassificationStatus.ACTIVE)
+                .findAllActiveByTripPlaceId(
+                        place.getId(),
+                        ClassificationStatus.ACTIVE
+                )
                 .stream()
                 .min(THUMBNAIL_ORDER)
                 .orElse(null);
 
-        place.changeThumbnailKey(
-                replacement == null ? null : replacement.getPreviewStorageKey()
-        );
+        if (replacement == null) {
+            place.softDelete(deletedAt);
+            return;
+        }
+
+        place.changeThumbnailKey(replacement.getPreviewStorageKey());
     }
 
     private void refreshThumbnail(Trip trip) {

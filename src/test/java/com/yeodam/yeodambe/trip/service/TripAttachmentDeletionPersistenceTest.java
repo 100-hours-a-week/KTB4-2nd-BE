@@ -18,6 +18,9 @@ import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
@@ -87,6 +90,7 @@ class TripAttachmentDeletionPersistenceTest {
 
         assertThat(places.findById(place.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo(replacement.getPreviewStorageKey());
+        assertThat(places.findById(place.getId()).orElseThrow().getDeletedAt()).isNull();
         assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo(replacement.getPreviewStorageKey());
         assertThat(attachments.findById(old.getId()).orElseThrow().getDeletedAt()).isNotNull();
@@ -97,7 +101,7 @@ class TripAttachmentDeletionPersistenceTest {
     }
 
     @Test
-    void 마지막_대표사진을_삭제하면_대표사진키를_null로_저장한다() {
+    void 마지막_대표사진을_삭제하면_장소도_같은시각에_삭제처리한다() {
         User owner = users.saveAndFlush(new User("delete-last@test.com", "마지막삭제"));
         stats.saveAndFlush(new UserStats(owner));
         Trip trip = trips.saveAndFlush(Trip.localMock(
@@ -108,7 +112,10 @@ class TripAttachmentDeletionPersistenceTest {
 
         service.deleteOne(owner.getUserId(), only.getId());
 
-        assertThat(places.findById(place.getId()).orElseThrow().getThumbnailKey()).isNull();
+        var deletedPlace = places.findById(place.getId()).orElseThrow();
+        assertThat(deletedPlace.getThumbnailKey()).isNull();
+        assertThat(deletedPlace.getDeletedAt()).isNotNull()
+                .isEqualTo(attachments.findById(only.getId()).orElseThrow().getDeletedAt());
         assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey()).isNull();
         assertThat(attachments.countByTripIdAndDeletedAtIsNullAndClassificationStatus(
                 trip.getId(), ClassificationStatus.ACTIVE)).isZero();
@@ -132,6 +139,46 @@ class TripAttachmentDeletionPersistenceTest {
 
         assertThat(trips.findById(trip.getId()).orElseThrow().getThumbnailKey())
                 .isEqualTo(replacement.getPreviewStorageKey());
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"stale-preview"})
+    void 대표키가_없거나_잘못되어도_마지막_사진을_삭제하면_장소를_삭제한다(String thumbnailKey) {
+        User owner = users.saveAndFlush(new User("missing-thumbnail-" + java.util.UUID.randomUUID() + "@test.com", "마지막삭제"));
+        stats.saveAndFlush(new UserStats(owner));
+        Trip trip = trips.saveAndFlush(Trip.localMock(owner.getUserId(), "대표키누락", LocalDate.now(), LocalDate.now(), null));
+        TripDetailPlace place = savePlace(trip.getId(), thumbnailKey);
+        TripAttachment only = saveAttachment(owner.getUserId(), trip.getId(), place.getId(),
+                "no-thumbnail-" + java.util.UUID.randomUUID(), 80);
+
+        service.deleteOne(owner.getUserId(), only.getId());
+
+        var deletedPlace = places.findById(place.getId()).orElseThrow();
+        assertThat(deletedPlace.getDeletedAt()).isNotNull();
+        assertThat(deletedPlace.getThumbnailKey()).isNull();
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 같은_폴더의_사진을_모두_일괄삭제해도_다른_폴더는_유지한다() {
+        User owner = users.saveAndFlush(new User("empty-bulk@test.com", "전체삭제"));
+        stats.saveAndFlush(new UserStats(owner));
+        Trip trip = trips.saveAndFlush(Trip.localMock(owner.getUserId(), "일괄삭제", LocalDate.now(), LocalDate.now(), null));
+        TripDetailPlace removed = savePlace(trip.getId(), null);
+        TripDetailPlace retained = savePlace(trip.getId(), "preview-retained-bulk");
+        var first = saveAttachment(owner.getUserId(), trip.getId(), removed.getId(), "first-bulk", 90);
+        var second = saveAttachment(owner.getUserId(), trip.getId(), removed.getId(), "second-bulk", 80);
+        var remaining = saveAttachment(owner.getUserId(), trip.getId(), retained.getId(), "retained-bulk", 70);
+
+        service.deleteBulk(owner.getUserId(), List.of(first.getId(), second.getId()));
+
+        assertThat(places.findById(removed.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(places.findById(retained.getId()).orElseThrow().getDeletedAt()).isNull();
+        assertThat(attachments.findById(remaining.getId()).orElseThrow().getDeletedAt()).isNull();
+        assertThat(places.findPlaceFoldersWithCursor(trip.getId(), null, null,
+                org.springframework.data.domain.PageRequest.of(0, 7)))
+                .extracting(TripDetailPlace::getId).containsExactly(retained.getId());
     }
 
     private TripDetailPlace savePlace(

@@ -20,6 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
@@ -68,6 +71,21 @@ class CurrentUserServiceTest {
                 "KAKAO",
                 true
         ));
+    }
+
+    @Test
+    void 기존_HTTP_프로필을_DB_변경_없이_HTTPS로_반환한다() {
+        User user = mock(User.class);
+        given(userRepository.findById(42L)).willReturn(Optional.of(user));
+        given(user.getProfileImageUrl()).willReturn("http://k.kakaocdn.net/photo.jpg");
+        given(oauthAccountRepository.findByUser_UserIdAndDeletedAtIsNull(42L))
+                .willReturn(Optional.empty());
+
+        CurrentUserResponse result = service.find(42L);
+
+        assertThat(result.profileImageUrl()).isEqualTo("https://k.kakaocdn.net/photo.jpg");
+        assertThat(user.getProfileImageUrl()).isEqualTo("http://k.kakaocdn.net/photo.jpg");
+        verify(user, never()).updateProfileImageUrl(anyString());
     }
 
     @Test

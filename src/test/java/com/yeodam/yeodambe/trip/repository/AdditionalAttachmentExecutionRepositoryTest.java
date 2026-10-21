@@ -7,6 +7,12 @@ import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import com.yeodam.yeodambe.trip.service.TripService;
+import com.yeodam.yeodambe.trip.service.request.TripListRequest;
+import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -20,6 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +46,51 @@ class AdditionalAttachmentExecutionRepositoryTest {
     @Autowired private EntityManager entityManager;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private TripService tripService;
+    @Autowired private ObjectMapper objectMapper;
+
+    @Test
+    void 현재_사용자와_페이지의_미종료_작업_여행만_중복없이_조회한다() {
+        var owner = createTrip();
+        var other = createTrip();
+        Long outsideTripId = trips.saveAndFlush(new Trip(owner.userId(), "다른 페이지", LocalDate.now(), LocalDate.now())).getId();
+        var now = LocalDateTime.now();
+        saveExecution(owner, UUID.randomUUID().toString(), now);
+        saveExecution(owner, UUID.randomUUID().toString(), now);
+        saveExecution(other, UUID.randomUUID().toString(), now);
+        saveExecution(new Fixture(owner.userId(), outsideTripId), UUID.randomUUID().toString(), now);
+        entityManager.clear();
+
+        assertThat(executions.findActiveTripIds(owner.userId(), List.of(owner.tripId(), other.tripId())))
+                .containsExactly(owner.tripId());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = AdditionalAttachmentExecution.Status.class, names = {"COMPLETED", "FAILED", "CANCELED"})
+    void 추가_작업_종료시_목록은_COMPLETED로_돌아오고_DB상태는_유지한다(AdditionalAttachmentExecution.Status terminal) {
+        var fixture = createTrip();
+        jdbc.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", fixture.tripId());
+        String executionId = UUID.randomUUID().toString();
+        saveExecution(fixture, executionId, LocalDateTime.now());
+        entityManager.clear();
+
+        var during = tripService.findTrips(fixture.userId(), TripListRequest.from(null, null, null, objectMapper));
+        assertThat(during.items()).singleElement().satisfies(item ->
+                assertThat(item.status()).isEqualTo(TripListItemResponse.Status.UPDATING));
+        assertThat(jdbc.queryForObject("SELECT processing_status FROM trips WHERE trip_id = ?", String.class, fixture.tripId()))
+                .isEqualTo("COMPLETED");
+
+        executions.findById(executionId).orElseThrow().finish(terminal, null, LocalDateTime.now());
+        executions.flush();
+        entityManager.clear();
+
+        var after = tripService.findTrips(fixture.userId(), TripListRequest.from(null, null, null, objectMapper));
+        assertThat(after.items()).singleElement().satisfies(item ->
+                assertThat(item.status()).isEqualTo(TripListItemResponse.Status.COMPLETED));
+        assertThat(executions.findActiveTripIds(fixture.userId(), List.of(fixture.tripId()))).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT processing_status FROM trips WHERE trip_id = ?", String.class, fixture.tripId()))
+                .isEqualTo("COMPLETED");
+    }
 
     @Test
     void findsLatestOwnedExecutionWithDeterministicTimestampTieOrder() {

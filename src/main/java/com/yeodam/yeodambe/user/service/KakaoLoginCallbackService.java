@@ -76,7 +76,7 @@ public class KakaoLoginCallbackService {
         KakaoUserIdentity identity = new KakaoUserIdentity(
                 user.id().toString(),
                 user.kakaoAccount().email(),
-                profileImageUrl
+                KakaoProfileImageUrl.toHttps(profileImageUrl)
         );
 
         try {

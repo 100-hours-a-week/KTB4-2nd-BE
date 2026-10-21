@@ -36,7 +36,7 @@ class TripEditServiceTest {
     private final TripAccessService access = mock(TripAccessService.class);
     private final ObjectMapper mapper = new ObjectMapper();
     private final TripService service = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
-            trips, regions, mock(RegionCatalog.class), attachments, storage, access, mapper, mock(StoryRepository.class), mock(TripMapCacheStore.class));
+            trips, regions, mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class), mock(RegionCatalog.class), attachments, storage, access, mapper, mock(StoryRepository.class), mock(TripMapCacheStore.class));
     private final LocalDateTime createdAt = LocalDateTime.of(2026, 10, 1, 12, 0);
     private Trip trip;
 

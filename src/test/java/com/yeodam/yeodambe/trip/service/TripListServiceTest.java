@@ -9,9 +9,11 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionName;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import com.yeodam.yeodambe.trip.service.request.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
+import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -32,6 +34,7 @@ class TripListServiceTest {
     private TripRegionRepository tripRegionRepository;
     private TripAttachmentRepository tripAttachmentRepository;
     private TripAttachmentStorageClient storageClient;
+    private AdditionalAttachmentExecutionRepository executions;
     private TripService tripService;
 
     @BeforeEach
@@ -40,9 +43,11 @@ class TripListServiceTest {
         tripRegionRepository = mock(TripRegionRepository.class);
         tripAttachmentRepository = mock(TripAttachmentRepository.class);
         storageClient = mock(TripAttachmentStorageClient.class);
+        executions = mock(AdditionalAttachmentExecutionRepository.class);
         tripService = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
                 tripRepository,
                 tripRegionRepository,
+                executions,
                 mock(RegionCatalog.class),
                 tripAttachmentRepository,
                 storageClient,
@@ -70,6 +75,8 @@ class TripListServiceTest {
         assertThat(cursor.tripId()).isEqualTo(2L);
         assertThat(cursor.startDate()).isEqualTo(LocalDate.of(2026, 9, 1));
         assertThat(cursor.favoriteGroup()).isFalse();
+        verify(executions).findActiveTripIds(1L, List.of(8L, 7L, 6L, 5L, 4L, 3L, 2L));
+        verifyNoMoreInteractions(executions);
     }
 
     @Test
@@ -141,11 +148,11 @@ class TripListServiceTest {
         assertThat(response.items().getFirst().placeSummary()).isEqualTo("제주, 부산, 서울");
         assertThat(response.items().getFirst().attachmentCount()).isEqualTo(4L);
         assertThat(response.items().getFirst().thumbnailUrl()).isEqualTo("https://cdn.test/7");
-        assertThat(response.items().getFirst().status()).isEqualTo(ProcessingStatus.COMPLETED);
+        assertThat(response.items().getFirst().status()).isEqualTo(TripListItemResponse.Status.COMPLETED);
         assertThat(response.items().get(1).placeSummary()).isEqualTo("강릉");
         assertThat(response.items().get(1).attachmentCount()).isZero();
         assertThat(response.items().get(1).thumbnailUrl()).isNull();
-        assertThat(response.items().get(1).status()).isEqualTo(ProcessingStatus.PROCESSING);
+        assertThat(response.items().get(1).status()).isEqualTo(TripListItemResponse.Status.PROCESSING);
         verify(storageClient, never()).createReadUrl("thumb/6.webp");
     }
 
@@ -159,7 +166,29 @@ class TripListServiceTest {
         assertThat(response.items()).isEmpty();
         assertThat(response.hasNext()).isFalse();
         assertThat(response.nextCursor()).isNull();
-        verifyNoInteractions(tripRegionRepository, tripAttachmentRepository, storageClient);
+        verifyNoInteractions(tripRegionRepository, tripAttachmentRepository, storageClient, executions);
+    }
+
+    @Test
+    void 진행중인_추가_작업이_있는_완료_여행만_UPDATING으로_표시한다() {
+        Trip updating = trip(7L, false, ProcessingStatus.COMPLETED, "thumb/7.webp");
+        Trip completed = trip(6L, false, ProcessingStatus.COMPLETED, null);
+        Trip processing = trip(5L, false, ProcessingStatus.PROCESSING, null);
+        when(tripRepository.findListLatest(eq(1L), isNull(), isNull(), any(Pageable.class)))
+                .thenReturn(List.of(updating, completed, processing));
+        when(executions.findActiveTripIds(1L, List.of(7L, 6L, 5L))).thenReturn(List.of(7L, 5L));
+        when(storageClient.createReadUrl("thumb/7.webp")).thenReturn("https://cdn.test/7");
+
+        var response = tripService.findTrips(1L, TripListRequest.from(null, null, null, objectMapper));
+
+        assertThat(response.items()).extracting(TripListItemResponse::status).containsExactly(
+                TripListItemResponse.Status.UPDATING,
+                TripListItemResponse.Status.COMPLETED,
+                TripListItemResponse.Status.PROCESSING);
+        assertThat(response.items().getFirst().thumbnailUrl()).isEqualTo("https://cdn.test/7");
+        assertThat(updating.getProcessingStatus()).isEqualTo(ProcessingStatus.COMPLETED);
+        verify(executions).findActiveTripIds(1L, List.of(7L, 6L, 5L));
+        verifyNoMoreInteractions(executions);
     }
 
     private Trip trip(Long id, boolean favorite, ProcessingStatus status, String thumbnailKey) {

@@ -46,7 +46,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
-
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import java.util.Set;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -71,6 +72,7 @@ public class TripService {
 
     private final TripRepository tripRepository;
     private final TripRegionRepository tripRegionRepository;
+    private final AdditionalAttachmentExecutionRepository additionalAttachmentExecutionRepository;
     private final RegionCatalog regionCatalog;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
@@ -114,8 +116,14 @@ public class TripService {
 
         List<TripSearchResultResponse.Attachment> photos = attachments.stream()
                 .map(attachment -> new TripSearchResultResponse.Attachment(
-                        attachment.getId(), attachment.getTripId(), attachment.getTripPlaceId(),
-                        tripAttachmentStorageClient.createReadUrl(attachment.getPreviewStorageKey())))
+                        attachment.getId(),
+                        attachment.getTripId(),
+                        attachment.getTrip().getTripName(),
+                        attachment.getTripPlaceId(),
+                        tripAttachmentStorageClient.createReadUrl(
+                                attachment.getPreviewStorageKey()
+                        )
+                ))
                 .toList();
 
         List<TripSearchResultResponse.Folder> folders = buildSearchFolders(attachments);
@@ -518,6 +526,12 @@ public class TripService {
         }
 
         List<Long> tripIds = page.stream().map(Trip::getId).toList();
+        Set<Long> updatingTripIds = new HashSet<>(
+                additionalAttachmentExecutionRepository.findActiveTripIds(
+                        userId,
+                        tripIds
+                )
+        );
         Map<Long, List<String>> regionNames = tripRegionRepository.findNamesByTripIds(tripIds).stream()
                 .collect(Collectors.groupingBy(
                         TripRegionName::tripId,
@@ -534,7 +548,12 @@ public class TripService {
         List<TripListItemResponse> items = page.stream()
                 .map(trip -> new TripListItemResponse(
                         trip.getId(),
-                        trip.getProcessingStatus(),
+                        trip.getProcessingStatus() == ProcessingStatus.COMPLETED
+                                && updatingTripIds.contains(trip.getId())
+                                ? TripListItemResponse.Status.UPDATING
+                                : TripListItemResponse.Status.valueOf(
+                                trip.getProcessingStatus().name()
+                        ),
                         trip.getTripName(),
                         trip.getStartDate(),
                         trip.getEndDate(),

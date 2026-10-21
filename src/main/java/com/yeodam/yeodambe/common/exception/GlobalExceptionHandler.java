@@ -107,6 +107,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.SEARCH_SERVICE_UNAVAILABLE, null);
     }
 
+    @ExceptionHandler(RunpodStatusUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handleRunpodStatusUnavailable(RunpodStatusUnavailableException exception) {
+        logFailure(log.atWarn(), ErrorMessage.RUNPOD_STATUS_UNAVAILABLE,
+                "RunPod 실행 상태를 조회할 수 없습니다.", exception);
+        return new ApiResponse<>(ErrorMessage.RUNPOD_STATUS_UNAVAILABLE, null);
+    }
+
     @ExceptionHandler(AiStatusUnavailableException.class)
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handleAiStatusUnavailable(AiStatusUnavailableException e) {

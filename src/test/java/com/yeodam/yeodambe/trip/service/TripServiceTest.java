@@ -70,6 +70,7 @@ class TripServiceTest {
         tripService = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
                 tripRepository,
                 tripRegionRepository,
+                mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class),
                 regionCatalog,
                 tripAttachmentRepository,
                 tripAttachmentStorageClient,

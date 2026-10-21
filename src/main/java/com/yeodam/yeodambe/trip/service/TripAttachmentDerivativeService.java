@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
 
@@ -44,6 +43,7 @@ public class TripAttachmentDerivativeService {
     private final TripDerivativeScheduler scheduler;
     private final InitialAttachmentUploadTransactionService transactions;
     private final InitialAttachmentStoragePipeline pipeline;
+    private final ExifToolProcess exifTool;
 
     public CompletableFuture<List<DerivedPhotoKeys>> createAll(
             String executionId, List<String> originalKeys, List<String> mimeTypes
@@ -271,10 +271,20 @@ public class TripAttachmentDerivativeService {
         Path display = directory.resolve("display.jpg");
         JsonNode metadata = metadata(original);
         convertDerivatives(original, mimeType, metadata, analyze, preview, display);
-        // 필요한 촬영 정보만 복사한다. 픽셀 방향은 유지하고 뷰어의 자동 회전은 막는다.
-        run("exiftool", "-overwrite_original", "-TagsFromFile", original.toString(),
-                "-DateTimeOriginal", "-SubSecTimeOriginal", "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
-                "-Orientation#=1", analyze.toString());
+        // 필요한 촬영 정보만 복사한다. 방향은 픽셀에 반영했으므로 뷰어의 중복 회전을 막는다.
+        ExifToolProcess.Result copyResult = exifTool.execute(List.of(
+                "-overwrite_original", "-TagsFromFile", original.toString(),
+                "-DateTimeOriginal", "-SubSecTimeOriginal",
+                "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
+                "-Orientation#=1", analyze.toString()
+        ));
+
+        if (copyResult.exitStatus() != 0) {
+            throw new IllegalStateException(
+                    TripInternalErrorMessage.COMMAND_FAILED.message()
+                            .formatted("exiftool")
+            );
+        }
         boolean heic = "image/heic".equals(mimeType);
         DerivedPhotoKeys photo = new DerivedPhotoKeys(originalKey, plannedKey(keys, 0), plannedKey(keys, 1),
                 heic ? plannedKey(keys, 2) : null, takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
@@ -323,41 +333,30 @@ public class TripAttachmentDerivativeService {
     }
 
     private JsonNode metadata(Path original) {
-        Path output = original.resolveSibling("metadata.json");
-        Process process = null;
-        try {
-            process = new ProcessBuilder("exiftool", "-j", "-n",
-                    "-Orientation", "-JPEGQualityEstimate", "-DateTimeOriginal", "-OffsetTimeOriginal",
-                    "-GPSLatitude", "-GPSLongitude",
-                    "-Make", "-Model", original.toString())
-                    .redirectOutput(output.toFile())
-                    .redirectError(ProcessBuilder.Redirect.DISCARD)
-                    .start();
-            if (!process.waitFor(120, TimeUnit.SECONDS)) {
-                throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_FAILED.message(),
-                        new TimeoutException(TripInternalErrorMessage.EXIF_PROCESS_TIMEOUT.message()));
-            }
-            if (process.exitValue() != 0) {
-                throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_FAILED.message());
-            }
-            JsonNode values = json.readTree(Files.readAllBytes(output));
-            if (!values.isArray() || values.isEmpty()) {
-                throw new IllegalStateException(TripInternalErrorMessage.EXIF_RESULT_MISSING.message());
-            }
-            return values.get(0);
-        } catch (IOException e) {
-            throw new IllegalStateException(TripInternalErrorMessage.EXIF_TOOL_EXECUTION_FAILED.message(), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException(TripInternalErrorMessage.EXIF_EXTRACTION_INTERRUPTED.message(), e);
-        } finally {
-            stopProcess(process);
-            try {
-                Files.deleteIfExists(output);
-            } catch (IOException failure) {
-                log.warn("임시 EXIF 파일 삭제 실패: {}", output, failure);
-            }
+        ExifToolProcess.Result result = exifTool.execute(List.of(
+                "-j", "-n",
+                "-Orientation", "-JPEGQualityEstimate",
+                "-DateTimeOriginal", "-OffsetTimeOriginal",
+                "-GPSLatitude", "-GPSLongitude",
+                "-Make", "-Model",
+                original.toString()
+        ));
+
+        if (result.exitStatus() != 0) {
+            throw new IllegalStateException(
+                    TripInternalErrorMessage.EXIF_EXTRACTION_FAILED.message()
+            );
         }
+
+        JsonNode values = json.readTree(result.output());
+
+        if (values == null || !values.isArray() || values.isEmpty()) {
+            throw new IllegalStateException(
+                    TripInternalErrorMessage.EXIF_RESULT_MISSING.message()
+            );
+        }
+
+        return values.get(0);
     }
 
     private OffsetDateTime takenAt(JsonNode metadata) {
@@ -408,69 +407,4 @@ public class TripAttachmentDerivativeService {
         String combined = (make + " " + model).trim();
         return combined.isEmpty() || combined.length() > 100 ? null : combined;
     }
-
-    private void run(String... command) {
-        Process process = null;
-        try {
-            process = startProcess(command);
-
-            if (!process.waitFor(120, TimeUnit.SECONDS)) {
-                throw new IllegalStateException(TripInternalErrorMessage.COMMAND_TIMEOUT.message().formatted(command[0]),
-                        new TimeoutException(TripInternalErrorMessage.PHOTO_CONVERSION_PROCESS_TIMEOUT.message()));
-            }
-            if (process.exitValue() != 0) {
-                throw new IllegalStateException(TripInternalErrorMessage.COMMAND_FAILED.message().formatted(command[0]));
-            }
-        } catch (IOException e) {
-            throw new IllegalStateException(TripInternalErrorMessage.COMMAND_UNAVAILABLE.message().formatted(command[0]), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException(TripInternalErrorMessage.COMMAND_INTERRUPTED.message().formatted(command[0]), e);
-        } finally {
-            stopProcess(process);
-        }
-    }
-
-    private Process startProcess(String... command) throws IOException {
-        ProcessBuilder builder = new ProcessBuilder(command)
-                .redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD);
-        try {
-            return builder.start();
-        } catch (IOException failure) {
-            if (!"magick".equals(command[0])) {
-                throw failure;
-            }
-            // ImageMagick 7이 없는 기존 CI·운영 환경에서는 ImageMagick 6을 사용한다.
-            command[0] = "convert";
-            try {
-                return builder.command(command).start();
-            } catch (IOException fallbackFailure) {
-                fallbackFailure.addSuppressed(failure);
-                throw fallbackFailure;
-            }
-        }
-    }
-
-    private void stopProcess(Process process) {
-        if (process == null || !process.isAlive()) {
-            return;
-        }
-        process.destroyForcibly();
-        boolean interrupted = Thread.interrupted();
-        // 프로세스가 살아 있으면 원본/임시 파일 보상을 시작할 수 없다.
-        while (process.isAlive()) {
-            try {
-                if (!process.waitFor(5, TimeUnit.SECONDS)) {
-                    log.error("사진 변환 프로세스 종료 지연: pid={}", process.pid());
-                }
-            } catch (InterruptedException failure) {
-                interrupted = true;
-            }
-        }
-        if (interrupted) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
 }

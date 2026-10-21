@@ -79,4 +79,18 @@ class MigrationTripTransactionTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM migration_trip_request_result", Integer.class))
                 .isZero();
     }
+
+    @Test
+    void 완료_저널_PK_충돌이면_방금_만든_여행도_롤백한다() {
+        // Simulate another transaction winning the ID between find and insert.
+        // A same-transaction fixture insertion makes the PK collision deterministic.
+        when(trips.createTrip(eq(7L), any())).thenAnswer(call -> {
+            jdbc.update("INSERT INTO test_trip (trip_id) VALUES (42)");
+            jdbc.update("INSERT INTO migration_trip_request_result (request_id,user_id,payload_hash,status,trip_id) VALUES (?,?,?,'COMPLETED',99)", ID,7L,"a".repeat(64));
+            return new TripCreateResponse(42L, ProcessingStatus.PROCESSING);
+        });
+        assertThatThrownBy(() -> apply.apply(command)).isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM test_trip", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM migration_trip_request_result", Integer.class)).isZero();
+    }
 }

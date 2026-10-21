@@ -28,9 +28,8 @@ class MigrationTripApplyServiceTest {
         service.apply(command);
 
         var ordered = inOrder(results, trips);
-        ordered.verify(results).insertApplying(command);
         ordered.verify(trips).createTrip(7L, command.tripRequest());
-        ordered.verify(results).complete(command.requestId(), 42L);
+        ordered.verify(results).insertCompleted(command, 42L);
     }
 
     @Test
@@ -42,6 +41,6 @@ class MigrationTripApplyServiceTest {
         service.apply(command);
 
         verifyNoInteractions(trips);
-        verify(results, never()).insertApplying(any());
+        verify(results, never()).insertCompleted(any(), any());
     }
 }

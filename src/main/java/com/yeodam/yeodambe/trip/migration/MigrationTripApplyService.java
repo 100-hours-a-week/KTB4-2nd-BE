@@ -26,9 +26,12 @@ public class MigrationTripApplyService {
             return false;
         }
 
-        results.insertApplying(command);
         Long tripId = trips.createTrip(command.userId(), command.tripRequest()).tripId();
-        results.complete(command.requestId(), tripId);
+        // APPLYING was never externally visible: both former journal writes shared
+        // this transaction. One final insert avoids an extra SQL and CDC event.
+        // The request_id PK still rejects concurrent duplicate commits; that
+        // transaction (including its trip) rolls back and can be redelivered.
+        results.insertCompleted(command, tripId);
         return true;
     }
 

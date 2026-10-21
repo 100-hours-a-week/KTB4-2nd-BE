@@ -25,20 +25,12 @@ public class MigrationTripResultRepository {
         return rows.stream().findFirst();
     }
 
-    public void insertApplying(MigrationTripCommand command) {
+    public void insertCompleted(MigrationTripCommand command, Long tripId) {
         jdbc.update("""
                 INSERT INTO migration_trip_request_result
-                    (request_id, user_id, payload_hash, status)
-                VALUES (?, ?, ?, 'APPLYING')
-                """, command.requestId(), command.userId(), command.payloadHash());
-    }
-
-    public void complete(String requestId, Long tripId) {
-        jdbc.update("""
-                UPDATE migration_trip_request_result
-                SET status = 'COMPLETED', trip_id = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE request_id = ?
-                """, tripId, requestId);
+                    (request_id, user_id, payload_hash, status, trip_id)
+                VALUES (?, ?, ?, 'COMPLETED', ?)
+                """, command.requestId(), command.userId(), command.payloadHash(), tripId);
     }
 
     public void fail(MigrationTripCommand command, String errorCode) {

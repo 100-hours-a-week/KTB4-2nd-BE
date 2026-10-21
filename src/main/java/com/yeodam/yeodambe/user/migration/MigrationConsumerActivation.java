@@ -19,11 +19,15 @@ public class MigrationConsumerActivation implements HealthIndicator {
     private volatile boolean prepared;
     private volatile boolean activated;
     private final boolean deferTrip;
-    public MigrationConsumerActivation(KafkaListenerEndpointRegistry registry,String file) { this(registry,file,false); }
+    private final int tripPartitions;
+    public MigrationConsumerActivation(KafkaListenerEndpointRegistry registry,String file) { this(registry,file,false,4); }
+    public MigrationConsumerActivation(KafkaListenerEndpointRegistry registry,String file,boolean deferTrip) { this(registry,file,deferTrip,4); }
     @org.springframework.beans.factory.annotation.Autowired
     public MigrationConsumerActivation(KafkaListenerEndpointRegistry registry,@Value("${migration.consumer.enable-file}") String file,
-            @Value("${migration.consumer.defer-trip:false}") boolean deferTrip) {
-        this.registry=registry;this.file=Path.of(file);this.deferTrip=deferTrip;
+            @Value("${migration.consumer.defer-trip:false}") boolean deferTrip,
+            @Value("${migration.trip.partitions:4}") int tripPartitions) {
+        if(tripPartitions!=4 && tripPartitions!=8) throw new IllegalArgumentException("Invalid migration trip partition count");
+        this.registry=registry;this.file=Path.of(file);this.deferTrip=deferTrip;this.tripPartitions=tripPartitions;
     }
     @Override
     public Health health() { return prepared && (!Files.exists(file) || activated) ? Health.up().build() : Health.down().build(); }
@@ -43,7 +47,7 @@ public class MigrationConsumerActivation implements HealthIndicator {
                     for(String id:ids) {
                         var c=registry.getListenerContainer(id);
                         var partitions=c.getAssignedPartitions();
-                        assigned &= c.isContainerPaused() && partitions!=null && partitions.size()==4;
+                        assigned &= c.isContainerPaused() && partitions!=null && partitions.size()==(id.equals("migrationTripApply")?tripPartitions:4);
                     }
                     if(assigned) {prepared=true;break;}
                     if(System.nanoTime()>deadline) throw new IllegalStateException("Migration partition assignment incomplete");
@@ -55,7 +59,7 @@ public class MigrationConsumerActivation implements HealthIndicator {
                 while(true) {
                     var trip=registry.getListenerContainer("migrationTripApply");
                     var parts=trip.getAssignedPartitions();
-                    if(trip.isRunning() && parts!=null && parts.size()==4 && !trip.isContainerPaused()) break;
+                    if(trip.isRunning() && parts!=null && parts.size()==tripPartitions && !trip.isContainerPaused()) break;
                     Thread.sleep(20);
                 }
                 activated=true;

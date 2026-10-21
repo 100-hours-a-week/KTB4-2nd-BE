@@ -34,7 +34,7 @@ class MigrationConsumerActivationTest {
         Files.createFile(enabled);
         verify(trip,timeout(1000)).resume();verify(auth,timeout(1000)).resume();
     }
-    @Test void targetTripDoesNotJoinSourceGroupBeforeActivation() throws Exception {
+    @Test void eightTripPartitionsAndFourAuthPartitionsActivateAfterPromotion() throws Exception {
         var registry=mock(KafkaListenerEndpointRegistry.class);
         var trip=mock(MessageListenerContainer.class);var auth=mock(MessageListenerContainer.class);
         when(registry.getListenerContainer("migrationTripApply")).thenReturn(trip);
@@ -43,10 +43,10 @@ class MigrationConsumerActivationTest {
         when(auth.isContainerPaused()).thenAnswer(invocation->paused.get());
         doAnswer(invocation->{paused.set(false);return null;}).when(auth).resume();
         when(trip.isRunning()).thenReturn(true);
-        when(trip.getAssignedPartitions()).thenReturn(List.of(new TopicPartition("trip",0),new TopicPartition("trip",1),new TopicPartition("trip",2),new TopicPartition("trip",3)));
+        when(trip.getAssignedPartitions()).thenReturn(List.of(new TopicPartition("trip",0),new TopicPartition("trip",1),new TopicPartition("trip",2),new TopicPartition("trip",3),new TopicPartition("trip",4),new TopicPartition("trip",5),new TopicPartition("trip",6),new TopicPartition("trip",7)));
         when(auth.getAssignedPartitions()).thenReturn(List.of(new TopicPartition("auth",0),new TopicPartition("auth",1),new TopicPartition("auth",2),new TopicPartition("auth",3)));
         var enabled=directory.resolve("deferred-enabled");
-        var activation=new MigrationConsumerActivation(registry,enabled.toString(),true);activation.ready();
+        var activation=new MigrationConsumerActivation(registry,enabled.toString(),true,8);activation.ready();
         verify(auth,timeout(3000)).start();verify(trip,never()).start();
         Files.createFile(enabled);verify(trip,timeout(3000)).start();verify(auth,timeout(3000)).resume();
         var end=System.nanoTime()+3_000_000_000L;

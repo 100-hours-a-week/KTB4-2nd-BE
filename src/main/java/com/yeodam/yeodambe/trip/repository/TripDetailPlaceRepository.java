@@ -19,17 +19,31 @@ public interface TripDetailPlaceRepository extends JpaRepository<TripDetailPlace
     Optional<TripDetailPlace> findByIdForUpdate(@Param("tripPlaceId") Long tripPlaceId);
 
     @Query("""
-            select place
-            from TripDetailPlace place
-            where place.tripId = :tripId
-              and place.deletedAt is null
-              and (
-                    :cursorPlaceName is null
-                    or place.placeName > :cursorPlaceName
-                    or (place.placeName = :cursorPlaceName and place.id > :cursorTripPlaceId)
-              )
-            order by place.placeName asc, place.id asc
-            """)
+        select place
+        from TripDetailPlace place
+        where place.tripId = :tripId
+          and place.deletedAt is null
+          and exists (
+                select 1
+                from TripAttachment attachment
+                join attachment.file file
+                where attachment.tripPlaceId = place.id
+                  and attachment.tripId = place.tripId
+                  and attachment.classificationStatus =
+                      com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+                  and attachment.deletedAt is null
+                  and file.deletedAt is null
+          )
+          and (
+                :cursorPlaceName is null
+                or place.placeName > :cursorPlaceName
+                or (
+                    place.placeName = :cursorPlaceName
+                    and place.id > :cursorTripPlaceId
+                )
+          )
+        order by place.placeName asc, place.id asc
+        """)
     List<TripDetailPlace> findPlaceFoldersWithCursor(
             @Param("tripId") Long tripId,
             @Param("cursorPlaceName") String cursorPlaceName,

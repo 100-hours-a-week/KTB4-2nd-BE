@@ -44,8 +44,8 @@ public class AccessTokenRefreshController {
             ) String refreshToken
     ) {
         AccessTokenRefreshService.Result result =
-                migrationAuth != null && migrationAuth.queueEnabled()
-                        ? queuedRefresh(refreshToken) : service.refresh(refreshToken);
+                migrationAuth != null
+                        ? migrationRefresh(refreshToken) : service.refresh(refreshToken);
 
         ResponseCookie accessCookie = cookie(
                 "accessToken",
@@ -77,8 +77,9 @@ public class AccessTokenRefreshController {
                 ));
     }
 
-    private AccessTokenRefreshService.Result queuedRefresh(String token) {
-        var reply = migrationAuth.request("refresh", token);
+    private AccessTokenRefreshService.Result migrationRefresh(String token) {
+        var reply = migrationAuth.queueEnabled()
+                ? migrationAuth.request("refresh", token) : migrationAuth.direct("refresh", token);
         return new AccessTokenRefreshService.Result(reply.accessToken(), reply.refreshToken());
     }
 

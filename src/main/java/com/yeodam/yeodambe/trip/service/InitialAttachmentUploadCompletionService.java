@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException;
@@ -41,11 +43,15 @@ public class InitialAttachmentUploadCompletionService {
 
         var candidate = transactions.loadAcceptanceCandidate(tripId, userId, request.uploadId());
 
-        if (candidate.status() == InitialAttachmentUploadStatus.PENDING) {
-            verifyUploadedFiles(candidate.photos());
+        TripProcessingStatusResponse status;
+        try (var scope = WorkflowMdcScope.job("trip_creation", tripId, candidate.executionId());
+             var timing = startUploadAcceptanceLogging(candidate.batchNo())) {
+            if (candidate.status() == InitialAttachmentUploadStatus.PENDING) {
+                verifyUploadedFiles(candidate.photos());
+            }
+            status = transactions.startProcessing(tripId, userId, request.uploadId());
+            timing.success();
         }
-
-        TripProcessingStatusResponse status = transactions.startProcessing(tripId, userId, request.uploadId());
         if (status.status() == TripProcessingStatusResponse.Status.PROCESSING) {
             derivatives.processAcceptedBatch(tripId, userId, request.uploadId());
         }
@@ -133,5 +139,9 @@ public class InitialAttachmentUploadCompletionService {
         }
 
         throw new UnsupportedAttachmentFormatException();
+    }
+
+    private WorkflowLog.Stage startUploadAcceptanceLogging(int batchNo) {
+        return WorkflowLog.stage("original_upload_acceptance").field("batch_no", batchNo);
     }
 }

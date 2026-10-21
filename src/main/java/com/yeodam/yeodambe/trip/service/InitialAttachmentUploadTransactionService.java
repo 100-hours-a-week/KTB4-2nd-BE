@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
@@ -144,6 +146,7 @@ public class InitialAttachmentUploadTransactionService {
         String executionId = UUID.randomUUID().toString();
         executionRepository.save(new TripCreationExecution(
                 executionId, tripId, userId, request.totalAttachmentCount()));
+        logWorkflowStarted(tripId, executionId);
         return executionId;
     }
 
@@ -371,6 +374,7 @@ public class InitialAttachmentUploadTransactionService {
         }
 
         candidate.accept(now());
+        logUploadBatchAccepted(tripId, execution.getExecutionId(), candidate.getBatchNo());
         execution.recordUploadActivity(now());
         if (candidate.getLastBatch()) {
             List<InitialAttachmentUploadBatch> all = batches.findAllByExecutionIdOrderByBatchNoAsc(execution.getExecutionId());
@@ -382,6 +386,7 @@ public class InitialAttachmentUploadTransactionService {
             }
 
             execution.closeInput();
+            logOriginalUploadCompleted(trip, execution.getExecutionId());
             enqueueProcessIfReady(execution);
         }
         return acceptanceStatus(trip, execution);
@@ -483,27 +488,32 @@ public class InitialAttachmentUploadTransactionService {
             Long itemId,
             DerivedPhotoKeys photo
     ) {
-        requireCurrentClaim(claim);
-        InitialAttachmentUploadItem item = requireItem(claim, itemId);
-        if (!item.getObjectKey().equals(photo.originalKey()) || photo.originalSizeBytes() == null
-                || !item.getSizeBytes().equals(photo.originalSizeBytes())) {
-            throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_SOURCE_ATTACHMENT_MISMATCH.message());
-        }
-        String prefix = "trip-uploads/" + claim.executionId() + "/derived/"
-                + itemId + "/" + item.getConversionAttempts() + "/";
-        boolean heic = "image/heic".equals(item.getContentType());
-        if (!Objects.equals(photo.analyzeKey(), prefix + "analyze.jpg")
-                || !Objects.equals(photo.previewKey(), prefix + "preview.webp")
-                || photo.analyzeSizeBytes() == null || photo.analyzeSizeBytes() < 1
-                || photo.previewSizeBytes() == null || photo.previewSizeBytes() < 1
-                || (heic && (!Objects.equals(photo.displayKey(), prefix + "display.jpg")
-                    || photo.displaySizeBytes() == null || photo.displaySizeBytes() < 1))
-                || (!heic && photo.displayKey() != null)) {
-            throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_OUTPUT_KEY_OR_SIZE_INVALID.message());
-        }
-        if (item.getDerivedJson() == null) {
-            saveAttachment(claim.tripId(), claim.userId(), item, photo);
-            item.conversionCompleted(objectMapper.writeValueAsString(photo));
+        try (var scope = WorkflowMdcScope.job("trip_creation", claim.tripId(), claim.executionId());
+             var timing = startAttachmentPersistenceLogging(itemId)) {
+            requireCurrentClaim(claim);
+            InitialAttachmentUploadItem item = requireItem(claim, itemId);
+            if (!item.getObjectKey().equals(photo.originalKey()) || photo.originalSizeBytes() == null
+                    || !item.getSizeBytes().equals(photo.originalSizeBytes())) {
+                throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_SOURCE_ATTACHMENT_MISMATCH.message());
+            }
+            String prefix = "trip-uploads/" + claim.executionId() + "/derived/"
+                    + itemId + "/" + item.getConversionAttempts() + "/";
+            boolean heic = "image/heic".equals(item.getContentType());
+            if (!Objects.equals(photo.analyzeKey(), prefix + "analyze.jpg")
+                    || !Objects.equals(photo.previewKey(), prefix + "preview.webp")
+                    || photo.analyzeSizeBytes() == null || photo.analyzeSizeBytes() < 1
+                    || photo.previewSizeBytes() == null || photo.previewSizeBytes() < 1
+                    || (heic && (!Objects.equals(photo.displayKey(), prefix + "display.jpg")
+                        || photo.displaySizeBytes() == null || photo.displaySizeBytes() < 1))
+                    || (!heic && photo.displayKey() != null)) {
+                throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_OUTPUT_KEY_OR_SIZE_INVALID.message());
+            }
+            if (item.getDerivedJson() == null) {
+                saveAttachment(claim.tripId(), claim.userId(), item, photo);
+                item.conversionCompleted(objectMapper.writeValueAsString(photo));
+            }
+
+            logAttachmentPersisted(timing);
         }
     }
 
@@ -552,6 +562,7 @@ public class InitialAttachmentUploadTransactionService {
                 "photos_ready", claim.tripId(), claim.executionId(), claim.batchNo(), null, null, null, null,
                 objectMapper.valueToTree(refs));
         batch.ready(objectMapper.writeValueAsString(event));
+        logPhotoDerivativesPersisted(claim.tripId(), claim.executionId());
         saveCdcOutbox(batch.getOutboxId(), claim.executionId(), "photos_ready",
                 claim.batchNo(), claim.tripId(), batch.getOutboxPayload());
     }
@@ -568,6 +579,7 @@ public class InitialAttachmentUploadTransactionService {
             return;
         }
         execution.finish(TripCreationExecution.Status.FAILED, errorCode, now());
+        logWorkflowFailed(execution, trip, errorCode);
         releaseReservation(execution, 0);
         scheduleExecutionCleanup(execution, errorCode);
         softDeleteExecutionPhotos(execution);
@@ -592,6 +604,7 @@ public class InitialAttachmentUploadTransactionService {
         }
         execution.requestCancellation();
         execution.finish(TripCreationExecution.Status.CANCELED, null, now());
+        logWorkflowCanceled(tripId, execution.getExecutionId());
         releaseReservation(execution, 0);
         scheduleExecutionCleanup(execution, "CANCELED");
         softDeleteExecutionPhotos(execution);
@@ -836,9 +849,13 @@ public class InitialAttachmentUploadTransactionService {
             Long tripId,
             String payload
     ) {
-        outboxes.save(new TripCreationOutbox(
-                id, executionId, messageType, batchNo, tripId,
-                topics.topicFor(EventType.TRIP_CREATE_REQUEST), payload));
+        try (var scope = WorkflowMdcScope.job("trip_creation", tripId, executionId);
+             var timing = startOutboxPersistenceLogging(messageType, batchNo)) {
+            outboxes.save(new TripCreationOutbox(
+                    id, executionId, messageType, batchNo, tripId,
+                    topics.topicFor(EventType.TRIP_CREATE_REQUEST), payload));
+            logAiRequestEnqueued(timing);
+        }
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -858,6 +875,7 @@ public class InitialAttachmentUploadTransactionService {
         var publishedAt = jdbc.queryForObject("SELECT FROM_UNIXTIME(?)", LocalDateTime.class,
                 BigDecimal.valueOf(receipt.publishedAt().toEpochMilli(), 3));
         candidate.recordPublished(publishedAt);
+        logAiRequestObserved(execution.getTripId(), execution.getExecutionId(), candidate.getMessageType());
         if ("process".equals(candidate.getMessageType())) {
             execution.processSent(publishedAt);
             return;
@@ -885,5 +903,54 @@ public class InitialAttachmentUploadTransactionService {
         } else if (!"photos_ready".equals(event.type())) {
             throw new IllegalArgumentException(TripInternalErrorMessage.UNSUPPORTED_PHOTO_REQUEST.message());
         }
+    }
+
+    private WorkflowLog.Stage startAttachmentPersistenceLogging(Long itemId) {
+        return WorkflowLog.stage("attachment_persistence").field("item_id", itemId).debug();
+    }
+
+    private WorkflowLog.Stage startOutboxPersistenceLogging(String messageType, int batchNo) {
+        return WorkflowLog.stage("outbox_persistence")
+                .field("message_type", messageType)
+                .field("batch_no", batchNo);
+    }
+
+    private void logWorkflowStarted(Long tripId, String executionId) {
+        WorkflowLog.event("trip_creation", tripId, executionId, "workflow_started");
+    }
+
+    private void logPhotoDerivativesPersisted(Long tripId, String executionId) {
+        WorkflowLog.event("trip_creation", tripId, executionId, "photo_derivatives_persisted");
+    }
+
+    private void logUploadBatchAccepted(Long tripId, String executionId, int batchNo) {
+        WorkflowLog.batchAccepted("trip_creation", tripId, executionId, batchNo);
+    }
+
+    private void logAiRequestObserved(Long tripId, String executionId, String messageType) {
+        WorkflowLog.deliveryObserved("trip_creation", tripId, executionId, messageType);
+    }
+
+    private void logOriginalUploadCompleted(Trip trip, String executionId) {
+        WorkflowLog.uploadCompleted("trip_creation", trip.getId(), executionId,
+                trip.getCreatedAt(), LocalDateTime.now());
+    }
+
+    private void logWorkflowFailed(TripCreationExecution execution, Trip trip, String errorCode) {
+        WorkflowLog.finished("trip_creation", execution.getTripId(), execution.getExecutionId(),
+                trip == null ? null : trip.getCreatedAt(), "failure", errorCode);
+    }
+
+    private void logWorkflowCanceled(Long tripId, String executionId) {
+        WorkflowLog.finished("trip_creation", tripId, executionId,
+                trips.findById(tripId).map(Trip::getCreatedAt).orElse(null), "canceled", null);
+    }
+
+    private void logAttachmentPersisted(WorkflowLog.Stage timing) {
+        timing.committed("attachment_persistence");
+    }
+
+    private void logAiRequestEnqueued(WorkflowLog.Stage timing) {
+        timing.committed("ai_request_enqueued");
     }
 }

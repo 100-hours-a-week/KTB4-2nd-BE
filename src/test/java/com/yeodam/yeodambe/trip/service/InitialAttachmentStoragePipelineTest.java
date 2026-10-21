@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.InOrder;
+import org.slf4j.MDC;
 import org.springframework.dao.TransientDataAccessResourceException;
 
 import java.io.IOException;
@@ -18,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
@@ -64,6 +66,39 @@ class InitialAttachmentStoragePipelineTest {
         pipeline.close();
         scheduler.stop();
         meters.close();
+    }
+
+    @Test
+    void 변환과_비동기_저장에_같은_작업문맥을_전달한다() throws Exception {
+        var claim = claim(1L);
+        AtomicReference<Map<String, String>> convertedContext = new AtomicReference<>();
+        AtomicReference<Map<String, String>> uploadedContext = new AtomicReference<>();
+        when(storage.storeDerivedToAsync(anyString(), any(), anyString())).thenAnswer(call -> {
+            uploadedContext.set(MDC.getCopyOfContextMap());
+            return CompletableFuture.completedFuture(call.getArgument(0));
+        });
+        MDC.put("request_id", "upload-request");
+        try {
+            pipeline.start(claim, (photo, keys) -> {
+                convertedContext.set(MDC.getCopyOfContextMap());
+                return prepare(photo.itemId(), keys);
+            }, error -> true);
+            verify(transactions, timeout(5000)).completeBatch(claim);
+            Map<String, String> expected = Map.of(
+                    "request_id", "upload-request",
+                    "workflow", "trip_creation",
+                    "trip_id", claim.tripId().toString(),
+                    "job_id", claim.executionId(),
+                    "batch_no", Integer.toString(claim.batchNo())
+            );
+            assertThat(convertedContext.get()).containsAllEntriesOf(expected)
+                    .containsEntry("item_id", "1")
+                    .containsEntry("attempts", "1");
+            assertThat(uploadedContext.get()).containsAllEntriesOf(expected);
+            assertThat(MDC.getCopyOfContextMap()).containsExactlyEntriesOf(Map.of("request_id", "upload-request"));
+        } finally {
+            MDC.clear();
+        }
     }
 
     @Test

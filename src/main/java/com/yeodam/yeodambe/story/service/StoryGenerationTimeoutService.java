@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
 import lombok.RequiredArgsConstructor;
@@ -36,13 +39,19 @@ public class StoryGenerationTimeoutService {
         if (!job.failIfTimedOut(outbox.getPublishedAt(), comparisonTime)) {
             return false;
         }
+        logGenerationTimedOut(job);
+        return true;
+    }
+
+    private void logGenerationTimedOut(StoryGenerationJob job) {
+        WorkflowLog.finished("story_generation", job.getTripId(), job.getExecutionId(), job.getCreatedAt(), "failure", job.getErrorCode());
         log.atWarn()
                 .addKeyValue("event", "story_generation_timed_out")
                 .addKeyValue("result", "failure")
                 .addKeyValue("trip_id", job.getTripId())
-                .addKeyValue("job_id", job.getId())
+                .addKeyValue("job_id", job.getExecutionId())
+                .addKeyValue("generation_id", job.getId())
                 .addKeyValue("error_code", job.getErrorCode())
                 .log("스토리 요청 Kafka 발행 후 1시간이 지나 작업을 실패 처리했습니다.");
-        return true;
     }
 }

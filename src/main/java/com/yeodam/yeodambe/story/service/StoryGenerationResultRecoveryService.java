@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -37,6 +40,12 @@ public class StoryGenerationResultRecoveryService {
         var job = jobRepository.findByIdForUpdate(found.getId()).orElse(null);
         if (job != null && job.getTripId().equals(tripId) && !job.isFinished()) {
             job.fail("STORY_RESULT_PROCESSING_FAILED");
+            logWorkflowFailed(job);
         }
+    }
+
+    private void logWorkflowFailed(StoryGenerationJob job) {
+        WorkflowLog.finished("story_generation", job.getTripId(), job.getExecutionId(),
+                job.getCreatedAt(), "failure", job.getErrorCode());
     }
 }

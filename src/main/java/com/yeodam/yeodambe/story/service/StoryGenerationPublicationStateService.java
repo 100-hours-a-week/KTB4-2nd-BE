@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
@@ -29,13 +32,21 @@ public class StoryGenerationPublicationStateService {
             OutboxReceipt receipt
     ) {
         var candidate = outboxRepository.findById(outboxId).orElseThrow();
-        jobRepository.findByIdForUpdate(candidate.getGenerationId()).orElseThrow();
+        var job = jobRepository.findByIdForUpdate(candidate.getGenerationId()).orElseThrow();
         var outbox = outboxRepository.findByIdForUpdate(outboxId).orElseThrow();
         entityManager.refresh(outbox);
         Assert.isTrue(outbox.isCdcManaged(), "Expected a CDC-managed Outbox");
         receipt.verify(outbox.getTopic(), outbox.getTripId(), outbox.getPayload());
         var publishedAt = jdbc.queryForObject("SELECT FROM_UNIXTIME(?)", LocalDateTime.class,
                 BigDecimal.valueOf(receipt.publishedAt().toEpochMilli(), 3));
+        boolean firstPublication = outbox.getPublishedAt() == null;
         outbox.publicationSucceeded(publishedAt);
+        if (firstPublication) {
+            logAiRequestObserved(job);
+        }
+    }
+
+    private void logAiRequestObserved(StoryGenerationJob job) {
+        WorkflowLog.deliveryObserved("story_generation", job.getTripId(), job.getExecutionId(), "story");
     }
 }

@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.story.event.handler;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
+
 import com.yeodam.yeodambe.common.event.EventHandler;
 import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventType;
@@ -62,12 +65,15 @@ public class StoryCreateResultEventHandler
             );
         }
 
-        var response = event.toResponse();
+        try (var scope = WorkflowMdcScope.job("story_generation", job.getTripId(), job.getExecutionId())) {
+            org.slf4j.MDC.put("generation_id", job.getId().toString());
+            var response = event.toResponse();
 
-        if (event.status() == StoryGenerationAiResponse.Status.COMPLETED) {
-            completionService.complete(job.getId(), response);
-        } else {
-            terminalService.apply(job.getId(), response);
+            if (event.status() == StoryGenerationAiResponse.Status.COMPLETED) {
+                completionService.complete(job.getId(), response);
+            } else {
+                terminalService.apply(job.getId(), response);
+            }
         }
     }
 }

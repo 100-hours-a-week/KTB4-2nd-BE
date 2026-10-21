@@ -53,6 +53,8 @@ class StoryGenerationStatusSchedulerTest {
         prepareOutbox(20L, "request-20");
         doAnswer(call -> {
             assertThat(MDC.get("request_id")).isEqualTo("request-" + call.getArgument(0));
+            assertThat(MDC.get("job_id")).isEqualTo("execution-" + call.getArgument(0));
+            assertThat(MDC.get("workflow")).isEqualTo("story_generation");
             return null;
         }).when(sync).synchronize(org.mockito.ArgumentMatchers.anyLong());
 

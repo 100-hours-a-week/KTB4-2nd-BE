@@ -116,6 +116,11 @@ class StoryGenerationKafkaResultIntegrationTest {
         return AdminClient.create(Map.of("bootstrap.servers", BOOTSTRAP_SERVERS));
     }
 
+    private final ch.qos.logback.classic.Logger workflowLogger = (ch.qos.logback.classic.Logger)
+            org.slf4j.LoggerFactory.getLogger(com.yeodam.yeodambe.common.logging.WorkflowLog.class);
+    private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> workflowEvents =
+            new ch.qos.logback.core.read.ListAppender<>();
+
     private User owner;
     private Trip trip;
     private TripDetailPlace folder;
@@ -125,6 +130,9 @@ class StoryGenerationKafkaResultIntegrationTest {
 
     @BeforeEach
     void prepare() {
+        workflowEvents.list = new java.util.concurrent.CopyOnWriteArrayList<>();
+        workflowEvents.start();
+        workflowLogger.addAppender(workflowEvents);
         owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "스토리회원"));
         trip = trips.save(new Trip(owner.getUserId(), "여행",
                 LocalDate.of(2026, 10, 11), LocalDate.of(2026, 10, 12)));
@@ -142,6 +150,7 @@ class StoryGenerationKafkaResultIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        workflowLogger.detachAppender(workflowEvents);
         if (trip == null) {
             return;
         }
@@ -174,6 +183,7 @@ class StoryGenerationKafkaResultIntegrationTest {
         awaitCommitted(repeated);
         assertCompletedOnce();
         assertThat(jobs.findById(job.getId()).orElseThrow().getStoryId()).isEqualTo(storyId);
+        assertThat(terminalSuccessLogs()).hasSize(1);
     }
 
     @ParameterizedTest
@@ -238,6 +248,7 @@ class StoryGenerationKafkaResultIntegrationTest {
         try {
             assertThat(retryEntered.await(15, TimeUnit.SECONDS)).isTrue();
             assertNoResultSaved();
+            assertThat(terminalSuccessLogs()).isEmpty();
             try (var client = admin()) {
                 var committed = client.listConsumerGroupOffsets(GROUP)
                         .partitionsToOffsetAndMetadata().get(5, TimeUnit.SECONDS)
@@ -253,6 +264,7 @@ class StoryGenerationKafkaResultIntegrationTest {
 
         assertThat(attempts.get()).isEqualTo(2);
         assertCompletedOnce();
+        assertThat(terminalSuccessLogs()).hasSize(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM story_selected_places WHERE trip_place_id = ?",
                 Integer.class, folder.getId())).isEqualTo(1);
     }
@@ -372,6 +384,16 @@ class StoryGenerationKafkaResultIntegrationTest {
             }
             Thread.sleep(100);
         }
+    }
+
+    private List<ch.qos.logback.classic.spi.ILoggingEvent> terminalSuccessLogs() {
+        return workflowEvents.list.stream()
+                .filter(event -> job.getExecutionId().equals(event.getMDCPropertyMap().get("job_id")))
+                .filter(event -> event.getKeyValuePairs().stream()
+                        .anyMatch(pair -> "event".equals(pair.key) && "workflow_finished".equals(pair.value)))
+                .filter(event -> event.getKeyValuePairs().stream()
+                        .anyMatch(pair -> "result".equals(pair.key) && "success".equals(pair.value)))
+                .toList();
     }
 
     private void assertCompletedOnce() {

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
@@ -36,35 +37,40 @@ public class StoryGenerationStatusScheduler {
         );
 
         for (var job : jobs) {
-            String previousRequestId = MDC.get("request_id");
-
-            try {
-                if (timeoutService.expire(job.getId())) {
-                    continue;
-                }
-                var outbox = outboxRepository.findByGenerationId(job.getId())
-                        .orElseThrow(() -> new IllegalStateException(
-                                StoryGenerationInternalErrorMessage.OUTBOX_NOT_FOUND.message()
-                        ));
-
-                MDC.put("request_id", outbox.getRequestId());
-                syncService.synchronize(job.getId());
-            } catch (RuntimeException failure) {
-                log.atWarn()
-                        .addKeyValue("event", "story_generation_status_sync_failed")
-                        .addKeyValue("result", "failure")
-                        .addKeyValue("trip_id", job.getTripId())
-                        .addKeyValue("job_id", job.getId())
-                        .addKeyValue("failure_stage", "ai_status_sync")
-                        .addKeyValue("failure", failure.getClass().getSimpleName())
-                        .log("스토리 생성 상태 반영에 실패했습니다.");
-            } finally {
-                if (previousRequestId == null) {
-                    MDC.remove("request_id");
-                } else {
-                    MDC.put("request_id", previousRequestId);
+            try (var scope = WorkflowMdcScope.job("story_generation", job.getTripId(), job.getExecutionId(), null)) {
+                populateGenerationLoggingContext(job);
+                try {
+                    var outbox = outboxRepository.findByGenerationId(job.getId())
+                            .orElseThrow(() -> new IllegalStateException(
+                                    StoryGenerationInternalErrorMessage.OUTBOX_NOT_FOUND.message()
+                            ));
+                    populateRequestLoggingContext(outbox.getRequestId(), job.getExecutionId());
+                    if (!timeoutService.expire(job.getId())) {
+                        syncService.synchronize(job.getId());
+                    }
+                } catch (RuntimeException failure) {
+                    logStatusSyncFailure(failure);
                 }
             }
+        }
+    }
+
+    private void logStatusSyncFailure(RuntimeException failure) {
+        log.atWarn()
+                .addKeyValue("event", "story_generation_status_sync_failed")
+                .addKeyValue("result", "failure")
+                .addKeyValue("failure_stage", "ai_status_sync")
+                .addKeyValue("failure", failure.getClass().getSimpleName())
+                .log("스토리 생성 상태 반영에 실패했습니다.");
+    }
+
+    private void populateGenerationLoggingContext(StoryGenerationJob job) {
+        MDC.put("generation_id", job.getId().toString());
+    }
+
+    private void populateRequestLoggingContext(String requestId, String executionId) {
+        if (requestId != null && !requestId.equals(executionId)) {
+            MDC.put("request_id", requestId);
         }
     }
 }

@@ -23,11 +23,11 @@ import static org.mockito.Mockito.*;
 class StoryGenerationCancelServiceTest {
     private final StoryGenerationJobRepository jobs = mock(StoryGenerationJobRepository.class);
     private final StoryGenerationAiClient ai = mock(StoryGenerationAiClient.class);
-    private final StoryGenerationCancelService service = new StoryGenerationCancelService(jobs, ai);
+    private final StoryGenerationCancelService service = new StoryGenerationCancelService(jobs, ai, new StoryGenerationTerminalService(jobs));
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class, names = {"QUEUED", "PROCESSING"})
-    void cancellationAckDoesNotFinishJobBeforeKafkaResult(StoryGenerationJob.Status status) {
+    void cancellationAckImmediatelyFinishesJob(StoryGenerationJob.Status status) {
         var job = prepare(42L);
         if (status == StoryGenerationJob.Status.PROCESSING) {
             job.updateProcessing(50);
@@ -36,7 +36,7 @@ class StoryGenerationCancelServiceTest {
 
         service.cancel(42L, 7L);
 
-        assertThat(job.getStatus()).isEqualTo(status);
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.CANCELED);
         assertThat(job.getStoryId()).isNull();
         verify(ai).cancel(77L);
         verify(jobs, never()).save(any());
@@ -116,9 +116,49 @@ class StoryGenerationCancelServiceTest {
                 .hasMessage(StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH.message());
     }
 
+    @Test
+    void aiTaskNotFoundAlsoFinishesJob() {
+        var job = prepare(42L);
+        when(ai.cancel(77L)).thenThrow(new StoryGenerationAiRequestException(
+                StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 404, "TASK_NOT_FOUND"));
+
+        service.cancel(42L, 7L);
+
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.CANCELED);
+        verify(ai).cancel(77L);
+    }
+
+    @Test
+    void unrelatedAiNotFoundDoesNotCancelJob() {
+        var job = prepare(42L);
+        var failure = new StoryGenerationAiRequestException(
+                StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 404, "OTHER_NOT_FOUND");
+        when(ai.cancel(77L)).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.cancel(42L, 7L)).isSameAs(failure);
+
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verify(jobs, never()).findByIdForUpdate(anyLong());
+    }
+
+    @Test
+    void completionDuringAiCallIsNotReplacedByCancellation() {
+        var job = prepare(42L);
+        when(ai.cancel(77L)).thenAnswer(invocation -> {
+            job.complete(99L);
+            return response(77L, "execution-1", StoryGenerationAiResponse.Status.CANCELED);
+        });
+
+        assertThatThrownBy(() -> service.cancel(42L, 7L))
+                .isInstanceOf(StoryGenerationCannotBeCanceledException.class);
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.COMPLETED);
+        assertThat(job.getStoryId()).isEqualTo(99L);
+    }
+
     private StoryGenerationJob prepare(Long ownerId) {
         var job = new StoryGenerationJob("execution-1", 77L, ownerId, Story.Mood.EMOTIONAL);
         when(jobs.findById(7L)).thenReturn(Optional.of(job));
+        when(jobs.findByIdForUpdate(7L)).thenReturn(Optional.of(job));
         return job;
     }
 

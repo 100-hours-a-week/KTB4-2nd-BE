@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name="migration.service-schedulers-enabled", havingValue="true", matchIfMissing=true)
 @RequiredArgsConstructor
 public class PlaceSearchCatalogScheduler {
     private final PlaceSearchCatalog catalog;

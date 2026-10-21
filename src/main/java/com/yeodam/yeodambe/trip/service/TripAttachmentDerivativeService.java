@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
@@ -115,8 +116,7 @@ public class TripAttachmentDerivativeService {
             transactions.claimBatch(tripId, userId, uploadId)
                     .ifPresent(this::startPipeline);
         } catch (RuntimeException failure) {
-            log.warn("접수한 사진 배치의 즉시 제출 재시도: tripId={}, uploadId={}, stage=conversion_submit, cause={}",
-                    tripId, uploadId, failure.getClass().getSimpleName());
+            logConversionSubmissionFailure(tripId, uploadId, failure);
         }
     }
 
@@ -202,7 +202,7 @@ public class TripAttachmentDerivativeService {
                 try {
                     Files.deleteIfExists(path);
                 } catch (IOException cleanupFailure) {
-                    log.warn("임시 사진 파일 삭제 실패: {}", path, cleanupFailure);
+                    logTemporaryPhotoCleanupFailure(path, cleanupFailure);
                 }
             }
         }
@@ -212,20 +212,24 @@ public class TripAttachmentDerivativeService {
             String originalKey,
             Path original
     ) throws IOException {
-        Timer.Sample readSample = Timer.start(meterRegistry);
-        String readOutcome = "success";
+        try (var timing = startOriginalDownloadLogging()) {
+            Timer.Sample readSample = Timer.start(meterRegistry);
+            String readOutcome = "success";
 
-        try {
-            try (InputStream input = storage.open(originalKey)) {
-                Files.copy(input, original);
+            try {
+                try (InputStream input = storage.open(originalKey)) {
+                    Files.copy(input, original);
+                }
+            } catch (IOException | RuntimeException failure) {
+                readOutcome = "failure";
+                throw failure;
+            } finally {
+                readSample.stop(Timer.builder("yeodam.trip.stage")
+                        .tags("stage", "original_s3_read", "outcome", readOutcome)
+                        .register(meterRegistry));
             }
-        } catch (IOException | RuntimeException failure) {
-            readOutcome = "failure";
-            throw failure;
-        } finally {
-            readSample.stop(Timer.builder("yeodam.trip.stage")
-                    .tags("stage", "original_s3_read", "outcome", readOutcome)
-                    .register(meterRegistry));
+
+            timing.success();
         }
     }
 
@@ -243,10 +247,13 @@ public class TripAttachmentDerivativeService {
         try {
             PreparedPhotoDerivative prepared = prepareLocal(originalKey, mimeType, plannedKeys, directory);
             List<String> stored = new ArrayList<>();
-            for (int index = 0; index < prepared.outputs().size(); index++) {
-                PreparedPhotoDerivative.Output output = prepared.outputs().get(index);
-                stored.add(storeTrackedDerivative(executionId, output.file(), output.mimeType(),
-                        plannedKeys, index, uploadedKeys));
+            try (var uploadTiming = startDerivativeUploadLogging()) {
+                for (int index = 0; index < prepared.outputs().size(); index++) {
+                    PreparedPhotoDerivative.Output output = prepared.outputs().get(index);
+                    stored.add(storeTrackedDerivative(executionId, output.file(), output.mimeType(),
+                            plannedKeys, index, uploadedKeys));
+                }
+                uploadTiming.success();
             }
             return prepared.storedKeys(stored);
         } catch (RuntimeException failure) {
@@ -265,38 +272,41 @@ public class TripAttachmentDerivativeService {
             List<String> keys,
             Path directory
     ) {
-        Path original = directory.resolve("original");
-        Path analyze = directory.resolve("analyze.jpg");
-        Path preview = directory.resolve("preview.webp");
-        Path display = directory.resolve("display.jpg");
-        JsonNode metadata = metadata(original);
-        convertDerivatives(original, mimeType, metadata, analyze, preview, display);
-        // 필요한 촬영 정보만 복사한다. 방향은 픽셀에 반영했으므로 뷰어의 중복 회전을 막는다.
-        ExifToolProcess.Result copyResult = exifTool.execute(List.of(
-                "-overwrite_original", "-TagsFromFile", original.toString(),
-                "-DateTimeOriginal", "-SubSecTimeOriginal",
-                "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
-                "-Orientation#=1", analyze.toString()
-        ));
+        try (var timing = startImageConversionLogging()) {
+            Path original = directory.resolve("original");
+            Path analyze = directory.resolve("analyze.jpg");
+            Path preview = directory.resolve("preview.webp");
+            Path display = directory.resolve("display.jpg");
+            JsonNode metadata = metadata(original);
+            convertDerivatives(original, mimeType, metadata, analyze, preview, display);
+            // 필요한 촬영 정보만 복사한다. 방향은 픽셀에 반영했으므로 뷰어의 중복 회전을 막는다.
+            ExifToolProcess.Result copyResult = exifTool.execute(List.of(
+                    "-overwrite_original", "-TagsFromFile", original.toString(),
+                    "-DateTimeOriginal", "-SubSecTimeOriginal",
+                    "-OffsetTimeOriginal", "-GPS:All", "-Make", "-Model",
+                    "-Orientation#=1", analyze.toString()
+            ));
 
-        if (copyResult.exitStatus() != 0) {
-            throw new IllegalStateException(
-                    TripInternalErrorMessage.COMMAND_FAILED.message()
-                            .formatted("exiftool")
-            );
+            if (copyResult.exitStatus() != 0) {
+                throw new IllegalStateException(
+                        TripInternalErrorMessage.COMMAND_FAILED.message()
+                                .formatted("exiftool")
+                );
+            }
+            boolean heic = "image/heic".equals(mimeType);
+            DerivedPhotoKeys photo = new DerivedPhotoKeys(originalKey, plannedKey(keys, 0), plannedKey(keys, 1),
+                    heic ? plannedKey(keys, 2) : null, takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
+                    coordinate(metadata, "GPSLongitude", 180), deviceModel(metadata), fileSize(original),
+                    fileSize(analyze), fileSize(preview), heic ? fileSize(display) : null);
+            List<PreparedPhotoDerivative.Output> outputs = new ArrayList<>();
+            outputs.add(new PreparedPhotoDerivative.Output(analyze, plannedKey(keys, 0), "image/jpeg"));
+            outputs.add(new PreparedPhotoDerivative.Output(preview, plannedKey(keys, 1), "image/webp"));
+            if (heic) {
+                outputs.add(new PreparedPhotoDerivative.Output(display, plannedKey(keys, 2), "image/jpeg"));
+            }
+            timing.success();
+            return new PreparedPhotoDerivative(directory, photo, outputs);
         }
-        boolean heic = "image/heic".equals(mimeType);
-        DerivedPhotoKeys photo = new DerivedPhotoKeys(originalKey, plannedKey(keys, 0), plannedKey(keys, 1),
-                heic ? plannedKey(keys, 2) : null, takenAt(metadata), coordinate(metadata, "GPSLatitude", 90),
-                coordinate(metadata, "GPSLongitude", 180), deviceModel(metadata), fileSize(original),
-                fileSize(analyze), fileSize(preview), heic ? fileSize(display) : null);
-        List<PreparedPhotoDerivative.Output> outputs = new ArrayList<>();
-        outputs.add(new PreparedPhotoDerivative.Output(analyze, plannedKey(keys, 0), "image/jpeg"));
-        outputs.add(new PreparedPhotoDerivative.Output(preview, plannedKey(keys, 1), "image/webp"));
-        if (heic) {
-            outputs.add(new PreparedPhotoDerivative.Output(display, plannedKey(keys, 2), "image/jpeg"));
-        }
-        return new PreparedPhotoDerivative(directory, photo, outputs);
     }
 
     private String plannedKey(List<String> keys, int index) {
@@ -406,5 +416,26 @@ public class TripAttachmentDerivativeService {
         String model = metadata.path("Model").asString();
         String combined = (make + " " + model).trim();
         return combined.isEmpty() || combined.length() > 100 ? null : combined;
+    }
+
+    private WorkflowLog.Stage startOriginalDownloadLogging() {
+        return WorkflowLog.stage("original_download").debug();
+    }
+
+    private WorkflowLog.Stage startDerivativeUploadLogging() {
+        return WorkflowLog.stage("derivative_upload").debug();
+    }
+
+    private WorkflowLog.Stage startImageConversionLogging() {
+        return WorkflowLog.stage("image_conversion").debug();
+    }
+
+    private void logConversionSubmissionFailure(Long tripId, String uploadId, RuntimeException failure) {
+        log.warn("접수한 사진 배치의 즉시 제출 재시도: tripId={}, uploadId={}, stage=conversion_submit, cause={}",
+                tripId, uploadId, failure.getClass().getSimpleName());
+    }
+
+    private void logTemporaryPhotoCleanupFailure(Path path, IOException cleanupFailure) {
+        log.warn("임시 사진 파일 삭제 실패: {}", path, cleanupFailure);
     }
 }

@@ -44,6 +44,37 @@ class BackendJsonLogFormatterTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
+    void workflowStageFieldsAreSearchableWithNumericTimingValues() {
+        var converter = new ThrowableProxyConverter();
+        converter.start();
+        var formatter = new BackendJsonLogFormatter(new MockEnvironment(), converter);
+        var event = new LoggingEvent();
+        event.setInstant(Instant.parse("2026-10-21T00:00:00Z"));
+        event.setLevel(Level.INFO);
+        event.setLoggerName("workflow");
+        event.setMessage("단계 완료");
+        event.setMDCPropertyMap(Map.of("workflow", "trip_creation", "job_id", "job-1", "batch_no", "2"));
+        event.setKeyValuePairs(List.of(
+                new KeyValuePair("stage", "image_conversion"),
+                new KeyValuePair("stage_started_at", "2026-10-21T00:00:00Z"),
+                new KeyValuePair("stage_elapsed_ms", 120L),
+                new KeyValuePair("work_duration_ms", 230L),
+                new KeyValuePair("sample_count", 2L),
+                new KeyValuePair("workflow_elapsed_ms", 1000L)
+        ));
+        var json = objectMapper.readTree(formatter.format(event));
+        assertThat(json.path("workflow").asString()).isEqualTo("trip_creation");
+        assertThat(json.path("job_id").asString()).isEqualTo("job-1");
+        assertThat(json.path("batch_no").asLong()).isEqualTo(2);
+        assertThat(json.path("stage_elapsed_ms").isNumber()).isTrue();
+        assertThat(json.path("stage_elapsed_ms").asLong()).isEqualTo(120);
+        assertThat(json.path("work_duration_ms").asLong()).isEqualTo(230);
+        assertThat(json.path("workflow_elapsed_ms").asLong()).isEqualTo(1000);
+        assertThat(json.path("stage_started_at").asString()).isEqualTo("2026-10-21T00:00:00Z");
+    }
+
+
+    @Test
     void 공통_필드와_MDC_값을_JSON으로_출력한다() throws Exception {
         ThrowableProxyConverter throwableProxyConverter = new ThrowableProxyConverter();
         throwableProxyConverter.start();

@@ -45,6 +45,25 @@ public class BackendJsonLogFormatter
         members.add("error_code", event -> contextValue(event, "error_code"));
         members.add("expected_count", event -> numberValue(contextValue(event, "expected_count")));
         members.add("saved_count", event -> numberValue(contextValue(event, "saved_count")));
+        members.add("workflow", event -> contextValue(event, "workflow"));
+        members.add("stage", event -> contextValue(event, "stage"));
+        members.add("stage_started_at", event -> contextValue(event, "stage_started_at"));
+        members.add("stage_finished_at", event -> contextValue(event, "stage_finished_at"));
+        members.add("message_type", event -> contextValue(event, "message_type"));
+        members.add("batch_id", event -> numberValue(contextValue(event, "batch_id")));
+        members.add("failed_count", event -> numberValue(contextValue(event, "failed_count")));
+        members.add("generation_id", event -> numberValue(contextValue(event, "generation_id")));
+        members.add("workflow_elapsed_ms", event -> numberValue(contextValue(event, "workflow_elapsed_ms")));
+        members.add("batch_no", event -> numberValue(contextValue(event, "batch_no")));
+        members.add("item_id", event -> numberValue(contextValue(event, "item_id")));
+        members.add("photo_count", event -> numberValue(contextValue(event, "photo_count")));
+        members.add("place_count", event -> numberValue(contextValue(event, "place_count")));
+        members.add("unique_coordinate_count", event -> numberValue(contextValue(event, "unique_coordinate_count")));
+        members.add("lookup_failure_count", event -> numberValue(contextValue(event, "lookup_failure_count")));
+        members.add("fallback_count", event -> numberValue(contextValue(event, "fallback_count")));
+        members.add("work_duration_ms", event -> numberValue(contextValue(event, "work_duration_ms")));
+        members.add("stage_elapsed_ms", event -> numberValue(contextValue(event, "stage_elapsed_ms")));
+        members.add("sample_count", event -> numberValue(contextValue(event, "sample_count")));
         members.add("release", environment.getProperty("RELEASE", "unknown"));
         members.add("stack_trace", event -> event.getThrowableProxy() == null
                 ? null

@@ -32,19 +32,6 @@ public class MigrationAuthGateway {
         this.kafka=kafka;this.crypto=crypto;this.mapper=mapper;this.mode=mode;this.hasher=hasher;this.topic=topic;this.apply=apply;this.redis=redis;
     }
     public boolean queueEnabled() { return mode.queueEnabled(); }
-    public MigrationAuthReply direct(String operation, String credential) {
-        if (credential==null || credential.isBlank()) throw new RefreshTokenInvalidOrExpiredException();
-        var command=new MigrationAuthCommand(hasher.hash(topic+":"+operation+":"+credential),operation,credential,System.currentTimeMillis());
-        var cached=apply.recover(command);
-        if(cached.isPresent()) return cached.get();
-        try {
-            // Source rotation and its encrypted reply commit in the same transaction.
-            return apply.apply(command);
-        } catch(org.springframework.dao.DuplicateKeyException duplicate) {
-            // A retry can race the original HTTP request before its commit is visible.
-            return apply.recover(command).orElseThrow(this::unavailable);
-        }
-    }
     public MigrationAuthReply request(String operation, String credential) {
         if (credential==null || credential.isBlank()) throw new RefreshTokenInvalidOrExpiredException();
         String id=hasher.hash(topic+":"+operation+":"+credential);

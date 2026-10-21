@@ -11,14 +11,14 @@ class MigrationTripKafkaConfigTest {
         var config=new MigrationTripKafkaConfig();
         var factory=config.migrationTripListenerFactory(mock(ConsumerFactory.class),8);
         assertThat(((ConcurrentMessageListenerContainer<?,?>)factory.createContainer("rehearsal-test")).getConcurrency()).isEqualTo(8);
-        assertThat(factory.getContainerProperties().getAckMode()).isEqualTo(ContainerProperties.AckMode.RECORD);
+        assertThat(factory.getContainerProperties().getAckMode()).isEqualTo(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
         assertThat(factory.getContainerProperties().isStopImmediate()).isTrue();
         assertThatThrownBy(()->config.migrationTripListenerFactory(mock(ConsumerFactory.class),9))
                 .isInstanceOf(IllegalArgumentException.class);
     }
-    @Test void handoffFinishesCurrentRecordWithoutDrainingFetchedBatch() {
+    @Test void handoffDoesNotAutomaticallyCommitUnfinishedBatch() {
         var factory=new MigrationTripKafkaConfig().migrationTripListenerFactory(mock(ConsumerFactory.class),4);
-        assertThat(factory.getContainerProperties().getAckMode()).isEqualTo(ContainerProperties.AckMode.RECORD);
+        assertThat(factory.getContainerProperties().getAckMode()).isEqualTo(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
         assertThat(factory.getContainerProperties().isStopImmediate()).isTrue();
     }
 }

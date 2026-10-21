@@ -16,7 +16,7 @@ class MigrationTripConsumerTest {
     private final ObjectMapper mapper = mock(ObjectMapper.class);
     private final MigrationTripAdmissionService admission = mock(MigrationTripAdmissionService.class);
     private final MigrationTripApplyService apply = mock(MigrationTripApplyService.class);
-    private final MigrationTripConsumer consumer = new MigrationTripConsumer(mapper, admission, apply);
+    private final MigrationTripConsumer consumer = new MigrationTripConsumer(mapper, admission, apply, mock(MigrationTripWorkScheduler.class));
     private final MigrationTripCommand command = new MigrationTripCommand(
             ID, 7L, "hash", "강릉", LocalDate.of(2026, 10, 1),
             LocalDate.of(2026, 10, 2), List.of("42150"));

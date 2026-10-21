@@ -28,7 +28,8 @@ class MigrationSourceControlTest {
         when(registry.getListenerContainer("migrationTripApply")).thenReturn(listener);
         doAnswer(invocation -> {((Runnable)invocation.getArgument(0)).run();return null;}).when(listener).stop(any(Runnable.class));
         int port;try(var socket=new ServerSocket(0)){port=socket.getLocalPort();}
-        var control=new MigrationSourceControl(mode,registry,new ObjectMapper(),port,run,key.toString());
+        var scheduler=mock(MigrationTripWorkScheduler.class);
+        var control=new MigrationSourceControl(mode,registry,new ObjectMapper(),scheduler,port,run,key.toString());
         try {
             control.ready();var client=HttpClient.newHttpClient();
             var uri=URI.create("http://127.0.0.1:"+port+"/fence");
@@ -41,6 +42,8 @@ class MigrationSourceControlTest {
             assertThat(response.statusCode()).isEqualTo(200);
             assertThat(new ObjectMapper().readTree(response.body()).get("sourceConsumerStopped").asBoolean()).isTrue();
             assertThat(mode.fencing()).isTrue();
+            verify(scheduler).beginFence();
+            assertThat(new ObjectMapper().readTree(response.body()).get("activeTrip").asInt()).isZero();
             client.send(request,HttpResponse.BodyHandlers.ofString());verify(listener,times(1)).stop(any(Runnable.class));
         } finally {control.close();}
     }

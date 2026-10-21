@@ -28,6 +28,7 @@ public class MigrationSourceControl {
     private final MigrationTripMode mode;
     private final KafkaListenerEndpointRegistry registry;
     private final ObjectMapper mapper;
+    private final MigrationTripWorkScheduler scheduler;
     private final int port;
     private final String runId;
     private final byte[] token;
@@ -36,11 +37,11 @@ public class MigrationSourceControl {
     private volatile boolean consumerStopped;
     private HttpServer server;
     private java.util.concurrent.ExecutorService executor;
-    public MigrationSourceControl(MigrationTripMode mode,KafkaListenerEndpointRegistry registry,ObjectMapper mapper,
+    public MigrationSourceControl(MigrationTripMode mode,KafkaListenerEndpointRegistry registry,ObjectMapper mapper,MigrationTripWorkScheduler scheduler,
             @Value("${migration.source-control.port}") int port,
             @Value("${migration.source-control.run-id}") String runId,
             @Value("${migration.source-control.token-file}") String tokenFile) throws IOException {
-        this.mode=mode;this.registry=registry;this.mapper=mapper;this.port=port;
+        this.mode=mode;this.registry=registry;this.mapper=mapper;this.scheduler=scheduler;this.port=port;
         this.runId=UUID.fromString(runId).toString();this.token=Files.readString(Path.of(tokenFile)).trim().getBytes(StandardCharsets.UTF_8);
         if(token.length!=64 || !new String(token,StandardCharsets.UTF_8).matches("[0-9a-f]{64}")) throw new IllegalArgumentException("Invalid migration control token");
     }
@@ -58,6 +59,7 @@ public class MigrationSourceControl {
             if(!(fence?"POST":"GET").equals(e.getRequestMethod())) {reply(e,405,Map.of("error","method"));return;}
             if(fence && requested.compareAndSet(false,true)) {
                 mode.beginFence();
+                scheduler.beginFence();
                 var listener=registry.getListenerContainer("migrationTripApply");
                 if(listener==null) throw new IllegalStateException("Source listener absent");
                 listener.stop(()->consumerStopped=true);
@@ -65,7 +67,7 @@ public class MigrationSourceControl {
             var listener=registry.getListenerContainer("migrationTripApply");
             int assigned=listener==null || listener.getAssignedPartitions()==null?0:listener.getAssignedPartitions().size();
             reply(e,200,Map.of("runId",runId,"instance",instance,"fencing",mode.fencing(),
-                    "activeDirect",mode.activeDirect(),"sourceConsumerStopped",consumerStopped,
+                    "activeDirect",mode.activeDirect(),"activeTrip",scheduler.active(),"queuedTrip",scheduler.queued(),"sourceConsumerStopped",consumerStopped,
                     "sourceConsumerRunning",listener!=null && listener.isRunning(),"sourceAssignedPartitions",assigned));
         } catch(RuntimeException failure) {reply(e,503,Map.of("error","control_unavailable"));}
         finally {e.close();}

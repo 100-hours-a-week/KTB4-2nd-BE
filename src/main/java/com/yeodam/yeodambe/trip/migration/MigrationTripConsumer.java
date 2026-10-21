@@ -4,8 +4,6 @@ import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.KafkaHeaders;
-import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -17,15 +15,17 @@ public class MigrationTripConsumer {
     private final ObjectMapper mapper;
     private final MigrationTripAdmissionService admission;
     private final MigrationTripApplyService applyService;
+    private final MigrationTripWorkScheduler scheduler;
 
     public MigrationTripConsumer(
             ObjectMapper mapper,
             MigrationTripAdmissionService admission,
-            MigrationTripApplyService applyService
+            MigrationTripApplyService applyService, MigrationTripWorkScheduler scheduler
     ) {
         this.mapper = mapper;
         this.admission = admission;
         this.applyService = applyService;
+        this.scheduler = scheduler;
     }
 
     @KafkaListener(
@@ -35,8 +35,28 @@ public class MigrationTripConsumer {
             containerFactory = "migrationTripListenerFactory",
             autoStartup = "${migration.trip.consumer-enabled:false}"
     )
-    public void consume(String json, @Header(KafkaHeaders.RECEIVED_KEY) String key,
-                        @Header(KafkaHeaders.RECEIVED_PARTITION) int partition) {
+    public void consumeBatch(java.util.List<org.apache.kafka.clients.consumer.ConsumerRecord<String,String>> records,
+                             org.apache.kafka.clients.consumer.Consumer<String,String> consumer) {
+        var jobs=scheduler.submit(records,r->consume(r.value(),r.key(),r.partition()));
+        // KafkaConsumer is used only on its poll thread. Workers only apply transactions.
+        // Wait even when interrupted: a Source stop callback must never precede its last commit.
+        for(var job:jobs) job.completed().join();
+        var commits=new java.util.HashMap<org.apache.kafka.common.TopicPartition,org.apache.kafka.clients.consumer.OffsetAndMetadata>();
+        var unfinished=new java.util.HashMap<org.apache.kafka.common.TopicPartition,Long>();
+        for(var job:jobs) {
+            var r=job.record();var partition=new org.apache.kafka.common.TopicPartition(r.topic(),r.partition());
+            if(unfinished.containsKey(partition)) continue;
+            if(job.completed().join()) commits.put(partition,new org.apache.kafka.clients.consumer.OffsetAndMetadata(r.offset()+1));
+            else unfinished.put(partition,r.offset());
+        }
+        if(!commits.isEmpty()) consumer.commitSync(commits);
+        unfinished.forEach(consumer::seek);
+        if(!unfinished.isEmpty() && !scheduler.fencing()) {
+            try {Thread.sleep(1000);} catch(InterruptedException interrupted) {Thread.currentThread().interrupt();}
+        }
+    }
+
+    public void consume(String json, String key, int partition) {
         long receivedAtMs = System.currentTimeMillis();
         MigrationTripCommand command = mapper.readValue(json, MigrationTripCommand.class);
         if (!Long.toString(command.userId()).equals(key)

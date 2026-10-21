@@ -19,10 +19,15 @@ public class MigrationTripKafkaConfig {
         factory.setConsumerFactory(consumerFactory);
         if (concurrency < 1 || concurrency > 8) throw new IllegalArgumentException("Invalid rehearsal concurrency");
         factory.setConcurrency(concurrency);
+        factory.setBatchListener(true);
+        var properties=new java.util.Properties();
+        properties.setProperty("max.poll.records","32");
+        properties.setProperty("enable.auto.commit","false");
+        factory.getContainerProperties().setKafkaConsumerProperties(properties);
         factory.setMissingTopicsFatal(true);
-        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
-        // Finish the current record and commit it; leave fetched but unapplied records
-        // in Kafka for the Target instead of draining an entire poll during cutover.
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        // The poll thread commits only completed prefixes; fencing cancels queued work.
+        // No framework batch/auto acknowledgement may advance past an unfinished record.
         factory.getContainerProperties().setStopImmediate(true);
         factory.setCommonErrorHandler(new DefaultErrorHandler(
                 new FixedBackOff(1000L, FixedBackOff.UNLIMITED_ATTEMPTS)));

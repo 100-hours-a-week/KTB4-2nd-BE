@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
+
 import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
@@ -32,10 +35,30 @@ public class StoryGenerationAcceptanceService {
         var message = messageService.assemble(job);
         String payload = objectMapper.writeValueAsString(message);
 
-        var outbox = new StoryGenerationOutbox(job.getId(), payload, requestId);
-        outbox.enableCdc(tripId, topics.topicFor(EventType.STORY_CREATE_REQUEST));
-        outboxRepository.saveAndFlush(outbox);
-
+        try (var scope = WorkflowMdcScope.job("story_generation", tripId, job.getExecutionId());
+             var timing = startOutboxPersistenceLogging(job.getId())) {
+            logWorkflowStarted(job.getId());
+            var outbox = new StoryGenerationOutbox(job.getId(), payload, requestId);
+            outbox.enableCdc(tripId, topics.topicFor(EventType.STORY_CREATE_REQUEST));
+            outboxRepository.saveAndFlush(outbox);
+            logAiRequestEnqueued(timing);
+        }
         return job;
+    }
+
+    private WorkflowLog.Stage startOutboxPersistenceLogging(Long generationId) {
+        return WorkflowLog.stage("outbox_persistence")
+                .field("message_type", "story")
+                .field("generation_id", generationId);
+    }
+
+    private void logWorkflowStarted(Long generationId) {
+        WorkflowLog.stage("workflow_started")
+                .field("generation_id", generationId)
+                .committed("workflow_started");
+    }
+
+    private void logAiRequestEnqueued(WorkflowLog.Stage timing) {
+        timing.committed("ai_request_enqueued");
     }
 }

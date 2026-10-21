@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
@@ -44,6 +47,7 @@ public class StoryGenerationTerminalService {
 
         if (response.status() == StoryGenerationAiResponse.Status.CANCELED) {
             job.cancel();
+            logWorkflowFinished(job, "canceled", null);
             return;
         }
 
@@ -59,5 +63,12 @@ public class StoryGenerationTerminalService {
         }
 
         job.fail(error.code());
+        logWorkflowFinished(job, "failure", job.getErrorCode());
+    }
+
+    private void logWorkflowFinished(StoryGenerationJob job, String result, String errorCode) {
+        WorkflowLog.event("story_generation", job.getTripId(), job.getExecutionId(), "ai_result_received");
+        WorkflowLog.finished("story_generation", job.getTripId(), job.getExecutionId(),
+                job.getCreatedAt(), result, errorCode);
     }
 }

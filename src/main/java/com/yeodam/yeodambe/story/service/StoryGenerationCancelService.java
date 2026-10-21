@@ -16,6 +16,7 @@ public class StoryGenerationCancelService {
 
     private final StoryGenerationJobRepository jobRepository;
     private final StoryGenerationAiClient aiClient;
+    private final StoryGenerationTerminalService terminalService;
 
     public void cancel(Long userId, Long generationId) {
         var job = jobRepository.findById(generationId)
@@ -31,10 +32,17 @@ public class StoryGenerationCancelService {
         try {
             response = aiClient.cancel(job.getTripId());
         } catch (StoryGenerationAiRequestException failure) {
+            if (Integer.valueOf(404).equals(failure.getStatusCode())
+                    && "TASK_NOT_FOUND".equals(failure.getErrorCode())) {
+                terminalService.confirmCancellation(userId, generationId);
+                return;
+            }
+
             if (Integer.valueOf(409).equals(failure.getStatusCode())
                     && "TASK_NOT_CANCELABLE".equals(failure.getErrorCode())) {
                 throw new StoryGenerationCannotBeCanceledException();
             }
+
             throw failure;
         }
 
@@ -50,5 +58,6 @@ public class StoryGenerationCancelService {
                     StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
             );
         }
+        terminalService.confirmCancellation(userId, generationId);
     }
 }

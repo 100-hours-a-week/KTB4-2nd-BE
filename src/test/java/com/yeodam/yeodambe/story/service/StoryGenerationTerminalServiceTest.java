@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
+import com.yeodam.yeodambe.common.exception.StoryGenerationCannotBeCanceledException;
+import com.yeodam.yeodambe.common.exception.StoryGenerationNotFoundException;
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse.Failure;
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse.Status;
 import com.yeodam.yeodambe.story.entity.Story;
@@ -142,6 +144,51 @@ class StoryGenerationTerminalServiceTest {
         assertThatThrownBy(() -> service.apply(10L, response(241L, "execution-1", Status.CANCELED, null)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage(StoryGenerationInternalErrorMessage.JOB_NOT_FOUND.message());
+    }
+
+    @Test
+    void confirmsCancellationAndAcceptsLaterKafkaCancellation() {
+        prepareJob();
+        job.updateProcessing(50);
+
+        service.confirmCancellation(2L, 10L);
+        service.apply(10L, response(241L, "execution-1", Status.CANCELED, null));
+
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.CANCELED);
+        assertThat(job.getProgress()).isEqualTo(50);
+        assertThat(job.getStoryId()).isNull();
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = StoryGenerationJob.Status.class,
+            names = {"COMPLETED", "FAILED"})
+    void cancellationDoesNotReplaceCompletionOrFailure(StoryGenerationJob.Status status) {
+        prepareJob();
+        if (status == StoryGenerationJob.Status.COMPLETED) {
+            job.complete(99L);
+        } else {
+            job.fail("WORKER_DEAD");
+        }
+
+        assertThatThrownBy(() -> service.confirmCancellation(2L, 10L))
+                .isInstanceOf(StoryGenerationCannotBeCanceledException.class);
+        assertThat(job.getStatus()).isEqualTo(status);
+    }
+
+    @Test
+    void cancellationRejectsOtherOwnerWithoutChangingState() {
+        prepareJob();
+
+        assertThatThrownBy(() -> service.confirmCancellation(999L, 10L))
+                .isInstanceOf(StoryGenerationNotFoundException.class);
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+    }
+
+    @Test
+    void cancellationRejectsMissingJob() {
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.confirmCancellation(2L, 10L))
+                .isInstanceOf(StoryGenerationNotFoundException.class);
     }
 
     private void prepareJob() {

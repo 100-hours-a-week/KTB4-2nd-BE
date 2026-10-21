@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 class MigrationTripConsumerTest {
@@ -25,7 +26,7 @@ class MigrationTripConsumerTest {
         when(mapper.readValue("json", MigrationTripCommand.class)).thenReturn(command);
         when(admission.hashPayload(7L, command.tripRequest())).thenReturn("hash");
 
-        assertThatThrownBy(() -> consumer.consume("json", "other-id"))
+        assertThatThrownBy(() -> consumer.consume("json", "other-id", 0))
                 .isInstanceOf(IllegalStateException.class);
         verifyNoInteractions(apply);
     }
@@ -36,8 +37,31 @@ class MigrationTripConsumerTest {
         when(admission.hashPayload(7L, command.tripRequest())).thenReturn("hash");
         doThrow(new TripNameDuplicatedException()).when(apply).apply(command);
 
-        consumer.consume("json", "7");
+        consumer.consume("json", "7", 0);
 
         verify(apply).recordFailure(command, "TRIP_NAME_DUPLICATED");
+    }
+
+    @Test
+    void 완료된_요청만_구간시간과_파티션을_기록한다() {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(MigrationTripConsumer.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            when(mapper.readValue("json", MigrationTripCommand.class)).thenReturn(command);
+            when(admission.hashPayload(7L, command.tripRequest())).thenReturn("hash");
+            when(apply.apply(command)).thenReturn(true, false);
+            consumer.consume("json", "7", 2);
+            consumer.consume("json", "7", 2);
+            var messages = appender.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList();
+            assertThat(messages).hasSize(2);
+            assertThat(messages.getFirst()).contains("consumer_started_at_ms=", "apply_elapsed_us=", "partition=2");
+            assertThat(messages.getLast()).contains("migration_trip_replayed").doesNotContain("apply_elapsed_us=");
+            assertThat(messages.getFirst()).doesNotContain("강릉", "42150", "hash");
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 }

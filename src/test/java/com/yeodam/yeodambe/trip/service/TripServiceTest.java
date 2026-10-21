@@ -46,7 +46,6 @@ class TripServiceTest {
     private TripAccessService tripAccessService;
     private TripService tripService;
     private TripMapCacheStore mapCache;
-    private TripMapCacheLock mapLock;
     private final Logger logger = (Logger) LoggerFactory.getLogger(TripService.class);
     private ListAppender<ILoggingEvent> logAppender;
 
@@ -67,8 +66,6 @@ class TripServiceTest {
         regionCatalog = mock(RegionCatalog.class);
         tripAccessService = mock(TripAccessService.class);
         mapCache = mock(TripMapCacheStore.class);
-        mapLock = mock(TripMapCacheLock.class);
-        when(mapLock.tryAcquire(eq(1L), eq("v1"), anyString())).thenReturn(true);
         when(mapCache.version(1L)).thenReturn(Optional.of("v1"));
         tripService = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
                 tripRepository,
@@ -79,8 +76,7 @@ class TripServiceTest {
                 tripAccessService,
                 new ObjectMapper(),
                 mock(StoryRepository.class),
-                mapCache,
-                mapLock
+                mapCache
         );
     }
 
@@ -346,6 +342,8 @@ class TripServiceTest {
         assertThat(captor.getValue().markers().getFirst().previewStorageKey()).isEqualTo("preview-key");
         assertThat(captor.getValue().markers().getFirst().attachmentCount()).isEqualTo(3);
         assertThat(response.markers().getFirst().thumbnailUrl()).isEqualTo("https://example.test/signed");
+        verify(mapCache).find(1L, "v1");
+        verify(tripAttachmentRepository).findMapRepresentatives(1L);
     }
 
     @Test
@@ -369,73 +367,65 @@ class TripServiceTest {
     }
 
     @Test
-    void lockOwnerLoadsAndSavesBeforeReleasingTheSameOwner() {
-        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
+    void concurrentCacheMissesMayLoadDatabaseIndependently() throws Exception {
+        var gate = new java.util.concurrent.CyclicBarrier(2);
+        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenAnswer(call -> {
+            gate.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            return List.of();
+        });
 
-        assertThat(tripService.findMap(1L).markers()).isEmpty();
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var first = pool.submit(() -> tripService.findMap(1L));
+            var second = pool.submit(() -> tripService.findMap(1L));
 
-        var owner = org.mockito.ArgumentCaptor.forClass(String.class);
-        var order = inOrder(mapLock, mapCache, tripAttachmentRepository);
-        order.verify(mapCache).version(1L);
-        order.verify(mapCache).find(1L, "v1");
-        order.verify(mapLock).tryAcquire(eq(1L), eq("v1"), owner.capture());
-        order.verify(mapCache).find(1L, "v1");
-        order.verify(tripAttachmentRepository).findMapRepresentatives(1L);
-        order.verify(mapCache).save(eq(1L), eq("v1"), any());
-        order.verify(mapLock).release(1L, "v1", owner.getValue());
-        assertThat(java.util.UUID.fromString(owner.getValue())).isNotNull();
-    }
-
-    @Test
-    void waitingRequestUsesCacheFilledByAnotherRequest() {
-        var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of());
-        when(mapCache.find(1L, "v1")).thenReturn(Optional.empty(), Optional.of(cached));
-        when(mapLock.tryAcquire(eq(1L), eq("v1"), anyString())).thenReturn(false);
-
-        assertThat(tripService.findMap(1L).markers()).isEmpty();
+            assertThat(first.get(10, java.util.concurrent.TimeUnit.SECONDS).markers()).isEmpty();
+            assertThat(second.get(10, java.util.concurrent.TimeUnit.SECONDS).markers()).isEmpty();
+        }
 
         verify(mapCache, times(2)).find(1L, "v1");
-        verifyNoInteractions(tripAttachmentRepository);
-        verify(mapCache, never()).save(anyLong(), anyString(), any());
-        verify(mapLock, never()).release(anyLong(), anyString(), anyString());
+        verify(tripAttachmentRepository, times(2)).findMapRepresentatives(1L);
+        verify(mapCache, times(2)).save(eq(1L), eq("v1"), any());
     }
 
     @Test
-    void cacheIsRecheckedAfterAcquiringLock() {
-        var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of());
-        when(mapCache.find(1L, "v1")).thenReturn(Optional.empty(), Optional.of(cached));
+    @SuppressWarnings("unchecked")
+    void redisReadAndWriteFailuresDoNotPreventMapResponse() {
+        var redis = mock(org.springframework.data.redis.core.StringRedisTemplate.class);
+        var values = mock(org.springframework.data.redis.core.ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(values);
+        when(values.get("cache:trip-map:version:user:1")).thenReturn("v1");
+        when(values.get("cache:trip-map:user:1:v1"))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("redis read unavailable"));
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("redis write unavailable"))
+                .when(values).set(anyString(), anyString(), any(java.time.Duration.class));
+        ReflectionTestUtils.setField(tripService, "tripMapCacheStore",
+                new TripMapCacheStore(redis, new ObjectMapper()));
+        when(tripAttachmentRepository.findMapRepresentatives(1L))
+                .thenReturn(List.of(mapRepresentative(7L, "preview-key")));
+        when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(7L)))
+                .thenReturn(List.of(new TripAttachmentCount(7L, 3L)));
+        when(tripAttachmentStorageClient.createReadUrl("preview-key"))
+                .thenReturn("https://example.test/signed");
 
-        assertThat(tripService.findMap(1L).markers()).isEmpty();
+        var response = tripService.findMap(1L);
 
-        verifyNoInteractions(tripAttachmentRepository);
-        verify(mapCache, never()).save(anyLong(), anyString(), any());
-        verify(mapLock).release(eq(1L), eq("v1"), anyString());
-    }
-
-    @Test
-    void redisLockFailureFallsBackToDatabaseWithoutSavingCache() {
-        when(mapLock.tryAcquire(eq(1L), eq("v1"), anyString()))
-                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("redis unavailable"));
-        when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
-
-        assertThat(tripService.findMap(1L).markers()).isEmpty();
-
+        assertThat(response.markers()).singleElement().satisfies(marker -> {
+            assertThat(marker.tripId()).isEqualTo(7L);
+            assertThat(marker.attachmentCount()).isEqualTo(3L);
+            assertThat(marker.thumbnailUrl()).isEqualTo("https://example.test/signed");
+        });
         verify(tripAttachmentRepository).findMapRepresentatives(1L);
-        verify(mapCache, never()).save(anyLong(), anyString(), any());
-        verify(mapLock, never()).release(anyLong(), anyString(), anyString());
+        verify(values).set(eq("cache:trip-map:user:1:v1"), anyString(), eq(java.time.Duration.ofSeconds(60)));
     }
 
     @Test
-    void databaseFailureStillReleasesAcquiredLock() {
+    void databaseFailurePropagatesWithoutSavingCache() {
         var failure = new org.springframework.dao.DataAccessResourceFailureException("database unavailable");
         when(tripAttachmentRepository.findMapRepresentatives(1L)).thenThrow(failure);
 
         assertThat(assertThrows(org.springframework.dao.DataAccessResourceFailureException.class,
                 () -> tripService.findMap(1L))).isSameAs(failure);
 
-        var owner = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(mapLock).tryAcquire(eq(1L), eq("v1"), owner.capture());
-        verify(mapLock).release(1L, "v1", owner.getValue());
         verify(mapCache, never()).save(anyLong(), anyString(), any());
     }
 

@@ -48,7 +48,7 @@ class TripListServiceTest {
                 storageClient,
                 mock(TripAccessService.class),
                 objectMapper,
-                mock(StoryRepository.class), mock(TripMapCacheStore.class), mock(TripMapCacheLock.class)
+                mock(StoryRepository.class), mock(TripMapCacheStore.class)
         );
     }
 

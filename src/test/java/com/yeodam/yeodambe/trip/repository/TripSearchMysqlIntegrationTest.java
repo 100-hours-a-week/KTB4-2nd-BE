@@ -47,8 +47,6 @@ import static org.mockito.Mockito.*;
 class TripSearchMysqlIntegrationTest extends TripSearchRepositoryTest {
     @MockitoBean
     private TripMapCacheStore mapCache;
-    @MockitoBean
-    private TripMapCacheLock mapLock;
 
     @Autowired
     private EntityManager entityManager;

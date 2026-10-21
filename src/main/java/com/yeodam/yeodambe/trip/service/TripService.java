@@ -39,8 +39,6 @@ import com.yeodam.yeodambe.trip.service.response.TripMapCacheData;
 import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
-import org.springframework.dao.DataAccessException;
-import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.spi.LoggingEventBuilder;
@@ -49,8 +47,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.Optional;
-import java.util.UUID;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -82,7 +78,6 @@ public class TripService {
     private final ObjectMapper objectMapper;
     private final StoryRepository storyRepository;
     private final TripMapCacheStore tripMapCacheStore;
-    private final TripMapCacheLock tripMapCacheLock;
 
     @Transactional(readOnly = true)
     public List<TripSearchCandidateResponse> findSearchCandidates(
@@ -476,65 +471,12 @@ public class TripService {
             Long userId,
             String version
     ) {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-
-        while (true) {
-            var cached = tripMapCacheStore.find(userId, version);
-            if (cached.isPresent()) {
-                return cached.get();
-            }
-
-            var filled = tryFillMapCache(userId, version);
-            if (filled.isPresent()) {
-                return filled.get();
-            }
-
-            if (System.nanoTime() >= deadline) {
-                log.warn("메인 지도 캐시 대기 시간이 초과됐습니다. userId={}",
-                        userId);
-                return loadMapData(userId);
-            }
-
-            try {
-                TimeUnit.MILLISECONDS.sleep(50);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                return loadMapData(userId);
-            }
-        }
-    }
-
-    private Optional<TripMapCacheData> tryFillMapCache(
-            Long userId,
-            String version
-    ) {
-        String owner = UUID.randomUUID().toString();
-
-        boolean acquired;
-        try {
-            acquired = tripMapCacheLock.tryAcquire(userId, version, owner);
-        } catch (DataAccessException exception) {
-            log.warn("메인 지도 캐시 잠금 획득에 실패했습니다. userId={}",
-                    userId, exception);
-            return Optional.of(loadMapData(userId));
-        }
-
-        if (!acquired) {
-            return Optional.empty();
-        }
-
-        try {
-            return Optional.of(
-                    tripMapCacheStore.find(userId, version)
-                            .orElseGet(() -> {
-                                TripMapCacheData loaded = loadMapData(userId);
-                                tripMapCacheStore.save(userId, version, loaded);
-                                return loaded;
-                            })
-            );
-        } finally {
-            tripMapCacheLock.release(userId, version, owner);
-        }
+        return tripMapCacheStore.find(userId, version)
+                .orElseGet(() -> {
+                    TripMapCacheData loaded = loadMapData(userId);
+                    tripMapCacheStore.save(userId, version, loaded);
+                    return loaded;
+                });
     }
 
     private TripMapCacheData loadMapData(Long userId) {

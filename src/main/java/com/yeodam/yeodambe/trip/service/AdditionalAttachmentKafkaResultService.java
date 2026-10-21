@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
@@ -58,6 +60,7 @@ public class AdditionalAttachmentKafkaResultService {
             return true;
         }
         execution.receiveResult(raw, event.status().name(), transactions.databaseTime());
+        logAiResultReceived(event.tripId(), event.executionId());
         if (event.status() != TripCreateResultEvent.Status.COMPLETED)
             transactions.failExecution(event.executionId(), ErrorMessage.AI_PROCESSING_FAILED.name());
         return true;
@@ -130,6 +133,7 @@ public class AdditionalAttachmentKafkaResultService {
             execution.releaseReservation(execution.getAccountedBytes());
         }
         execution.finish(AdditionalAttachmentExecution.Status.COMPLETED, null, transactions.databaseTime());
+        logWorkflowCompleted(claim, execution);
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -155,5 +159,14 @@ public class AdditionalAttachmentKafkaResultService {
             else if (execution.getProcessPublishedAt() != null && !execution.getProcessPublishedAt().isAfter(now.minusHours(1)))
                 transactions.failExecution(execution.getExecutionId(), "AI_RESULT_TIMEOUT");
         }
+    }
+
+    private void logAiResultReceived(Long tripId, String executionId) {
+        WorkflowLog.event("trip_reanalysis", tripId, executionId, "ai_result_received");
+    }
+
+    private void logWorkflowCompleted(TripAnalysisResultClaim claim, AdditionalAttachmentExecution execution) {
+        WorkflowLog.finishedFromDatabase("trip_reanalysis", claim.tripId(), claim.executionId(),
+                execution.getCreatedAt(), execution.getEndedAt(), "success", null);
     }
 }

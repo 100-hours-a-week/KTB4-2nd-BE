@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
@@ -436,6 +438,7 @@ public class TripAnalysisResultService {
             return;
         }
         execution.receiveResult(rawPayload, event.status().name(), uploadTransactions.databaseTime());
+        logAiResultReceived(event.tripId(), event.executionId());
         switch (event.status()) {
             case COMPLETED -> {
                 // 원문을 먼저 커밋하고 검증·외부 조회·최종 저장은 별도 작업에서 수행한다.
@@ -533,6 +536,7 @@ public class TripAnalysisResultService {
                 null, uploadTransactions.databaseTime());
         creationExecutions.saveAndFlush(execution);
         persistCompleted(claim.tripId(), claim.userId(), executionAttachments(claim.executionId()), result, placeNames);
+        logWorkflowCompleted(claim);
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -679,5 +683,15 @@ public class TripAnalysisResultService {
         if (!value.isNumber() || value.asDecimal().abs().compareTo(maximum) > 0) {
             throw new IllegalStateException(TripInternalErrorMessage.RESULT_COORDINATE_OUT_OF_RANGE.message());
         }
+    }
+
+    private void logAiResultReceived(Long tripId, String executionId) {
+        WorkflowLog.event("trip_creation", tripId, executionId, "ai_result_received");
+    }
+
+    private void logWorkflowCompleted(TripAnalysisResultClaim claim) {
+        var completedTrip = trips.findById(claim.tripId()).orElseThrow();
+        WorkflowLog.finished("trip_creation", claim.tripId(), claim.executionId(),
+                completedTrip.getCreatedAt(), "success", null);
     }
 }

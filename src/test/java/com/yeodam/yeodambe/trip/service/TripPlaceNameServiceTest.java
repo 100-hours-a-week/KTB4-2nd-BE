@@ -34,6 +34,29 @@ class TripPlaceNameServiceTest {
     }
 
     @Test
+    void 역지오코딩_완료에_실행문맥과_대체건수를_남긴다() {
+        Logger logger = (Logger) LoggerFactory.getLogger(com.yeodam.yeodambe.common.logging.WorkflowLog.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            when(client.lookup(any(), any())).thenReturn(failure(KakaoLocalClient.Failure.OTHER));
+            service(1).resolve(7L, "run", onePlace(), () -> true);
+            assertThat(appender.list).hasSize(1);
+            ILoggingEvent event = appender.list.getFirst();
+            assertThat(event.getMDCPropertyMap()).containsEntry("job_id", "run");
+            assertThat(event.getKeyValuePairs()).anySatisfy(pair -> {
+                assertThat(pair.key).isEqualTo("fallback_count");
+                assertThat(pair.value).isEqualTo(1L);
+            });
+            assertThat(event.getFormattedMessage()).doesNotContain("33.45", "126.94");
+            assertThat(MDC.get("job_id")).isNull();
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
     void AI_장소_좌표와_ID가_올바르지_않으면_호출하지_않는다() {
         TripPlaceNameService service = service(5);
         when(executions.isCurrent(7L, "run")).thenReturn(true);

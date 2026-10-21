@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
+
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse;
 
 
@@ -59,23 +62,28 @@ public class AdditionalAttachmentUploadCompletionService {
             return;
         }
 
-        for (AdditionalAttachmentUploadItem item : batch.items()) {
-            uploadedFileValidator.verifySize(
-                    item.getObjectKey(),
-                    item.getSizeBytes()
-            );
+        String jobId = batch.additionId();
+        try (var scope = WorkflowMdcScope.job("trip_reanalysis", tripId, jobId);
+             var timing = startUploadAcceptanceLogging(batch.items().size())) {
+            for (AdditionalAttachmentUploadItem item : batch.items()) {
+                uploadedFileValidator.verifySize(
+                        item.getObjectKey(),
+                        item.getSizeBytes()
+                );
 
-            uploadedFileValidator.verifyType(
-                    item.getObjectKey(),
-                    item.getContentType()
+                uploadedFileValidator.verifyType(
+                        item.getObjectKey(),
+                        item.getContentType()
+                );
+            }
+
+            uploadTransactionService.markVerified(
+                    tripId,
+                    userId,
+                    request.uploadId()
             );
+            timing.success();
         }
-
-        uploadTransactionService.markVerified(
-                tripId,
-                userId,
-                request.uploadId()
-        );
     }
     public Optional<AdditionalAttachmentAnalysisPreparationService.PreparedAnalysis> prepareAddition(
             Long tripId, Long userId, AdditionalAttachmentUploadCompleteRequest request
@@ -114,10 +122,7 @@ public class AdditionalAttachmentUploadCompletionService {
             retainFiles(derived);
             return derived;
         } catch (RuntimeException failure) {
-            log.atError().addKeyValue("event", "additional_upload_prepare")
-                    .addKeyValue("result", "failure").addKeyValue("trip_id", tripId)
-                    .addKeyValue("job_id", request.uploadId()).addKeyValue("failure_stage", stage)
-                    .log("추가 사진 준비에 실패했습니다.", failure);
+            logUploadPreparationFailure(tripId, request.uploadId(), stage, failure);
             if (!persisted) {
                 boolean cleaned = !hasCleanupFailure(failure);
                 for (String key : keys(derived, false)) {
@@ -205,5 +210,18 @@ public class AdditionalAttachmentUploadCompletionService {
                 originalKeys,
                 contentTypes
         );
+    }
+
+    private WorkflowLog.Stage startUploadAcceptanceLogging(int photoCount) {
+        return WorkflowLog.stage("original_upload_acceptance").field("photo_count", photoCount);
+    }
+
+    private void logUploadPreparationFailure(
+            Long tripId, String uploadId, String stage, RuntimeException failure
+    ) {
+        log.atError().addKeyValue("event", "additional_upload_prepare")
+                .addKeyValue("result", "failure").addKeyValue("trip_id", tripId)
+                .addKeyValue("job_id", uploadId).addKeyValue("failure_stage", stage)
+                .log("추가 사진 준비에 실패했습니다.", failure);
     }
 }

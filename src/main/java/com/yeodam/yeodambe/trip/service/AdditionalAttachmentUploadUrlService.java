@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+
 import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
@@ -244,6 +246,7 @@ public class AdditionalAttachmentUploadUrlService {
                             now
                     )
             );
+            logWorkflowStarted(tripId, execution.getExecutionId());
         }
 
         if (execution.isInputClosed()) {
@@ -382,5 +385,9 @@ public class AdditionalAttachmentUploadUrlService {
                 throw new InvalidAttachmentUploadException();
             }
         }
+    }
+
+    private void logWorkflowStarted(Long tripId, String executionId) {
+        WorkflowLog.event("trip_reanalysis", tripId, executionId, "workflow_started");
     }
 }

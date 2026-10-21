@@ -44,8 +44,13 @@ class TripPlaceFolderRepositoryTest {
         TripDetailPlace alpha1 = savePlace(trip.getId(), "Alpha", null);
         TripDetailPlace alpha2 = savePlace(trip.getId(), "Alpha", null);
         TripDetailPlace beta = savePlace(trip.getId(), "Beta", null);
-        savePlace(trip.getId(), "Aardvark", LocalDateTime.now());
-        savePlace(other.getId(), "Alpha", null);
+        TripDetailPlace deleted = savePlace(trip.getId(), "Aardvark", LocalDateTime.now());
+        TripDetailPlace otherPlace = savePlace(other.getId(), "Alpha", null);
+        savePlace(trip.getId(), "Aardvark", null);
+        for (TripDetailPlace place : List.of(alpha1, alpha2, beta, deleted)) {
+            saveAttachment(owner.getUserId(), trip.getId(), place.getId(), ClassificationStatus.ACTIVE, false, false);
+        }
+        saveAttachment(owner.getUserId(), other.getId(), otherPlace.getId(), ClassificationStatus.ACTIVE, false, false);
         flushAndClear();
 
         assertThat(places.findPlaceFoldersWithCursor(
@@ -80,6 +85,26 @@ class TripPlaceFolderRepositoryTest {
                         new PlaceFolderAttachmentCount(first.getId(), 1L),
                         new PlaceFolderAttachmentCount(second.getId(), 1L)
                 );
+    }
+
+    @Test
+    void 기존_빈폴더와_삭제사진_삭제파일_미분류사진만_있는_폴더를_제외한다() {
+        User owner = users.save(new User("empty-folders@test.com", "빈폴더회원"));
+        Trip trip = trips.save(new Trip(owner.getUserId(), "빈폴더검증", LocalDate.now(), LocalDate.now()));
+        TripDetailPlace empty = savePlace(trip.getId(), "A-empty", null);
+        TripDetailPlace deletedPhoto = savePlace(trip.getId(), "B-deleted-photo", null);
+        TripDetailPlace deletedFile = savePlace(trip.getId(), "C-deleted-file", null);
+        TripDetailPlace unclassified = savePlace(trip.getId(), "D-unclassified", null);
+        TripDetailPlace active = savePlace(trip.getId(), "E-active", null);
+        saveAttachment(owner.getUserId(), trip.getId(), deletedPhoto.getId(), ClassificationStatus.ACTIVE, true, false);
+        saveAttachment(owner.getUserId(), trip.getId(), deletedFile.getId(), ClassificationStatus.ACTIVE, false, true);
+        saveAttachment(owner.getUserId(), trip.getId(), unclassified.getId(), ClassificationStatus.UNCLASSIFIED, false, false);
+        saveAttachment(owner.getUserId(), trip.getId(), active.getId(), ClassificationStatus.ACTIVE, false, false);
+        flushAndClear();
+
+        assertThat(places.findPlaceFoldersWithCursor(trip.getId(), null, null, PageRequest.of(0, 7)))
+                .extracting(TripDetailPlace::getId).containsExactly(active.getId());
+        assertThat(places.findById(empty.getId()).orElseThrow().getDeletedAt()).isNull();
     }
 
     private TripDetailPlace savePlace(Long tripId, String name, LocalDateTime deletedAt) {

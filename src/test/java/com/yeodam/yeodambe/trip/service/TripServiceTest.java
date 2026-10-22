@@ -19,6 +19,7 @@ import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.RegionCatalog;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -103,6 +104,35 @@ class TripServiceTest {
         assertThrows(InvalidTripRequestException.class,
                 () -> afterMidnight.createTrip(1L, request(today, today.plusDays(1), List.of("50110"))));
         verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    void 앞뒤_공백을_제거한_여행명으로_생성_중복을_검사한다() {
+        givenRegion();
+        givenSavedTrip();
+        when(tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNull(1L, "중복"))
+                .thenReturn(true);
+        TripCreateRequest request = new TripCreateRequest(
+                "  중복  ", LocalDate.now(), LocalDate.now(), List.of("50110")
+        );
+
+        assertThrows(TripNameDuplicatedException.class, () -> tripService.createTrip(1L, request));
+        verify(tripRepository, never()).save(any());
+    }
+
+    @Test
+    void 앞뒤_공백을_제거한_여행명을_생성한다() {
+        givenRegion();
+        givenSavedTrip();
+        TripCreateRequest request = new TripCreateRequest(
+                "  여행  ", LocalDate.now(), LocalDate.now(), List.of("50110")
+        );
+
+        tripService.createTrip(1L, request);
+
+        ArgumentCaptor<Trip> captor = ArgumentCaptor.forClass(Trip.class);
+        verify(tripRepository).save(captor.capture());
+        assertThat(captor.getValue().getTripName()).isEqualTo("여행");
     }
 
     @Test

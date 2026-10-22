@@ -83,6 +83,26 @@ class TripUpdateServiceTest {
     }
 
     @Test
+    void 앞뒤_공백을_제거한_여행명으로_중복을_검사한다() {
+        when(trips.existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(1L, "중복", 7L))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.updateTrip(7L, 1L,
+                new TripUpdateRequest("  중복  ", null, null, null)))
+                .isInstanceOf(TripNameDuplicatedException.class);
+        assertThat(trip.getTripName()).isEqualTo("기존 여행");
+    }
+
+    @Test
+    void 앞뒤_공백을_제거한_여행명을_저장한다() {
+        var response = service.updateTrip(7L, 1L,
+                new TripUpdateRequest("  변경 여행  ", null, null, null));
+
+        assertThat(response.tripName()).isEqualTo("변경 여행");
+        assertThat(trip.getTripName()).isEqualTo("변경 여행");
+    }
+
+    @Test
     void 이름만_수정하면_날짜와_지역과_기존_상태를_유지한다() {
         var result = service.updateTrip(7L, 1L,
                 new TripUpdateRequest("변경 여행", null, null, null));

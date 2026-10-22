@@ -23,9 +23,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-@JdbcTest
+@JdbcTest(properties="migration.diagnostics.enabled=true")
 @ActiveProfiles("local")
-@Import({MigrationTripResultRepository.class, MigrationTripApplyService.class})
+@Import({MigrationTripResultRepository.class, MigrationTripApplyService.class, MigrationDiagnosticsDataSource.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class MigrationTripTransactionTest {
     private static final String ID = "51961261-7761-4587-ae2b-55c0452924bd";
@@ -49,6 +49,20 @@ class MigrationTripTransactionTest {
         jdbc.execute("CREATE TABLE IF NOT EXISTS test_trip (trip_id BIGINT PRIMARY KEY)");
         jdbc.execute("DELETE FROM migration_trip_request_result");
         jdbc.execute("DELETE FROM test_trip");
+    }
+
+    @Test
+    void 계측이_실제_트랜잭션의_연결과_저널과_커밋을_관측한다() {
+        when(trips.createTrip(eq(7L), any())).thenReturn(new TripCreateResponse(42L, ProcessingStatus.PROCESSING));
+        var trace=new MigrationTripDiagnostics.Trace(System.currentTimeMillis(),System.nanoTime());
+        MigrationTripDiagnostics.CURRENT.set(trace);
+        try {
+            apply.apply(command);
+            assertThat(trace.counts.get("connection")).isGreaterThanOrEqualTo(1);
+            assertThat(trace.counts.get("journal_read")).isEqualTo(1);
+            assertThat(trace.counts.get("journal_write")).isEqualTo(1);
+            assertThat(trace.counts.get("commit")).isEqualTo(1);
+        } finally {MigrationTripDiagnostics.CURRENT.remove();}
     }
 
     @Test

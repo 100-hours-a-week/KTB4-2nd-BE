@@ -16,6 +16,8 @@ public class MigrationTripApplyService {
 
     @Transactional
     public boolean apply(MigrationTripCommand command) {
+        var diagnostic=MigrationTripDiagnostics.CURRENT.get();
+        if(diagnostic!=null) diagnostic.bodyEntryNs=System.nanoTime();
         var existing = results.find(command.requestId());
         if (existing.isPresent()) {
             ensureSameCommand(existing.get(), command);

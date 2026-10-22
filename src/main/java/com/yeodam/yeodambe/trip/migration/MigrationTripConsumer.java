@@ -37,6 +37,15 @@ public class MigrationTripConsumer {
     )
     public void consumeBatch(java.util.List<org.apache.kafka.clients.consumer.ConsumerRecord<String,String>> records,
                              org.apache.kafka.clients.consumer.Consumer<String,String> consumer) {
+        long batchStartedNs=System.nanoTime();
+        if(MigrationTripDiagnostics.enabled()) {
+            var counts=new java.util.TreeMap<Integer,Integer>();
+            var first=new java.util.TreeMap<Integer,Long>();
+            var last=new java.util.TreeMap<Integer,Long>();
+            for(var r:records) {counts.merge(r.partition(),1,Integer::sum);first.merge(r.partition(),r.offset(),Math::min);last.merge(r.partition(),r.offset(),Math::max);}
+            log.info("migration_trip_batch origin={} at_ms={} thread={} assigned={} counts={} first={} last={} active={} queued={}",
+                    applyRole,System.currentTimeMillis(),Thread.currentThread().getName(),consumer.assignment(),counts,first,last,scheduler.active(),scheduler.queued());
+        }
         var jobs=scheduler.submit(records,r->consume(r.value(),r.key(),r.partition()));
         // KafkaConsumer is used only on its poll thread. Workers only apply transactions.
         // Wait even when interrupted: a Source stop callback must never precede its last commit.
@@ -49,6 +58,8 @@ public class MigrationTripConsumer {
             if(job.completed().join()) commits.put(partition,new org.apache.kafka.clients.consumer.OffsetAndMetadata(r.offset()+1));
             else unfinished.put(partition,r.offset());
         }
+        if(MigrationTripDiagnostics.enabled()) log.info("migration_trip_batch_done origin={} at_ms={} thread={} wait_us={} unfinished={} active={} queued={}",
+                applyRole,System.currentTimeMillis(),Thread.currentThread().getName(),(System.nanoTime()-batchStartedNs)/1000,unfinished.keySet(),scheduler.active(),scheduler.queued());
         if(!commits.isEmpty()) consumer.commitSync(commits);
         unfinished.forEach(consumer::seek);
         if(!unfinished.isEmpty() && !scheduler.fencing()) {
@@ -68,13 +79,15 @@ public class MigrationTripConsumer {
         }
         try {
             long applyStartedNs = System.nanoTime();
+            var diagnostic=MigrationTripDiagnostics.CURRENT.get();
+            if(diagnostic!=null) diagnostic.applyStartNs=applyStartedNs;
             boolean created = applyService.apply(command);
             long applyElapsedUs = (System.nanoTime() - applyStartedNs) / 1_000;
             // The transactional service proxy has committed before this observation.
             // Queue wait includes producer delivery/polling; it is not broker-only latency.
-            if (created) log.info("migration_trip_completed request_id={} origin={} queued_at_ms={} committed_at_ms={} consumer_started_at_ms={} apply_elapsed_us={} partition={}",
+            if (created) log.info("migration_trip_completed request_id={} origin={} queued_at_ms={} committed_at_ms={} consumer_started_at_ms={} apply_elapsed_us={} partition={} diagnostic={}",
                     command.requestId(), applyRole, command.queuedAtEpochMs(), System.currentTimeMillis(),
-                    receivedAtMs, applyElapsedUs, partition);
+                    receivedAtMs, applyElapsedUs, partition, diagnostic!=null ? diagnostic.fields() : "disabled");
             else log.info("migration_trip_replayed request_id={}", command.requestId());
         } catch (TripNameDuplicatedException duplicate) {
             applyService.recordFailure(command, "TRIP_NAME_DUPLICATED");

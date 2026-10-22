@@ -17,7 +17,7 @@ import java.util.function.Consumer;
 @Slf4j
 public class MigrationTripWorkScheduler implements AutoCloseable {
     public record Job(ConsumerRecord<String,String> record, CompletableFuture<Boolean> completed) {}
-    private record Work(Job job, Consumer<ConsumerRecord<String,String>> apply) {}
+    private record Work(Job job, Consumer<ConsumerRecord<String,String>> apply, long receivedMs, long submittedNs) {}
     private static final class Lane {
         final String key;
         final ArrayDeque<Work> work = new ArrayDeque<>();
@@ -44,6 +44,7 @@ public class MigrationTripWorkScheduler implements AutoCloseable {
 
     public List<Job> submit(List<ConsumerRecord<String,String>> records,
                             Consumer<ConsumerRecord<String,String>> apply) {
+        long receivedMs=System.currentTimeMillis();
         List<Job> jobs=new ArrayList<>(records.size());
         Set<String> blocked=new HashSet<>();
         synchronized(lock) {
@@ -54,7 +55,7 @@ public class MigrationTripWorkScheduler implements AutoCloseable {
                 }
                 var lane=lanes.computeIfAbsent(record.key(),Lane::new);
                 if(!lane.running && lane.work.isEmpty()) ready.addLast(lane);
-                lane.work.addLast(new Work(job,apply));pending++;
+                lane.work.addLast(new Work(job,apply,receivedMs,System.nanoTime()));pending++;
             }
             lock.notifyAll();
         }
@@ -71,11 +72,15 @@ public class MigrationTripWorkScheduler implements AutoCloseable {
                 lane=ready.removeFirst();lane.running=true;work=lane.work.removeFirst();active++;
             }
             boolean completed=false;
-            try {work.apply().accept(work.job().record());completed=true;}
+            try {
+                if(MigrationTripDiagnostics.enabled()) MigrationTripDiagnostics.CURRENT.set(new MigrationTripDiagnostics.Trace(work.receivedMs(),work.submittedNs()));
+                work.apply().accept(work.job().record());completed=true;
+            }
             catch(Exception failure) {
                 log.warn("migration_trip_apply_retry partition={} offset={} error={}",
                         work.job().record().partition(),work.job().record().offset(),failure.getClass().getSimpleName());
             } finally {
+                MigrationTripDiagnostics.CURRENT.remove();
                 synchronized(lock) {
                     active--;pending--;lane.running=false;
                     work.job().completed().complete(completed);

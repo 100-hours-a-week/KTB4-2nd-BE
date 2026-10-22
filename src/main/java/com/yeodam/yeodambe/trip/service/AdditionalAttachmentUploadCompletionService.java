@@ -5,7 +5,8 @@ import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse;
 
-
+import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadItem;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus;
@@ -65,16 +66,30 @@ public class AdditionalAttachmentUploadCompletionService {
         String jobId = batch.additionId();
         try (var scope = WorkflowMdcScope.job("trip_reanalysis", tripId, jobId);
              var timing = startUploadAcceptanceLogging(batch.items().size())) {
-            for (AdditionalAttachmentUploadItem item : batch.items()) {
-                uploadedFileValidator.verifySize(
-                        item.getObjectKey(),
-                        item.getSizeBytes()
+            try {
+                for (AdditionalAttachmentUploadItem item : batch.items()) {
+                    uploadedFileValidator.verifySize(
+                            item.getObjectKey(),
+                            item.getSizeBytes()
+                    );
+
+                    uploadedFileValidator.verifyType(
+                            item.getObjectKey(),
+                            item.getContentType()
+                    );
+                }
+            } catch (InvalidAttachmentUploadException
+                     | UnsupportedAttachmentFormatException failure) {
+                ErrorMessage error = failure instanceof UnsupportedAttachmentFormatException
+                        ? ErrorMessage.UNSUPPORTED_ATTACHMENT_FORMAT
+                        : ErrorMessage.INVALID_ATTACHMENT_UPLOAD;
+
+                uploadTransactionService.failExecution(
+                        jobId,
+                        error.name()
                 );
 
-                uploadedFileValidator.verifyType(
-                        item.getObjectKey(),
-                        item.getContentType()
-                );
+                throw failure;
             }
 
             uploadTransactionService.markVerified(

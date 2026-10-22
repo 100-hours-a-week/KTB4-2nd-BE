@@ -3,6 +3,9 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
+import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException;
+import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadCompleteRequest;
@@ -386,7 +389,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void keepsPendingWhenLaterFileSizeIsWrongAndAllowsVerificationRetry() {
+    void endsExecutionWhenLaterFileSizeIsWrongAndAllowsNewAddition() {
         var response = service.issueUploadUrls(tripId, userId, request());
         configureUploadedFiles();
         String secondKey = jdbcTemplate.queryForObject(
@@ -397,12 +400,18 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
 
         assertThatThrownBy(() -> completionService.verifyBatch(tripId, userId, completeRequest))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
-        assertThat(batchStatus(response.uploadId())).isEqualTo("PENDING");
+        assertFailedExecutionAndReleasedReservation(response.uploadId(), "INVALID_ATTACHMENT_UPLOAD");
         assertThat(itemCount()).isEqualTo(2);
+        transactionService.failExecution(additionId, "INVALID_ATTACHMENT_UPLOAD");
+        assertThat(userStatsRepository.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isZero();
+        assertThatThrownBy(() -> completionService.verifyBatch(tripId, userId, completeRequest))
+                .isInstanceOf(TripAttachmentAddNotAllowedException.class);
 
-        doReturn(2048L).when(storage).size(secondKey);
-        completionService.verifyBatch(tripId, userId, completeRequest);
-        assertThat(batchStatus(response.uploadId())).isEqualTo("VERIFIED");
+        additionId = UUID.randomUUID().toString();
+        var retry = service.issueUploadUrls(tripId, userId, request());
+        completionService.verifyBatch(tripId, userId,
+                new AdditionalAttachmentUploadCompleteRequest(retry.uploadId()));
+        assertThat(batchStatus(retry.uploadId())).isEqualTo("VERIFIED");
     }
 
     @Test
@@ -436,6 +445,61 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
                 .isInstanceOf(TripAttachmentAddNotAllowedException.class);
         verifyNoInteractions(storage);
         assertThat(batchStatus(response.uploadId())).isEqualTo("PROCESSING");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"unsupported", "mismatch"})
+    void endsExecutionOnInvalidFileHeaderWithoutWaitingForTimeout(String kind) {
+        var issued = service.issueUploadUrls(tripId, userId, request());
+        configureUploadedFiles();
+        doAnswer(call -> new ByteArrayInputStream(
+                kind.equals("unsupported") ? "broken photo".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                        : new byte[]{(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}))
+                .when(storage).open(anyString());
+
+        assertThatThrownBy(() -> completionService.verifyBatch(tripId, userId,
+                new AdditionalAttachmentUploadCompleteRequest(issued.uploadId())))
+                .isInstanceOf(kind.equals("unsupported") ? UnsupportedAttachmentFormatException.class
+                        : InvalidAttachmentUploadException.class);
+        assertFailedExecutionAndReleasedReservation(issued.uploadId(),
+                kind.equals("unsupported") ? "UNSUPPORTED_ATTACHMENT_FORMAT" : "INVALID_ATTACHMENT_UPLOAD");
+    }
+
+    @Test
+    void transientS3FailureKeepsExecutionAndReservationForRetry() {
+        var issued = service.issueUploadUrls(tripId, userId, request());
+        configureUploadedFiles();
+        doThrow(S3Exception.builder().statusCode(503).message("unavailable").build()).when(storage).size(anyString());
+
+        assertThatThrownBy(() -> completionService.verifyBatch(tripId, userId,
+                new AdditionalAttachmentUploadCompleteRequest(issued.uploadId())))
+                .isInstanceOf(AttachmentStorageException.class);
+        assertThat(batchStatus(issued.uploadId())).isEqualTo("PENDING");
+        assertThat(jdbcTemplate.queryForObject("SELECT ended_at FROM additional_attachment_executions WHERE execution_id = ?",
+                java.time.LocalDateTime.class, additionId)).isNull();
+        assertThat(userStatsRepository.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isEqualTo(3072L);
+
+        doAnswer(call -> jdbcTemplate.queryForObject(
+                "SELECT size_bytes FROM additional_attachment_upload_items WHERE object_key = ?",
+                Long.class, call.getArgument(0, String.class))).when(storage).size(anyString());
+        completionService.verifyBatch(tripId, userId, new AdditionalAttachmentUploadCompleteRequest(issued.uploadId()));
+        assertThat(batchStatus(issued.uploadId())).isEqualTo("VERIFIED");
+    }
+
+    private void assertFailedExecutionAndReleasedReservation(String uploadId, String code) {
+        assertThat(batchStatus(uploadId)).isEqualTo("FAILED");
+        assertThat(jdbcTemplate.queryForObject("SELECT status FROM additional_attachment_executions WHERE execution_id = ?",
+                String.class, additionId)).isEqualTo("FAILED");
+        assertThat(jdbcTemplate.queryForObject("SELECT ended_at FROM additional_attachment_executions WHERE execution_id = ?",
+                java.time.LocalDateTime.class, additionId)).isNotNull();
+        assertThat(jdbcTemplate.queryForObject("SELECT error_code FROM additional_attachment_executions WHERE execution_id = ?",
+                String.class, additionId)).isEqualTo(code);
+        assertThat(userStatsRepository.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM additional_attachment_upload_items WHERE object_key LIKE ? AND cleanup_started_at IS NOT NULL",
+                Integer.class, originalKeyPattern())).isEqualTo(2);
+        assertThat(tripAttachmentCount()).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM additional_attachment_upload_outbox WHERE trip_id = ?", Integer.class, tripId)).isZero();
+        verify(storage, never()).delete(anyString());
     }
 
     private String batchStatus(String uploadId) {

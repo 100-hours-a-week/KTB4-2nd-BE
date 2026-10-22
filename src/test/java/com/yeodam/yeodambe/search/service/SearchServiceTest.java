@@ -12,6 +12,7 @@ import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
@@ -137,6 +138,27 @@ class SearchServiceTest {
         assertThat(request.getValue().intent()).isEqualTo(AiQueryParseResponse.Intent.SEARCH);
         assertThat(request.getValue().visualQuery()).isEqualTo("바다 사진");
         assertThat(request.getValue().query()).isEqualTo("바다 사진");
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "\t\n"})
+    void 시각_검색어가_없으면_날짜와_지역과_의도를_유지하고_원문으로_검색한다(String visualQuery) {
+        LocalDate dateFrom = LocalDate.of(2026, 1, 1);
+        LocalDate dateTo = LocalDate.of(2026, 1, 2);
+        when(ai.parse("바다 사진")).thenReturn(new AiQueryParseResponse(
+                AiQueryParseResponse.Intent.QUESTION, dateFrom, dateTo, List.of("제주"), visualQuery, true));
+        prepare(List.of(hit(1, .8)), List.of(photo(1, 1)), List.of(folder(1)), "답변", null);
+
+        assertThat(service.search(1L, "바다 사진").answer()).isEqualTo("답변");
+
+        verify(trips).findSearchCandidates(1L, new TripSearchCondition(dateFrom, dateTo, List.of("제주")));
+        ArgumentCaptor<AiQuerySearchRequest> request = ArgumentCaptor.forClass(AiQuerySearchRequest.class);
+        verify(ai).search(request.capture());
+        assertThat(request.getValue().intent()).isEqualTo(AiQueryParseResponse.Intent.QUESTION);
+        assertThat(request.getValue().visualQuery()).isEqualTo("바다 사진");
+        assertThat(request.getValue().query()).isEqualTo("바다 사진");
+        assertThat(request.getValue().limit()).isEqualTo(30);
     }
 
     @Test

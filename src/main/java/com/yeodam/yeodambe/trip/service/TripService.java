@@ -69,6 +69,8 @@ public class TripService {
     private static final int TRIP_LIST_SIZE = 7;
     private static final int TRIP_LIST_FETCH_SIZE = TRIP_LIST_SIZE + 1;
     private static final int EDIT_ATTACHMENT_PAGE_SIZE = 18;
+    // 후보 400개를 넘으면 이후 사진은 검색하지 않으며, 부하 측정 후 상한을 재검토한다.
+    private static final int SEARCH_CANDIDATE_LIMIT = 400;
 
     private final TripRepository tripRepository;
     private final TripRegionRepository tripRegionRepository;
@@ -96,7 +98,7 @@ public class TripService {
 
         return tripAttachmentRepository.findSearchCandidates(
                 userId, takenFrom, takenBefore, filterRegions,
-                filterRegions ? regionNames : List.of("")
+                filterRegions ? regionNames : List.of(""), PageRequest.of(0, SEARCH_CANDIDATE_LIMIT)
         );
     }
 

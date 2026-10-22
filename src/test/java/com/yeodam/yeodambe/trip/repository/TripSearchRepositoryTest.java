@@ -8,6 +8,7 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -50,7 +51,8 @@ class TripSearchRepositoryTest {
         List<Long> all = List.of(valid.getId(), foreignPhoto.getId(), processingPhoto.getId(),
                 deletedTripPhoto.getId(), unclassified.getId(), removed.getId(), deletedFile.getId());
         em.clear();
-        assertThat(repository.findSearchCandidates(owner.getUserId(), null, null, false, List.of("")))
+        assertThat(repository.findSearchCandidates(owner.getUserId(), null, null,
+                false, List.of(""), PageRequest.of(0, 400)))
                 .extracting(TripSearchCandidateResponse::tripAttachmentId).containsExactly(valid.getId());
         assertThat(repository.findSearchResults(owner.getUserId(), all))
                 .extracting(TripAttachment::getId).containsExactly(valid.getId());
@@ -74,13 +76,14 @@ class TripSearchRepositoryTest {
         em.clear();
         assertThat(repository.findSearchCandidates(owner.getUserId(),
                 LocalDate.of(2024, 2, 29).atStartOfDay(), LocalDate.of(2024, 3, 1).atStartOfDay(),
-                true, List.of("제주"))).extracting(TripSearchCandidateResponse::tripAttachmentId).containsExactly(last.getId());
+                true, List.of("제주"), PageRequest.of(0, 400)))
+                .extracting(TripSearchCandidateResponse::tripAttachmentId).containsExactly(last.getId());
         assertThat(repository.findSearchCandidates(owner.getUserId(), null, null,
-                true, List.of("속초"))).isEmpty();
+                true, List.of("속초"), PageRequest.of(0, 400))).isEmpty();
         assertThat(repository.findSearchCandidates(owner.getUserId(), null, null,
-                true, List.of("제주"))).hasSize(3).doesNotHaveDuplicates();
+                true, List.of("제주"), PageRequest.of(0, 400))).hasSize(3).doesNotHaveDuplicates();
         assertThat(repository.findSearchCandidates(owner.getUserId(), null,
-                LocalDate.of(2024, 3, 1).atStartOfDay(), false, List.of("")))
+                LocalDate.of(2024, 3, 1).atStartOfDay(), false, List.of(""), PageRequest.of(0, 400)))
                 .extracting(TripSearchCandidateResponse::tripAttachmentId).containsExactly(last.getId());
     }
 
@@ -99,7 +102,8 @@ class TripSearchRepositoryTest {
         em.flush();
         em.clear();
 
-        assertThat(repository.findSearchCandidates(owner.getUserId(), null, null, false, List.of("")))
+        assertThat(repository.findSearchCandidates(owner.getUserId(), null, null,
+                false, List.of(""), PageRequest.of(0, 400)))
                 .isEmpty();
         assertThat(repository.findSearchResults(owner.getUserId(), List.of(deletedPhoto.getId(), foreignPhoto.getId())))
                 .isEmpty();
@@ -121,10 +125,10 @@ class TripSearchRepositoryTest {
 
         assertThat(repository.findSearchCandidates(owner.getUserId(),
                 LocalDateTime.of(2026, 10, 12, 0, 0), LocalDateTime.of(2026, 10, 13, 0, 0),
-                false, List.of("")))
+                false, List.of(""), PageRequest.of(0, 400)))
                 .extracting(TripSearchCandidateResponse::tripAttachmentId).containsExactly(corrected.getId());
         assertThat(repository.findSearchCandidates(owner.getUserId(),
-                LocalDateTime.of(2026, 10, 12, 0, 0), null, false, List.of("")))
+                LocalDateTime.of(2026, 10, 12, 0, 0), null, false, List.of(""), PageRequest.of(0, 400)))
                 .hasSize(2);
     }
 

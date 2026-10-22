@@ -125,7 +125,8 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             @Param("takenFrom") LocalDateTime takenFrom,
             @Param("takenBefore") LocalDateTime takenBefore,
             @Param("filterRegions") boolean filterRegions,
-            @Param("regionNames") Collection<String> regionNames
+            @Param("regionNames") Collection<String> regionNames,
+            Pageable pageable
     );
 
     @Query("""

@@ -10,11 +10,14 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.service.*;
 import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
+import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -160,6 +163,20 @@ class TripSearchMysqlIntegrationTest extends TripSearchRepositoryTest {
         var result = tripService.findSearchResults(ownerId, ids);
 
         assertThat(result.folders().getFirst().placeName()).isEqualTo("변경 장소");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 399, 400, 401})
+    void 검색_후보는_ID_오름차순으로_최대_400개만_조회한다(int count) {
+        List<Long> ids = fixture(count);
+        entityManager.flush();
+        entityManager.clear();
+
+        List<TripSearchCandidateResponse> candidates = tripService.findSearchCandidates(ownerId,
+                new TripSearchCondition(null, null, null));
+
+        assertThat(candidates).extracting(TripSearchCandidateResponse::tripAttachmentId)
+                .containsExactlyElementsOf(ids.subList(0, Math.min(count, 400)));
     }
 
     private Long ownerId;

@@ -51,6 +51,7 @@ class MigrationTripBatchOffsetTest {
             verify(kafka).commitSync(Map.of(new TopicPartition("requests",7),new OffsetAndMetadata(2)));
             verify(kafka).seek(new TopicPartition("requests",7),2L);
             assertThat(scheduler.active()).isZero();
+            verify(listener,never()).consume("queued","A",7);
         }
     }
 }

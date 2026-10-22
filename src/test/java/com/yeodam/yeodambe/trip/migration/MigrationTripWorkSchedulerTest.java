@@ -33,7 +33,8 @@ class MigrationTripWorkSchedulerTest {
     @Test void fenceLeavesOnlyCurrentTransactionAndCancelsQueuedOrNewRequests() throws Exception {
         try(var scheduler=new MigrationTripWorkScheduler(1)) {
             var started=new CountDownLatch(1);var release=new CountDownLatch(1);
-            var jobs=scheduler.submit(List.of(record(0,"A","first"),record(1,"A","queued")),r->{started.countDown();await(release);});
+            var executed=Collections.synchronizedList(new ArrayList<String>());
+            var jobs=scheduler.submit(List.of(record(0,"A","first"),record(1,"A","queued")),r->{executed.add(r.value());started.countDown();await(release);});
             try {
                 assertThat(started.await(2,TimeUnit.SECONDS)).isTrue();scheduler.beginFence();
                 assertThat(scheduler.active()).isEqualTo(1);assertThat(scheduler.queued()).isZero();
@@ -42,6 +43,7 @@ class MigrationTripWorkSchedulerTest {
             } finally {release.countDown();}
             assertThat(jobs.getFirst().completed().get(2,TimeUnit.SECONDS)).isTrue();
             assertThat(scheduler.active()).isZero();
+            assertThat(executed).containsExactly("first");
         }
     }
     @Test void failedEarlierRequestBlocksLaterRequestsForSameUserOnly() throws Exception {

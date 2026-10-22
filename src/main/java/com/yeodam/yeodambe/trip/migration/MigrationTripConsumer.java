@@ -33,6 +33,7 @@ public class MigrationTripConsumer {
             topics = "${migration.trip.topic}",
             groupId = "${MIGRATION_TRIP_CONSUMER_GROUP:yeodam-migration-trip-apply}",
             containerFactory = "migrationTripListenerFactory",
+            properties = {"max.poll.records=32", "enable.auto.commit=false"},
             autoStartup = "${migration.trip.consumer-enabled:false}"
     )
     public void consumeBatch(java.util.List<org.apache.kafka.clients.consumer.ConsumerRecord<String,String>> records,

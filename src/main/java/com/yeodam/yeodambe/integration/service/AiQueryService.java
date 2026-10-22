@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.integration.service;
 
+import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.integration.client.AiQueryClient;
 import com.yeodam.yeodambe.common.exception.AiQueryUnavailableException;
 import com.yeodam.yeodambe.integration.service.request.AiQueryParseRequest;
@@ -67,7 +68,7 @@ public class AiQueryService {
                 .addKeyValue("failure", "response_contract")
                 .addKeyValue("field", field)
                 .addKeyValue("reason", reason)
-                .log("AI 검색 응답 계약 검증에 실패했습니다.");
+                .log(IntegrationInternalErrorMessage.AI_QUERY_RESPONSE_INVALID.message());
         return new AiQueryUnavailableException();
     }
 
@@ -80,7 +81,7 @@ public class AiQueryService {
                     .addKeyValue("stage", "search")
                     .addKeyValue("failure", "request_contract")
                     .addKeyValue("field", "candidates")
-                    .log("AI 검색 후보의 ID 또는 분석용 저장 키가 올바르지 않습니다.");
+                    .log(IntegrationInternalErrorMessage.AI_QUERY_CANDIDATE_INVALID.message());
             throw new AiQueryUnavailableException();
         }
     }
@@ -95,7 +96,7 @@ public class AiQueryService {
             log.atWarn()
                     .addKeyValue("stage", "search")
                     .addKeyValue("failure", "response_contract")
-                    .log("AI 검색 응답 계약 검증에 실패했습니다.");
+                    .log(IntegrationInternalErrorMessage.AI_QUERY_RESPONSE_INVALID.message());
             throw new AiQueryUnavailableException();
         }
     }

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.entity;
 
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -77,7 +78,7 @@ public class StoryGenerationJob {
         if (isFinished() || publishedAt == null || publishedAt.plusHours(1).isAfter(now)) {
             return false;
         }
-        fail("STORY_GENERATION_TIMEOUT");
+        fail(ErrorMessage.STORY_GENERATION_TIMEOUT.name());
         return true;
     }
 

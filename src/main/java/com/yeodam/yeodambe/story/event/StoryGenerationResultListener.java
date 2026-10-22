@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.event;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.integration.event.EventJsonCodec;
 import com.yeodam.yeodambe.story.event.handler.StoryCreateResultEventHandler;
@@ -42,7 +43,10 @@ public class StoryGenerationResultListener {
             }
             event = eventJsonCodec.deserialize(message, StoryCreateResultEvent.class);
         } catch (JacksonException | IllegalArgumentException failure) {
-            throw new InvalidStoryResultException("스토리 결과 메시지를 읽을 수 없습니다.", failure);
+            throw new InvalidStoryResultException(
+                    StoryGenerationInternalErrorMessage.RESULT_MESSAGE_UNREADABLE,
+                    failure
+            );
         }
 
         resultHandler.handle(event);

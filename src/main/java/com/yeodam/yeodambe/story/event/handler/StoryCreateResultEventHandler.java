@@ -48,7 +48,7 @@ public class StoryCreateResultEventHandler
                 || event.status() == StoryGenerationAiResponse.Status.QUEUED
                 || event.status() == StoryGenerationAiResponse.Status.PROCESSING) {
             throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
+                    StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID
             );
         }
 
@@ -61,7 +61,7 @@ public class StoryCreateResultEventHandler
 
         if (!job.getTripId().equals(event.tripId())) {
             throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH.message()
+                    StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH
             );
         }
 

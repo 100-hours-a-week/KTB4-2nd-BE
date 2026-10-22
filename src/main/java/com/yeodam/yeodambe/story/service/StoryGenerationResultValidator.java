@@ -84,7 +84,7 @@ public class StoryGenerationResultValidator {
 
     private IllegalArgumentException invalidResponse() {
         return new InvalidStoryResultException(
-                StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
+                StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID
         );
     }
 }

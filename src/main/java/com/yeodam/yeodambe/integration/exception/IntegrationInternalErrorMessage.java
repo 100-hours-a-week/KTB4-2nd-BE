@@ -16,7 +16,13 @@ public enum IntegrationInternalErrorMessage {
     AI_SERVER_READY_WAIT_TIMEOUT("AI 서버 준비 시간이 초과됐습니다."),
     AI_PROGRESS_EXECUTION_MISMATCH("AI 진행률의 실행이 다릅니다."),
     AI_PROGRESS_INVALID("AI 진행률이 잘못됐습니다."),
-    AI_PROCESS_STEP_INVALID("AI 처리 단계가 잘못됐습니다.");
+    AI_PROCESS_STEP_INVALID("AI 처리 단계가 잘못됐습니다."),
+    AI_QUERY_HTTP_REQUEST_FAILED("AI 검색 HTTP 요청에 실패했습니다."),
+    AI_QUERY_RESPONSE_INVALID("AI 검색 응답 계약 검증에 실패했습니다."),
+    AI_QUERY_CANDIDATE_INVALID("AI 검색 후보의 ID 또는 분석용 저장 키가 올바르지 않습니다."),
+    AI_QUERY_RESULT_OUTSIDE_CANDIDATES("AI 검색 응답에 후보 외 사진이 포함됐습니다."),
+    AI_QUERY_TIMEOUT("AI 검색 처리 시간이 초과됐습니다."),
+    AI_QUERY_UNAVAILABLE("AI 검색 서비스를 사용할 수 없습니다.");
 
     private final String message;
 

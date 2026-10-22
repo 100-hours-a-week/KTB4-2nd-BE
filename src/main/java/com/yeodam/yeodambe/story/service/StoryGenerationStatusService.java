@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.StoryGenerationNotFoundException;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
@@ -29,7 +30,7 @@ public class StoryGenerationStatusService {
         if (job.getStatus() == StoryGenerationJob.Status.FAILED) {
             error = new StoryGenerationStatusResponse.Failure(
                     ErrorMessage.STORY_GENERATION_FAILED.name(),
-                    "스토리 생성에 실패했습니다."
+                    StoryGenerationInternalErrorMessage.GENERATION_FAILED.message()
             );
         }
 

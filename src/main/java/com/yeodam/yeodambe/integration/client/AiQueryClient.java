@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.integration.client;
 
+import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.AiQueryUnavailableException;
 import com.yeodam.yeodambe.common.exception.AiQueryTimeoutException;
 import com.yeodam.yeodambe.integration.service.request.AiQueryParseRequest;
@@ -82,7 +83,7 @@ public class AiQueryClient {
                     .addKeyValue("failure", failure.getClass().getSimpleName())
                     .addKeyValue("duration_ms", (System.nanoTime() - startedAt) / 1_000_000)
                     .addKeyValue("request_id", MDC.get("request_id"))
-                    .log("AI 검색 HTTP 요청에 실패했습니다.");
+                    .log(IntegrationInternalErrorMessage.AI_QUERY_HTTP_REQUEST_FAILED.message());
             // 외부 예외의 URL·본문·인증키가 공통 로그로 전달되지 않도록 cause를 제거합니다.
             if (isTimeout(failure)) {
                 throw new AiQueryTimeoutException();

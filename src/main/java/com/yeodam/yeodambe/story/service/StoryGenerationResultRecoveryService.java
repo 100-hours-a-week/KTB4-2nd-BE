@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 
@@ -39,7 +40,7 @@ public class StoryGenerationResultRecoveryService {
         }
         var job = jobRepository.findByIdForUpdate(found.getId()).orElse(null);
         if (job != null && job.getTripId().equals(tripId) && !job.isFinished()) {
-            job.fail("STORY_RESULT_PROCESSING_FAILED");
+            job.fail(ErrorMessage.STORY_RESULT_PROCESSING_FAILED.name());
             logWorkflowFailed(job);
         }
     }

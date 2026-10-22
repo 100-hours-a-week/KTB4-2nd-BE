@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.common.exception.StoryAlreadyExistsException;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 import com.yeodam.yeodambe.story.entity.StoryGenerationPlace;
@@ -53,9 +55,9 @@ public class StoryGenerationJobService {
                     .addKeyValue("event", "story_generation_rejected")
                     .addKeyValue("result", "rejected")
                     .addKeyValue("trip_id", trip.getId())
-                    .addKeyValue("error_code", "STORY_GENERATION_IN_PROGRESS")
+                    .addKeyValue("error_code", ErrorMessage.STORY_GENERATION_IN_PROGRESS.name())
                     .addKeyValue("failure_stage", "active_job_check")
-                    .log("진행 중인 스토리 작업이 있어 생성 요청을 거부했습니다.");
+                    .log(StoryGenerationInternalErrorMessage.ACTIVE_JOB_REQUEST_REJECTED.message());
             throw new StoryGenerationInProgressException();
         }
 
@@ -76,10 +78,10 @@ public class StoryGenerationJobService {
                         .addKeyValue("event", "story_generation_rejected")
                         .addKeyValue("result", "rejected")
                         .addKeyValue("trip_id", trip.getId())
-                        .addKeyValue("error_code", "STORY_GENERATION_IN_PROGRESS")
+                        .addKeyValue("error_code", ErrorMessage.STORY_GENERATION_IN_PROGRESS.name())
                         .addKeyValue("failure_stage", "active_job_unique")
                         .setCause(e)
-                        .log("활성 작업 UNIQUE 충돌로 생성 요청을 거부했습니다.");
+                        .log(StoryGenerationInternalErrorMessage.ACTIVE_JOB_UNIQUE_CONFLICT.message());
                 throw new StoryGenerationInProgressException(e);
             }
 

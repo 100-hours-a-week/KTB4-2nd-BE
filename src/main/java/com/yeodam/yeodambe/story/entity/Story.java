@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.entity;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -70,7 +71,9 @@ public class Story {
             String storySummary
     ) {
         if (tripId == null || mood == null) {
-            throw new IllegalArgumentException("스토리 여행과 분위기가 필요합니다.");
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.STORY_REFERENCE_REQUIRED.message()
+            );
         }
         validateText(storySummary);
         this.tripId = tripId;
@@ -84,7 +87,9 @@ public class Story {
 
     static void validateText(String text) {
         if (text == null || text.isBlank() || text.codePointCount(0, text.length()) > 40) {
-            throw new IllegalArgumentException("스토리 문구는 필수이며 최대 40자입니다.");
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.STORY_TEXT_INVALID.message()
+            );
         }
     }
 

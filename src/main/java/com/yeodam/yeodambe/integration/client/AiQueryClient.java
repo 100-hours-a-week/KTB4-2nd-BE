@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.integration.client;
 
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.AiQueryUnavailableException;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.exception.AiQueryTimeoutException;
 import com.yeodam.yeodambe.integration.service.request.AiQueryParseRequest;
 import com.yeodam.yeodambe.integration.service.request.AiQuerySearchRequest;
@@ -60,36 +61,60 @@ public class AiQueryClient {
 
     private <T> T post(String stage, Object request, Class<T> responseType) {
         long startedAt = System.nanoTime();
-        try {
+        try (WorkflowLog.Stage timing = startRequestLogging(stage)) {
+            logRequestStarted(stage);
             T response = restClient.post()
                     .uri("/query/" + stage)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .headers(headers -> {
-                        String requestId = MDC.get("request_id");
-                        if (requestId != null) {
-                            headers.set("X-Request-ID", requestId);
-                        }
-                    })
+                    .headers(this::setRequestIdHeader)
                     .body(request)
                     .retrieve()
                     .body(responseType);
             if (response == null) {
                 throw new AiQueryUnavailableException();
             }
+            logRequestCompleted(timing);
             return response;
         } catch (RestClientException | AiQueryUnavailableException failure) {
-            log.atWarn()
-                    .addKeyValue("stage", stage)
-                    .addKeyValue("failure", failure.getClass().getSimpleName())
-                    .addKeyValue("duration_ms", (System.nanoTime() - startedAt) / 1_000_000)
-                    .addKeyValue("request_id", MDC.get("request_id"))
-                    .log(IntegrationInternalErrorMessage.AI_QUERY_HTTP_REQUEST_FAILED.message());
+            logRequestFailure(stage, startedAt, failure);
             // 외부 예외의 URL·본문·인증키가 공통 로그로 전달되지 않도록 cause를 제거합니다.
             if (isTimeout(failure)) {
                 throw new AiQueryTimeoutException();
             }
             throw new AiQueryUnavailableException();
         }
+    }
+
+    private WorkflowLog.Stage startRequestLogging(String stage) {
+        return WorkflowLog.stage("ai_query_" + stage).field("workflow", "natural_language_search");
+    }
+
+    private void logRequestCompleted(WorkflowLog.Stage timing) {
+        timing.success();
+    }
+
+    private void logRequestFailure(String stage, long startedAt, RuntimeException failure) {
+        log.atWarn()
+                .addKeyValue("stage", stage)
+                .addKeyValue("failure", failure.getClass().getSimpleName())
+                .addKeyValue("duration_ms", (System.nanoTime() - startedAt) / 1_000_000)
+                .addKeyValue("request_id", MDC.get("request_id"))
+                .log(IntegrationInternalErrorMessage.AI_QUERY_HTTP_REQUEST_FAILED.message());
+    }
+
+    private void setRequestIdHeader(HttpHeaders headers) {
+        String requestId = MDC.get("request_id");
+        if (requestId != null) {
+            headers.set("X-Request-ID", requestId);
+        }
+    }
+
+    private void logRequestStarted(String stage) {
+        log.atInfo()
+                .addKeyValue("event", "ai_query_request_started")
+                .addKeyValue("workflow", "natural_language_search")
+                .addKeyValue("stage", stage)
+                .log("AI 검색 요청을 시작합니다.");
     }
 
     private boolean isTimeout(Throwable failure) {

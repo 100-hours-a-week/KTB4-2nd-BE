@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
 
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
@@ -53,11 +54,7 @@ public class BulkAttachmentDownloadService {
         long startedAt = System.nanoTime();
         String failureStage = "zip_create";
 
-        log.atInfo()
-                .addKeyValue("event", "attachment_bulk_download")
-                .addKeyValue("result", "started")
-                .addKeyValue("expected_count", expectedCount)
-                .log("첨부 일괄 다운로드를 시작했습니다.");
+        logBulkDownloadStarted(expectedCount);
 
         Path archive = null;
 
@@ -76,14 +73,7 @@ public class BulkAttachmentDownloadService {
                     ARCHIVE_FILE_NAME
             );
 
-            long durationMillis = (System.nanoTime() - startedAt) / 1_000_000;
-
-            log.atInfo()
-                    .addKeyValue("event", "attachment_bulk_download")
-                    .addKeyValue("result", "success")
-                    .addKeyValue("expected_count", expectedCount)
-                    .addKeyValue("duration_ms", durationMillis)
-                    .log("첨부 일괄 다운로드 URL을 발급했습니다.");
+            logBulkDownloadCompleted(expectedCount, startedAt);
 
             return new BulkAttachmentDownloadResponse(
                     ARCHIVE_FILE_NAME,
@@ -98,6 +88,33 @@ public class BulkAttachmentDownloadService {
         } finally {
             deleteArchive(archive);
         }
+    }
+
+    private void logBulkDownloadStarted(int expectedCount) {
+        log.atInfo()
+                .addKeyValue("event", "attachment_bulk_download")
+                .addKeyValue("result", "started")
+                .addKeyValue("expected_count", expectedCount)
+                .log("첨부 일괄 다운로드를 시작했습니다.");
+    }
+
+    private void logBulkDownloadCompleted(int expectedCount, long startedAt) {
+        long durationMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+        log.atInfo()
+                .addKeyValue("event", "attachment_bulk_download")
+                .addKeyValue("result", "success")
+                .addKeyValue("expected_count", expectedCount)
+                .addKeyValue("duration_ms", durationMillis)
+                .log("첨부 일괄 다운로드 URL을 발급했습니다.");
+    }
+
+    private WorkflowLog.Stage startOriginalDownloadLogging(String objectKey) {
+        return WorkflowLog.stage("s3_original_download").field("object_key", objectKey);
+    }
+
+    private void logOriginalDownloadCompleted(WorkflowLog.Stage timing, long downloadedBytes) {
+        timing.field("bytes_transferred", downloadedBytes).success();
     }
 
     private void validateIds(List<Long> tripAttachmentIds) {
@@ -138,10 +155,13 @@ public class BulkAttachmentDownloadService {
 
         zipOutputStream.putNextEntry(new ZipEntry(entryName));
 
-        try (InputStream input = tripAttachmentStorageClient.open(
-                attachment.getFile().getObjectKey()
-        )) {
-            input.transferTo(zipOutputStream);
+        String objectKey = attachment.getFile().getObjectKey();
+        try (WorkflowLog.Stage download = startOriginalDownloadLogging(objectKey)) {
+            long downloadedBytes;
+            try (InputStream input = tripAttachmentStorageClient.open(objectKey)) {
+                downloadedBytes = input.transferTo(zipOutputStream);
+            }
+            logOriginalDownloadCompleted(download, downloadedBytes);
         } finally {
             zipOutputStream.closeEntry();
         }

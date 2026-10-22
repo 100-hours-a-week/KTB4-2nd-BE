@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
@@ -21,18 +22,35 @@ public class TripAttachmentDownloadService {
             Long userId,
             Long tripAttachmentId
     ) {
-        TripAttachment attachment = tripAttachmentRepository
-                .findAccessibleById(tripAttachmentId, userId)
-                .orElseThrow(AttachmentNotFoundException::new);
+        try (WorkflowLog.Stage timing = startDownloadUrlLogging()) {
+            TripAttachment attachment = tripAttachmentRepository
+                    .findAccessibleById(tripAttachmentId, userId)
+                    .orElseThrow(AttachmentNotFoundException::new);
 
-        String downloadUrl = tripAttachmentStorageClient.createDownloadUrl(
-                attachment.getFile().getObjectKey(),
-                attachment.getFile().getOriginalFileName()
-        );
+            recordDownloadObject(timing, attachment.getFile().getObjectKey());
+            String downloadUrl = tripAttachmentStorageClient.createDownloadUrl(
+                    attachment.getFile().getObjectKey(),
+                    attachment.getFile().getOriginalFileName()
+            );
 
-        return new TripAttachmentDownloadResponse(
-                attachment.getId(),
-                downloadUrl
-        );
+            logDownloadUrlIssued(timing);
+            return new TripAttachmentDownloadResponse(
+                    attachment.getId(),
+                    downloadUrl
+            );
+        }
     }
+
+    private WorkflowLog.Stage startDownloadUrlLogging() {
+        return WorkflowLog.stage("original_download_url").field("workflow", "attachment_download");
+    }
+
+    private void recordDownloadObject(WorkflowLog.Stage timing, String objectKey) {
+        timing.field("object_key", objectKey);
+    }
+
+    private void logDownloadUrlIssued(WorkflowLog.Stage timing) {
+        timing.success();
+    }
+
 }

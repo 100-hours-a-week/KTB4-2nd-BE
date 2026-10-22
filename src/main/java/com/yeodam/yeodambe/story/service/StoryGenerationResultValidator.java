@@ -38,7 +38,8 @@ public class StoryGenerationResultValidator {
                     || !attachmentIds.add(block.tripAttachmentId())
                     || !isRequiredTextValid(block.dayLabel(), 40)
                     || !isRequiredTextValid(block.detailSummary(), 40)
-                    || (block.memo() != null && block.memo().length() > 125)) {
+                    || (block.memo() != null
+                    && block.memo().codePointCount(0, block.memo().length()) > 125)) {
                 throw invalidResponse();
             }
         }
@@ -78,7 +79,7 @@ public class StoryGenerationResultValidator {
     private boolean isRequiredTextValid(String text, int maxLength) {
         return text != null
                 && !text.isBlank()
-                && text.length() <= maxLength;
+                && text.codePointCount(0, text.length()) <= maxLength;
     }
 
     private IllegalArgumentException invalidResponse() {

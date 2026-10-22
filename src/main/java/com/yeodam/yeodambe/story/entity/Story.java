@@ -83,7 +83,7 @@ public class Story {
     }
 
     static void validateText(String text) {
-        if (text == null || text.isBlank() || text.length() > 40) {
+        if (text == null || text.isBlank() || text.codePointCount(0, text.length()) > 40) {
             throw new IllegalArgumentException("스토리 문구는 필수이며 최대 40자입니다.");
         }
     }

@@ -60,7 +60,9 @@ class BackendJsonLogFormatterTest {
                 new KeyValuePair("stage_elapsed_ms", 120L),
                 new KeyValuePair("work_duration_ms", 230L),
                 new KeyValuePair("sample_count", 2L),
-                new KeyValuePair("workflow_elapsed_ms", 1000L)
+                new KeyValuePair("workflow_elapsed_ms", 1000L),
+                new KeyValuePair("object_key", "derived/object-1"),
+                new KeyValuePair("bytes_transferred", 1024L)
         ));
         var json = objectMapper.readTree(formatter.format(event));
         assertThat(json.path("workflow").asString()).isEqualTo("trip_creation");
@@ -70,6 +72,9 @@ class BackendJsonLogFormatterTest {
         assertThat(json.path("stage_elapsed_ms").asLong()).isEqualTo(120);
         assertThat(json.path("work_duration_ms").asLong()).isEqualTo(230);
         assertThat(json.path("workflow_elapsed_ms").asLong()).isEqualTo(1000);
+        assertThat(json.path("object_key").asString()).isEqualTo("derived/object-1");
+        assertThat(json.path("bytes_transferred").isNumber()).isTrue();
+        assertThat(json.path("bytes_transferred").asLong()).isEqualTo(1024L);
         assertThat(json.path("stage_started_at").asString()).isEqualTo("2026-10-21T00:00:00Z");
     }
 

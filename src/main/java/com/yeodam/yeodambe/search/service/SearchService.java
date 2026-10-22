@@ -2,6 +2,8 @@ package com.yeodam.yeodambe.search.service;
 
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.AiQueryUnavailableException;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.integration.service.AiQueryService;
 import com.yeodam.yeodambe.integration.service.request.AiQuerySearchRequest;
 import com.yeodam.yeodambe.integration.service.response.AiQueryParseResponse;
@@ -13,10 +15,12 @@ import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
 import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
 import java.time.ZoneOffset;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -33,6 +37,33 @@ public class SearchService {
     private final AiQueryService aiQueryService;
 
     public SearchResponse search(Long userId, String query) {
+        try (WorkflowMdcScope scope = openSearchLoggingContext();
+             WorkflowLog.Stage timing = startSearchLogging()) {
+            SearchResponse response = executeSearch(userId, query);
+            logSearchCompleted(timing);
+            return response;
+        }
+    }
+
+    private WorkflowLog.Stage startSearchLogging() {
+        return WorkflowLog.stage("search_total");
+    }
+
+    private void logSearchCompleted(WorkflowLog.Stage timing) {
+        timing.success();
+    }
+
+    private WorkflowMdcScope openSearchLoggingContext() {
+        Map<String, String> context = new HashMap<>();
+        Map<String, String> current = MDC.getCopyOfContextMap();
+        if (current != null) {
+            context.putAll(current);
+        }
+        context.put("workflow", "natural_language_search");
+        return WorkflowMdcScope.open(context);
+    }
+
+    private SearchResponse executeSearch(Long userId, String query) {
         AiQueryParseResponse parsed = aiQueryService.parse(query);
 
         TripSearchCondition condition = parsed.parsed()

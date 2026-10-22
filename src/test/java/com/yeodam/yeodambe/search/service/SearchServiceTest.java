@@ -1,6 +1,13 @@
 package com.yeodam.yeodambe.search.service;
 
 import com.yeodam.yeodambe.common.exception.AiQueryUnavailableException;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+import org.junit.jupiter.api.AfterEach;
 import com.yeodam.yeodambe.integration.service.AiQueryService;
 import com.yeodam.yeodambe.integration.service.request.AiQuerySearchRequest;
 import com.yeodam.yeodambe.integration.service.response.AiQueryParseResponse;
@@ -16,7 +23,9 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Map;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.LongStream;
@@ -29,10 +38,90 @@ class SearchServiceTest {
     private final TripService trips = mock(TripService.class);
     private final SearchService service = new SearchService(trips, ai);
 
+    private final Logger workflowLogger = (Logger) LoggerFactory.getLogger(WorkflowLog.class);
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>() {
+        @Override
+        protected void append(ILoggingEvent event) {
+            event.prepareForDeferredProcessing();
+            super.append(event);
+        }
+    };
+
     @BeforeEach
     void setUp() {
+        logs.start();
+        workflowLogger.addAppender(logs);
         when(ai.parse("바다 사진")).thenReturn(new AiQueryParseResponse(
                 AiQueryParseResponse.Intent.QUESTION, null, null, List.of(), "바다", true));
+    }
+
+    @AfterEach
+    void cleanUpLogging() {
+        workflowLogger.detachAppender(logs);
+        logs.stop();
+        MDC.clear();
+    }
+
+    @Test
+    void 검색_성공의_요청_ID와_전체_처리_시간을_기록하고_MDC를_복원한다() {
+        MDC.setContextMap(Map.of("request_id", "search-request-1", "workflow", "previous"));
+        prepare(List.of(hit(1, .9)), List.of(photo(1, 1)), List.of(folder(1)), "private-answer", null);
+        when(ai.parse("바다 사진")).thenAnswer(invocation -> {
+            assertThat(MDC.get("workflow")).isEqualTo("natural_language_search");
+            return new AiQueryParseResponse(AiQueryParseResponse.Intent.SEARCH, null, null, List.of(), "바다", true);
+        });
+
+        service.search(1L, "바다 사진");
+
+        assertSearchTiming("success");
+        assertThat(MDC.getCopyOfContextMap())
+                .containsExactlyInAnyOrderEntriesOf(Map.of("request_id", "search-request-1", "workflow", "previous"));
+    }
+
+    @Test
+    void 후보가_없어도_검색_처리_시간을_기록하고_MDC를_정리한다() {
+        when(trips.findSearchCandidates(eq(1L), any())).thenReturn(List.of());
+
+        service.search(1L, "바다 사진");
+
+        assertSearchTiming("success");
+        assertThat(MDC.getCopyOfContextMap()).isNullOrEmpty();
+    }
+
+    @Test
+    void AI_호출_실패도_검색_처리_시간을_기록하고_MDC를_복원한다() {
+        MDC.put("request_id", "search-request-1");
+        when(ai.parse("바다 사진")).thenThrow(new AiQueryUnavailableException());
+
+        assertThatThrownBy(() -> service.search(1L, "바다 사진"))
+                .isInstanceOf(AiQueryUnavailableException.class);
+
+        assertSearchTiming("failure");
+        assertThat(MDC.getCopyOfContextMap()).containsExactlyEntriesOf(Map.of("request_id", "search-request-1"));
+    }
+
+    private void assertSearchTiming(String result) {
+        ILoggingEvent event = logs.list.stream()
+                .filter(log -> "search_total".equals(field(log, "stage")))
+                .findFirst().orElseThrow();
+        assertThat(field(event, "result")).isEqualTo(result);
+        assertThat(event.getMDCPropertyMap()).containsEntry("workflow", "natural_language_search");
+        if (MDC.get("request_id") != null) {
+            assertThat(event.getMDCPropertyMap()).containsEntry("request_id", "search-request-1");
+        }
+        assertThat((Long) field(event, "duration_ms")).isGreaterThanOrEqualTo(0L);
+        Instant startedAt = Instant.parse((String) field(event, "stage_started_at"));
+        Instant finishedAt = Instant.parse((String) field(event, "stage_finished_at"));
+        assertThat(finishedAt).isAfterOrEqualTo(startedAt);
+        assertThat(event.getThrowableProxy()).isNull();
+        assertThat(event.getKeyValuePairs().toString()).doesNotContain("바다 사진", "private-answer");
+    }
+
+    private Object field(ILoggingEvent event, String key) {
+        return event.getKeyValuePairs().stream()
+                .filter(pair -> key.equals(pair.key))
+                .map(pair -> pair.value)
+                .findFirst().orElse(null);
     }
 
     @Test

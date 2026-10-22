@@ -1,6 +1,9 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemRepository;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
+import org.slf4j.MDC;
 
 
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
@@ -20,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -39,6 +43,25 @@ public class TripObjectCleanupService {
     private final AdditionalAttachmentUploadTransactionService additionalTransactions;
 
     public void retryPending() {
+        try (WorkflowMdcScope scope = openCleanupLoggingContext();
+             WorkflowLog.Stage scan = startCleanupScanLogging()) {
+            cleanupPending();
+            logCleanupScanCompleted(scan);
+        }
+    }
+
+    private WorkflowMdcScope openCleanupLoggingContext() {
+        Map<String, String> context = new HashMap<>();
+        Map<String, String> current = MDC.getCopyOfContextMap();
+        if (current != null) {
+            context.putAll(current);
+        }
+        context.put("workflow", "s3_object_cleanup");
+        context.put("run_id", UUID.randomUUID().toString());
+        return WorkflowMdcScope.open(context);
+    }
+
+    private void cleanupPending() {
         LocalDateTime before = uploadTransactions.databaseTime().minusDays(30);
         cleanup(attachments.findExpiredPendingCleanup(
                 LocalDateTime.now().minusDays(30),
@@ -47,7 +70,9 @@ public class TripObjectCleanupService {
         for (var item : additionalItems.findPendingCleanup(before, PageRequest.of(0, RETRY_BATCH_SIZE))) {
             for (var object : additionalTransactions.cleanupObjects(item)) {
                 if (!object.deleted() && object.startedAt() != null && !object.startedAt().isAfter(before)
-                        && cleanupKey(object.key())) additionalTransactions.recordObjectDeleted(item.getId(), object.key());
+                        && cleanupKey(object.key())) {
+                    additionalTransactions.recordObjectDeleted(item.getId(), object.key());
+                }
             }
         }
         for (var item : uploadItems.findPendingCleanup(before, PageRequest.of(0, RETRY_BATCH_SIZE))) {
@@ -98,6 +123,7 @@ public class TripObjectCleanupService {
 
     private boolean cleanupKey(String objectKey) {
         if (isActivelyReferenced(objectKey)) {
+            logObjectCleanupSkipped(objectKey);
             return false;
         }
 
@@ -105,9 +131,30 @@ public class TripObjectCleanupService {
             storage.delete(objectKey);
             return true;
         } catch (RuntimeException failure) {
-            log.warn("여행 첨부 객체 삭제에 실패했습니다. stage=object_cleanup, cause={}", failure.getClass().getSimpleName());
+            logObjectCleanupFailure(failure);
             return false;
         }
+    }
+
+    private WorkflowLog.Stage startCleanupScanLogging() {
+        return WorkflowLog.stage("s3_cleanup_scan");
+    }
+
+    private void logCleanupScanCompleted(WorkflowLog.Stage scan) {
+        scan.success();
+    }
+
+    private void logObjectCleanupSkipped(String objectKey) {
+        log.atInfo()
+                .addKeyValue("event", "s3_object_cleanup_skipped")
+                .addKeyValue("result", "skipped")
+                .addKeyValue("object_key", objectKey)
+                .log("활성 참조가 있어 S3 객체 삭제를 건너뛰었습니다.");
+    }
+
+    private void logObjectCleanupFailure(RuntimeException failure) {
+        log.warn("여행 첨부 객체 삭제에 실패했습니다. stage=object_cleanup, cause={}",
+                failure.getClass().getSimpleName());
     }
 
     private boolean isActivelyReferenced(String objectKey) {

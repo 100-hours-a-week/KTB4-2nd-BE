@@ -11,6 +11,8 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.slf4j.MDC;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -18,6 +20,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,6 +53,41 @@ class TripObjectCleanupServiceTest {
         ReflectionTestUtils.setField(attachment, "file", file);
         when(attachments.findExpiredPendingCleanup(any(LocalDateTime.class), any()))
                 .thenReturn(List.of(attachment));
+    }
+
+    @AfterEach
+    void clearMdc() {
+        MDC.clear();
+    }
+
+    @Test
+    void 정리_실행마다_실행_ID를_부여하고_호출자의_MDC를_복원한다() {
+        MDC.setContextMap(Map.of("request_id", "request-1", "workflow", "previous"));
+        java.util.Set<String> runIds = new java.util.HashSet<>();
+        doAnswer(invocation -> {
+            assertThat(MDC.get("workflow")).isEqualTo("s3_object_cleanup");
+            assertThat(MDC.get("run_id")).isNotBlank();
+            runIds.add(MDC.get("run_id"));
+            return null;
+        }).when(storage).delete(anyString());
+
+        service.retryPending();
+        service.retryPending();
+
+        assertThat(runIds).hasSize(2);
+        assertThat(MDC.getCopyOfContextMap())
+                .containsExactlyInAnyOrderEntriesOf(Map.of("request_id", "request-1", "workflow", "previous"));
+    }
+
+    @Test
+    void 정리_조회가_실패해도_MDC를_원래대로_복원한다() {
+        MDC.put("request_id", "request-1");
+        when(uploadTransactions.databaseTime()).thenThrow(new IllegalStateException("database"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(service::retryPending)
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(MDC.getCopyOfContextMap()).containsExactlyEntriesOf(Map.of("request_id", "request-1"));
     }
 
     @Test

@@ -16,12 +16,14 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -34,6 +36,7 @@ import static org.assertj.core.api.Assertions.*;
 class AiQueryClientTest {
     private final Logger logger = (Logger) LoggerFactory.getLogger(AiQueryClient.class);
     private ListAppender<ILoggingEvent> logs;
+    private final Logger workflowLogger = (Logger) LoggerFactory.getLogger(WorkflowLog.class);
     private HttpServer server;
     private ExecutorService executor;
     private AiQueryClient client;
@@ -48,9 +51,16 @@ class AiQueryClientTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        logs = new ListAppender<>();
+        logs = new ListAppender<>() {
+            @Override
+            protected void append(ILoggingEvent event) {
+                event.prepareForDeferredProcessing();
+                super.append(event);
+            }
+        };
         logs.start();
         logger.addAppender(logs);
+        workflowLogger.addAppender(logs);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         executor = Executors.newCachedThreadPool();
         server.setExecutor(executor);
@@ -83,10 +93,61 @@ class AiQueryClientTest {
     @AfterEach
     void tearDown() {
         logger.detachAppender(logs);
+        workflowLogger.detachAppender(logs);
         logs.stop();
         MDC.clear();
         server.stop(0);
         executor.shutdownNow();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parse", "search"})
+    void AI_요청_시작과_응답_완료_시간을_같은_요청_ID로_기록한다(String stage) {
+        MDC.put("request_id", "search-request-1");
+        response = "{}";
+
+        request(stage);
+
+        assertThat(logs.list.stream().anyMatch(event ->
+                "ai_query_request_started".equals(field(event, "event")))).isTrue();
+        assertAiTiming(stage, "success");
+        assertThat(requestId.get()).isEqualTo("search-request-1");
+        assertThat(MDC.get("request_id")).isEqualTo("search-request-1");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parse", "search"})
+    void AI_요청_실패_시간도_같은_요청_ID로_기록한다(String stage) {
+        MDC.put("request_id", "search-request-1");
+        status = 504;
+        response = "secret-key private-query";
+
+        assertThatThrownBy(() -> request(stage)).isInstanceOf(AiQueryTimeoutException.class);
+
+        assertAiTiming(stage, "failure");
+        assertSafeFailureLogs(stage);
+    }
+
+    private void assertAiTiming(String stage, String result) {
+        ILoggingEvent event = logs.list.stream()
+                .filter(log -> ("ai_query_" + stage).equals(field(log, "event")))
+                .findFirst().orElseThrow();
+        assertThat(field(event, "result")).isEqualTo(result);
+        assertThat(field(event, "workflow")).isEqualTo("natural_language_search");
+        assertThat(event.getMDCPropertyMap()).containsEntry("request_id", "search-request-1");
+        assertThat((Long) field(event, "duration_ms")).isGreaterThanOrEqualTo(0L);
+        Instant start = Instant.parse((String) field(event, "stage_started_at"));
+        Instant finish = Instant.parse((String) field(event, "stage_finished_at"));
+        assertThat(finish).isAfterOrEqualTo(start);
+        assertThat(event.getThrowableProxy()).isNull();
+        assertThat(event.getKeyValuePairs().toString()).doesNotContain("secret-key", "private-query", baseUrl());
+    }
+
+    private Object field(ILoggingEvent event, String key) {
+        return event.getKeyValuePairs().stream()
+                .filter(pair -> key.equals(pair.key))
+                .map(pair -> pair.value)
+                .findFirst().orElse(null);
     }
 
     @Test

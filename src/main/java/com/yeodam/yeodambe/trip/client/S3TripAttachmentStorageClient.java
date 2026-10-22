@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.client;
 
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
@@ -20,6 +21,7 @@ import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.Tag;
 import software.amazon.awssdk.services.s3.model.Tagging;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -132,9 +134,12 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
 
     @Override
     public void delete(String objectKey) {
-        s3.deleteObject(request -> request
-                .bucket(bucket)
-                .key(objectKey));
+        try (WorkflowLog.Stage timing = startObjectDeletionLogging(objectKey)) {
+            s3.deleteObject(request -> request
+                    .bucket(bucket)
+                    .key(objectKey));
+            logStorageOperationCompleted(timing);
+        }
     }
 
     @Override
@@ -265,12 +270,13 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         }
 
         String key = "trip-uploads/" + executionId + "/derived/" + UUID.randomUUID();
-        try {
+        try (WorkflowLog.Stage timing = startDerivedUploadLogging(key)) {
             s3.putObject(
                     request -> request.bucket(bucket).key(key).contentType(mimeType)
                             .tagging("status=temporary"),
                     RequestBody.fromFile(file)
             );
+            logStorageOperationCompleted(timing);
             return key;
         } catch (RuntimeException failure) {
             throw new AttachmentStorageException(key, failure);
@@ -286,9 +292,10 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
         if (!Set.of("image/jpeg", "image/webp").contains(mimeType)) {
             throw new IllegalArgumentException(TripInternalErrorMessage.UNSUPPORTED_DERIVED_ATTACHMENT_FORMAT.message());
         }
-        try {
+        try (WorkflowLog.Stage timing = startDerivedUploadLogging(objectKey)) {
             s3.putObject(request -> request.bucket(bucket).key(objectKey).contentType(mimeType)
                     .tagging("status=retained"), RequestBody.fromFile(file));
+            logStorageOperationCompleted(timing);
             return objectKey;
         } catch (RuntimeException failure) {
             throw new AttachmentStorageException(objectKey, failure);
@@ -310,17 +317,50 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
                 .contentType(mimeType)
                 .tagging("status=retained")
                 .build();
+        WorkflowLog.Stage timing = startDerivedUploadLogging(objectKey);
         try {
-            return asyncS3.putObject(request, AsyncRequestBody.fromFile(file))
-                    .handle((response, failure) -> {
-                        if (failure != null) {
-                            throw new AttachmentStorageException(objectKey, failure);
-                        }
-                        return objectKey;
-                    });
+            var upload = asyncS3.putObject(request, AsyncRequestBody.fromFile(file));
+            trackDerivedUploadCompletion(upload, timing);
+            return upload.handle((response, failure) -> {
+                if (failure != null) {
+                    throw new AttachmentStorageException(objectKey, failure);
+                }
+                return objectKey;
+            });
         } catch (RuntimeException failure) {
+            logStorageOperationFailed(timing);
             return CompletableFuture.failedFuture(new AttachmentStorageException(objectKey, failure));
         }
+    }
+
+    private WorkflowLog.Stage startObjectDeletionLogging(String objectKey) {
+        return WorkflowLog.stage("s3_object_delete").field("object_key", objectKey);
+    }
+
+    private WorkflowLog.Stage startDerivedUploadLogging(String objectKey) {
+        return WorkflowLog.stage("s3_derived_upload").field("object_key", objectKey);
+    }
+
+    private void trackDerivedUploadCompletion(
+            CompletableFuture<PutObjectResponse> upload,
+            WorkflowLog.Stage timing
+    ) {
+        // 반환 Future가 취소되어도 실제 S3 전송 완료는 기록한다.
+        upload.whenComplete((response, failure) -> {
+            if (failure == null) {
+                logStorageOperationCompleted(timing);
+            } else {
+                logStorageOperationFailed(timing);
+            }
+        });
+    }
+
+    private void logStorageOperationCompleted(WorkflowLog.Stage timing) {
+        timing.success();
+    }
+
+    private void logStorageOperationFailed(WorkflowLog.Stage timing) {
+        timing.close();
     }
 
     @Override

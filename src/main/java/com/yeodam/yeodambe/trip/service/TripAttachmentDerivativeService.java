@@ -212,13 +212,15 @@ public class TripAttachmentDerivativeService {
             String originalKey,
             Path original
     ) throws IOException {
-        try (var timing = startOriginalDownloadLogging()) {
+        try (var timing = startOriginalDownloadLogging();
+             WorkflowLog.Stage download = startOriginalObjectDownloadLogging(originalKey)) {
             Timer.Sample readSample = Timer.start(meterRegistry);
             String readOutcome = "success";
+            long downloadedBytes;
 
             try {
                 try (InputStream input = storage.open(originalKey)) {
-                    Files.copy(input, original);
+                    downloadedBytes = Files.copy(input, original);
                 }
             } catch (IOException | RuntimeException failure) {
                 readOutcome = "failure";
@@ -229,7 +231,7 @@ public class TripAttachmentDerivativeService {
                         .register(meterRegistry));
             }
 
-            timing.success();
+            logOriginalDownloadCompleted(timing, download, downloadedBytes);
         }
     }
 
@@ -416,6 +418,19 @@ public class TripAttachmentDerivativeService {
         String model = metadata.path("Model").asString();
         String combined = (make + " " + model).trim();
         return combined.isEmpty() || combined.length() > 100 ? null : combined;
+    }
+
+    private WorkflowLog.Stage startOriginalObjectDownloadLogging(String originalKey) {
+        return WorkflowLog.stage("s3_original_download").field("object_key", originalKey);
+    }
+
+    private void logOriginalDownloadCompleted(
+            WorkflowLog.Stage batchTiming,
+            WorkflowLog.Stage downloadTiming,
+            long downloadedBytes
+    ) {
+        downloadTiming.field("bytes_transferred", downloadedBytes).success();
+        batchTiming.success();
     }
 
     private WorkflowLog.Stage startOriginalDownloadLogging() {

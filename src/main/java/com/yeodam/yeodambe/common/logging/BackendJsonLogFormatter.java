@@ -41,6 +41,8 @@ public class BackendJsonLogFormatter
         members.add("attempts", event -> numberValue(contextValue(event, "attempts")));
         members.add("job_id", event -> contextValue(event, "job_id"));
         members.add("duration_ms", event -> numberValue(contextValue(event, "duration_ms")));
+        members.add("object_key", event -> contextValue(event, "object_key"));
+        members.add("bytes_transferred", event -> numberValue(contextValue(event, "bytes_transferred")));
         members.add("failure_stage", event -> contextValue(event, "failure_stage"));
         members.add("error_code", event -> contextValue(event, "error_code"));
         members.add("expected_count", event -> numberValue(contextValue(event, "expected_count")));

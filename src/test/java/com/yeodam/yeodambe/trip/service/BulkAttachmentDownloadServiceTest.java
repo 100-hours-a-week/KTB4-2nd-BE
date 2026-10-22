@@ -14,6 +14,8 @@ import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -51,6 +53,8 @@ class BulkAttachmentDownloadServiceTest {
     void detachLogAppender() {
         if (logAppender != null) {
             logger.detachAppender(logAppender);
+            ((Logger) LoggerFactory.getLogger(WorkflowLog.class)).detachAppender(logAppender);
+            MDC.clear();
             logAppender.stop();
         }
     }
@@ -103,6 +107,15 @@ class BulkAttachmentDownloadServiceTest {
                 .findFirst()
                 .orElseThrow();
         assertThat(keyValue(success, "expected_count")).isEqualTo(2);
+        List<ILoggingEvent> downloads = logAppender.list.stream()
+                .filter(event -> "s3_original_download".equals(keyValue(event, "stage")))
+                .toList();
+        assertThat(downloads).hasSize(2);
+        assertThat(downloads).allSatisfy(event -> {
+            assertThat(keyValue(event, "result")).isEqualTo("success");
+            assertThat(keyValue(event, "bytes_transferred")).isInstanceOf(Long.class);
+        });
+
     }
 
     @Test
@@ -158,6 +171,30 @@ class BulkAttachmentDownloadServiceTest {
         verifyNoInteractions(tripAttachmentRepository, tripAttachmentStorageClient);
     }
 
+    @Test
+    void 원본_스트림을_읽다가_실패하면_다운로드_성공을_기록하지_않는다() {
+        startLogAppender();
+        TripAttachment first = attachment(501L, 1L, "first-key", "photo.jpg");
+        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+                .thenReturn(List.of(first));
+        when(tripAttachmentStorageClient.open("first-key")).thenReturn(new java.io.InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException("private-source");
+            }
+        });
+
+        assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L)))
+                .isInstanceOf(IllegalStateException.class);
+
+        List<ILoggingEvent> downloads = logAppender.list.stream()
+                .filter(event -> "s3_original_download".equals(keyValue(event, "stage")))
+                .toList();
+        assertThat(downloads).hasSize(1);
+        assertThat(keyValue(downloads.getFirst(), "result")).isEqualTo("failure");
+        assertThat(keyValue(downloads.getFirst(), "object_key")).isEqualTo("first-key");
+    }
+
     private TripAttachment attachment(
             Long attachmentId,
             Long userId,
@@ -198,6 +235,7 @@ class BulkAttachmentDownloadServiceTest {
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
         logger.addAppender(appender);
+        ((Logger) LoggerFactory.getLogger(WorkflowLog.class)).addAppender(appender);
         logAppender = appender;
     }
 

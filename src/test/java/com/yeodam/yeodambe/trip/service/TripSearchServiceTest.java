@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
 import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
@@ -38,7 +39,8 @@ class TripSearchServiceTest {
         TripSearchCandidateResponse candidate = new TripSearchCandidateResponse(
                 7L, "analyze", null, null, "여행");
         when(attachments.findSearchCandidates(1L, LocalDate.of(2024, 2, 29).atStartOfDay(),
-                LocalDate.of(2024, 3, 1).atStartOfDay(), false, List.of(""))).thenReturn(List.of(candidate));
+                LocalDate.of(2024, 3, 1).atStartOfDay(), false, List.of(""), PageRequest.of(0, 400)))
+                .thenReturn(List.of(candidate));
         assertThat(service.findSearchCandidates(1L, new TripSearchCondition(
                 LocalDate.of(2024, 2, 29), LocalDate.of(2024, 2, 29), List.of())))
                 .extracting(TripSearchCandidateResponse::tripAttachmentId)

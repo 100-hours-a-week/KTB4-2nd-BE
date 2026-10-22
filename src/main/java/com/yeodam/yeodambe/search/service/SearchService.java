@@ -46,7 +46,7 @@ public class SearchService {
         AiQuerySearchResponse searched = aiQueryService.search(new AiQuerySearchRequest(
                 query,
                 parsed.parsed() ? parsed.intent() : AiQueryParseResponse.Intent.SEARCH,
-                parsed.parsed() ? parsed.visualQuery() : query,
+                resolveVisualQuery(parsed, query),
                 candidates.stream().map(this::toAiCandidate).toList(), SEARCH_LIMIT
         ));
 
@@ -63,6 +63,13 @@ public class SearchService {
 
         return new SearchResponse(query, answer, searched.answerError(),
                 buildFolders(current, scores), buildAttachments(current, scores));
+    }
+
+    private String resolveVisualQuery(AiQueryParseResponse parsed, String query) {
+        if (!parsed.parsed() || parsed.visualQuery() == null || parsed.visualQuery().isBlank()) {
+            return query;
+        }
+        return parsed.visualQuery();
     }
 
     private AiQuerySearchRequest.Candidate toAiCandidate(TripSearchCandidateResponse candidate) {

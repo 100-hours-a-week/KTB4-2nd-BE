@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.entity;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -82,12 +83,16 @@ public class StoryBlock {
     ) {
         if (storyId == null || tripAttachmentId == null
                 || sourceTripPlaceId == null || sourceDate == null) {
-            throw new IllegalArgumentException("블록 참조와 날짜가 필요합니다.");
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.BLOCK_REFERENCE_REQUIRED.message()
+            );
         }
         Story.validateText(dayLabel);
         Story.validateText(detailSummary);
         if (memo != null && memo.codePointCount(0, memo.length()) > 125) {
-            throw new IllegalArgumentException("메모는 최대 125자입니다.");
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.BLOCK_MEMO_TOO_LONG.message()
+            );
         }
         this.storyId = storyId;
         this.tripAttachmentId = tripAttachmentId;
@@ -101,7 +106,9 @@ public class StoryBlock {
 
     void connectStory(Story story) {
         if (story.getId() == null || !story.getId().equals(storyId)) {
-            throw new IllegalArgumentException("저장된 같은 스토리에만 연결할 수 있습니다.");
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.SAVED_STORY_MISMATCH.message()
+            );
         }
         this.storyId = story.getId();
         this.story = story;

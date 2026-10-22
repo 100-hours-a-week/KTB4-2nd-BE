@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.entity;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -56,7 +57,9 @@ public class StorySelectedPlace {
             Long tripPlaceId
     ) {
         if (storyId == null || tripPlaceId == null) {
-            throw new IllegalArgumentException("선택 장소 참조가 필요합니다.");
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.SELECTED_PLACE_REFERENCE_REQUIRED.message()
+            );
         }
         this.storyId = storyId;
         this.tripPlaceId = tripPlaceId;
@@ -64,7 +67,9 @@ public class StorySelectedPlace {
 
     void connectStory(Story story) {
         if (story.getId() == null || !story.getId().equals(storyId)) {
-            throw new IllegalArgumentException("저장된 같은 스토리에만 연결할 수 있습니다.");
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.SAVED_STORY_MISMATCH.message()
+            );
         }
         this.storyId = story.getId();
         this.story = story;

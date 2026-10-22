@@ -61,7 +61,7 @@ public class StoryGenerationStatusScheduler {
                 .addKeyValue("result", "failure")
                 .addKeyValue("failure_stage", "ai_status_sync")
                 .addKeyValue("failure", failure.getClass().getSimpleName())
-                .log("스토리 생성 상태 반영에 실패했습니다.");
+                .log(StoryGenerationInternalErrorMessage.STATUS_APPLICATION_FAILED.message());
     }
 
     private void populateGenerationLoggingContext(StoryGenerationJob job) {

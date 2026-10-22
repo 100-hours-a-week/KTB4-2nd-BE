@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
 import org.springframework.stereotype.Component;
@@ -11,7 +12,9 @@ public class StoryValidator {
 
     public void validateBlockCount(List<BlockDetail> blocks) {
         if (blocks.size() > 30) {
-            throw new StoryDataIntegrityException("블록 개수: 최대 30개를 초과했습니다.");
+            throw new StoryDataIntegrityException(
+                    StoryGenerationInternalErrorMessage.BLOCK_COUNT_EXCEEDED
+            );
         }
     }
 
@@ -25,29 +28,43 @@ public class StoryValidator {
 
     private void validateBlockRelation(Long tripId, BlockDetail block) {
         if (block.getAttachment() == null) {
-            throw new StoryDataIntegrityException("블록 관계: 첨부가 없습니다.");
+            throw new StoryDataIntegrityException(
+                    StoryGenerationInternalErrorMessage.BLOCK_ATTACHMENT_MISSING
+            );
         }
         if (!tripId.equals(block.getAttachment().getTripId())) {
-            throw new StoryDataIntegrityException("블록 관계: 다른 여행의 첨부입니다.");
+            throw new StoryDataIntegrityException(
+                    StoryGenerationInternalErrorMessage.BLOCK_ATTACHMENT_TRIP_MISMATCH
+            );
         }
         if (block.getFile() == null) {
-            throw new StoryDataIntegrityException("블록 관계: 파일이 없습니다.");
+            throw new StoryDataIntegrityException(
+                    StoryGenerationInternalErrorMessage.BLOCK_FILE_MISSING
+            );
         }
     }
 
     private void validateDisplayBlock(Long tripId, BlockDetail block) {
         if (block.getPlace() == null) {
-            throw new StoryDataIntegrityException("표시 조건: 장소가 없습니다.");
+            throw new StoryDataIntegrityException(
+                    StoryGenerationInternalErrorMessage.DISPLAY_PLACE_MISSING
+            );
         }
         if (!tripId.equals(block.getPlace().getTripId())) {
-            throw new StoryDataIntegrityException("표시 조건: 다른 여행의 장소입니다.");
+            throw new StoryDataIntegrityException(
+                    StoryGenerationInternalErrorMessage.DISPLAY_PLACE_TRIP_MISMATCH
+            );
         }
         if (block.getBlock().getSourceDate() == null) {
-            throw new StoryDataIntegrityException("표시 조건: 스토리 날짜가 없습니다.");
+            throw new StoryDataIntegrityException(
+                    StoryGenerationInternalErrorMessage.DISPLAY_DATE_MISSING
+            );
         }
         String key = block.getAttachment().getPreviewStorageKey();
         if (key == null || key.isBlank()) {
-            throw new StoryDataIntegrityException("표시 조건: 미리보기 키가 없습니다.");
+            throw new StoryDataIntegrityException(
+                    StoryGenerationInternalErrorMessage.DISPLAY_PREVIEW_KEY_MISSING
+            );
         }
     }
 }

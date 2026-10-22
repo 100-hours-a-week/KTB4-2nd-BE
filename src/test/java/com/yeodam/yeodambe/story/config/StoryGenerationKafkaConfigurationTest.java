@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.config;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import com.yeodam.yeodambe.story.service.StoryGenerationResultRecoveryService;
 import com.yeodam.yeodambe.integration.service.KafkaDltLogService;
@@ -41,7 +42,9 @@ class StoryGenerationKafkaConfigurationTest {
         var record = new ConsumerRecord<>("ai-results", 0, 10, "7", "{broken");
         var consumer = mock(Consumer.class);
         var container = mock(MessageListenerContainer.class);
-        var failure = new InvalidStoryResultException("invalid JSON");
+        var failure = new InvalidStoryResultException(
+                StoryGenerationInternalErrorMessage.RESULT_MESSAGE_UNREADABLE
+        );
 
         assertThat(handler.handleOne(failure, record, consumer, container)).isFalse();
         verifyNoInteractions(recovery, dltLogs);
@@ -69,7 +72,9 @@ class StoryGenerationKafkaConfigurationTest {
         var handler = (DefaultErrorHandler) org.springframework.test.util.ReflectionTestUtils
                 .getField(factory, "commonErrorHandler");
         var record = new ConsumerRecord<>("story-result", 0, 10, "7", "{broken");
-        var failure = new InvalidStoryResultException("invalid JSON");
+        var failure = new InvalidStoryResultException(
+                StoryGenerationInternalErrorMessage.RESULT_MESSAGE_UNREADABLE
+        );
 
         assertThat(handler.handleOne(failure, record, mock(Consumer.class),
                 mock(MessageListenerContainer.class))).isFalse();

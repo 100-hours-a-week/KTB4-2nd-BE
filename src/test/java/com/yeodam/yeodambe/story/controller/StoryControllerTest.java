@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.controller;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.story.service.StoryReadService;
@@ -106,7 +107,10 @@ class StoryControllerTest {
     @Test
     void 정합성과_URL발급_실패는_500이다() throws Exception {
         Cookie cookie = authenticated();
-        for (RuntimeException failure : List.of(new StoryDataIntegrityException("표시 조건: 장소 없음"), new IllegalStateException("URL 발급 실패"))) {
+        for (RuntimeException failure : List.of(
+                new StoryDataIntegrityException(StoryGenerationInternalErrorMessage.DISPLAY_PLACE_MISSING),
+                new IllegalStateException("URL 발급 실패")
+        )) {
             doThrow(failure).when(service).findStory(42L, 7L);
             mvc.perform(get("/trips/7/story").cookie(cookie)).andExpect(status().isInternalServerError())
                     .andExpect(jsonPath("$.message").value("INTERNAL_SERVER_ERROR")).andExpect(jsonPath("$.data").isEmpty());

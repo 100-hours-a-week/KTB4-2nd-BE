@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.common.exception;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
@@ -95,7 +97,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.GATEWAY_TIMEOUT)
     ApiResponse<Void> handleAiQueryTimeout(AiQueryTimeoutException e) {
         logFailure(log.atWarn(), ErrorMessage.SEARCH_SERVICE_TIMEOUT,
-                "AI 검색 처리 시간이 초과됐습니다.", e);
+                IntegrationInternalErrorMessage.AI_QUERY_TIMEOUT.message(), e);
         return new ApiResponse<>(ErrorMessage.SEARCH_SERVICE_TIMEOUT, null);
     }
 
@@ -103,7 +105,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handleAiQueryUnavailable(AiQueryUnavailableException e) {
         logFailure(log.atWarn(), ErrorMessage.SEARCH_SERVICE_UNAVAILABLE,
-                "AI 검색 서비스를 사용할 수 없습니다.", e);
+                IntegrationInternalErrorMessage.AI_QUERY_UNAVAILABLE.message(), e);
         return new ApiResponse<>(ErrorMessage.SEARCH_SERVICE_UNAVAILABLE, null);
     }
 
@@ -470,7 +472,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     ApiResponse<Void> handleStoryDataIntegrity(StoryDataIntegrityException e) {
         logFailure(log.atError(), ErrorMessage.INTERNAL_SERVER_ERROR,
-                "스토리 조회 데이터의 정합성 검증에 실패했습니다.", e);
+                StoryGenerationInternalErrorMessage.READ_DATA_INTEGRITY_FAILED.message(), e);
         return new ApiResponse<>(ErrorMessage.INTERNAL_SERVER_ERROR, null);
     }
 

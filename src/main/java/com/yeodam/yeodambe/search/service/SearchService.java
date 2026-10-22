@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.search.service;
 
+import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.AiQueryUnavailableException;
 import com.yeodam.yeodambe.integration.service.AiQueryService;
 import com.yeodam.yeodambe.integration.service.request.AiQuerySearchRequest;
@@ -91,7 +92,7 @@ public class SearchService {
             log.atWarn()
                     .addKeyValue("stage", "search")
                     .addKeyValue("failure", "candidate_membership")
-                    .log("AI 검색 응답에 후보 외 사진이 포함됐습니다.");
+                    .log(IntegrationInternalErrorMessage.AI_QUERY_RESULT_OUTSIDE_CANDIDATES.message());
             throw new AiQueryUnavailableException();
         }
     }

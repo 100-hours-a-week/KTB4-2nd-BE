@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 
@@ -52,6 +53,6 @@ public class StoryGenerationTimeoutService {
                 .addKeyValue("job_id", job.getExecutionId())
                 .addKeyValue("generation_id", job.getId())
                 .addKeyValue("error_code", job.getErrorCode())
-                .log("스토리 요청 Kafka 발행 후 1시간이 지나 작업을 실패 처리했습니다.");
+                .log(StoryGenerationInternalErrorMessage.GENERATION_TIMED_OUT.message());
     }
 }

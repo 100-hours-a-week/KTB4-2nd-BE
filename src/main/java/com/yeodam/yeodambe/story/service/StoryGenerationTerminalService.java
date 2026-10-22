@@ -27,7 +27,7 @@ public class StoryGenerationTerminalService {
                 || (response.status() != StoryGenerationAiResponse.Status.FAILED
                 && response.status() != StoryGenerationAiResponse.Status.CANCELED)) {
             throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
+                    StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID
             );
         }
 
@@ -39,7 +39,7 @@ public class StoryGenerationTerminalService {
         if (!job.getTripId().equals(response.tripId())
                 || !job.getExecutionId().equals(response.executionId())) {
             throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH.message()
+                    StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH
             );
         }
 
@@ -60,7 +60,7 @@ public class StoryGenerationTerminalService {
                 || error.code().isBlank()
                 || error.code().length() > 100) {
             throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
+                    StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID
             );
         }
 

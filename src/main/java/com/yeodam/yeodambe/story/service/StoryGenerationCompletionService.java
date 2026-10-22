@@ -52,7 +52,7 @@ public class StoryGenerationCompletionService {
         if (response == null
                 || response.status() != StoryGenerationAiResponse.Status.COMPLETED) {
             throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message()
+                    StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID
             );
         }
 
@@ -64,7 +64,7 @@ public class StoryGenerationCompletionService {
         if (!job.getTripId().equals(response.tripId())
                 || !job.getExecutionId().equals(response.executionId())) {
             throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH.message()
+                    StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH
             );
         }
 
@@ -136,7 +136,7 @@ public class StoryGenerationCompletionService {
                                 || !trip.getId().equals(sourcePlace.getTripId())
                                 || sourcePlace.getStartedAt() == null) {
                             throw new StoryDataIntegrityException(
-                                    "스토리 생성 장소 또는 날짜가 올바르지 않습니다."
+                                    StoryGenerationInternalErrorMessage.RESULT_SOURCE_INVALID
                             );
                         }
                         return new StoryBlock(

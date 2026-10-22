@@ -48,8 +48,10 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import java.util.Set;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -65,6 +67,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class TripService {
+    private static final ZoneId TRIP_ZONE = ZoneId.of("Asia/Seoul");
     private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
     private static final int TRIP_LIST_SIZE = 7;
     private static final int TRIP_LIST_FETCH_SIZE = TRIP_LIST_SIZE + 1;
@@ -82,6 +85,7 @@ public class TripService {
     private final ObjectMapper objectMapper;
     private final StoryRepository storyRepository;
     private final TripMapCacheStore tripMapCacheStore;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public List<TripSearchCandidateResponse> findSearchCandidates(
@@ -684,7 +688,7 @@ public class TripService {
             LocalDate endDate,
             List<String> regionCodes
     ) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock.withZone(TRIP_ZONE));
 
         if (endDate.isBefore(startDate)
                 || startDate.isAfter(today)

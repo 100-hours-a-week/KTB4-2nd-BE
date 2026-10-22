@@ -11,7 +11,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,9 +28,7 @@ class TripUpdateServiceTest {
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
-    private final TripService service = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
-            trips, regions, mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class), catalog, attachments, storage, mock(TripAccessService.class),
-            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class), mapCache);
+    private final TripService service = createService(Clock.systemUTC());
     private Trip trip;
     private TripRegion seoul;
     private final LocalDate start = LocalDate.of(2026, 9, 1);
@@ -44,6 +45,41 @@ class TripUpdateServiceTest {
         when(trips.findOwnedActiveForUpdate(7L, 1L)).thenReturn(Optional.of(trip));
         when(regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L)).thenReturn(List.of(seoul));
         when(catalog.getRequired("11000")).thenReturn(reference("11000"));
+    }
+
+    @Test
+    void 한국_자정부터_오전까지_당일로_여행_기간을_수정한다() {
+        LocalDate today = LocalDate.of(2030, 10, 22);
+        for (String instant : List.of(
+                "2030-10-21T15:00:00Z", "2030-10-21T23:59:59Z", "2030-10-22T00:00:00Z"
+        )) {
+            TripService service = createService(Clock.fixed(Instant.parse(instant), ZoneOffset.UTC));
+
+            var response = service.updateTrip(7L, 1L, new TripUpdateRequest(null, today, today, null));
+
+            assertThat(response.startDate()).isEqualTo(today);
+            assertThat(response.endDate()).isEqualTo(today);
+        }
+    }
+
+    @Test
+    void 한국_자정_전후의_미래_날짜로는_여행_기간을_수정하지_않는다() {
+        TripService beforeMidnight = createService(Clock.fixed(
+                Instant.parse("2030-10-21T14:59:59Z"), ZoneOffset.UTC
+        ));
+        TripService afterMidnight = createService(Clock.fixed(
+                Instant.parse("2030-10-21T15:00:00Z"), ZoneOffset.UTC
+        ));
+        LocalDate today = LocalDate.of(2030, 10, 22);
+
+        assertThatThrownBy(() -> beforeMidnight.updateTrip(7L, 1L,
+                new TripUpdateRequest(null, today, today, null)))
+                .isInstanceOf(InvalidTripRequestException.class);
+        assertThatThrownBy(() -> afterMidnight.updateTrip(7L, 1L,
+                new TripUpdateRequest(null, today, today.plusDays(1), null)))
+                .isInstanceOf(InvalidTripRequestException.class);
+        assertThat(trip.getStartDate()).isEqualTo(start);
+        assertThat(trip.getEndDate()).isEqualTo(end);
     }
 
     @Test
@@ -134,6 +170,23 @@ class TripUpdateServiceTest {
         assertThat(busan.getDeletedAt()).isNotNull();
         assertThat(result.regions()).extracting(r -> r.regionCode())
                 .containsExactly("11000", "50000");
+    }
+
+    private TripService createService(Clock clock) {
+        return new TripService(
+                mock(AdditionalAttachmentModificationGuard.class),
+                trips,
+                regions,
+                mock(AdditionalAttachmentExecutionRepository.class),
+                catalog,
+                attachments,
+                storage,
+                mock(TripAccessService.class),
+                new tools.jackson.databind.ObjectMapper(),
+                mock(StoryRepository.class),
+                mapCache,
+                clock
+        );
     }
 
     private RegionCatalog.Region reference(String code) {

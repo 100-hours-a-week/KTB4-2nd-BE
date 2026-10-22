@@ -27,7 +27,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -67,18 +70,39 @@ class TripServiceTest {
         tripAccessService = mock(TripAccessService.class);
         mapCache = mock(TripMapCacheStore.class);
         when(mapCache.version(1L)).thenReturn(Optional.of("v1"));
-        tripService = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
-                tripRepository,
-                tripRegionRepository,
-                mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class),
-                regionCatalog,
-                tripAttachmentRepository,
-                tripAttachmentStorageClient,
-                tripAccessService,
-                new ObjectMapper(),
-                mock(StoryRepository.class),
-                mapCache
-        );
+        tripService = createService(Clock.systemUTC());
+    }
+
+    @Test
+    void 한국_자정부터_오전까지_당일_여행_생성을_허용한다() {
+        givenRegion();
+        givenSavedTrip();
+        LocalDate today = LocalDate.of(2030, 10, 22);
+        for (String instant : List.of(
+                "2030-10-21T15:00:00Z", "2030-10-21T23:59:59Z", "2030-10-22T00:00:00Z"
+        )) {
+            TripService service = createService(Clock.fixed(Instant.parse(instant), ZoneOffset.UTC));
+
+            assertThat(service.createTrip(1L, request(today, today, List.of("50110"))).tripId())
+                    .isEqualTo(7L);
+        }
+    }
+
+    @Test
+    void 한국_자정_전후의_미래_날짜로는_여행을_생성하지_않는다() {
+        TripService beforeMidnight = createService(Clock.fixed(
+                Instant.parse("2030-10-21T14:59:59Z"), ZoneOffset.UTC
+        ));
+        TripService afterMidnight = createService(Clock.fixed(
+                Instant.parse("2030-10-21T15:00:00Z"), ZoneOffset.UTC
+        ));
+        LocalDate today = LocalDate.of(2030, 10, 22);
+
+        assertThrows(InvalidTripRequestException.class,
+                () -> beforeMidnight.createTrip(1L, request(today, today, List.of("50110"))));
+        assertThrows(InvalidTripRequestException.class,
+                () -> afterMidnight.createTrip(1L, request(today, today.plusDays(1), List.of("50110"))));
+        verify(tripRepository, never()).save(any());
     }
 
     @Test
@@ -428,6 +452,22 @@ class TripServiceTest {
                 () -> tripService.findMap(1L))).isSameAs(failure);
 
         verify(mapCache, never()).save(anyLong(), anyString(), any());
+    }
+
+    private TripService createService(Clock clock) {
+        return new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
+                tripRepository,
+                tripRegionRepository,
+                mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class),
+                regionCatalog,
+                tripAttachmentRepository,
+                tripAttachmentStorageClient,
+                tripAccessService,
+                new ObjectMapper(),
+                mock(StoryRepository.class),
+                mapCache,
+                clock
+        );
     }
 
     private com.yeodam.yeodambe.trip.repository.TripMapRepresentative mapRepresentative(Long tripId, String previewKey) {

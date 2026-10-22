@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.Pageable;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,7 +54,8 @@ class TripListServiceTest {
                 storageClient,
                 mock(TripAccessService.class),
                 objectMapper,
-                mock(StoryRepository.class), mock(TripMapCacheStore.class)
+                mock(StoryRepository.class), mock(TripMapCacheStore.class),
+                Clock.systemUTC()
         );
     }
 

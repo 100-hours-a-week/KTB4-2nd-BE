@@ -31,6 +31,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -48,6 +49,9 @@ import static org.mockito.Mockito.*;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @Import({TestcontainersConfiguration.class, TripService.class, SearchService.class, AdditionalAttachmentModificationGuard.class, tools.jackson.databind.ObjectMapper.class})
 class TripSearchMysqlIntegrationTest extends TripSearchRepositoryTest {
+    @MockitoBean
+    private Clock clock;
+
     @MockitoBean
     private TripMapCacheStore mapCache;
 

@@ -18,6 +18,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -49,7 +50,8 @@ class TripDetailServiceTest {
                 tripAccessService,
                 new tools.jackson.databind.ObjectMapper(),
                 storyRepository,
-                mock(TripMapCacheStore.class)
+                mock(TripMapCacheStore.class),
+                Clock.systemUTC()
         );
     }
 

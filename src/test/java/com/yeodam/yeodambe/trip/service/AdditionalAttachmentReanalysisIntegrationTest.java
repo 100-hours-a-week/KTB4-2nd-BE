@@ -321,6 +321,38 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(outboxCount()).isZero();
     }
 
+    @Test
+    void laterBatchValidationFailureEndsAdditionButPreservesExistingTravelData() {
+        transactions.failExecution(additionId, "TEST_RESET");
+        additionId = UUID.randomUUID().toString();
+        uploadId = urls.issueUploadUrls(tripId, userId, request(1, 2, false)).uploadId();
+        var firstClaim = prepareAsync();
+        var ready = outboxes.findAll().stream().filter(value -> value.getTripId().equals(tripId)
+                && "photos_ready".equals(value.getMessageType())).findFirst().orElseThrow();
+        confirm(ready);
+        var second = urls.issueUploadUrls(tripId, userId, request(2, 2, true));
+        when(storage.open(anyString())).thenAnswer(call -> new ByteArrayInputStream("broken photo".getBytes()));
+
+        assertThatThrownBy(() -> completion.complete(tripId, userId,
+                new AdditionalAttachmentUploadCompleteRequest(second.uploadId())))
+                .isInstanceOf(com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException.class);
+
+        var failed = executionRepository.findById(additionId).orElseThrow();
+        assertThat(failed.getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.FAILED);
+        assertThat(failed.getEndedAt()).isNotNull();
+        assertThat(jdbc.queryForList("SELECT status FROM additional_attachment_upload_batches WHERE addition_id = ?",
+                String.class, additionId)).hasSize(2).containsOnly("FAILED");
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(trips.findById(tripId).orElseThrow().getProcessingStatus()).isEqualTo(ProcessingStatus.COMPLETED);
+        assertThat(stats.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM additional_attachment_upload_outbox WHERE trip_id = ? AND message_type = 'process'",
+                Integer.class, tripId)).isZero();
+        var firstItem = additionalItems.findAllByBatch_IdOrderByFileOrderAsc(firstClaim.batchId()).getFirst();
+        assertThat(attachments.findById(firstItem.getTripAttachmentId()).orElseThrow().getDeletedAt()).isNotNull();
+        verify(storage, never()).delete(anyString());
+    }
+
     private Integer outboxCount() {
         return jdbc.queryForObject("SELECT COUNT(*) FROM additional_attachment_upload_outbox o "
                 + "JOIN additional_attachment_upload_batches b ON b.upload_batch_id = o.upload_batch_id "

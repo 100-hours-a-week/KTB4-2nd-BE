@@ -23,6 +23,25 @@ class StoryGenerationResultValidatorTest {
     private final StoryGenerationResultValidator validator = new StoryGenerationResultValidator();
 
     @Test
+    void 이모지가_포함된_최대_길이의_모든_스토리_문구를_허용한다() {
+        String text = "가".repeat(39) + "😀";
+        String memo = "나".repeat(124) + "😀";
+        Result result = new Result(text, List.of(new Block(1, 11L, 21L, text, text, memo)));
+
+        assertThatCode(() -> validator.validate(result)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void 코드_포인트_제한을_초과한_스토리_문구를_거부한다() {
+        String text = "😀".repeat(41);
+        Block validBlock = block(1, 11L, 21L);
+        assertInvalid(new Result(text, List.of(validBlock)));
+        assertInvalid(new Result("요약", List.of(new Block(1, 11L, 21L, text, "설명", null))));
+        assertInvalid(new Result("요약", List.of(new Block(1, 11L, 21L, "첫날", text, null))));
+        assertInvalid(new Result("요약", List.of(new Block(1, 11L, 21L, "첫날", "설명", "😀".repeat(126)))));
+    }
+
+    @Test
     void acceptsThirtyBlocksAndMaximumTextLengths() {
         var blocks = IntStream.rangeClosed(1, 30)
                 .mapToObj(index -> new Block(index, 11L, (long) index,

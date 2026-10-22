@@ -22,6 +22,23 @@ class TripUpdateRequestTest {
     }
 
     @Test
+    void 여행명_앞뒤_공백을_제거한_뒤_길이를_검증한다() {
+        TripUpdateRequest request = new TripUpdateRequest("  " + "😀".repeat(10) + "  ", null, null, null);
+
+        assertThat(request.tripName()).isEqualTo("😀".repeat(10));
+        assertThat(validator.validate(request)).isEmpty();
+    }
+
+    @Test
+    void 위치와_관계없이_여행명의_제어문자를_거부한다() {
+        for (String name : List.of("\n여행", "여행\t", "여\n행", "여행\u0000", "여행\u007F", "여행\u0085")) {
+            TripUpdateRequest request = new TripUpdateRequest(name, null, null, null);
+
+            assertThat(validator.validate(request)).as("name=%s", name).isNotEmpty();
+        }
+    }
+
+    @Test
     void 변경할_값이_없는_요청을_거부한다() {
         assertThat(validator.validate(new TripUpdateRequest(null, null, null, null)))
                 .extracting(violation -> violation.getPropertyPath().toString())

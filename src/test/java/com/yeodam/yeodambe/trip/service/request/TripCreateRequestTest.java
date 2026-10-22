@@ -22,6 +22,33 @@ class TripCreateRequestTest {
     }
 
     @Test
+    void 여행명_앞뒤_공백을_제거한_뒤_길이를_검증한다() {
+        TripCreateRequest request = new TripCreateRequest(
+                "  " + "😀".repeat(10) + "  ",
+                LocalDate.of(2026, 9, 1),
+                LocalDate.of(2026, 9, 3),
+                List.of("50110")
+        );
+
+        assertThat(request.tripName()).isEqualTo("😀".repeat(10));
+        assertThat(validator.validate(request)).isEmpty();
+    }
+
+    @Test
+    void 위치와_관계없이_여행명의_제어문자를_거부한다() {
+        for (String name : List.of("\n여행", "여행\t", "여\n행", "여행\u0000", "여행\u007F", "여행\u0085")) {
+            TripCreateRequest request = new TripCreateRequest(
+                    name,
+                    LocalDate.of(2026, 9, 1),
+                    LocalDate.of(2026, 9, 3),
+                    List.of("50110")
+            );
+
+            assertThat(validator.validate(request)).as("name=%s", name).isNotEmpty();
+        }
+    }
+
+    @Test
     void 필수_필드가_없으면_거부한다() {
         var violations = validator.validate(new TripCreateRequest(null, null, null, null));
 

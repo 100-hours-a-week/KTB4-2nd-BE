@@ -68,6 +68,25 @@ class SearchSecurityIntegrationTest {
     }
 
     @Test
+    void 이모지_한_코드_포인트의_검색어는_거부한다() throws Exception {
+        mvc.perform(get("/search").param("query", "😀").cookie(cookie()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_SEARCH_QUERY"));
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void 이모지_검색어의_코드_포인트_길이_경계를_검증한다() throws Exception {
+        for (String query : List.of("😀😀", "  " + "😀".repeat(100) + "  ")) {
+            mvc.perform(get("/search").param("query", query).cookie(cookie()))
+                    .andExpect(status().isOk());
+        }
+        mvc.perform(get("/search").param("query", "😀".repeat(101)).cookie(cookie()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_SEARCH_QUERY"));
+    }
+
+    @Test
     void 검색어를_정규화하고_인증된_사용자_ID로_검색한다() throws Exception {
         mvc.perform(get("/search").param("query", "  제주 바다  ").param("userId", "99")
                         .cookie(cookie()))

@@ -86,7 +86,7 @@ public class StoryBlock {
         }
         Story.validateText(dayLabel);
         Story.validateText(detailSummary);
-        if (memo != null && memo.length() > 125) {
+        if (memo != null && memo.codePointCount(0, memo.length()) > 125) {
             throw new IllegalArgumentException("메모는 최대 125자입니다.");
         }
         this.storyId = storyId;

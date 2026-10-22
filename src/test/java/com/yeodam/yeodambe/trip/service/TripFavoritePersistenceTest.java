@@ -15,6 +15,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 @Import({TripService.class, AdditionalAttachmentModificationGuard.class})
 class TripFavoritePersistenceTest {
+    @MockitoBean
+    private Clock clock;
+
     @MockitoBean
     private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     @Autowired

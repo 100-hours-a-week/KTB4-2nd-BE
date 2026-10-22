@@ -1,12 +1,11 @@
 package com.yeodam.yeodambe.search.service.request;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 
 public record SearchRequest(
         @NotBlank
-        @Size(min = 2, max = 100)
         @Pattern(regexp = "^[^\\p{Cc}]+$")
         String query
 ) {
@@ -14,5 +13,14 @@ public record SearchRequest(
         if (query != null) {
             query = query.strip();
         }
+    }
+
+    @AssertTrue
+    public boolean isQueryLengthValid() {
+        if (query == null) {
+            return true;
+        }
+        int length = query.codePointCount(0, query.length());
+        return length >= 2 && length <= 100;
     }
 }

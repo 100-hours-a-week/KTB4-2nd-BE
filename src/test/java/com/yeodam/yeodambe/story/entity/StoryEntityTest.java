@@ -3,11 +3,42 @@ package com.yeodam.yeodambe.story.entity;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.*;
 
 class StoryEntityTest {
+    @Test
+    void 이모지가_포함된_최대_길이의_문구와_메모를_저장한다() {
+        String text = "가".repeat(39) + "😀";
+        String memo = "나".repeat(124) + "😀";
+        Story story = new Story(1L, Story.Mood.PLAIN, text);
+        StoryBlock block = new StoryBlock(
+                1L, 2L, 5L, LocalDate.of(2026, 10, 13),
+                1, text, text, memo
+        );
+
+        assertThat(story.getStorySummary()).isEqualTo(text);
+        assertThat(block.getDayLabel()).isEqualTo(text);
+        assertThat(block.getDetailSummary()).isEqualTo(text);
+        assertThat(block.getMemo()).isEqualTo(memo);
+    }
+
+    @Test
+    void 코드_포인트_제한을_초과한_문구와_메모를_저장하지_않는다() {
+        String text = "😀".repeat(41);
+        LocalDate date = LocalDate.of(2026, 10, 13);
+        assertThatThrownBy(() -> new Story(1L, Story.Mood.PLAIN, text))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new StoryBlock(1L, 2L, 5L, date, 1, text, "설명", null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new StoryBlock(1L, 2L, 5L, date, 1, "첫날", text, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new StoryBlock(1L, 2L, 5L, date, 1, "첫날", "설명", "😀".repeat(126)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     void 저장_문구의_필수값과_길이를_검증한다() {
         assertThat(new Story(1L, Story.Mood.PLAIN, "가".repeat(40)).getStorySummary()).hasSize(40);

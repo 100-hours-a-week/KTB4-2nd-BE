@@ -71,6 +71,40 @@ class TripUpdateIntegrationTest {
     }
 
     @Test
+    void 여행명_공백을_정리하고_이모지_열자를_저장한다() throws Exception {
+        String name = "😀".repeat(10);
+        mvc.perform(request("{\"tripName\":\"  " + name + "  \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tripName").value(name));
+
+        assertThat(name()).isEqualTo(name);
+    }
+
+    @Test
+    void 앞뒤_공백을_제거한_이름이_중복되면_409를_반환한다() throws Exception {
+        create("다른 여행", List.of("11000"));
+        mvc.perform(request("{\"tripName\":\"  다른 여행  \"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("TRIP_NAME_DUPLICATED"));
+
+        assertThat(name()).isEqualTo("원래 여행");
+    }
+
+    @Test
+    void 여행명의_제어문자를_400으로_거부하고_기존_이름을_보존한다() throws Exception {
+        for (String body : List.of(
+                "{\"tripName\":\"\\n여행\"}",
+                "{\"tripName\":\"여행\\t\"}",
+                "{\"tripName\":\"여행\\u0000\"}"
+        )) {
+            mvc.perform(request(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("INVALID_TRIP_REQUEST"));
+            assertThat(name()).isEqualTo("원래 여행");
+        }
+    }
+
+    @Test
     void 이름만_수정하면_같은_ID로_저장하고_기존_값을_보존한다() throws Exception {
         mvc.perform(request("{\"tripName\":\"변경 여행\"}"))
                 .andExpect(status().isOk())

@@ -42,6 +42,14 @@ class StorySchemaMigrationTest {
         assertThatThrownBy(() -> jdbc.update("INSERT INTO story_blocks(story_id,trip_attachment_id,source_trip_place_id,source_date,order_number,day_label,detail_summary) VALUES (901,901,901,'2026-10-07',2,'날','문구')")).isInstanceOf(DataIntegrityViolationException.class);
         jdbc.update("INSERT INTO story_blocks(story_id,trip_attachment_id,source_trip_place_id,source_date,order_number,day_label,detail_summary) VALUES (902,901,901,'2026-10-07',1,'날','문구')");
         assertThatThrownBy(() -> jdbc.update("UPDATE trips SET current_story_id=999 WHERE trip_id=901")).isInstanceOf(DataIntegrityViolationException.class);
+        String text = "😀".repeat(40);
+        String memo = "😀".repeat(125);
+        jdbc.update("UPDATE stories SET story_summary=? WHERE story_id=901", text);
+        jdbc.update("UPDATE story_blocks SET day_label=?,detail_summary=?,memo=? WHERE story_id=901", text, text, memo);
+        assertThat(jdbc.queryForObject("SELECT story_summary FROM stories WHERE story_id=901", String.class)).isEqualTo(text);
+        assertThat(jdbc.queryForObject("SELECT day_label FROM story_blocks WHERE story_id=901", String.class)).isEqualTo(text);
+        assertThat(jdbc.queryForObject("SELECT detail_summary FROM story_blocks WHERE story_id=901", String.class)).isEqualTo(text);
+        assertThat(jdbc.queryForObject("SELECT memo FROM story_blocks WHERE story_id=901", String.class)).isEqualTo(memo);
         assertThatThrownBy(() -> jdbc.update("UPDATE stories SET story_summary=? WHERE story_id=901", "가".repeat(41))).isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> jdbc.update("UPDATE story_blocks SET day_label=? WHERE story_id=901", "가".repeat(41))).isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> jdbc.update("UPDATE story_blocks SET detail_summary=? WHERE story_id=901", "가".repeat(41))).isInstanceOf(DataIntegrityViolationException.class);

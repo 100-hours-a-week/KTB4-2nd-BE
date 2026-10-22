@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
@@ -25,7 +26,7 @@ class TripSearchServiceTest {
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final TripService service = new TripService(mock(AdditionalAttachmentModificationGuard.class), mock(TripRepository.class), regions,
             mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class), mock(RegionCatalog.class), attachments, storage, mock(TripAccessService.class),
-            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class), mock(TripMapCacheStore.class));
+            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class), mock(TripMapCacheStore.class), Clock.systemUTC());
 
     @Test
     void 사진_ID가_없으면_DB_조회와_URL_생성을_생략한다() {

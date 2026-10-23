@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.search.service.request;
 
+import com.yeodam.yeodambe.common.validation.TextValidation;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -13,6 +14,11 @@ public record SearchRequest(
         if (query != null) {
             query = query.strip();
         }
+    }
+
+    @AssertTrue
+    public boolean isQueryContentValid() {
+        return TextValidation.hasVisibleContent(query);
     }
 
     @AssertTrue

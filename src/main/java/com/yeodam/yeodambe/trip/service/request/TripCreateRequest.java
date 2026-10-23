@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service.request;
 
+import com.yeodam.yeodambe.common.validation.TextValidation;
 import jakarta.validation.constraints.*;
 
 import java.time.LocalDate;
@@ -21,6 +22,11 @@ public record TripCreateRequest(
         if (tripName != null && tripName.codePoints().noneMatch(Character::isISOControl)) {
             tripName = tripName.strip();
         }
+    }
+
+    @AssertTrue
+    public boolean isTripNameContentValid() {
+        return TextValidation.hasVisibleContent(tripName);
     }
 
     @AssertTrue

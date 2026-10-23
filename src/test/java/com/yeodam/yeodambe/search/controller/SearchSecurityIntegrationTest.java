@@ -129,6 +129,20 @@ class SearchSecurityIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
+            "\u3164\u3164", "\u2800\u2800", "\u200B\u200B", "\u200C\u200C", "\u200D\u200D",
+            "\u2060\u2060", "\uFEFF\uFEFF", "\u00A0\u00A0", "\u2007\u2007", "\u202F\u202F",
+            " \u3164\u2800\u200B\u2060\uFEFF "
+    })
+    void 유니코드_공백_검색어는_검색_서비스_호출_전에_거절한다(String query) throws Exception {
+        mvc.perform(get("/search").param("query", query).cookie(cookie()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_SEARCH_QUERY"));
+
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
             "제주에서 뭐 먹었지?",
             "바다! #여행 @제주",
             "2026-10-19 (제주/서귀포)",

@@ -651,6 +651,22 @@ class TripCreationSecurityIntegrationTest {
         verifyNoInteractions(tripService);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "\u3164", "\u2800", "\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF",
+            "\u00A0", "\u2007", "\u202F", " \u3164\u2800\u200B\u2060\uFEFF "
+    })
+    void 유니코드_공백_여행명은_생성_서비스_호출_전에_거절한다(String name) throws Exception {
+        authenticatedCreationRequest("/trips", """
+                {"tripName":"%s","startDate":"2026-10-01","endDate":"2026-10-02",
+                 "regionCodes":["50110"]}
+                """.formatted(name))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+
+        verifyNoInteractions(tripService);
+    }
+
     @Test
     void 메타데이터_없이_여행을_생성한다() throws Exception {
         given(tripService.createTrip(eq(42L), any())).willReturn(

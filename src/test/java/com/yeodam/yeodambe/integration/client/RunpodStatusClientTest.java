@@ -18,6 +18,7 @@ import org.springframework.web.client.RestClient;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -66,7 +67,7 @@ class RunpodStatusClientTest {
         RunpodStatusClient client = new RunpodStatusClient(RestClient.builder(),
                 "http://127.0.0.1:" + server.getAddress().getPort(), "secret-key",
                 Duration.ofSeconds(1), Duration.ofMillis(300));
-        service = new RunpodStatusService(client);
+        service = new RunpodStatusService(client, Clock.systemUTC());
     }
 
     @AfterEach

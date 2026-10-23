@@ -17,6 +17,8 @@ import com.yeodam.yeodambe.user.security.jwt.JwtConfig;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -128,6 +130,18 @@ class StorySourceFolderControllerTest {
         mockMvc.perform(authenticatedRequest().param("cursor", "bad"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_CURSOR"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0, -1})
+    void 양수가_아닌_여행_ID는_서비스_호출_없이_400을_반환한다(long tripId) throws Exception {
+        String path = "/trips/" + tripId + "/story/source-folders";
+        mockMvc.perform(get("/api" + path).contextPath("/api").servletPath(path)
+                        .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.data").isEmpty());
+        then(storySourceFolderListService).shouldHaveNoInteractions();
     }
 
     private MockHttpServletRequestBuilder authenticatedRequest() {

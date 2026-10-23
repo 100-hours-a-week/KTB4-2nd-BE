@@ -28,11 +28,13 @@ import com.yeodam.yeodambe.trip.service.response.TripAttachmentDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
+import com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -536,6 +538,43 @@ class TripAttachmentControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0, -1})
+    void 미분류_폴더_조회는_양수가_아닌_여행_ID를_서비스_호출_없이_거부한다(long tripId) throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        mvc.perform(get("/trips/{tripId}/unclassified-folders", tripId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.data").isEmpty());
+        verifyNoInteractions(unclassifiedFolderListService);
+    }
+
+    @Test
+    void 미분류_폴더_조회는_정상_응답과_접근불가_404를_유지한다() throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        when(unclassifiedFolderListService.findFolders(1L, 7L))
+                .thenReturn(new UnclassifiedFolderListResponse(List.of()));
+        when(unclassifiedFolderListService.findFolders(1L, 8L))
+                .thenThrow(new TripNotFoundException());
+
+        mvc.perform(get("/trips/7/unclassified-folders"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("UNCLASSIFIED_FOLDER_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.folders").isEmpty());
+        mvc.perform(get("/trips/8/unclassified-folders"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"));
+        verify(unclassifiedFolderListService).findFolders(1L, 7L);
+        verify(unclassifiedFolderListService).findFolders(1L, 8L);
     }
 
     private HandlerMethodArgumentResolver authenticationPrincipalResolver() {

@@ -27,6 +27,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ActiveProfiles;
@@ -176,8 +177,28 @@ class StoryGenerationControllerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
-    void missingAndOtherOwnerJobsReturnSameNotFoundResponse(boolean missing) throws Exception {
+    @ValueSource(strings = {"/story-generations/7", "/story-generation/7"})
+    void bothStatusPathsReturnTheSameResponse(String path) throws Exception {
+        var saved = mock(StoryGenerationJob.class);
+        when(saved.getId()).thenReturn(7L);
+        when(saved.getUserId()).thenReturn(42L);
+        when(saved.getStatus()).thenReturn(StoryGenerationJob.Status.QUEUED);
+        when(jobs.findById(7L)).thenReturn(Optional.of(saved));
+
+        mvc.perform(statusRequest(path).cookie(new Cookie("accessToken", issuer.issue(42L, "session"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("STORY_GENERATION_STATUS_FOUND"))
+                .andExpect(jsonPath("$.data.generationId").value(7))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"));
+        verify(jobs).findById(7L);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "true,/story-generation/7", "false,/story-generation/7",
+            "true,/story-generations/7", "false,/story-generations/7"
+    })
+    void missingAndOtherOwnerJobsReturnSameNotFoundResponse(boolean missing, String path) throws Exception {
         var saved = mock(StoryGenerationJob.class);
         if (missing) {
             when(jobs.findById(7L)).thenReturn(Optional.empty());
@@ -186,21 +207,46 @@ class StoryGenerationControllerTest {
             when(jobs.findById(7L)).thenReturn(Optional.of(saved));
         }
 
-        mvc.perform(statusRequest().cookie(new Cookie("accessToken", issuer.issue(42L, "session"))))
+        mvc.perform(statusRequest(path).cookie(new Cookie("accessToken", issuer.issue(42L, "session"))))
                 .andExpect(status().isNotFound())
                 .andExpect(content().json("{\"message\":\"STORY_GENERATION_NOT_FOUND\",\"data\":null}"));
         verifyNoInteractions(acceptance);
     }
 
-    @Test
-    void unauthenticatedStatusReadStopsBeforeRepositoryLookup() throws Exception {
-        mvc.perform(statusRequest()).andExpect(status().isUnauthorized());
+    @ParameterizedTest
+    @ValueSource(strings = {"/story-generations/7", "/story-generation/7"})
+    void unauthenticatedStatusReadStopsBeforeRepositoryLookup(String path) throws Exception {
+        mvc.perform(statusRequest(path)).andExpect(status().isUnauthorized());
         verifyNoInteractions(jobs, acceptance);
     }
 
     private MockHttpServletRequestBuilder statusRequest() {
-        return get("/api/story-generation/7").contextPath("/api")
-                .servletPath("/story-generation/7");
+        return statusRequest("/story-generation/7");
+    }
+
+    private MockHttpServletRequestBuilder statusRequest(String path) {
+        return get("/api" + path).contextPath("/api").servletPath(path);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "GET,/story-generation/0", "GET,/story-generation/-1",
+            "GET,/story-generations/0", "GET,/story-generations/-1",
+            "DELETE,/story-generations/0", "DELETE,/story-generations/-1",
+            "POST,/trips/0/story-generations", "POST,/trips/-1/story-generations"
+    })
+    void nonPositiveIdsAreRejectedBeforeBusinessProcessing(String method, String path) throws Exception {
+        mvc.perform(request(HttpMethod.valueOf(method), "/api" + path)
+                        .contextPath("/api").servletPath(path)
+                        .cookie(new Cookie("accessToken", issuer.issue(42L, "session")),
+                                new Cookie("CSRF_CONTEXT", "browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token")
+                        .contentType("application/json")
+                        .content("{\"mood\":\"EMOTIONAL\",\"tripPlaceIds\":[10]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.data").isEmpty());
+        verifyNoInteractions(acceptance, jobs, ai);
     }
 
     @Test

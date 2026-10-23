@@ -118,7 +118,7 @@ public class TripAttachmentController {
 
     @GetMapping("/trips/{tripId}/unclassified-folders")
     public ResponseEntity<ApiResponse<UnclassifiedFolderListResponse>> findUnclassifiedFolders(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
         Long userId = Long.valueOf(jwt.getSubject());

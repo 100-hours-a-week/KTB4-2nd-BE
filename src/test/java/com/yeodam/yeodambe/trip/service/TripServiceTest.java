@@ -42,6 +42,11 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 class TripServiceTest {
+    private static final Clock FIXED_CLOCK = Clock.fixed(
+            Instant.parse("2030-10-21T15:00:00Z"), ZoneOffset.UTC
+    );
+    private static final LocalDate TODAY = LocalDate.of(2030, 10, 22);
+
     private TripRepository tripRepository;
     private TripRegionRepository tripRegionRepository;
     private TripAttachmentRepository tripAttachmentRepository;
@@ -71,7 +76,7 @@ class TripServiceTest {
         tripAccessService = mock(TripAccessService.class);
         mapCache = mock(TripMapCacheStore.class);
         when(mapCache.version(1L)).thenReturn(Optional.of("v1"));
-        tripService = createService(Clock.systemUTC());
+        tripService = createService(FIXED_CLOCK);
     }
 
     @Test
@@ -113,7 +118,7 @@ class TripServiceTest {
         when(tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNull(1L, "중복"))
                 .thenReturn(true);
         TripCreateRequest request = new TripCreateRequest(
-                "  중복  ", LocalDate.now(), LocalDate.now(), List.of("50110")
+                "  중복  ", TODAY, TODAY, List.of("50110")
         );
 
         assertThrows(TripNameDuplicatedException.class, () -> tripService.createTrip(1L, request));
@@ -125,7 +130,7 @@ class TripServiceTest {
         givenRegion();
         givenSavedTrip();
         TripCreateRequest request = new TripCreateRequest(
-                "  여행  ", LocalDate.now(), LocalDate.now(), List.of("50110")
+                "  여행  ", TODAY, TODAY, List.of("50110")
         );
 
         tripService.createTrip(1L, request);
@@ -141,7 +146,7 @@ class TripServiceTest {
         givenSavedTrip();
 
         var response = tripService.createTrip(1L,
-                request(LocalDate.now(), LocalDate.now(), List.of("50110")));
+                request(TODAY, TODAY, List.of("50110")));
 
         assertThat(response.tripId()).isEqualTo(7L);
         assertThat(response.status()).isEqualTo(ProcessingStatus.PROCESSING);
@@ -196,7 +201,7 @@ class TripServiceTest {
 
     @Test
     void 종료일이_빠르거나_날짜가_미래면_거부한다() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = TODAY;
 
         assertInvalid(today, today.minusDays(1), List.of("50110"));
         assertInvalid(today.plusDays(1), today.plusDays(1), List.of("50110"));
@@ -206,12 +211,12 @@ class TripServiceTest {
 
     @Test
     void 시작일을_포함해_구십삼일이면_거부한다() {
-        assertInvalid(LocalDate.now().minusDays(92), LocalDate.now(), List.of("50110"));
+        assertInvalid(TODAY.minusDays(92), TODAY, List.of("50110"));
     }
 
     @Test
     void 같은_지역을_두번_선택하면_거부한다() {
-        assertInvalid(LocalDate.now(), LocalDate.now(), List.of("50110", "50110"));
+        assertInvalid(TODAY, TODAY, List.of("50110", "50110"));
     }
 
     @Test
@@ -219,7 +224,7 @@ class TripServiceTest {
         when(regionCatalog.getRequired("99999")).thenThrow(new InvalidTripRequestException());
 
         assertThrows(InvalidTripRequestException.class,
-                () -> tripService.createTrip(1L, request(LocalDate.now(), LocalDate.now(), List.of("99999"))));
+                () -> tripService.createTrip(1L, request(TODAY, TODAY, List.of("99999"))));
         verifyNoInteractions(tripRepository, tripRegionRepository);
     }
 
@@ -230,7 +235,7 @@ class TripServiceTest {
                 .thenReturn(true);
 
         assertThrows(TripNameDuplicatedException.class,
-                () -> tripService.createTrip(1L, request(LocalDate.now(), LocalDate.now(), List.of("50110"))));
+                () -> tripService.createTrip(1L, request(TODAY, TODAY, List.of("50110"))));
         verify(tripRepository, never()).save(any());
     }
 
@@ -240,7 +245,7 @@ class TripServiceTest {
         givenSavedTrip();
 
         var sameDay = tripService.createTrip(1L,
-                request(LocalDate.now(), LocalDate.now(), List.of("50110")));
+                request(TODAY, TODAY, List.of("50110")));
 
         assertThat(sameDay.tripId()).isEqualTo(7L);
         assertThat(sameDay.status()).isEqualTo(ProcessingStatus.PROCESSING);
@@ -253,7 +258,7 @@ class TripServiceTest {
         givenSavedTrip();
 
         var response = tripService.createTrip(1L,
-                request(LocalDate.now().minusDays(91), LocalDate.now(), List.of("50110")));
+                request(TODAY.minusDays(91), TODAY, List.of("50110")));
 
         assertThat(response.tripId()).isEqualTo(7L);
         assertThat(response.status()).isEqualTo(ProcessingStatus.PROCESSING);
@@ -262,7 +267,7 @@ class TripServiceTest {
 
     @Test
     void 완료된_소유_여행을_즐겨찾기로_등록한다() {
-        Trip trip = new Trip(1L, "여행", LocalDate.now(), LocalDate.now());
+        Trip trip = new Trip(1L, "여행", TODAY, TODAY);
         ReflectionTestUtils.setField(trip, "id", 7L);
         when(tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
                 7L, 1L, ProcessingStatus.COMPLETED)).thenReturn(Optional.of(trip));
@@ -276,7 +281,7 @@ class TripServiceTest {
 
     @Test
     void 이미_즐겨찾기인_여행도_true로_유지한다() {
-        Trip trip = new Trip(1L, "여행", LocalDate.now(), LocalDate.now());
+        Trip trip = new Trip(1L, "여행", TODAY, TODAY);
         ReflectionTestUtils.setField(trip, "id", 7L);
         ReflectionTestUtils.setField(trip, "favorite", true);
         when(tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
@@ -299,7 +304,7 @@ class TripServiceTest {
 
     @Test
     void 즐겨찾기_삭제를_반복해도_false로_유지한다() {
-        Trip trip = new Trip(1L, "여행", LocalDate.now(), LocalDate.now());
+        Trip trip = new Trip(1L, "여행", TODAY, TODAY);
         ReflectionTestUtils.setField(trip, "favorite", true);
         when(tripRepository.findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
                 7L, 1L, ProcessingStatus.COMPLETED)).thenReturn(Optional.of(trip));

@@ -19,7 +19,7 @@ class CursorCodecTest {
     @Test
     void JSON_객체를_URL_safe_Base64로_왕복한다() {
         AttachmentCursor cursor = new AttachmentCursor(
-                LocalDateTime.of(2026, 10, 9, 12, 0), 18L
+                LocalDateTime.of(2026, 10, 9, 12, 0), 18L, 7L, null, null
         );
 
         String encoded = CursorCodec.encode(cursor, objectMapper);

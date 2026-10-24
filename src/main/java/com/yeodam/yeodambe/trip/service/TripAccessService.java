@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
+import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,5 +23,13 @@ public class TripAccessService {
     public Trip requireReadableTrip(Long tripId, Long userId) {
         return tripRepository.findByIdAndUserIdAndDeletedAtIsNull(tripId, userId)
                 .orElseThrow(TripNotFoundException::new);
+    }
+
+    public Trip requireCompletedTrip(Long tripId, Long userId) {
+        Trip trip = requireReadableTrip(tripId, userId);
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new TripDetailNotAvailableException();
+        }
+        return trip;
     }
 }

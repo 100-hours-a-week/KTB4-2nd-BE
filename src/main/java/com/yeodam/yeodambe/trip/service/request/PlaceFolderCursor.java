@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.util.CursorCodec;
 import com.yeodam.yeodambe.common.exception.InvalidPlaceFolderCursorException;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 
@@ -42,10 +43,9 @@ public record PlaceFolderCursor(
 
         PlaceFolderCursor cursor;
         try {
-            cursor = objectMapper.treeToValue(
-                    CursorCodec.decode(value, objectMapper),
-                    PlaceFolderCursor.class
-            );
+            JsonNode node = CursorCodec.decode(value, objectMapper);
+            validateJsonFields(node);
+            cursor = objectMapper.treeToValue(node, PlaceFolderCursor.class);
         } catch (JacksonException | IllegalArgumentException exception) {
             throw new InvalidPlaceFolderCursorException();
         }
@@ -55,5 +55,15 @@ public record PlaceFolderCursor(
         }
 
         return cursor;
+    }
+
+    private static void validateJsonFields(JsonNode node) {
+        if (!node.path("tripId").isIntegralNumber()
+                || !node.path("tripId").canConvertToLong()
+                || !node.path("placeName").isString()
+                || !node.path("tripPlaceId").isIntegralNumber()
+                || !node.path("tripPlaceId").canConvertToLong()) {
+            throw new InvalidPlaceFolderCursorException();
+        }
     }
 }

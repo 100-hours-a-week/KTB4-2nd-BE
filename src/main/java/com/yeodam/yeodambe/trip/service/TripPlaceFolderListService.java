@@ -30,7 +30,7 @@ public class TripPlaceFolderListService {
     private final ObjectMapper objectMapper;
 
     public TripPlaceFolderListResponse findPlaceFolders(Long userId, Long tripId, String cursor) {
-        tripAccessService.requireReadableTrip(tripId, userId);
+        tripAccessService.requireCompletedTrip(tripId, userId);
         PlaceFolderCursor decoded = PlaceFolderCursor.decode(cursor, tripId, objectMapper);
 
         List<TripDetailPlace> fetched = tripDetailPlaceRepository.findPlaceFoldersWithCursor(

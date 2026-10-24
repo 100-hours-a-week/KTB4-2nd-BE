@@ -2,6 +2,8 @@ package com.yeodam.yeodambe.trip.service.request;
 
 import com.yeodam.yeodambe.common.exception.InvalidPlaceFolderCursorException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -61,6 +63,34 @@ class PlaceFolderCursorTest {
 
         assertThatThrownBy(() -> PlaceFolderCursor.decode(encoded, null, objectMapper))
                 .isInstanceOf(InvalidPlaceFolderCursorException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "1.9", "7.0", "\"7\"", "true", "null", "[]", "{}", "9223372036854775808"
+    })
+    void 여행_ID의_정수_타입과_long_범위를_검사한다(String tripId) {
+        assertInvalid(encodedJson("""
+                {"tripId":%s,"placeName":"제주","tripPlaceId":11}
+                """.formatted(tripId)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "1.9", "11.0", "\"11\"", "true", "null", "[]", "{}", "9223372036854775808"
+    })
+    void 장소_ID의_정수_타입과_long_범위를_검사한다(String tripPlaceId) {
+        assertInvalid(encodedJson("""
+                {"tripId":7,"placeName":"제주","tripPlaceId":%s}
+                """.formatted(tripPlaceId)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"123", "true", "null", "[]", "{}"})
+    void 장소명은_문자열만_허용한다(String placeName) {
+        assertInvalid(encodedJson("""
+                {"tripId":7,"placeName":%s,"tripPlaceId":11}
+                """.formatted(placeName)));
     }
 
     private void assertInvalid(String cursor) {

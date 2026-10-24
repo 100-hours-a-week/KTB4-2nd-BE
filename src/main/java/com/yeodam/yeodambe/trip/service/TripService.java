@@ -285,12 +285,13 @@ public class TripService {
     ) {
         Trip trip = tripAccessService.requireReadableTrip(tripId, userId);
 
-        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
+                || additionalAttachmentExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
             throw new TripUpdateNotAllowedException();
         }
 
         AttachmentCursor attachmentCursor = AttachmentCursor.decode(
-                cursor, objectMapper
+                cursor, tripId, null, null, objectMapper
         );
 
         List<TripAttachment> attachments =
@@ -321,7 +322,7 @@ public class TripService {
                     EDIT_ATTACHMENT_PAGE_SIZE - 1
             );
             nextCursor = new AttachmentCursor(
-                    last.getCreatedAt(), last.getId()
+                    last.getCreatedAt(), last.getId(), tripId, null, null
             ).encode(objectMapper);
         }
 
@@ -377,7 +378,8 @@ public class TripService {
             if (trip.getProcessingStatus() == ProcessingStatus.CANCELED) {
                 throw new TripNotFoundException();
             }
-            if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
+                    || additionalAttachmentExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
                 throw new TripDetailNotAvailableException();
             }
 

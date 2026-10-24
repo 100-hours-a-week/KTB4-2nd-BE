@@ -72,7 +72,7 @@ class UnclassifiedFolderListServiceTest {
 
     @Test
     void 접근불가_여행은_사진과_URL_조회_전에_거절한다() {
-        doThrow(new TripNotFoundException()).when(access).requireReadableTrip(7L, 1L);
+        doThrow(new TripNotFoundException()).when(access).requireCompletedTrip(7L, 1L);
         assertThatThrownBy(() -> service.findFolders(1L, 7L)).isInstanceOf(TripNotFoundException.class);
         verifyNoInteractions(repository, storage);
     }
@@ -120,7 +120,7 @@ class UnclassifiedFolderListServiceTest {
 
     @Test
     void 내부목록도_접근거절은_커서해석_사진_URL_조회_전에_처리한다() {
-        doThrow(new TripNotFoundException()).when(access).requireReadableTrip(7L, 1L);
+        doThrow(new TripNotFoundException()).when(access).requireCompletedTrip(7L, 1L);
 
         assertThatThrownBy(() -> service.findAttachments(1L, 7L, "BLURRY", "broken!"))
                 .isInstanceOf(TripNotFoundException.class);
@@ -131,7 +131,7 @@ class UnclassifiedFolderListServiceTest {
     void 잘못된_커서는_사진_URL_조회_전에_거절한다() {
         assertThatThrownBy(() -> service.findAttachments(1L, 7L, "BLURRY", "broken!"))
                 .isInstanceOf(InvalidCursorException.class);
-        verify(access).requireReadableTrip(7L, 1L);
+        verify(access).requireCompletedTrip(7L, 1L);
         verifyNoInteractions(repository, storage);
     }
 

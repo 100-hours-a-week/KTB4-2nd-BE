@@ -31,6 +31,7 @@ public class TripAttachmentListService {
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
     private final ObjectMapper objectMapper;
+    private final TripAccessService tripAccessService;
 
     public TripAttachmentListResponse findByPlaceFolder(
             Long userId,
@@ -47,6 +48,8 @@ public class TripAttachmentListService {
         )) {
             throw new PlaceFolderNotFoundException();
         }
+
+        tripAccessService.requireCompletedTrip(tripId, userId);
 
         AttachmentCursor attachmentCursor = AttachmentCursor.decode(
                 cursor,

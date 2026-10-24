@@ -118,7 +118,7 @@ class TripPlaceFolderListServiceTest {
 
     @Test
     void 접근할수없는_여행은_커서를_검증하기_전에_거부한다() {
-        doThrow(new TripNotFoundException()).when(accessService).requireReadableTrip(7L, 1L);
+        doThrow(new TripNotFoundException()).when(accessService).requireCompletedTrip(7L, 1L);
 
         assertThatThrownBy(() -> service.findPlaceFolders(1L, 7L, "bad-cursor"))
                 .isInstanceOf(TripNotFoundException.class);

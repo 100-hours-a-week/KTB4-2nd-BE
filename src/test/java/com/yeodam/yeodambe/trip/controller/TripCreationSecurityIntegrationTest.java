@@ -487,7 +487,7 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(jsonPath("$.data.hasNext").value(true))
                 .andExpect(jsonPath("$.data.nextCursor").value(nextCursor));
 
-        then(tripAccessService).should().requireReadableTrip(7L, 42L);
+        then(tripAccessService).should().requireCompletedTrip(7L, 42L);
     }
 
     @Test
@@ -507,7 +507,7 @@ class TripCreationSecurityIntegrationTest {
     @Test
     void 장소_폴더_목록_API의_여행에_접근할수없으면_404를_반환한다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
-        given(tripAccessService.requireReadableTrip(7L, 42L))
+        given(tripAccessService.requireCompletedTrip(7L, 42L))
                 .willThrow(new TripNotFoundException());
 
         mockMvc.perform(get("/trips/7/place-folders")
@@ -525,7 +525,7 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
 
-        then(tripAccessService).should(never()).requireReadableTrip(any(), any());
+        then(tripAccessService).should(never()).requireCompletedTrip(any(), any());
     }
 
     @Test
@@ -536,7 +536,7 @@ class TripCreationSecurityIntegrationTest {
                         .cookie(new Cookie("accessToken", accessToken)))
                 .andExpect(status().isBadRequest());
 
-        then(tripAccessService).should(never()).requireReadableTrip(any(), any());
+        then(tripAccessService).should(never()).requireCompletedTrip(any(), any());
     }
 
     @Test

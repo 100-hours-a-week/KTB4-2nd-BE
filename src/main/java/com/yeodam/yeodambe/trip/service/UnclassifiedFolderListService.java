@@ -39,7 +39,7 @@ public class UnclassifiedFolderListService {
             String cursor
     ) {
         AttachmentIssue attachmentIssue = parseIssue(issue);
-        tripAccessService.requireReadableTrip(tripId, userId);
+        tripAccessService.requireCompletedTrip(tripId, userId);
         AttachmentCursor attachmentCursor = AttachmentCursor.decode(cursor, objectMapper);
 
         List<TripAttachment> attachments = tripAttachmentRepository.findUnclassifiedByIssueWithCursor(
@@ -96,7 +96,7 @@ public class UnclassifiedFolderListService {
     }
 
     public UnclassifiedFolderListResponse findFolders(Long userId, Long tripId) {
-        tripAccessService.requireReadableTrip(tripId, userId);
+        tripAccessService.requireCompletedTrip(tripId, userId);
 
         Map<AttachmentIssue, Long> counts = tripAttachmentRepository
                 .countUnclassifiedByIssue(tripId)

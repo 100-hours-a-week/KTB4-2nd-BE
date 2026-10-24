@@ -285,7 +285,8 @@ public class TripService {
     ) {
         Trip trip = tripAccessService.requireReadableTrip(tripId, userId);
 
-        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
+                || additionalAttachmentExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
             throw new TripUpdateNotAllowedException();
         }
 
@@ -377,7 +378,8 @@ public class TripService {
             if (trip.getProcessingStatus() == ProcessingStatus.CANCELED) {
                 throw new TripNotFoundException();
             }
-            if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
+                    || additionalAttachmentExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
                 throw new TripDetailNotAvailableException();
             }
 

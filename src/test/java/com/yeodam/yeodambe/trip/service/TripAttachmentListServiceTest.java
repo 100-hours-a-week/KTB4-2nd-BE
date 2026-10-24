@@ -4,6 +4,8 @@ import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import com.yeodam.yeodambe.common.exception.PlaceFolderNotFoundException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
+import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
@@ -16,6 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -37,7 +40,8 @@ class TripAttachmentListServiceTest {
             tripDetailPlaceRepository,
             tripAttachmentRepository,
             storageClient,
-            new ObjectMapper()
+            new ObjectMapper(),
+            new TripAccessService(tripRepository)
     );
 
     @Test
@@ -110,6 +114,10 @@ class TripAttachmentListServiceTest {
     }
 
     private void prepareOwnedPlace() {
+        Trip trip = mock(Trip.class);
+        when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
+        when(tripRepository.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+                .thenReturn(Optional.of(trip));
         when(tripRepository.existsByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
                 .thenReturn(true);
         when(tripDetailPlaceRepository.existsByIdAndTripIdAndDeletedAtIsNull(3L, 7L))

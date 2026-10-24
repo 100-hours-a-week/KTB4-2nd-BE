@@ -53,6 +53,9 @@ public class TripAttachmentListService {
 
         AttachmentCursor attachmentCursor = AttachmentCursor.decode(
                 cursor,
+                tripId,
+                tripPlaceId,
+                null,
                 objectMapper
         );
 
@@ -88,7 +91,10 @@ public class TripAttachmentListService {
             TripAttachment lastAttachment = attachments.get(PAGE_SIZE - 1);
             nextCursor = new AttachmentCursor(
                     lastAttachment.getCreatedAt(),
-                    lastAttachment.getId()
+                    lastAttachment.getId(),
+                    tripId,
+                    tripPlaceId,
+                    null
             ).encode(objectMapper);
         }
 

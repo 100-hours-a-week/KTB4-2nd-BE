@@ -7,6 +7,9 @@ import com.yeodam.yeodambe.story.service.StorySourceFolderListService;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
@@ -28,7 +31,9 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.stream.LongStream;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -198,6 +203,51 @@ class TripReadStateControllerTest {
                 .andExpect(jsonPath("$.message").value("PLACE_FOLDER_NOT_FOUND"));
 
         verifyNoInteractions(attachments, storage);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "/trips/7/edit, /trips/8/edit",
+            "/trips/7/edit, /trips/7/place-folders/3/attachments",
+            "/trips/7/edit, /trips/7/unclassified-folders/BLURRY/attachments",
+            "/trips/7/place-folders/3/attachments, /trips/7/place-folders/4/attachments",
+            "/trips/7/place-folders/3/attachments, /trips/8/place-folders/3/attachments",
+            "/trips/7/unclassified-folders/BLURRY/attachments, /trips/7/unclassified-folders/DUPLICATED/attachments",
+            "/trips/7/unclassified-folders/BLURRY/attachments, /trips/8/unclassified-folders/BLURRY/attachments"
+    })
+    void 다른_여행이나_폴더에_커서를_사용하면_400이다(String sourcePath, String path) throws Exception {
+        var photos = LongStream.rangeClosed(1, 19).mapToObj(id -> {
+            TripAttachment photo = mock(TripAttachment.class);
+            when(photo.getId()).thenReturn(id);
+            when(photo.getCreatedAt()).thenReturn(LocalDateTime.of(2026, 10, 1, 12, 0));
+            return photo;
+        }).toList();
+        when(attachments.findForEditWithCursor(eq(7L), isNull(), isNull(), any()))
+                .thenReturn(photos);
+        when(attachments.findByPlaceFolderWithCursor(
+                eq(7L), eq(3L), eq(ClassificationStatus.ACTIVE), isNull(), isNull(), any()
+        )).thenReturn(photos);
+        when(attachments.findUnclassifiedByIssueWithCursor(
+                eq(7L), eq(AttachmentIssue.BLURRY), isNull(), isNull(), any()
+        )).thenReturn(photos);
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(8L, 1L)).thenReturn(Optional.of(trip));
+        when(trips.existsByIdAndUserIdAndDeletedAtIsNull(8L, 1L)).thenReturn(true);
+        when(places.existsByIdAndTripIdAndDeletedAtIsNull(3L, 8L)).thenReturn(true);
+        when(places.existsByIdAndTripIdAndDeletedAtIsNull(4L, 7L)).thenReturn(true);
+        String body = mvc.perform(get(sourcePath))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        var data = new ObjectMapper().readTree(body).path("data");
+        var page = sourcePath.endsWith("/edit") ? data.path("attachments") : data;
+        String cursor = page.path("nextCursor").asString();
+
+        clearInvocations(attachments);
+        mvc.perform(get(path).param("cursor", cursor))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_CURSOR"))
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        verifyNoInteractions(attachments);
     }
 
     @ParameterizedTest

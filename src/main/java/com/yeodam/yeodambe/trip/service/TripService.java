@@ -291,7 +291,7 @@ public class TripService {
         }
 
         AttachmentCursor attachmentCursor = AttachmentCursor.decode(
-                cursor, objectMapper
+                cursor, tripId, null, null, objectMapper
         );
 
         List<TripAttachment> attachments =
@@ -322,7 +322,7 @@ public class TripService {
                     EDIT_ATTACHMENT_PAGE_SIZE - 1
             );
             nextCursor = new AttachmentCursor(
-                    last.getCreatedAt(), last.getId()
+                    last.getCreatedAt(), last.getId(), tripId, null, null
             ).encode(objectMapper);
         }
 

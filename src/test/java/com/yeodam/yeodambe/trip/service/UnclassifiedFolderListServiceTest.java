@@ -178,10 +178,11 @@ class UnclassifiedFolderListServiceTest {
         assertThat(response.items()).hasSize(18);
         assertThat(response.attachmentCount()).isEqualTo(25);
         assertThat(response.hasNext()).isTrue();
-        assertThat(AttachmentCursor.decode(response.nextCursor(), objectMapper))
+        assertThat(AttachmentCursor.decode(response.nextCursor(), 7L, null, AttachmentIssue.BLURRY, objectMapper))
                 .isEqualTo(new AttachmentCursor(
                         attachments.get(17).getCreatedAt(),
-                        attachments.get(17).getId()
+                        attachments.get(17).getId(),
+                        7L, null, AttachmentIssue.BLURRY
                 ));
         verify(storage, times(18)).createReadUrl(anyString());
         verify(storage, never()).createReadUrl(attachments.get(18).getPreviewStorageKey());
@@ -189,7 +190,9 @@ class UnclassifiedFolderListServiceTest {
 
     @Test
     void 전달한_커서의_시각과_ID로_다음페이지를_조회한다() {
-        AttachmentCursor cursor = new AttachmentCursor(LocalDateTime.of(2026, 10, 9, 10, 0), 503L);
+        AttachmentCursor cursor = new AttachmentCursor(
+                LocalDateTime.of(2026, 10, 9, 10, 0), 503L, 7L, null, AttachmentIssue.BLURRY
+        );
         when(repository.findUnclassifiedByIssueWithCursor(
                 7L, AttachmentIssue.BLURRY, cursor.createdAt(), cursor.tripAttachmentId(), PageRequest.of(0, 19)
         )).thenReturn(List.of());

@@ -99,15 +99,15 @@ class TripEditServiceTest {
         assertThat(result.attachments().items().getFirst().thumbnailUrl()).isEqualTo("url/preview-100");
         assertThat(result.attachmentCount()).isEqualTo(30);
         assertThat(result.attachments().hasNext()).isTrue();
-        assertThat(AttachmentCursor.decode(result.attachments().nextCursor(), mapper))
-                .isEqualTo(new AttachmentCursor(createdAt, 83L));
+        assertThat(AttachmentCursor.decode(result.attachments().nextCursor(), 7L, null, null, mapper))
+                .isEqualTo(new AttachmentCursor(createdAt, 83L, 7L, null, null));
         verify(storage, never()).createReadUrl("preview-82");
         verifyNoInteractions(trips);
     }
 
     @Test
     void 다음_페이지는_커서의_시각과_ID를_조회에_전달한다() {
-        String cursor = new AttachmentCursor(createdAt, 83L).encode(mapper);
+        String cursor = new AttachmentCursor(createdAt, 83L, 7L, null, null).encode(mapper);
         TripAttachment nextPhoto = photo(82L);
         when(attachments.findForEditWithCursor(7L, createdAt, 83L, PageRequest.of(0, 19)))
                 .thenReturn(List.of(nextPhoto));

@@ -40,7 +40,9 @@ public class UnclassifiedFolderListService {
     ) {
         AttachmentIssue attachmentIssue = parseIssue(issue);
         tripAccessService.requireCompletedTrip(tripId, userId);
-        AttachmentCursor attachmentCursor = AttachmentCursor.decode(cursor, objectMapper);
+        AttachmentCursor attachmentCursor = AttachmentCursor.decode(
+                cursor, tripId, null, attachmentIssue, objectMapper
+        );
 
         List<TripAttachment> attachments = tripAttachmentRepository.findUnclassifiedByIssueWithCursor(
                 tripId,
@@ -72,7 +74,10 @@ public class UnclassifiedFolderListService {
             TripAttachment lastAttachment = attachments.get(PAGE_SIZE - 1);
             nextCursor = new AttachmentCursor(
                     lastAttachment.getCreatedAt(),
-                    lastAttachment.getId()
+                    lastAttachment.getId(),
+                    tripId,
+                    null,
+                    attachmentIssue
             ).encode(objectMapper);
         }
 

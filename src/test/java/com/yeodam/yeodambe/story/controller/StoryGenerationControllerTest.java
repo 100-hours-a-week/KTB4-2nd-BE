@@ -149,7 +149,6 @@ class StoryGenerationControllerTest {
         when(saved.getId()).thenReturn(7L);
         when(saved.getUserId()).thenReturn(42L);
         when(saved.getStatus()).thenReturn(state);
-        when(saved.getProgress()).thenReturn(state == StoryGenerationJob.Status.COMPLETED ? 100 : 35);
         when(saved.getStoryId()).thenReturn(state == StoryGenerationJob.Status.COMPLETED ? 99L : null);
         when(jobs.findById(7L)).thenReturn(Optional.of(saved));
 
@@ -158,7 +157,7 @@ class StoryGenerationControllerTest {
                 .andExpect(jsonPath("$.message").value("STORY_GENERATION_STATUS_FOUND"))
                 .andExpect(jsonPath("$.data.generationId").value(7))
                 .andExpect(jsonPath("$.data.status").value(state.name()))
-                .andExpect(jsonPath("$.data.progress").value(state == StoryGenerationJob.Status.COMPLETED ? 100 : 35));
+                .andExpect(jsonPath("$.data.progress").doesNotHaveJsonPath());
         if (state == StoryGenerationJob.Status.FAILED) {
             result.andExpect(jsonPath("$.data.error.code").value("STORY_GENERATION_FAILED"))
                     .andExpect(jsonPath("$.data.error.message").value("스토리 생성에 실패했습니다."));

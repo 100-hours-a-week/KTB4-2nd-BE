@@ -36,7 +36,6 @@ public class StoryGenerationStatusService {
         return new StoryGenerationStatusResponse(
                 job.getId(),
                 job.getStatus(),
-                job.getProgress(),
                 job.getStoryId(),
                 error
         );

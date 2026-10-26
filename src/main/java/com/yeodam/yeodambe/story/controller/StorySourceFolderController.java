@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.story.service.StorySourceFolderListService;
 import com.yeodam.yeodambe.story.service.response.StorySourceFolderListResponse;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,7 +21,7 @@ public class StorySourceFolderController {
 
     @GetMapping("/trips/{tripId}/story/source-folders")
     public ResponseEntity<ApiResponse<StorySourceFolderListResponse>> findFolders(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @RequestParam(required = false) String cursor,
             @AuthenticationPrincipal Jwt jwt
     ) {

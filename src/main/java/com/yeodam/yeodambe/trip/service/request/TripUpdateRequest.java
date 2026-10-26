@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service.request;
 
+import com.yeodam.yeodambe.common.validation.TextValidation;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -35,7 +36,7 @@ public record TripUpdateRequest(
     @AssertTrue
     public boolean isTripNameValid() {
         return tripName == null
-                || (!tripName.isBlank()
+                || (TextValidation.hasVisibleContent(tripName)
                 && tripName.codePointCount(0, tripName.length()) <= 10);
     }
 }

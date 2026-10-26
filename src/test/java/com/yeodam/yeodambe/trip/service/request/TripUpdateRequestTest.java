@@ -5,6 +5,8 @@ import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.LocalDate;
 import java.util.Arrays;
@@ -86,5 +88,26 @@ class TripUpdateRequestTest {
                 List.of("50110", "50130", "11110", "11140", "11170", "11200",
                         "11215", "11230", "11260", "11290"))))
                 .isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "\u3164", "\u2800", "\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF",
+            "\u00A0", "\u2007", "\u202F", " \u3164\u2800\u200B\u2060\uFEFF "
+    })
+    void 유니코드_공백만_있는_여행명은_거부한다(String name) {
+        assertThat(validator.validate(new TripUpdateRequest(name, null, null, null)))
+                .isNotEmpty();
+        assertThat(validator.validate(new TripUpdateRequest(name.repeat(2), null, null, null)))
+                .isNotEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"제주 여행", "!?", "ㄱㄴ", "e\u0301", "👨‍👩‍👧‍👦", "제주\u200B"})
+    void 표시할_내용이_있는_여행명은_변경하지_않는다(String name) {
+        TripUpdateRequest request = new TripUpdateRequest(name, null, null, null);
+
+        assertThat(validator.validate(request)).isEmpty();
+        assertThat(request.tripName()).isEqualTo(name);
     }
 }

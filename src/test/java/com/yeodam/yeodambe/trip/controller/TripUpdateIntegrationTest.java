@@ -12,6 +12,8 @@ import com.yeodam.yeodambe.user.service.UserRegistrationService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -121,6 +123,38 @@ class TripUpdateIntegrationTest {
     void 같은_이름을_유지해도_자신은_중복으로_판단하지_않는다() throws Exception {
         mvc.perform(request("{\"tripName\":\"원래 여행\"}"))
                 .andExpect(status().isOk());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "\u3164", "\u2800", "\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF",
+            "\u00A0", "\u2007", "\u202F", " \u3164\u2800\u200B\u2060\uFEFF "
+    })
+    void 유니코드_공백_여행명을_거절하고_기존_이름과_지역을_보존한다(String name) throws Exception {
+        List<String> originalRegions = jdbc.queryForList(
+                "SELECT region_code FROM trip_regions WHERE trip_id = ? AND deleted_at IS NULL ORDER BY region_id",
+                String.class, tripId
+        );
+
+        mvc.perform(request("{\"tripName\":\"" + name + "\",\"regionCodes\":[\"50110\"]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_TRIP_REQUEST"));
+
+        assertThat(name()).isEqualTo("원래 여행");
+        assertThat(jdbc.queryForList(
+                "SELECT region_code FROM trip_regions WHERE trip_id = ? AND deleted_at IS NULL ORDER BY region_id",
+                String.class, tripId
+        )).isEqualTo(originalRegions);
+    }
+
+    @Test
+    void 이름_없이_날짜만_수정하면_기존_이름을_보존한다() throws Exception {
+        mvc.perform(request("{\"endDate\":\"2026-09-02\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tripName").value("원래 여행"))
+                .andExpect(jsonPath("$.data.endDate").value("2026-09-02"));
+
+        assertThat(name()).isEqualTo("원래 여행");
     }
 
     @Test

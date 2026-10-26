@@ -44,11 +44,11 @@ public class TripProcessingStatusService {
         if (addition.isPresent()) {
             var execution = addition.get();
             switch (execution.getStatus()) {
-                case FAILED -> { return new TripProcessingStatusResponse(tripId, Status.FAILED, null, null, null,
+                case FAILED -> { return new TripProcessingStatusResponse(tripId, Status.FAILED,  null, null,
                         new TripProcessingStatusResponse.Error(execution.getErrorCode(),
                                 TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message())); }
-                case CANCELED -> { return new TripProcessingStatusResponse(tripId, Status.CANCELED, null, null, null, null); }
-                case RESULT_APPLYING -> { return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null, null); }
+                case CANCELED -> { return new TripProcessingStatusResponse(tripId, Status.CANCELED, null, null, null); }
+                case RESULT_APPLYING -> { return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null); }
                 case COMPLETED -> { return fromDatabase(trip); }
                 default -> {
                     if (execution.getProcessPublishedAt() == null) return processing(tripId);
@@ -56,9 +56,8 @@ public class TripProcessingStatusService {
                     if (ai.progress() != null && !Integer.valueOf(ai.progress().total()).equals(execution.getAnalysisAttachmentCount()))
                         throw new IllegalStateException(TripInternalErrorMessage.AI_PROGRESS_TOTAL_EXECUTION_MISMATCH.message());
                     if (ai.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED)
-                        return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null, null);
+                        return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null);
                     return new TripProcessingStatusResponse(tripId, Status.PROCESSING,
-                            ai.progress() == null ? null : new TripProcessingStatusResponse.Progress(ai.progress().done(), ai.progress().total()),
                             ai.currentStep(), null, null);
                 }
             }
@@ -70,7 +69,7 @@ public class TripProcessingStatusService {
         var execution = creationExecutions.findByTripId(tripId);
         if (execution.isPresent()) {
             if (execution.get().getStatus() == TripCreationExecution.Status.RESULT_APPLYING) {
-                return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null, null);
+                return new TripProcessingStatusResponse(tripId, Status.FINALIZING,  null, null, null);
             }
             if (execution.get().getProcessPublishedAt() == null) {
                 return processing(tripId);
@@ -83,16 +82,15 @@ public class TripProcessingStatusService {
                 return processing(tripId);
             }
             if (ai.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED) {
-                return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null, null);
+                return new TripProcessingStatusResponse(tripId, Status.FINALIZING,  null, null, null);
             }
             return new TripProcessingStatusResponse(tripId, Status.PROCESSING,
-                    ai.progress() == null ? null : new TripProcessingStatusResponse.Progress(ai.progress().done(), ai.progress().total()),
                     ai.currentStep(), null, null);
         }
         var latestBatch = uploadBatches.findFirstByTripIdAndUserIdOrderByIdDesc(tripId, userId);
         if (latestBatch.isPresent() && latestBatch.get().getLastBatch()
                 && latestBatch.get().getStatus() == InitialAttachmentUploadStatus.FAILED) {
-            return new TripProcessingStatusResponse(tripId, Status.FAILED, null, null, null,
+            return new TripProcessingStatusResponse(tripId, Status.FAILED, null, null,
                     new TripProcessingStatusResponse.Error(
                             ErrorMessage.AI_PROCESSING_FAILED.name(),
                             TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message()
@@ -111,8 +109,6 @@ public class TripProcessingStatusService {
             return new TripProcessingStatusResponse(
                     tripId,
                     Status.PROCESSING,
-                    new TripProcessingStatusResponse.Progress(
-                            aiStatus.progress().done(), aiStatus.progress().total()),
                     aiStatus.currentStep(),
                     null,
                     null
@@ -122,7 +118,7 @@ public class TripProcessingStatusService {
         Trip updated = findTrip(tripId, userId);
         if (aiStatus.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED
                 && updated.getProcessingStatus() == ProcessingStatus.PROCESSING) {
-            return new TripProcessingStatusResponse(tripId, Status.FINALIZING, null, null, null, null);
+            return new TripProcessingStatusResponse(tripId, Status.FINALIZING,  null, null, null);
         }
         return fromDatabase(updated);
     }
@@ -145,7 +141,6 @@ public class TripProcessingStatusService {
                     Status.FAILED,
                     null,
                     null,
-                    null,
                     new TripProcessingStatusResponse.Error(
                             ErrorMessage.AI_PROCESSING_FAILED.name(),
                             TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message()
@@ -154,7 +149,6 @@ public class TripProcessingStatusService {
             case CANCELED -> new TripProcessingStatusResponse(
                     tripId,
                     Status.CANCELED,
-                    null,
                     null,
                     null,
                     null
@@ -166,7 +160,6 @@ public class TripProcessingStatusService {
         return new TripProcessingStatusResponse(
                 tripId,
                 Status.PROCESSING,
-                null,
                 null,
                 null,
                 null
@@ -183,12 +176,10 @@ public class TripProcessingStatusService {
                 attachments.countByTripIdAndDeletedAtIsNullAndClassificationStatus(
                         tripId, ClassificationStatus.UNCLASSIFIED)
         );
-        int total = Math.addExact(classifiedCount, unclassifiedCount);
 
         return new TripProcessingStatusResponse(
                 tripId,
                 Status.COMPLETED,
-                new TripProcessingStatusResponse.Progress(total, total),
                 null,
                 new TripProcessingStatusResponse.Result(tripId, placeCount, classifiedCount, unclassifiedCount),
                 null

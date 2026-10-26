@@ -103,7 +103,6 @@ class TripProcessingStatusServiceTest {
         var response = service.findStatus(7L, 1L);
 
         assertThat(response.status()).isEqualTo(Status.COMPLETED);
-        assertThat(response.progress().done()).isEqualTo(13);
         assertThat(response.result().placeFolderCount()).isEqualTo(4);
         assertThat(response.result().classifiedAttachmentCount()).isEqualTo(11);
         assertThat(response.result().unclassifiedAttachmentCount()).isEqualTo(2);
@@ -111,20 +110,19 @@ class TripProcessingStatusServiceTest {
     }
 
     @Test
-    void AI_분석_시작_전에는_진행_수치를_만들지_않는다() {
+    void AI_분석_시작_전에는_작업_단계_없이_처리중을_반환한다() {
         when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
                 .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)));
 
         var response = service.findStatus(7L, 1L);
 
         assertThat(response.status()).isEqualTo(Status.PROCESSING);
-        assertThat(response.progress()).isNull();
         assertThat(response.currentStep()).isNull();
         verifyNoInteractions(analysis);
     }
 
     @Test
-    void AI가_처리중이면_검증된_진행_정보를_전달한다() {
+    void AI가_처리중이면_상태와_작업_단계를_전달한다() {
         when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
                 .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)));
         when(executions.isAnalysisStarted(7L)).thenReturn(true);
@@ -139,8 +137,7 @@ class TripProcessingStatusServiceTest {
 
         var response = service.findStatus(7L, 1L);
 
-        assertThat(response.progress().done()).isEqualTo(2);
-        assertThat(response.progress().total()).isEqualTo(5);
+        assertThat(response.status()).isEqualTo(Status.PROCESSING);
         assertThat(response.currentStep()).isEqualTo("EMBEDDING");
     }
 
@@ -161,7 +158,6 @@ class TripProcessingStatusServiceTest {
         var response = service.findStatus(7L, 1L);
 
         assertThat(response.status()).isEqualTo(Status.PROCESSING);
-        assertThat(response.progress()).isNull();
         assertThat(response.currentStep()).isNull();
         assertThat(response.result()).isNull();
         assertThat(response.error()).isNull();
@@ -185,7 +181,6 @@ class TripProcessingStatusServiceTest {
         var response = service.findStatus(7L, 1L);
 
         assertThat(response.status()).isEqualTo(Status.FINALIZING);
-        assertThat(response.progress()).isNull();
         assertThat(response.currentStep()).isNull();
         assertThat(response.result()).isNull();
         assertThat(response.error()).isNull();
@@ -213,7 +208,6 @@ class TripProcessingStatusServiceTest {
         var response = service.findStatus(7L, 1L);
 
         assertThat(response.status()).isEqualTo(Status.COMPLETED);
-        assertThat(response.progress().done()).isEqualTo(5);
         assertThat(response.result().placeFolderCount()).isEqualTo(1);
         verify(trips, times(2)).findByIdAndUserIdAndDeletedAtIsNull(7L, 1L);
     }

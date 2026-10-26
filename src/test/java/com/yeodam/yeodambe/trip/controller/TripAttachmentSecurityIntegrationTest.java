@@ -411,13 +411,14 @@ class TripAttachmentSecurityIntegrationTest {
         String token = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
         var request = new InitialAttachmentUploadCompleteRequest("upload-id");
-        given(uploadCompletion.complete(7L, 42L, request)).willReturn(new TripProcessingStatusResponse(7L, TripProcessingStatusResponse.Status.PROCESSING, null, null, null, null));
+        given(uploadCompletion.complete(7L, 42L, request)).willReturn(new TripProcessingStatusResponse(7L, TripProcessingStatusResponse.Status.PROCESSING, null, null, null));
         mockMvc.perform(post("/api/trips/7/initial-attachments").contextPath("/api")
                         .servletPath("/trips/7/initial-attachments")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"uploadId\":\"upload-id\"}")
                         .cookie(new Cookie("accessToken", token), new Cookie("CSRF_CONTEXT", "upload-browser"))
                         .header("X-CSRF-TOKEN", "csrf-token"))
                 .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.progress").doesNotHaveJsonPath())
                 .andExpect(jsonPath("$.data.status").value("PROCESSING"));
         then(uploadCompletion).should().complete(7L, 42L, request);
     }
@@ -428,7 +429,7 @@ class TripAttachmentSecurityIntegrationTest {
         given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
         given(uploadCompletion.complete(eq(7L), eq(42L), any())).willReturn(
                 new TripProcessingStatusResponse(7L, TripProcessingStatusResponse.Status.COMPLETED,
-                        new TripProcessingStatusResponse.Progress(2, 2), null,
+                        null,
                         new TripProcessingStatusResponse.Result(7L, 1, 2, 0), null));
         mockMvc.perform(post("/trips/7/initial-attachments").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"uploadId\":\"upload-id\"}")
@@ -437,6 +438,7 @@ class TripAttachmentSecurityIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("TRIP_PROCESSING_STATUS_FOUND"))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.progress").doesNotHaveJsonPath())
                 .andExpect(jsonPath("$.data.result.classifiedAttachmentCount").value(2));
     }
 

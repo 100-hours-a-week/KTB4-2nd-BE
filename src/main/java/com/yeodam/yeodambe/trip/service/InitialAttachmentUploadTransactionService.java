@@ -402,7 +402,7 @@ public class InitialAttachmentUploadTransactionService {
             default -> TripProcessingStatusResponse.Status.PROCESSING;
         };
         return new TripProcessingStatusResponse(
-                trip.getId(), status, null, null, null, null);
+                trip.getId(), status, null, null, null);
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

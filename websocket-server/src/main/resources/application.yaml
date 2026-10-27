@@ -17,6 +17,7 @@ management:
       show-details: never
 
 websocket:
+  allowed-origins: ${WEBSOCKET_ALLOWED_ORIGINS:http://localhost:5173}
   backend-auth:
     base-url: ${BACKEND_INTERNAL_BASE_URL:http://localhost:8080}
     service-token: ${WEBSOCKET_INTERNAL_SERVICE_TOKEN:}

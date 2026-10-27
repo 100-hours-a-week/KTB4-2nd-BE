@@ -75,6 +75,8 @@ auth:
   jwt:
     audience: yeodam-api
     access-token-ttl: 30m
+  websocket:
+    internal-service-token: ${WEBSOCKET_INTERNAL_SERVICE_TOKEN:}
 
 app:
   outbox:

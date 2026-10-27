@@ -1,0 +1,9 @@
+/auth.local.json
+/.runtime/
+/runs/
+/summary.json
+/summary.csv
+/analysis.json
+/docker-stats.jsonl
+/STOP_STATS
+__pycache__/

@@ -1,0 +1,217 @@
+{
+  "services": {
+    "mysql": {
+      "image": "mysql:9.7",
+      "environment": {
+        "MYSQL_DATABASE": "yeodam",
+        "MYSQL_USER": "yeodam",
+        "MYSQL_PASSWORD": "yeodam",
+        "MYSQL_ROOT_PASSWORD": "root"
+      },
+      "cpus": 1,
+      "mem_limit": "1g",
+      "command": [
+        "--performance-schema=ON"
+      ],
+      "volumes": [
+        "mysql-data:/var/lib/mysql"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "MYSQL_PWD=yeodam mysql -uyeodam yeodam -e \"SELECT 1\""
+        ],
+        "interval": "3s",
+        "timeout": "3s",
+        "retries": 40
+      }
+    },
+    "redis": {
+      "image": "redis:8.2.9-alpine",
+      "cpus": 0.5,
+      "mem_limit": "256m",
+      "command": [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no"
+      ]
+    },
+    "ai": {
+      "image": "python:3.13-slim",
+      "entrypoint": [
+        "python",
+        "-u",
+        "/experiment/ai_stub.py"
+      ],
+      "volumes": [
+        "./:/experiment:ro"
+      ],
+      "cpus": 1,
+      "mem_limit": "256m",
+      "ports": [
+        "127.0.0.1:19999:9999"
+      ],
+      "healthcheck": {
+        "disable": true
+      }
+    },
+    "prometheus": {
+      "image": "prom/prometheus:v3.15.0",
+      "command": [
+        "--config.file=/etc/prometheus/prometheus.yml",
+        "--web.enable-remote-write-receiver",
+        "--storage.tsdb.retention.time=2d"
+      ],
+      "volumes": [
+        "./prometheus.yml:/etc/prometheus/prometheus.yml:ro",
+        "prom-data:/prometheus"
+      ],
+      "ports": [
+        "127.0.0.1:19090:9090"
+      ],
+      "cpus": 0.5,
+      "mem_limit": "512m"
+    },
+    "redis-exporter": {
+      "image": "oliver006/redis_exporter:v1.86.0",
+      "environment": {
+        "REDIS_ADDR": "redis://redis:6379"
+      },
+      "cpus": 0.25,
+      "mem_limit": "128m"
+    },
+    "be1": {
+      "image": "yeodam-polling-backend:local",
+      "entrypoint": [
+        "java",
+        "--enable-native-access=ALL-UNNAMED",
+        "-Xms256m",
+        "-Xmx512m",
+        "-XX:+UseG1GC",
+        "-jar",
+        "/app/app.jar"
+      ],
+      "environment": {
+        "SPRING_PROFILES_ACTIVE": "performance",
+        "DOTENV_PATH": "/missing.env",
+        "MYSQL_URL": "jdbc:mysql://mysql:3306/yeodam?serverTimezone=UTC&characterEncoding=utf8",
+        "MYSQL_USERNAME": "yeodam",
+        "MYSQL_PASSWORD": "yeodam",
+        "REDIS_HOST": "redis",
+        "REDIS_PORT": "6379",
+        "AUTH_SESSION_KEY_PREFIX": "yeodam:polltest:auth:",
+        "JWT_SECRET": "local-development-jwt-secret-key-32-bytes",
+        "JWT_ISSUER": "http://polling.local",
+        "AI_SERVER_BASE_URL": "http://ai:9999",
+        "AI_SERVER_API_KEY": "test",
+        "AI_EC2_INSTANCE_ID": "i-performance",
+        "AWS_ACCESS_KEY_ID": "test",
+        "AWS_SECRET_ACCESS_KEY": "test",
+        "AWS_REGION": "ap-northeast-2",
+        "ATTACHMENT_S3_BUCKET": "polltest",
+        "ATTACHMENT_S3_ENDPOINT": "http://ai:9999",
+        "KAFKA_BOOTSTRAP_SERVERS": "127.0.0.1:19092",
+        "SPRING_KAFKA_LISTENER_AUTO_STARTUP": "false",
+        "STORY_STATUS_POLLING_ENABLED": "false",
+        "STORY_RESULT_LISTENER_ENABLED": "false",
+        "KAFKA_TRIP_RESULT_LISTENER_ENABLED": "false",
+        "SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE": "10",
+        "PLACE_CATALOG_PATH": "/app/data/place-search-catalog.json",
+        "LOGGING_LEVEL_ROOT": "WARN",
+        "LOGGING_LEVEL_ORG_APACHE_KAFKA": "OFF",
+        "SERVER_TOMCAT_THREADS_MAX": "200",
+        "SPRING_JPA_PROPERTIES_HIBERNATE_JDBC_TIME_ZONE": "UTC"
+      },
+      "cpus": 1,
+      "mem_limit": "2g",
+      "ports": [
+        "127.0.0.1:18081:8080"
+      ],
+      "build": {
+        "context": "./.runtime/backend-source"
+      },
+      "depends_on": {
+        "mysql": {
+          "condition": "service_healthy"
+        },
+        "redis": {
+          "condition": "service_started"
+        },
+        "ai": {
+          "condition": "service_started"
+        }
+      }
+    },
+    "be2": {
+      "image": "yeodam-polling-backend:local",
+      "entrypoint": [
+        "java",
+        "--enable-native-access=ALL-UNNAMED",
+        "-Xms256m",
+        "-Xmx512m",
+        "-XX:+UseG1GC",
+        "-jar",
+        "/app/app.jar"
+      ],
+      "environment": {
+        "SPRING_PROFILES_ACTIVE": "performance",
+        "DOTENV_PATH": "/missing.env",
+        "MYSQL_URL": "jdbc:mysql://mysql:3306/yeodam?serverTimezone=UTC&characterEncoding=utf8",
+        "MYSQL_USERNAME": "yeodam",
+        "MYSQL_PASSWORD": "yeodam",
+        "REDIS_HOST": "redis",
+        "REDIS_PORT": "6379",
+        "AUTH_SESSION_KEY_PREFIX": "yeodam:polltest:auth:",
+        "JWT_SECRET": "local-development-jwt-secret-key-32-bytes",
+        "JWT_ISSUER": "http://polling.local",
+        "AI_SERVER_BASE_URL": "http://ai:9999",
+        "AI_SERVER_API_KEY": "test",
+        "AI_EC2_INSTANCE_ID": "i-performance",
+        "AWS_ACCESS_KEY_ID": "test",
+        "AWS_SECRET_ACCESS_KEY": "test",
+        "AWS_REGION": "ap-northeast-2",
+        "ATTACHMENT_S3_BUCKET": "polltest",
+        "ATTACHMENT_S3_ENDPOINT": "http://ai:9999",
+        "KAFKA_BOOTSTRAP_SERVERS": "127.0.0.1:19092",
+        "SPRING_KAFKA_LISTENER_AUTO_STARTUP": "false",
+        "STORY_STATUS_POLLING_ENABLED": "false",
+        "STORY_RESULT_LISTENER_ENABLED": "false",
+        "KAFKA_TRIP_RESULT_LISTENER_ENABLED": "false",
+        "SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE": "10",
+        "PLACE_CATALOG_PATH": "/app/data/place-search-catalog.json",
+        "LOGGING_LEVEL_ROOT": "WARN",
+        "LOGGING_LEVEL_ORG_APACHE_KAFKA": "OFF",
+        "SERVER_TOMCAT_THREADS_MAX": "200",
+        "SPRING_JPA_PROPERTIES_HIBERNATE_JDBC_TIME_ZONE": "UTC"
+      },
+      "cpus": 1,
+      "mem_limit": "2g",
+      "ports": [
+        "127.0.0.1:18082:8080"
+      ],
+      "build": {
+        "context": "./.runtime/backend-source"
+      },
+      "depends_on": {
+        "mysql": {
+          "condition": "service_healthy"
+        },
+        "redis": {
+          "condition": "service_started"
+        },
+        "ai": {
+          "condition": "service_started"
+        }
+      }
+    }
+  },
+  "volumes": {
+    "mysql-data": {"name": "yeodam-pollbase-share-mysql-data"},
+    "prom-data": {"name": "yeodam-pollbase-share-prom-data"}
+  },
+  "networks": {
+    "default": {}
+  }
+}

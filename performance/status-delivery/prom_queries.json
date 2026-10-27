@@ -1,0 +1,11 @@
+{
+  "backend_cpu": "process_cpu_usage{job=\"polling-backend\"}",
+  "heap_bytes": "sum by(instance)(jvm_memory_used_bytes{job=\"polling-backend\",area=\"heap\"})",
+  "hikari_active": "hikaricp_connections_active{job=\"polling-backend\"}",
+  "http_rps": "sum by(instance,uri)(rate(http_server_requests_seconds_count{job=\"polling-backend\"}[30s]))",
+  "http_p95": "histogram_quantile(0.95,sum by(instance,uri,le)(rate(http_server_requests_seconds_bucket{job=\"polling-backend\"}[30s])))",
+  "redis_ops": "rate(redis_commands_processed_total[30s])",
+  "redis_memory": "redis_memory_used_bytes",
+  "redis_cpu": "rate(redis_cpu_user_seconds_total[30s])+rate(redis_cpu_sys_seconds_total[30s])",
+  "hikari_pending": "hikaricp_connections_pending{job=\"polling-backend\"}"
+}

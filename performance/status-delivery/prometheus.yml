@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: polling-backend
+    metrics_path: /api/actuator/prometheus
+    static_configs:
+      - targets: [be1:8080, be2:8080]
+  - job_name: polling-redis
+    static_configs:
+      - targets: [redis-exporter:9121]

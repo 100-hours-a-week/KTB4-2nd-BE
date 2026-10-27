@@ -157,6 +157,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.UNAUTHORIZED, null);
     }
 
+    @ExceptionHandler(CsrfTokenInvalidException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    ApiResponse<Void> handleCsrfTokenInvalid(
+            CsrfTokenInvalidException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.CSRF_TOKEN_INVALID, null);
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleUnreadableRequest(

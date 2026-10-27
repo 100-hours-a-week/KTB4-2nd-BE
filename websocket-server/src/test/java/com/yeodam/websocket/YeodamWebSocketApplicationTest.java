@@ -39,8 +39,10 @@ class YeodamWebSocketApplicationTest {
     }
 
     @Test
-    void doesNotExposePrometheusBeforeMonitoringIsConfigured() throws Exception {
-        assertThat(get("/api/actuator/prometheus").statusCode()).isEqualTo(404);
+    void rejectsUnauthenticatedRequestsOutsideHealth() throws Exception {
+        assertThat(get("/api/actuator/prometheus").statusCode()).isEqualTo(401);
+        assertThat(get("/api/ws").statusCode()).isEqualTo(401);
+        assertThat(get("/api/login").statusCode()).isEqualTo(401);
     }
 
     @Test

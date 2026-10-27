@@ -72,6 +72,8 @@ python3 -m unittest discover -s performance/status-delivery -p 'test_*.py'
 
 이 환경은 실제 JWT·Redis·MySQL과 상태 조회 API를 실행한다. 사진 업로드·변환·실제 AI 연산·Kafka 결과 저장·브라우저 렌더링은 측정 대상이 아니다. 공유용 환경은 동일 소스에서 이미지를 새로 빌드하므로, 다른 장비에서는 B도 다시 실행해 그 장비의 C와 비교한다.
 
+브라우저 표시·503 오류 후 복구·새로고침의 추가 소규모 시험과 원자료는 [browser-followup/README.md](browser-followup/README.md)에 별도로 기록했다. 이 자료는 위 부하 기준값과 구분한다.
+
 ## 공유 환경 검증 기록
 
 2026-10-27, Python 3.9·호스트 k6 2.3.0에서 기준 코드 Docker 이미지 빌드와 두 BE의 health 200을 확인했다. 자동 검사 7건이 통과했고, 보존한 원자료를 재집계한 결과도 기존 CSV 9행과 일치했다.

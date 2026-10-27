@@ -17,7 +17,10 @@ import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "websocket.backend-auth.service-token=application-test-service-token"
+)
 class YeodamWebSocketApplicationTest {
 
     @LocalServerPort

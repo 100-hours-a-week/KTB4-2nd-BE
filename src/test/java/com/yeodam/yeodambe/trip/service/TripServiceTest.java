@@ -501,7 +501,8 @@ class TripServiceTest {
                 new ObjectMapper(),
                 mock(StoryRepository.class),
                 mapCache,
-                clock
+                clock,
+                mock(com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository.class)
         );
     }
 

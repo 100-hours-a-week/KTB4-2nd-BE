@@ -14,6 +14,8 @@ import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
 import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
+import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
+import com.yeodam.yeodambe.trip.repository.TripDetailMapMarker;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionName;
@@ -30,6 +32,7 @@ import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
+import com.yeodam.yeodambe.trip.service.response.TripDetailMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
@@ -86,6 +89,7 @@ public class TripService {
     private final StoryRepository storyRepository;
     private final TripMapCacheStore tripMapCacheStore;
     private final Clock clock;
+    private final TripDetailPlaceRepository tripDetailPlaceRepository;
 
     @Transactional(readOnly = true)
     public List<TripSearchCandidateResponse> findSearchCandidates(
@@ -366,22 +370,10 @@ public class TripService {
     ) {
         long startedAt = System.nanoTime();
 
-        log.atInfo()
-                .addKeyValue("event", "trip_view")
-                .addKeyValue("result", "started")
-                .addKeyValue("trip_id", tripId)
-                .log("여행 상세 조회를 시작했습니다.");
+        logTripDetailStarted(tripId);
 
         try {
-            Trip trip = tripAccessService.requireReadableTrip(tripId, userId);
-
-            if (trip.getProcessingStatus() == ProcessingStatus.CANCELED) {
-                throw new TripNotFoundException();
-            }
-            if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
-                    || additionalAttachmentExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
-                throw new TripDetailNotAvailableException();
-            }
+            Trip trip = requireDetailAvailableTrip(tripId, userId);
 
             List<TripDetailResponse.Region> regions = tripRegionRepository
                     .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId).stream()
@@ -412,39 +404,117 @@ public class TripService {
                     trip.getFavorite()
             );
 
-            long durationMillis = (System.nanoTime() - startedAt) / 1_000_000;
-
-            log.atInfo()
-                    .addKeyValue("event", "trip_view")
-                    .addKeyValue("result", "success")
-                    .addKeyValue("trip_id", tripId)
-                    .addKeyValue("attachment_count", attachmentCount)
-                    .addKeyValue("duration_ms", durationMillis)
-                    .log("여행 상세 조회를 완료했습니다.");
+            logTripDetailSucceeded(tripId, attachmentCount, startedAt);
 
             return response;
         } catch (RuntimeException failure) {
-            ErrorMessage errorCode = ErrorMessage.INTERNAL_SERVER_ERROR;
-
-            if (failure instanceof TripNotFoundException) {
-                errorCode = ErrorMessage.TRIP_NOT_FOUND;
-            } else if (failure instanceof TripDetailNotAvailableException) {
-                errorCode = ErrorMessage.TRIP_DETAIL_NOT_AVAILABLE;
-            }
-
-            LoggingEventBuilder logEvent = errorCode == ErrorMessage.INTERNAL_SERVER_ERROR
-                    ? log.atError()
-                    : log.atWarn();
-
-            logEvent
-                    .addKeyValue("event", "trip_view")
-                    .addKeyValue("result", "failure")
-                    .addKeyValue("trip_id", tripId)
-                    .addKeyValue("error_code", errorCode.name())
-                    .log("여행 상세 조회에 실패했습니다.", failure);
+            logTripDetailFailure(tripId, failure);
 
             throw failure;
         }
+    }
+
+    @Transactional(readOnly = true)
+    public TripDetailMapResponse findTripDetailMap(Long tripId, Long userId) {
+        String stage = "access";
+        try {
+            Trip trip = requireDetailAvailableTrip(tripId, userId);
+
+            stage = "markers";
+            List<TripDetailMapMarker> fetched = tripDetailPlaceRepository.findMapMarkers(tripId);
+
+            stage = "thumbnail_url";
+            return createDetailMapResponse(trip.getId(), fetched);
+
+        } catch (RuntimeException failure) {
+            logDetailMapFailure(tripId, stage, failure);
+            throw failure;
+        }
+    }
+
+    private TripDetailMapResponse createDetailMapResponse(
+            Long tripId,
+            List<TripDetailMapMarker> fetched
+    ) {
+        List<TripDetailMapResponse.Marker> markers = fetched.stream()
+                .map(this::toMapMarker)
+                .toList();
+        return new TripDetailMapResponse(tripId, markers);
+    }
+
+    private void logTripDetailStarted(Long tripId) {
+        log.atInfo()
+                .addKeyValue("event", "trip_view")
+                .addKeyValue("result", "started")
+                .addKeyValue("trip_id", tripId)
+                .log("여행 상세 조회를 시작했습니다.");
+    }
+
+    private void logTripDetailSucceeded(Long tripId, long attachmentCount, long startedAt) {
+        long durationMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+        log.atInfo()
+                .addKeyValue("event", "trip_view")
+                .addKeyValue("result", "success")
+                .addKeyValue("trip_id", tripId)
+                .addKeyValue("attachment_count", attachmentCount)
+                .addKeyValue("duration_ms", durationMillis)
+                .log("여행 상세 조회를 완료했습니다.");
+    }
+
+    private void logTripDetailFailure(Long tripId, RuntimeException failure) {
+        ErrorMessage errorCode = ErrorMessage.INTERNAL_SERVER_ERROR;
+
+        if (failure instanceof TripNotFoundException) {
+            errorCode = ErrorMessage.TRIP_NOT_FOUND;
+        } else if (failure instanceof TripDetailNotAvailableException) {
+            errorCode = ErrorMessage.TRIP_DETAIL_NOT_AVAILABLE;
+        }
+
+        LoggingEventBuilder logEvent = errorCode == ErrorMessage.INTERNAL_SERVER_ERROR
+                ? log.atError()
+                : log.atWarn();
+
+        logEvent
+                .addKeyValue("event", "trip_view")
+                .addKeyValue("result", "failure")
+                .addKeyValue("trip_id", tripId)
+                .addKeyValue("error_code", errorCode.name())
+                .log("여행 상세 조회에 실패했습니다.", failure);
+    }
+
+    private void logDetailMapFailure(Long tripId, String stage, RuntimeException failure) {
+        log.atWarn()
+                .addKeyValue("event", "trip_detail_map")
+                .addKeyValue("trip_id", tripId)
+                .addKeyValue("stage", stage)
+                .addKeyValue("failure_type", failure.getClass().getSimpleName())
+                .log("여행 상세 지도 조회에 실패했습니다.");
+    }
+
+    private Trip requireDetailAvailableTrip(Long tripId, Long userId) {
+        Trip trip = tripAccessService.requireReadableTrip(tripId, userId);
+
+        if (trip.getProcessingStatus() == ProcessingStatus.CANCELED) {
+            throw new TripNotFoundException();
+        }
+
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
+                || additionalAttachmentExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
+            throw new TripDetailNotAvailableException();
+        }
+        return trip;
+    }
+
+    private TripDetailMapResponse.Marker toMapMarker(TripDetailMapMarker marker) {
+        return new TripDetailMapResponse.Marker(
+                marker.tripPlaceId(),
+                marker.placeName(),
+                marker.latitude(),
+                marker.longitude(),
+                marker.attachmentCount(),
+                createThumbnailUrl(marker.thumbnailKey())
+        );
     }
 
     @Transactional
@@ -643,8 +713,10 @@ public class TripService {
     }
 
     private String createThumbnailUrl(Trip trip) {
-        String thumbnailKey = trip.getThumbnailKey();
+        return createThumbnailUrl(trip.getThumbnailKey());
+    }
 
+    private String createThumbnailUrl(String thumbnailKey) {
         if (thumbnailKey == null || thumbnailKey.isBlank()) {
             return null;
         }

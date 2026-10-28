@@ -25,10 +25,10 @@ public class StoryGenerationJob {
     @Column(name = "execution_id", nullable = false, length = 36)
     private String executionId;
 
-    @Column(name = "trip_id", nullable = false)
+    @Column(name = "trip_id", nullable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long tripId;
 
-    @Column(name = "user_id", nullable = false)
+    @Column(name = "user_id", nullable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long userId;
 
     @Enumerated(EnumType.STRING)

@@ -16,7 +16,7 @@ public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long userId;
 
     @Column(name="email", nullable=false, length = 255)
@@ -28,7 +28,7 @@ public class User {
     @Column(name = "profile_image_url", length = 2048)
     private String profileImageUrl;
 
-    @ColumnDefault("CURRENT_TIMESTAMP")
+    @ColumnDefault("CURRENT_TIMESTAMP(6)")
     @Column(
             name = "created_at",
             nullable = false,
@@ -37,7 +37,7 @@ public class User {
     )
     private LocalDateTime createdAt;
 
-    @ColumnDefault("CURRENT_TIMESTAMP")
+    @ColumnDefault("CURRENT_TIMESTAMP(6)")
     @Column(
             name = "updated_at",
             nullable = false,

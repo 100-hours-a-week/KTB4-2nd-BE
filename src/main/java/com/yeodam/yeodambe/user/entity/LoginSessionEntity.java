@@ -34,7 +34,7 @@ public class LoginSessionEntity {
     private String sid;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id", nullable = false, columnDefinition = "BIGINT UNSIGNED")
     private User user;
 
     @Column(

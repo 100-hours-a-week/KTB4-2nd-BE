@@ -25,10 +25,10 @@ public class AdditionalAttachmentUploadBatch {
     @Column(name = "addition_id", nullable = false, length = 36)
     private String additionId;
 
-    @Column(name = "trip_id", nullable = false)
+    @Column(name = "trip_id", nullable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long tripId;
 
-    @Column(name = "user_id", nullable = false)
+    @Column(name = "user_id", nullable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long userId;
 
     @Column(name = "batch_no", nullable = false)

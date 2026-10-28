@@ -12,6 +12,7 @@ import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
+import com.yeodam.yeodambe.trip.service.ShareTripService;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.PlaceFolderCursor;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
@@ -95,6 +96,9 @@ class TripCreationSecurityIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @MockitoBean
+    private ShareTripService shareTripService;
 
     @MockitoBean
     private TripService tripService;
@@ -764,6 +768,18 @@ class TripCreationSecurityIntegrationTest {
                 .header("X-CSRF-TOKEN", "csrf-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
+    }
+
+    @Test
+    void 공유_등록도_쿠키_인증과_CSRF를_요구한다() throws Exception {
+        given(csrfTokenGenerator.generate()).willReturn("csrf-token");
+        mockMvc.perform(post("/trips/7/shares")
+                        .cookie(new Cookie("accessToken", accessTokenIssuer.issue(42L, "sid-42")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"granteeUserId\":2,\"permission\":\"READ\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+        verifyNoInteractions(shareTripService);
     }
 
     private String validRequest() {

@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
+import com.yeodam.yeodambe.trip.service.ShareTripService;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListCursor;
@@ -44,7 +45,7 @@ class TripControllerTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final TripController controller = new TripController(
             tripService, processingStatusService, cancellationService, placeFolderListService,
-            deletionService, objectMapper);
+            deletionService, objectMapper, mock(ShareTripService.class));
     private final TripCreateRequest request = new TripCreateRequest(
             "여행",
             LocalDate.now(),

@@ -15,6 +15,13 @@ import com.yeodam.yeodambe.common.exception.OAuthProviderUnavailableException;
 import com.yeodam.yeodambe.common.exception.OAuthStateCreateFailedException;
 import com.yeodam.yeodambe.common.exception.OAuthStateInvalidOrExpiredException;
 import com.yeodam.yeodambe.common.exception.UserNotFoundException;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.servlet.HandlerMapping;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.hibernate.exception.ConstraintViolationException;
+import java.sql.SQLException;
+import org.springframework.http.ResponseEntity;
+import com.yeodam.yeodambe.common.response.ApiResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,6 +75,24 @@ class GlobalExceptionHandlerTest {
     record OtherRequest(
             Long tripPlaceId
     ) {
+    }
+
+    @ParameterizedTest
+    @CsvSource({"uk_trip_share_trip_grantee,409", "trip_share_users.uk_trip_share_trip_grantee,409", "fk_trip_share_grantee,500"})
+    void 공유_대상_유일키_충돌만_409로_변환한다(String constraint, int expectedStatus) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("POST");
+        request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE,
+                "/trips/{tripId}/shares");
+        DataIntegrityViolationException exception =
+                new DataIntegrityViolationException("constraint failure",
+                        new ConstraintViolationException(
+                                "constraint failure", new SQLException(), constraint));
+        ResponseEntity<ApiResponse<Void>> response =
+                new GlobalExceptionHandler().handleDataIntegrityViolation(exception, request);
+        org.assertj.core.api.Assertions.assertThat(response.getStatusCode().value()).isEqualTo(expectedStatus);
+        org.assertj.core.api.Assertions.assertThat(response.getBody().message())
+                .isEqualTo(expectedStatus == 409 ? "TRIP_SHARE_ALREADY_EXISTS" : "INTERNAL_SERVER_ERROR");
     }
 
     @ParameterizedTest

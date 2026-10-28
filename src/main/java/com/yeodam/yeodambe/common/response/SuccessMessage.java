@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.common.response;
 
 public enum SuccessMessage {
+    TRIP_SHARE_CREATE_SUCCESS,
     ATTACHMENT_DOWNLOAD_URL_ISSUED,
     ATTACHMENT_FOUND,
     ATTACHMENT_RESTORE_SUCCESS,

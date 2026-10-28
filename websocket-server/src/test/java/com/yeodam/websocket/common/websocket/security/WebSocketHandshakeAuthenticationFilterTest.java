@@ -55,6 +55,12 @@ class WebSocketHandshakeAuthenticationFilterTest {
 
         filter.doFilter(request, new MockHttpServletResponse(), (nextRequest, response) -> {
             continued.set(true);
+            var credentials = (WebSocketSessionCredentials) nextRequest.getAttribute(
+                    WebSocketSessionCredentials.ATTRIBUTE_NAME
+            );
+            assertThat(credentials).isNotNull();
+            assertThat(credentials.accessToken()).isEqualTo("test-access-token");
+            assertThat(credentials.browserContext()).isEqualTo("test-browser-context");
             var authentication = SecurityContextHolder.getContext().getAuthentication();
             assertThat(authentication).isNotNull();
             assertThat(authentication.isAuthenticated()).isTrue();

@@ -77,6 +77,11 @@ class WebSocketConnectionSecurityTest {
         messagingTemplate.convertAndSendToUser("42", "/queue/ai-tasks", "test-notification");
         assertThat(frames.next()).contains("test-notification");
         assertThat(sessionManager.getSessions()).hasSize(1);
+        var credentials = (WebSocketSessionCredentials) sessionManager.getSessions().getFirst()
+                .getAttributes().get(WebSocketSessionCredentials.ATTRIBUTE_NAME);
+        assertThat(credentials).isNotNull();
+        assertThat(credentials.accessToken()).isEqualTo("test-access");
+        assertThat(credentials.browserContext()).isEqualTo("test-context");
 
         socket.sendClose(WebSocket.NORMAL_CLOSURE, "test completed").join();
         org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->

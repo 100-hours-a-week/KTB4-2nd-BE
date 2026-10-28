@@ -12,6 +12,7 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionTrackingDecorator;
+import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentialsHandshakeInterceptor;
 
 @Configuration(proxyBeanMethods = false)
 @EnableWebSocketMessageBroker
@@ -36,6 +37,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
+                .addInterceptors(
+                        new WebSocketSessionCredentialsHandshakeInterceptor()
+                )
                 .setAllowedOrigins(
                         properties.allowedOrigins().toArray(String[]::new)
                 );

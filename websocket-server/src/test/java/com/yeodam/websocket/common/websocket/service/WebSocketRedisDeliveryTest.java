@@ -55,6 +55,7 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
     @Autowired @Qualifier("webSocketEventListenerContainer")
     private RedisMessageListenerContainer listener;
     @Autowired private SimpUserRegistry users;
+    @Autowired private RedisSubscriptionState subscriptionState;
     private final ObjectMapper mapper = new ObjectMapper();
 
     @ParameterizedTest
@@ -109,10 +110,24 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
                 first.assertPayload();
                 second.assertPayload();
                 assertThat(other.messages.poll(400, TimeUnit.MILLISECONDS)).isNull();
-                secondRedis.convertAndSend(CHANNEL, event("AI_TASK", 42L));
-                first.assertPayload();
-                second.assertPayload();
-                assertThat(other.messages.poll(400, TimeUnit.MILLISECONDS)).isNull();
+                listener.stop();
+                try {
+                    assertThat(first.closed.get(5, TimeUnit.SECONDS)).isEqualTo(1011);
+                    assertThat(subscriptionState.isReady()).isFalse();
+                    assertThat(secondApp.getBean(RedisSubscriptionState.class).isReady()).isTrue();
+                    secondRedis.convertAndSend(CHANNEL, event("AI_TASK", 42L));
+                    second.assertPayload();
+                    assertThat(other.messages.poll(400, TimeUnit.MILLISECONDS)).isNull();
+                } finally {
+                    listener.start();
+                }
+                await().atMost(Duration.ofSeconds(5)).until(subscriptionState::isReady);
+                try (Connection recovered = connect(42L, "recovered-first-app", "/user/queue/ai-tasks")) {
+                    secondRedis.convertAndSend(CHANNEL, event("AI_TASK", 42L));
+                    recovered.assertPayload();
+                    second.assertPayload();
+                    assertThat(other.messages.poll(400, TimeUnit.MILLISECONDS)).isNull();
+                }
             }
         }
     }
@@ -163,9 +178,16 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
     private class Connection implements WebSocket.Listener, AutoCloseable {
         private WebSocket socket;
         private final BlockingQueue<String> messages = new LinkedBlockingQueue<>();
+        private final CompletableFuture<Integer> closed = new CompletableFuture<>();
         private final StringBuilder partial = new StringBuilder();
 
         @Override public void onOpen(WebSocket socket) { socket.request(1); }
+
+        @Override
+        public CompletableFuture<?> onClose(WebSocket socket, int statusCode, String reason) {
+            closed.complete(statusCode);
+            return CompletableFuture.completedFuture(null);
+        }
 
         @Override
         public CompletableFuture<?> onText(WebSocket socket, CharSequence data, boolean last) {

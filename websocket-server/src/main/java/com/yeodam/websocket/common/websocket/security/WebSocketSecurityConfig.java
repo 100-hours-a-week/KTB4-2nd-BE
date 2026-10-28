@@ -30,7 +30,12 @@ public class WebSocketSecurityConfig {
             RedisSubscriptionState subscriptionState
     ) throws Exception {
         http.authorizeHttpRequests(authorize -> authorize
-                .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                .requestMatchers(
+                        HttpMethod.GET,
+                        "/actuator/health",
+                        "/actuator/health/liveness",
+                        "/actuator/health/readiness"
+                ).permitAll()
                 .requestMatchers(HttpMethod.GET, "/ws").authenticated()
                 .anyRequest().denyAll()
         );

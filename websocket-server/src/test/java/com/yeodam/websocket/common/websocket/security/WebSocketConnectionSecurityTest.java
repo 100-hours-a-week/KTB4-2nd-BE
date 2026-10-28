@@ -1,6 +1,7 @@
 package com.yeodam.websocket.common.websocket.security;
 
 import com.yeodam.websocket.common.websocket.client.BackendAuthenticationClient;
+import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import com.yeodam.websocket.common.websocket.client.response.BackendAuthenticationResponse.AuthenticationData;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,9 @@ class WebSocketConnectionSecurityTest {
     @Autowired
     private SimpUserRegistry userRegistry;
 
+    @Autowired
+    private WebSocketSessionManager sessionManager;
+
     private WebSocket socket;
     private final Frames frames = new Frames();
 
@@ -72,6 +76,12 @@ class WebSocketConnectionSecurityTest {
         });
         messagingTemplate.convertAndSendToUser("42", "/queue/ai-tasks", "test-notification");
         assertThat(frames.next()).contains("test-notification");
+        assertThat(sessionManager.getSessions()).hasSize(1);
+
+        socket.sendClose(WebSocket.NORMAL_CLOSURE, "test completed").join();
+        org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                assertThat(sessionManager.getSessions()).isEmpty()
+        );
     }
 
     @ParameterizedTest

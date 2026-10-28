@@ -107,6 +107,45 @@ class TripPlaceFolderRepositoryTest {
         assertThat(places.findById(empty.getId()).orElseThrow().getDeletedAt()).isNull();
     }
 
+    @Test
+    void 지도는_활성_첨부를_장소별로_통합_집계하고_빈_장소와_잘못된_여행을_제외한다() {
+        User owner = users.save(new User("map-owner@test.com", "지도회원"));
+        Trip trip = trips.save(new Trip(owner.getUserId(), "지도여행", LocalDate.now(), LocalDate.now()));
+        Trip other = trips.save(new Trip(owner.getUserId(), "다른여행", LocalDate.now(), LocalDate.now()));
+        TripDetailPlace alpha1 = savePlace(trip.getId(), "Alpha", null);
+        TripDetailPlace alpha2 = savePlace(trip.getId(), "Alpha", null);
+        TripDetailPlace beta = savePlace(trip.getId(), "Beta", null);
+        TripDetailPlace deleted = savePlace(trip.getId(), "A-deleted", LocalDateTime.now());
+        TripDetailPlace empty = savePlace(trip.getId(), "A-empty", null);
+        TripDetailPlace mismatch = savePlace(trip.getId(), "A-mismatch", null);
+        TripDetailPlace otherPlace = savePlace(other.getId(), "A-other", null);
+        alpha1.changeThumbnailKey("preview/alpha");
+        for (TripDetailPlace place : List.of(alpha1, alpha2, beta, deleted)) {
+            saveAttachment(owner.getUserId(), trip.getId(), place.getId(), ClassificationStatus.ACTIVE, false, false);
+        }
+        saveAttachment(owner.getUserId(), trip.getId(), alpha1.getId(), ClassificationStatus.ACTIVE, false, false);
+        saveAttachment(owner.getUserId(), other.getId(), mismatch.getId(), ClassificationStatus.ACTIVE, false, false);
+        saveAttachment(owner.getUserId(), other.getId(), otherPlace.getId(), ClassificationStatus.ACTIVE, false, false);
+        for (ClassificationStatus status : List.of(ClassificationStatus.DISCARDED,
+                ClassificationStatus.UNCLASSIFIED, ClassificationStatus.DELETED)) {
+            saveAttachment(owner.getUserId(), trip.getId(), alpha1.getId(), status, false, false);
+        }
+        saveAttachment(owner.getUserId(), trip.getId(), alpha1.getId(), ClassificationStatus.ACTIVE, true, false);
+        saveAttachment(owner.getUserId(), trip.getId(), alpha1.getId(), ClassificationStatus.ACTIVE, false, true);
+        saveAttachment(owner.getUserId(), trip.getId(), empty.getId(), ClassificationStatus.ACTIVE, false, true);
+        flushAndClear();
+
+        List<TripDetailMapMarker> markers = places.findMapMarkers(trip.getId());
+
+        assertThat(markers).extracting(TripDetailMapMarker::tripPlaceId)
+                .containsExactly(alpha1.getId(), alpha2.getId(), beta.getId());
+        assertThat(markers).extracting(TripDetailMapMarker::attachmentCount).containsExactly(2L, 1L, 1L);
+        assertThat(markers.getFirst().latitude()).isEqualByComparingTo("33.45000000");
+        assertThat(markers.getFirst().longitude()).isEqualByComparingTo("126.94000000");
+        assertThat(markers.getFirst().thumbnailKey()).isEqualTo("preview/alpha");
+        assertThat(places.findMapMarkers(Long.MAX_VALUE)).isEmpty();
+    }
+
     private TripDetailPlace savePlace(Long tripId, String name, LocalDateTime deletedAt) {
         TripDetailPlace place = TripDetailPlace.fromAnalysis(
                 tripId,

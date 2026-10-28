@@ -33,7 +33,7 @@ public class AdditionalAttachmentUploadOutbox {
     @Column(name = "request_id", nullable = false, length = 128)
     private String requestId;
 
-    @Column(name = "trip_id", updatable = false)
+    @Column(name = "trip_id", updatable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long tripId;
 
     @Column(name = "topic", updatable = false)

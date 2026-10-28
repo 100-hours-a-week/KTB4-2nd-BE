@@ -195,9 +195,10 @@ class StoryGenerationJobServiceTest {
     @Test
     void 작업의_회원_외래키_오류를_생성중_오류로_바꾸지_않는다() {
         StoryGenerationRequest request = request(List.of(first.getId()));
-        when(inputService.validate(-1L, trip.getId(), request)).thenReturn(trip);
+        Long missingUserId = Long.MAX_VALUE;
+        when(inputService.validate(missingUserId, trip.getId(), request)).thenReturn(trip);
 
-        assertThatThrownBy(() -> service.create(-1L, trip.getId(), request))
+        assertThatThrownBy(() -> service.create(missingUserId, trip.getId(), request))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasStackTraceContaining("fk_story_generation_user");
 

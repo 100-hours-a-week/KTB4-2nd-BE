@@ -25,7 +25,7 @@ public class TripCreationOutbox {
     @Column(name = "batch_no", nullable = false, updatable = false)
     private int batchNo;
 
-    @Column(name = "trip_id", nullable = false, updatable = false)
+    @Column(name = "trip_id", nullable = false, updatable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long tripId;
 
     @Column(nullable = false, updatable = false)

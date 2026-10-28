@@ -24,11 +24,11 @@ public class TripAttachment {
     @Column(name = "trip_attachment_id")
     private Long id;
 
-    @Column(name = "trip_id", nullable = false)
+    @Column(name = "trip_id", nullable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long tripId;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "trip_id", nullable = false, insertable = false, updatable = false)
+    @JoinColumn(name = "trip_id", nullable = false, insertable = false, updatable = false, columnDefinition = "BIGINT UNSIGNED")
     private Trip trip;
 
     @Column(name = "trip_place_id")

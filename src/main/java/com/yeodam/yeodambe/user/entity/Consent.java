@@ -19,7 +19,7 @@ public class Consent {
     private Long consentId;
 
     @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false, unique = true)
+    @JoinColumn(name = "user_id", nullable = false, unique = true, columnDefinition = "BIGINT UNSIGNED")
     private User user;
 
     @Column(name = "is_agreed", nullable = false)

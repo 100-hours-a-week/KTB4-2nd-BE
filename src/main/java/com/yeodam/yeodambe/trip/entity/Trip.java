@@ -19,14 +19,14 @@ public class Trip {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "trip_id")
+    @Column(name = "trip_id", nullable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long id;
 
-    @Column(name = "user_id", nullable = false)
+    @Column(name = "user_id", nullable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long userId;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false, insertable = false, updatable = false)
+    @JoinColumn(name = "user_id", nullable = false, insertable = false, updatable = false, columnDefinition = "BIGINT UNSIGNED")
     private User user;
 
     @Column(name = "trip_name", nullable = false, length = 10)

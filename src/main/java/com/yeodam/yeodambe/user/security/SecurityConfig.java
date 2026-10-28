@@ -19,6 +19,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.core.env.Environment;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import com.yeodam.yeodambe.user.security.ratelimit.UserReadRateLimiter;
+import com.yeodam.yeodambe.user.security.ratelimit.UserReadRateLimitFilter;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
@@ -32,7 +36,12 @@ public class SecurityConfig {
             RdbCsrfTokenRepository rdbCsrfTokenRepository,
             CookieAccessTokenResolver cookieAccessTokenResolver,
             ApiAuthenticationEntryPoint apiAuthenticationEntryPoint,
-            Environment environment
+            Environment environment,
+            ObjectMapper objectMapper,
+            @Value("${app.read-rate-limit.enabled:false}") boolean readRateLimitEnabled,
+            @Value("${app.read-rate-limit.requests-per-second:5}") int readRate,
+            @Value("${app.read-rate-limit.burst:30}") int readBurst,
+            @Value("${app.read-rate-limit.max-users:10000}") int readMaxUsers
 
     ) throws Exception {
         http.cors(Customizer.withDefaults());
@@ -90,6 +99,12 @@ public class SecurityConfig {
                 .authenticationEntryPoint(apiAuthenticationEntryPoint)
                 .jwt(Customizer.withDefaults())
         );
+
+        if (readRateLimitEnabled) {
+            http.addFilterAfter(new UserReadRateLimitFilter(
+                    new UserReadRateLimiter(readRate, readBurst, readMaxUsers), objectMapper),
+                    AuthorizationFilter.class);
+        }
 
         return http.build();
     }

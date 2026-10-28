@@ -1,5 +1,6 @@
 package com.yeodam.websocket.common.websocket.service;
 
+import com.yeodam.websocket.common.websocket.config.WebSocketProperties;
 import com.yeodam.websocket.common.websocket.config.WebSocketEventProperties;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,7 @@ class WebSocketEventSubscriberTest {
     private static final String CHANNEL = "yeodam:test:websocket:events:v1";
     private final RedisSubscriptionState subscriptionState = new RedisSubscriptionState();
     private final TaskScheduler scheduler = mock(TaskScheduler.class);
-    private final WebSocketSessionManager sessionManager = new WebSocketSessionManager(scheduler, subscriptionState);
+    private final WebSocketSessionManager sessionManager = new WebSocketSessionManager(scheduler, subscriptionState, new WebSocketProperties(java.util.List.of(), 1000));
     private final WebSocketEventSubscriber subscriber = new WebSocketEventSubscriber(
             mapper, template, new WebSocketEventProperties(CHANNEL), subscriptionState, sessionManager
     );

@@ -17,7 +17,7 @@ import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.web.socket.EnableWebSocketSecurity;
 import org.springframework.security.messaging.access.intercept.MessageMatcherDelegatingAuthorizationManager;
 import org.springframework.security.messaging.web.csrf.CsrfChannelInterceptor;
-import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
+import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 
 @Configuration(proxyBeanMethods = false)
 @EnableWebSocketSecurity
@@ -27,7 +27,7 @@ public class WebSocketSecurityConfig {
     SecurityFilterChain webSocketSecurityFilterChain(
             HttpSecurity http,
             BackendAuthenticationClient authenticationClient,
-            RedisSubscriptionState subscriptionState
+            WebSocketSessionManager sessionManager
     ) throws Exception {
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(
@@ -51,7 +51,7 @@ public class WebSocketSecurityConfig {
         http.addFilterBefore(
                 new WebSocketHandshakeAuthenticationFilter(
                         authenticationClient,
-                        subscriptionState
+                        sessionManager
                 ),
                 AnonymousAuthenticationFilter.class
         );

@@ -11,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.socket.CloseStatus;
 import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
 import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
+import com.yeodam.websocket.common.websocket.config.WebSocketProperties;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -33,18 +34,26 @@ public class WebSocketSessionManager {
 
     private final TaskScheduler taskScheduler;
     private final RedisSubscriptionState subscriptionState;
+    private final int maxConnections;
 
     public WebSocketSessionManager(
             @Qualifier("webSocketSessionTaskScheduler")
             TaskScheduler taskScheduler,
-            RedisSubscriptionState subscriptionState
+            RedisSubscriptionState subscriptionState,
+            WebSocketProperties properties
     ) {
         this.taskScheduler = taskScheduler;
         this.subscriptionState = subscriptionState;
+        this.maxConnections = properties.maxConnections();
+    }
+
+    public synchronized boolean canAcceptConnection() {
+        return subscriptionState.isReady()
+                && sessions.size() < maxConnections;
     }
 
     public synchronized boolean register(WebSocketSession session) {
-        if (!subscriptionState.isReady()) {
+        if (!canAcceptConnection()) {
             return false;
         }
 

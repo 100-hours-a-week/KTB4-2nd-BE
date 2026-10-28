@@ -6,6 +6,11 @@ import com.yeodam.websocket.common.websocket.exception.BackendAuthenticationExce
 import com.yeodam.websocket.common.websocket.exception.BackendAuthenticationFailure;
 import jakarta.servlet.http.Cookie;
 import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
+import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
+import com.yeodam.websocket.common.websocket.config.WebSocketProperties;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.web.socket.WebSocketSession;
+import java.util.concurrent.ScheduledFuture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,8 +43,12 @@ class WebSocketHandshakeAuthenticationFilterTest {
 
     private final BackendAuthenticationClient client = mock(BackendAuthenticationClient.class);
     private final RedisSubscriptionState subscriptionState = new RedisSubscriptionState();
+    private final TaskScheduler scheduler = mock(TaskScheduler.class);
+    private final WebSocketSessionManager sessionManager = new WebSocketSessionManager(
+            scheduler, subscriptionState, new WebSocketProperties(List.of(), 1000)
+    );
     private final WebSocketHandshakeAuthenticationFilter filter =
-            new WebSocketHandshakeAuthenticationFilter(client, subscriptionState);
+            new WebSocketHandshakeAuthenticationFilter(client, sessionManager);
 
     @BeforeEach
     void prepareSubscription() {
@@ -49,11 +58,37 @@ class WebSocketHandshakeAuthenticationFilterTest {
     @Test
     void rejectsHandshakeBeforeSubscriptionWithoutCallingBackend() throws Exception {
         RedisSubscriptionState initialState = new RedisSubscriptionState();
-        var unavailableFilter = new WebSocketHandshakeAuthenticationFilter(client, initialState);
+        var unavailableFilter = new WebSocketHandshakeAuthenticationFilter(client,
+                new WebSocketSessionManager(scheduler, initialState, new WebSocketProperties(List.of(), 1000)));
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicBoolean continued = new AtomicBoolean();
 
         unavailableFilter.doFilter(authenticatedRequest(), response,
+                (request, nextResponse) -> continued.set(true));
+
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(continued).isFalse();
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void rejectsHandshakeAtCapacityWithoutCallingBackend() throws Exception {
+        var limited = new WebSocketSessionManager(scheduler, subscriptionState,
+                new WebSocketProperties(List.of(), 1));
+        var capacityFilter = new WebSocketHandshakeAuthenticationFilter(client, limited);
+        WebSocketSession existing = mock(WebSocketSession.class);
+        when(existing.getId()).thenReturn("existing");
+        Instant expiry = Instant.parse("2099-01-01T00:00:00Z");
+        when(existing.getPrincipal()).thenReturn(UsernamePasswordAuthenticationToken.authenticated(
+                new WebSocketPrincipal(42L, "login-session", expiry), null, List.of()
+        ));
+        org.mockito.Mockito.doReturn(mock(ScheduledFuture.class)).when(scheduler)
+                .schedule(org.mockito.ArgumentMatchers.any(Runnable.class), org.mockito.ArgumentMatchers.eq(expiry));
+        assertThat(limited.register(existing)).isTrue();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean continued = new AtomicBoolean();
+
+        capacityFilter.doFilter(authenticatedRequest(), response,
                 (request, nextResponse) -> continued.set(true));
 
         assertThat(response.getStatus()).isEqualTo(503);

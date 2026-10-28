@@ -1,6 +1,6 @@
 package com.yeodam.websocket.common.websocket.security;
 
-import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
+import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import com.yeodam.websocket.common.websocket.client.BackendAuthenticationClient;
 import com.yeodam.websocket.common.websocket.client.response.BackendAuthenticationResponse.AuthenticationData;
 import com.yeodam.websocket.common.websocket.exception.BackendAuthenticationException;
@@ -31,14 +31,14 @@ public class WebSocketHandshakeAuthenticationFilter extends OncePerRequestFilter
             LoggerFactory.getLogger(WebSocketHandshakeAuthenticationFilter.class);
 
     private final BackendAuthenticationClient authenticationClient;
-    private final RedisSubscriptionState subscriptionState;
+    private final WebSocketSessionManager sessionManager;
 
     public WebSocketHandshakeAuthenticationFilter(
             BackendAuthenticationClient authenticationClient,
-            RedisSubscriptionState subscriptionState
+            WebSocketSessionManager sessionManager
     ) {
         this.authenticationClient = authenticationClient;
-        this.subscriptionState = subscriptionState;
+        this.sessionManager = sessionManager;
     }
 
     @Override
@@ -53,7 +53,7 @@ public class WebSocketHandshakeAuthenticationFilter extends OncePerRequestFilter
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        if (!subscriptionState.isReady()) {
+        if (!sessionManager.canAcceptConnection()) {
             response.setStatus(HttpStatus.SERVICE_UNAVAILABLE.value());
             return;
         }

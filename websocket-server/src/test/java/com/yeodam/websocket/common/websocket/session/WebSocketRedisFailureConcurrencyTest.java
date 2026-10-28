@@ -1,5 +1,6 @@
 package com.yeodam.websocket.common.websocket.session;
 
+import com.yeodam.websocket.common.websocket.config.WebSocketProperties;
 import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
 import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +28,7 @@ class WebSocketRedisFailureConcurrencyTest {
     private static final Instant EXPIRES_AT = Instant.parse("2099-01-01T00:00:00Z");
     private final TaskScheduler scheduler = mock(TaskScheduler.class);
     private final RedisSubscriptionState state = new RedisSubscriptionState();
-    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler, state);
+    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler, state, new WebSocketProperties(java.util.List.of(), 1000));
     private final ScheduledFuture<?> reservation = mock(ScheduledFuture.class);
 
     @BeforeEach

@@ -1,5 +1,6 @@
 package com.yeodam.websocket.common.websocket.security;
 
+import com.yeodam.websocket.RedisTestSupport;
 import com.yeodam.websocket.common.websocket.client.BackendAuthenticationClient;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import com.yeodam.websocket.common.websocket.client.response.BackendAuthenticationResponse.AuthenticationData;
@@ -33,7 +34,7 @@ import static org.mockito.Mockito.when;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "websocket.backend-auth.service-token=connection-test-service-token"
 )
-class WebSocketConnectionSecurityTest {
+class WebSocketConnectionSecurityTest extends RedisTestSupport {
 
     @LocalServerPort
     private int port;

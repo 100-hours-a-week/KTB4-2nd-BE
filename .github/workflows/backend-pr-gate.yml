@@ -2,7 +2,7 @@ name: Backend PR Gate
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 279-be-v1-db-마이그레이션-시험-세팅]
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:

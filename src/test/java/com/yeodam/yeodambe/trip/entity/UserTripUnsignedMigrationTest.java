@@ -61,7 +61,8 @@ class UserTripUnsignedMigrationTest {
                 INSERT INTO story_generation_jobs(execution_id, trip_id, user_id, mood, status)
                 VALUES('unsigned-upgrade-job', 73, 42, 'PLAIN', 'QUEUED')
                 """);
-        Flyway.configure().dataSource(details.getJdbcUrl(), details.getUsername(), details.getPassword()).load().migrate();
+        Flyway.configure().dataSource(details.getJdbcUrl(), details.getUsername(), details.getPassword())
+                .target("26").load().migrate();
         List<String> types = jdbc.queryForList("""
                 SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
                 WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME IN ('user_id', 'trip_id', 'grantee_user_id', 'trip_share_id')
@@ -87,7 +88,8 @@ class UserTripUnsignedMigrationTest {
                 SELECT COUNT(*) FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE()
                 """, Long.class);
         assertThatThrownBy(() -> Flyway.configure()
-                .dataSource(details.getJdbcUrl(), details.getUsername(), details.getPassword()).load().migrate())
+                .dataSource(details.getJdbcUrl(), details.getUsername(), details.getPassword())
+                .target("26").load().migrate())
                 .hasStackTraceContaining("ck_unsigned_id_preflight");
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE()

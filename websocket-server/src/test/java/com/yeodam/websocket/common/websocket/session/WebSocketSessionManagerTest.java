@@ -1,5 +1,6 @@
 package com.yeodam.websocket.common.websocket.session;
 
+import com.yeodam.websocket.common.websocket.config.WebSocketProperties;
 import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
 import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
 import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
@@ -18,6 +19,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -32,7 +38,7 @@ class WebSocketSessionManagerTest {
     private final ScheduledFuture<?> reservation = mock(ScheduledFuture.class);
     private final WebSocketSession session = mock(WebSocketSession.class);
     private final RedisSubscriptionState subscriptionState = new RedisSubscriptionState();
-    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler, subscriptionState);
+    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler, subscriptionState, new WebSocketProperties(java.util.List.of(), 1000));
     private final ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
 
     @BeforeEach
@@ -47,6 +53,68 @@ class WebSocketSessionManagerTest {
                 new WebSocketPrincipal(42L, "login-session", EXPIRES_AT), null, List.of()
         ));
         doReturn(reservation).when(scheduler).schedule(any(Runnable.class), any(Instant.class));
+    }
+
+    @Test
+    void refusesAdmissionAndRegistrationAfterShutdownEvenIfSubscriptionRecovers() {
+        manager.shutdownConnections();
+        subscriptionState.markSubscribed();
+
+        assertThat(manager.canAcceptConnection()).isFalse();
+        assertThat(manager.register(session)).isFalse();
+        verifyNoInteractions(scheduler);
+    }
+
+    @Test
+    void closesWithRestartCodeAndCleansResourcesThroughTheCloseCallback() throws Exception {
+        manager.register(session);
+        when(session.isOpen()).thenReturn(true);
+        doAnswer(invocation -> {
+            assertThat(manager.canAcceptConnection()).isFalse();
+            assertThat(subscriptionState.isReady()).isFalse();
+            manager.unregister("connection-a");
+            return null;
+        }).when(session).close(CloseStatus.SERVICE_RESTARTED);
+
+        manager.shutdownConnections();
+        manager.shutdownConnections();
+
+        verify(session, times(1)).close(CloseStatus.SERVICE_RESTARTED);
+        assertThat(manager.getSessions()).isEmpty();
+        assertThat(session.getAttributes()).doesNotContainKey(WebSocketSessionCredentials.ATTRIBUTE_NAME);
+        verify(reservation).cancel(false);
+    }
+
+    @Test
+    void doesNotScheduleRedisFailureWorkAfterShutdown() {
+        manager.shutdownConnections();
+        subscriptionState.markSubscribed();
+
+        manager.closeConnectionsForRedisFailure();
+
+        verifyNoInteractions(scheduler);
+    }
+
+    @Test
+    void continuesShutdownWhenOneConnectionCannotClose() throws Exception {
+        manager.register(session);
+        when(session.isOpen()).thenReturn(true);
+        WebSocketSession another = mock(WebSocketSession.class);
+        when(another.getId()).thenReturn("shutdown-b");
+        var principal = session.getPrincipal();
+        when(another.getPrincipal()).thenReturn(principal);
+        when(another.isOpen()).thenReturn(true);
+        manager.register(another);
+        doThrow(new IOException("test shutdown close failure"))
+                .when(session).close(CloseStatus.SERVICE_RESTARTED);
+        doThrow(new IllegalStateException("test shutdown close failure"))
+                .when(another).close(CloseStatus.SERVICE_RESTARTED);
+
+        manager.shutdownConnections();
+
+        verify(session).close(CloseStatus.SERVICE_RESTARTED);
+        verify(another).close(CloseStatus.SERVICE_RESTARTED);
+        assertThat(manager.canAcceptConnection()).isFalse();
     }
 
     @Test
@@ -77,6 +145,60 @@ class WebSocketSessionManagerTest {
 
         assertThat(manager.getSessions()).containsExactly(session);
         verify(scheduler).schedule(any(Runnable.class), eq(EXPIRES_AT));
+    }
+
+    @Test
+    void refusesAnExtraConnectionAndAcceptsItAfterTheExistingConnectionCloses() throws Exception {
+        var limited = new WebSocketSessionManager(scheduler, subscriptionState,
+                new WebSocketProperties(List.of(), 1));
+        WebSocketSession another = mock(WebSocketSession.class);
+        assertThat(limited.register(session)).isTrue();
+
+        assertThat(limited.register(another)).isFalse();
+        assertThat(limited.getSessions()).containsExactly(session);
+        verify(session, never()).close(any(CloseStatus.class));
+        verifyNoInteractions(another);
+        verify(scheduler, times(1)).schedule(any(Runnable.class), any(Instant.class));
+
+        limited.unregister("connection-a");
+        when(another.getId()).thenReturn("connection-b");
+        var principal = session.getPrincipal();
+        when(another.getPrincipal()).thenReturn(principal);
+
+        assertThat(limited.register(another)).isTrue();
+        assertThat(limited.getSessions()).containsExactly(another);
+    }
+
+    @Test
+    void keepsConcurrentRegistrationsWithinTheConfiguredLimit() throws Exception {
+        var limited = new WebSocketSessionManager(scheduler, subscriptionState,
+                new WebSocketProperties(List.of(), 3));
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Boolean>> registrations = new ArrayList<>();
+        try (var executor = Executors.newFixedThreadPool(8)) {
+            try {
+                var principal = session.getPrincipal();
+                for (int i = 0; i < 20; i++) {
+                    WebSocketSession candidate = mock(WebSocketSession.class);
+                    when(candidate.getId()).thenReturn("concurrent-" + i);
+                    when(candidate.getPrincipal()).thenReturn(principal);
+                    registrations.add(executor.submit(() -> {
+                        assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
+                        return limited.register(candidate);
+                    }));
+                }
+                start.countDown();
+                int accepted = 0;
+                for (Future<Boolean> registration : registrations) {
+                    if (registration.get(5, TimeUnit.SECONDS)) accepted++;
+                }
+                assertThat(accepted).isEqualTo(3);
+                assertThat(limited.getSessions()).hasSize(3);
+                verify(scheduler, times(3)).schedule(any(Runnable.class), any(Instant.class));
+            } finally {
+                start.countDown();
+            }
+        }
     }
 
     @Test

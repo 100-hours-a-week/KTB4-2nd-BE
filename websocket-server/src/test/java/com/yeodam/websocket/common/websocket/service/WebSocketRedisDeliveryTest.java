@@ -127,6 +127,15 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
                     recovered.assertPayload();
                     second.assertPayload();
                     assertThat(other.messages.poll(400, TimeUnit.MILLISECONDS)).isNull();
+                    var secondSessions = secondApp.getBean(
+                            com.yeodam.websocket.common.websocket.session.WebSocketSessionManager.class);
+                    secondApp.close();
+                    assertThat(second.closed.get(5, TimeUnit.SECONDS)).isEqualTo(1012);
+                    assertThat(other.closed.get(5, TimeUnit.SECONDS)).isEqualTo(1012);
+                    assertThat(secondSessions.canAcceptConnection()).isFalse();
+                    await().atMost(Duration.ofSeconds(5)).until(() -> secondSessions.getSessions().isEmpty());
+                    redis.convertAndSend(CHANNEL, event("AI_TASK", 42L));
+                    recovered.assertPayload();
                 }
             }
         }

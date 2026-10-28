@@ -1,5 +1,6 @@
 package com.yeodam.websocket.common.websocket.session;
 
+import com.yeodam.websocket.common.websocket.config.WebSocketProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
@@ -27,7 +28,7 @@ class WebSocketSessionTrackingDecoratorTest {
 
     private final TaskScheduler scheduler = mock(TaskScheduler.class);
     private final RedisSubscriptionState subscriptionState = new RedisSubscriptionState();
-    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler, subscriptionState);
+    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler, subscriptionState, new WebSocketProperties(java.util.List.of(), 1000));
     private final WebSocketHandler delegate = mock(WebSocketHandler.class);
     private final WebSocketSessionTrackingDecorator decorator =
             new WebSocketSessionTrackingDecorator(delegate, manager);

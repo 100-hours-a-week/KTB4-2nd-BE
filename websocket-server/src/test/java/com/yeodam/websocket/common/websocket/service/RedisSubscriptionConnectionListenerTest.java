@@ -1,5 +1,6 @@
 package com.yeodam.websocket.common.websocket.service;
 
+import com.yeodam.websocket.common.websocket.config.WebSocketProperties;
 import io.lettuce.core.AbstractRedisClient;
 import io.lettuce.core.RedisChannelHandler;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
@@ -17,7 +18,7 @@ class RedisSubscriptionConnectionListenerTest {
     private final AbstractRedisClient client = mock(AbstractRedisClient.class);
     private final RedisSubscriptionState state = new RedisSubscriptionState();
     private final TaskScheduler scheduler = mock(TaskScheduler.class);
-    private final WebSocketSessionManager sessionManager = new WebSocketSessionManager(scheduler, state);
+    private final WebSocketSessionManager sessionManager = new WebSocketSessionManager(scheduler, state, new WebSocketProperties(java.util.List.of(), 1000));
     private final RedisSubscriptionConnectionListener listener = createListener();
 
     private RedisSubscriptionConnectionListener createListener() {

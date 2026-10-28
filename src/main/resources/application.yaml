@@ -132,7 +132,9 @@ ai:
     runpod-status-read-timeout: ${AI_RUNPOD_STATUS_READ_TIMEOUT:5s}
     health-connection-timeout: ${AI_HEALTH_CONNECTION_TIMEOUT:5s}
     health_read_timeout: ${AI_HEALTH_READ_TIMEOUT:5s}
-
+websocket:
+  events:
+    channel: ${WEBSOCKET_EVENTS_CHANNEL:yeodam:local:websocket:events:v1}
 ---
 spring:
   config:

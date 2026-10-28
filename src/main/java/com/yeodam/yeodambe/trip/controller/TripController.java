@@ -12,6 +12,7 @@ import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripDetailMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
@@ -21,6 +22,7 @@ import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -137,6 +139,17 @@ public class TripController {
         return ResponseEntity.ok(new ApiResponse<>(
                 SuccessMessage.TRIP_FOUND,
                 tripService.findTripDetail(tripId, Long.valueOf(jwt.getSubject()))
+        ));
+    }
+
+    @GetMapping("/trips/{tripId}/map")
+    public ResponseEntity<ApiResponse<TripDetailMapResponse>> findTripDetailMap(
+            @Positive @PathVariable Long tripId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(
+                SuccessMessage.TRIP_DETAIL_MAP_FOUND,
+                tripService.findTripDetailMap(tripId, Long.valueOf(jwt.getSubject()))
         ));
     }
 

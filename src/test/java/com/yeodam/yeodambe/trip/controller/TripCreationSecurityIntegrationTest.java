@@ -18,6 +18,7 @@ import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripDetailMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
@@ -51,6 +52,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -131,6 +133,49 @@ class TripCreationSecurityIntegrationTest {
     void allowSessionValidation() {
         given(activeLoginSessionValidator.validate(any(Jwt.class)))
                 .willReturn(OAuth2TokenValidatorResult.success());
+    }
+
+    @Test
+    void 지도는_쿠키_인증의_사용자와_숫자형_좌표를_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(tripService.findTripDetailMap(7L, 42L)).willReturn(new TripDetailMapResponse(
+                7L, List.of(new TripDetailMapResponse.Marker(
+                        11L, "성산일출봉", new BigDecimal("33.458"),
+                        new BigDecimal("126.9423"), 42L, null
+                ))
+        ));
+
+        mockMvc.perform(get("/trips/7/map").cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_DETAIL_MAP_FOUND"))
+                .andExpect(jsonPath("$.data.tripId").value(7))
+                .andExpect(jsonPath("$.data.markers[0].tripPlaceId").value(11))
+                .andExpect(jsonPath("$.data.markers[0].latitude").isNumber())
+                .andExpect(jsonPath("$.data.markers[0].latitude").value(33.458))
+                .andExpect(jsonPath("$.data.markers[0].longitude").value(126.9423))
+                .andExpect(jsonPath("$.data.markers[0].attachmentCount").value(42))
+                .andExpect(jsonPath("$.data.markers[0].thumbnailUrl").isEmpty());
+        then(tripService).should().findTripDetailMap(7L, 42L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "-1", "abc", "1.5", "9223372036854775808"})
+    void 잘못된_지도_tripId는_서비스_호출_전에_400이다(String tripId) throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        mockMvc.perform(get("/trips/" + tripId + "/map")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.data").isEmpty());
+        verifyNoInteractions(tripService);
+    }
+
+    @Test
+    void 미인증_지도_요청은_서비스_호출_전에_401이다() throws Exception {
+        mockMvc.perform(get("/trips/7/map"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+        verifyNoInteractions(tripService);
     }
 
     @Test

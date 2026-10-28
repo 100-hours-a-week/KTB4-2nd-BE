@@ -33,6 +33,11 @@ management:
         readiness:
           include: readinessState,redisSubscription
 
+logging:
+  structured:
+    format:
+      console: com.yeodam.websocket.common.websocket.logging.WebSocketJsonLogFormatter
+
 websocket:
   allowed-origins: ${WEBSOCKET_ALLOWED_ORIGINS:http://localhost:5173}
   max-connections: ${WEBSOCKET_MAX_CONNECTIONS:1000}

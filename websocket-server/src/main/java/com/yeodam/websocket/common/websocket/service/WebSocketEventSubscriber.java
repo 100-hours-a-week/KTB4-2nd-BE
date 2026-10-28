@@ -52,7 +52,8 @@ public class WebSocketEventSubscriber
                 new String(channel, StandardCharsets.UTF_8)
         )) {
             subscriptionState.markSubscribed();
-            log.info("WebSocket Redis subscription ready.");
+            log.atInfo().addKeyValue("event", "redis_subscription")
+                    .addKeyValue("result", "ready").log("WebSocket Redis subscription ready.");
         }
     }
 
@@ -61,7 +62,8 @@ public class WebSocketEventSubscriber
         if (properties.channel().equals(
                 new String(channel, StandardCharsets.UTF_8)
         )) {
-            log.warn("WebSocket Redis subscription unavailable.");
+            log.atWarn().addKeyValue("event", "redis_subscription")
+                    .addKeyValue("result", "unavailable").log("WebSocket Redis subscription unavailable.");
             sessionManager.closeConnectionsForRedisFailure();
         }
     }
@@ -70,7 +72,7 @@ public class WebSocketEventSubscriber
     public void onMessage(Message message, byte[] pattern) {
         byte[] body = message.getBody();
         if (body.length > MAX_EVENT_BYTES) {
-            log.warn("WebSocket event rejected. failure={}", WebSocketEventFailure.EVENT_TOO_LARGE);
+            logRejected(WebSocketEventFailure.EVENT_TOO_LARGE.name());
             return;
         }
 
@@ -78,23 +80,33 @@ public class WebSocketEventSubscriber
         try {
             event = objectMapper.readValue(body, WebSocketEvent.class);
         } catch (JacksonException exception) {
-            log.warn("WebSocket event rejected. failure={}", WebSocketEventFailure.INVALID_JSON);
+            logRejected(WebSocketEventFailure.INVALID_JSON.name());
             return;
         }
 
         try {
             validate(event);
         } catch (IllegalArgumentException exception) {
-            log.warn("WebSocket event rejected. failure={}", exception.getMessage());
+            logRejected(exception.getMessage());
             return;
         }
 
         try {
             dispatch(event);
         } catch (RuntimeException exception) {
-            log.warn("WebSocket event dispatch failed. failure={} event_id={} cause_type={}",
-                    WebSocketEventFailure.DELIVERY_FAILED, event.eventId(), exception.getClass().getName());
+            log.atWarn().addKeyValue("event", "websocket_event_dispatch")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("failure", WebSocketEventFailure.DELIVERY_FAILED.name())
+                    .addKeyValue("event_id", event.eventId())
+                    .addKeyValue("cause_type", exception.getClass().getName())
+                    .log("WebSocket event dispatch failed.");
         }
+    }
+
+    private void logRejected(String failure) {
+        log.atWarn().addKeyValue("event", "websocket_event_validation")
+                .addKeyValue("result", "failure").addKeyValue("failure", failure)
+                .log("WebSocket event rejected.");
     }
 
     private void dispatch(WebSocketEvent event) {

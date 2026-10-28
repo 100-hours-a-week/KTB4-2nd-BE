@@ -94,10 +94,10 @@ public class WebSocketHandshakeAuthenticationFilter extends OncePerRequestFilter
         } catch (BackendAuthenticationException exception) {
             SecurityContextHolder.clearContext();
 
-            log.warn(
-                    "WebSocket handshake authentication rejected. failure={}",
-                    exception.failure()
-            );
+            log.atWarn().addKeyValue("event", "websocket_authentication")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("failure", exception.failure().name())
+                    .log("WebSocket handshake authentication rejected.");
 
             HttpStatus status = switch (exception.failure()) {
                 case USER_UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;

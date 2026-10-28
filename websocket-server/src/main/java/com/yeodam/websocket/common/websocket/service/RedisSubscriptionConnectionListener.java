@@ -30,7 +30,9 @@ public class RedisSubscriptionConnectionListener
     @Override
     public void onRedisDisconnected(RedisChannelHandler<?, ?> connection) {
         if (connection instanceof StatefulRedisPubSubConnection<?, ?>) {
-            log.warn("WebSocket Redis Pub/Sub connection disconnected.");
+            log.atWarn().addKeyValue("event", "redis_subscription_connection")
+                    .addKeyValue("result", "disconnected")
+                    .log("WebSocket Redis Pub/Sub connection disconnected.");
             sessionManager.closeConnectionsForRedisFailure();
         }
     }

@@ -87,10 +87,10 @@ public class WebSocketSessionRevalidationService {
                 );
             }
         } catch (BackendAuthenticationException exception) {
-            log.warn(
-                    "WebSocket login session revalidation rejected. failure={}",
-                    exception.failure()
-            );
+            log.atWarn().addKeyValue("event", "websocket_session_revalidation")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("failure", exception.failure().name())
+                    .log("WebSocket login session revalidation rejected.");
 
             for (WebSocketSession connection : connections) {
                 sessionManager.closeConnection(connection.getId());

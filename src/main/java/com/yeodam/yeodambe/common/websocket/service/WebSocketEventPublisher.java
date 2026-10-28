@@ -7,6 +7,8 @@ import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventTarget
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -14,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 @Service
 public class WebSocketEventPublisher {
 
+    private static final Logger log = LoggerFactory.getLogger(WebSocketEventPublisher.class);
     private static final int MAX_EVENT_BYTES = 64 * 1024;
 
     private final StringRedisTemplate redisTemplate;
@@ -45,7 +48,15 @@ public class WebSocketEventPublisher {
                 WebSocketEventInternalErrorMessage.EVENT_TOO_LARGE.message()
         );
 
-        redisTemplate.convertAndSend(properties.channel(), json);
+        try {
+            redisTemplate.convertAndSend(properties.channel(), json);
+        } catch (RuntimeException exception) {
+            log.atWarn().addKeyValue("event", "websocket_event_publish")
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("failure", exception.getClass().getName())
+                    .log("WebSocket event Redis publication failed.");
+            throw exception;
+        }
     }
 
     private void validate(WebSocketEvent event) {

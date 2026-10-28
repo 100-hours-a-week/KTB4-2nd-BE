@@ -1,5 +1,6 @@
 package com.yeodam.websocket.common.websocket.service;
 
+import com.yeodam.websocket.common.websocket.config.WebSocketEventProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -12,12 +13,41 @@ import java.nio.charset.StandardCharsets;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 class WebSocketEventSubscriberTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private final SimpMessagingTemplate template = mock(SimpMessagingTemplate.class);
-    private final WebSocketEventSubscriber subscriber = new WebSocketEventSubscriber(mapper, template);
+    private static final String CHANNEL = "yeodam:test:websocket:events:v1";
+    private final RedisSubscriptionState subscriptionState = new RedisSubscriptionState();
+    private final WebSocketEventSubscriber subscriber = new WebSocketEventSubscriber(
+            mapper, template, new WebSocketEventProperties(CHANNEL), subscriptionState
+    );
+
+    @Test
+    void tracksSubscriptionAcknowledgementsForTheConfiguredChannel() {
+        byte[] channel = CHANNEL.getBytes(StandardCharsets.UTF_8);
+        assertThat(subscriptionState.isReady()).isFalse();
+        subscriber.onChannelSubscribed(channel, 1);
+        assertThat(subscriptionState.isReady()).isTrue();
+        subscriber.onChannelUnsubscribed(channel, 0);
+        assertThat(subscriptionState.isReady()).isFalse();
+        subscriber.onChannelSubscribed(channel, 1);
+        assertThat(subscriptionState.isReady()).isTrue();
+        verifyNoInteractions(template);
+    }
+
+    @Test
+    void ignoresAcknowledgementsForOtherChannels() {
+        byte[] other = "other-channel".getBytes(StandardCharsets.UTF_8);
+        subscriber.onChannelSubscribed(other, 1);
+        assertThat(subscriptionState.isReady()).isFalse();
+        subscriber.onChannelSubscribed(CHANNEL.getBytes(StandardCharsets.UTF_8), 1);
+        subscriber.onChannelUnsubscribed(other, 0);
+        assertThat(subscriptionState.isReady()).isTrue();
+        verifyNoInteractions(template);
+    }
 
     @ParameterizedTest
     @CsvSource({"AI_TASK,USER,/queue/ai-tasks", "COMMAND_RESULT,USER,/queue/command-results",

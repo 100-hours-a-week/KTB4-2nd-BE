@@ -3,6 +3,11 @@ package com.yeodam.websocket.common.websocket.service;
 import com.yeodam.websocket.common.websocket.exception.WebSocketEventFailure;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEvent;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEventTargetType;
+import com.yeodam.websocket.common.websocket.config.WebSocketEventProperties;
+import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
+import org.springframework.data.redis.connection.SubscriptionListener;
+
+import java.nio.charset.StandardCharsets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.Message;
@@ -15,17 +20,50 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
-public class WebSocketEventSubscriber implements MessageListener {
+public class WebSocketEventSubscriber
+        implements MessageListener, SubscriptionListener {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketEventSubscriber.class);
     private static final int MAX_EVENT_BYTES = 64 * 1024;
 
     private final ObjectMapper objectMapper;
     private final SimpMessagingTemplate messagingTemplate;
+    private final WebSocketEventProperties properties;
+    private final RedisSubscriptionState subscriptionState;
+    private final WebSocketSessionManager sessionManager;
 
-    public WebSocketEventSubscriber(ObjectMapper objectMapper, SimpMessagingTemplate messagingTemplate) {
+    public WebSocketEventSubscriber(
+            ObjectMapper objectMapper,
+            SimpMessagingTemplate messagingTemplate,
+            WebSocketEventProperties properties,
+            RedisSubscriptionState subscriptionState,
+            WebSocketSessionManager sessionManager
+    ) {
         this.objectMapper = objectMapper;
         this.messagingTemplate = messagingTemplate;
+        this.properties = properties;
+        this.subscriptionState = subscriptionState;
+        this.sessionManager = sessionManager;
+    }
+
+    @Override
+    public void onChannelSubscribed(byte[] channel, long count) {
+        if (properties.channel().equals(
+                new String(channel, StandardCharsets.UTF_8)
+        )) {
+            subscriptionState.markSubscribed();
+            log.info("WebSocket Redis subscription ready.");
+        }
+    }
+
+    @Override
+    public void onChannelUnsubscribed(byte[] channel, long count) {
+        if (properties.channel().equals(
+                new String(channel, StandardCharsets.UTF_8)
+        )) {
+            log.warn("WebSocket Redis subscription unavailable.");
+            sessionManager.closeConnectionsForRedisFailure();
+        }
     }
 
     @Override

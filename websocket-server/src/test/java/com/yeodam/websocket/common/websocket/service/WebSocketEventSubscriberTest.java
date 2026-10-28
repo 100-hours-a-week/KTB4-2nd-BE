@@ -1,23 +1,86 @@
 package com.yeodam.websocket.common.websocket.service;
 
+import com.yeodam.websocket.common.websocket.config.WebSocketEventProperties;
+import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.TaskScheduler;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 class WebSocketEventSubscriberTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private final SimpMessagingTemplate template = mock(SimpMessagingTemplate.class);
-    private final WebSocketEventSubscriber subscriber = new WebSocketEventSubscriber(mapper, template);
+    private static final String CHANNEL = "yeodam:test:websocket:events:v1";
+    private final RedisSubscriptionState subscriptionState = new RedisSubscriptionState();
+    private final TaskScheduler scheduler = mock(TaskScheduler.class);
+    private final WebSocketSessionManager sessionManager = new WebSocketSessionManager(scheduler, subscriptionState);
+    private final WebSocketEventSubscriber subscriber = new WebSocketEventSubscriber(
+            mapper, template, new WebSocketEventProperties(CHANNEL), subscriptionState, sessionManager
+    );
+
+    @Test
+    void tracksSubscriptionAcknowledgementsForTheConfiguredChannel() {
+        byte[] channel = CHANNEL.getBytes(StandardCharsets.UTF_8);
+        assertThat(subscriptionState.isReady()).isFalse();
+        subscriber.onChannelSubscribed(channel, 1);
+        assertThat(subscriptionState.isReady()).isTrue();
+        subscriber.onChannelUnsubscribed(channel, 0);
+        assertThat(subscriptionState.isReady()).isFalse();
+        verify(scheduler).schedule(any(Runnable.class), any(Instant.class));
+        subscriber.onChannelUnsubscribed(channel, 0);
+        verifyNoMoreInteractions(scheduler);
+        subscriber.onChannelSubscribed(channel, 1);
+        assertThat(subscriptionState.isReady()).isTrue();
+        verifyNoInteractions(template);
+    }
+
+    @Test
+    void doesNotRepeatClosureIfAnotherFailurePathAlreadyMarkedUnavailable() {
+        byte[] channel = CHANNEL.getBytes(StandardCharsets.UTF_8);
+        subscriber.onChannelSubscribed(channel, 1);
+        subscriptionState.markUnavailable();
+
+        subscriber.onChannelUnsubscribed(channel, 0);
+
+        assertThat(subscriptionState.isReady()).isFalse();
+        verifyNoInteractions(scheduler);
+    }
+
+    @Test
+    void requestsClosureAgainIfSubscriptionIsLostAfterRecovery() {
+        byte[] channel = CHANNEL.getBytes(StandardCharsets.UTF_8);
+        subscriber.onChannelSubscribed(channel, 1);
+        subscriber.onChannelUnsubscribed(channel, 0);
+        subscriber.onChannelSubscribed(channel, 1);
+        subscriber.onChannelUnsubscribed(channel, 0);
+
+        verify(scheduler, times(2)).schedule(any(Runnable.class), any(Instant.class));
+        assertThat(subscriptionState.isReady()).isFalse();
+    }
+
+    @Test
+    void ignoresAcknowledgementsForOtherChannels() {
+        byte[] other = "other-channel".getBytes(StandardCharsets.UTF_8);
+        subscriber.onChannelSubscribed(other, 1);
+        assertThat(subscriptionState.isReady()).isFalse();
+        subscriber.onChannelSubscribed(CHANNEL.getBytes(StandardCharsets.UTF_8), 1);
+        subscriber.onChannelUnsubscribed(other, 0);
+        assertThat(subscriptionState.isReady()).isTrue();
+        verifyNoInteractions(template);
+        verifyNoInteractions(scheduler);
+    }
 
     @ParameterizedTest
     @CsvSource({"AI_TASK,USER,/queue/ai-tasks", "COMMAND_RESULT,USER,/queue/command-results",

@@ -10,8 +10,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.socket.CloseStatus;
 import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
+import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.concurrent.ScheduledFuture;
 import java.util.List;
 import java.util.Map;
@@ -30,15 +32,22 @@ public class WebSocketSessionManager {
             new ConcurrentHashMap<>();
 
     private final TaskScheduler taskScheduler;
+    private final RedisSubscriptionState subscriptionState;
 
     public WebSocketSessionManager(
             @Qualifier("webSocketSessionTaskScheduler")
-            TaskScheduler taskScheduler
+            TaskScheduler taskScheduler,
+            RedisSubscriptionState subscriptionState
     ) {
         this.taskScheduler = taskScheduler;
+        this.subscriptionState = subscriptionState;
     }
 
-    public synchronized void register(WebSocketSession session) {
+    public synchronized boolean register(WebSocketSession session) {
+        if (!subscriptionState.isReady()) {
+            return false;
+        }
+
         Authentication authentication =
                 (Authentication) session.getPrincipal();
 
@@ -58,6 +67,8 @@ public class WebSocketSessionManager {
             sessions.remove(session.getId());
             throw exception;
         }
+
+        return true;
     }
 
     public synchronized void unregister(String connectionId) {
@@ -109,6 +120,30 @@ public class WebSocketSessionManager {
                     exception
             );
         }
+    }
+
+    public synchronized void closeConnectionsForRedisFailure() {
+        if (!subscriptionState.markUnavailable()) {
+            return;
+        }
+
+        List<WebSocketSession> affectedSessions = getSessions();
+
+        taskScheduler.schedule(() -> {
+            for (WebSocketSession session : affectedSessions) {
+                try {
+                    if (session.isOpen()) {
+                        session.close(CloseStatus.SERVER_ERROR);
+                    }
+                } catch (IOException | RuntimeException exception) {
+                    log.warn(
+                            "Failed to close WebSocket after Redis failure. connection_id={}",
+                            session.getId(),
+                            exception
+                    );
+                }
+            }
+        }, Instant.now());
     }
 
     private void closeExpiredSession(WebSocketSession session) {

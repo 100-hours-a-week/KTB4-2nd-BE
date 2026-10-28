@@ -17,6 +17,7 @@ import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.web.socket.EnableWebSocketSecurity;
 import org.springframework.security.messaging.access.intercept.MessageMatcherDelegatingAuthorizationManager;
 import org.springframework.security.messaging.web.csrf.CsrfChannelInterceptor;
+import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
 
 @Configuration(proxyBeanMethods = false)
 @EnableWebSocketSecurity
@@ -25,10 +26,16 @@ public class WebSocketSecurityConfig {
     @Bean
     SecurityFilterChain webSocketSecurityFilterChain(
             HttpSecurity http,
-            BackendAuthenticationClient authenticationClient
+            BackendAuthenticationClient authenticationClient,
+            RedisSubscriptionState subscriptionState
     ) throws Exception {
         http.authorizeHttpRequests(authorize -> authorize
-                .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                .requestMatchers(
+                        HttpMethod.GET,
+                        "/actuator/health",
+                        "/actuator/health/liveness",
+                        "/actuator/health/readiness"
+                ).permitAll()
                 .requestMatchers(HttpMethod.GET, "/ws").authenticated()
                 .anyRequest().denyAll()
         );
@@ -42,7 +49,10 @@ public class WebSocketSecurityConfig {
         http.logout(AbstractHttpConfigurer::disable);
         http.csrf(AbstractHttpConfigurer::disable);
         http.addFilterBefore(
-                new WebSocketHandshakeAuthenticationFilter(authenticationClient),
+                new WebSocketHandshakeAuthenticationFilter(
+                        authenticationClient,
+                        subscriptionState
+                ),
                 AnonymousAuthenticationFilter.class
         );
 

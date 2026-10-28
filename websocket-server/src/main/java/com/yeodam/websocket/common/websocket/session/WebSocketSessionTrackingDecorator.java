@@ -21,7 +21,10 @@ public class WebSocketSessionTrackingDecorator
     @Override
     public void afterConnectionEstablished(WebSocketSession session)
             throws Exception {
-        sessionManager.register(session);
+        if (!sessionManager.register(session)) {
+            session.close(CloseStatus.SERVER_ERROR);
+            return;
+        }
 
         try {
             super.afterConnectionEstablished(session);

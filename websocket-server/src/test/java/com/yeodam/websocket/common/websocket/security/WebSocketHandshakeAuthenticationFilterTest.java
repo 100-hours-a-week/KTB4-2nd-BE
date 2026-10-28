@@ -5,7 +5,9 @@ import com.yeodam.websocket.common.websocket.client.response.BackendAuthenticati
 import com.yeodam.websocket.common.websocket.exception.BackendAuthenticationException;
 import com.yeodam.websocket.common.websocket.exception.BackendAuthenticationFailure;
 import jakarta.servlet.http.Cookie;
+import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -35,8 +37,61 @@ import static org.mockito.Mockito.when;
 class WebSocketHandshakeAuthenticationFilterTest {
 
     private final BackendAuthenticationClient client = mock(BackendAuthenticationClient.class);
+    private final RedisSubscriptionState subscriptionState = new RedisSubscriptionState();
     private final WebSocketHandshakeAuthenticationFilter filter =
-            new WebSocketHandshakeAuthenticationFilter(client);
+            new WebSocketHandshakeAuthenticationFilter(client, subscriptionState);
+
+    @BeforeEach
+    void prepareSubscription() {
+        subscriptionState.markSubscribed();
+    }
+
+    @Test
+    void rejectsHandshakeBeforeSubscriptionWithoutCallingBackend() throws Exception {
+        RedisSubscriptionState initialState = new RedisSubscriptionState();
+        var unavailableFilter = new WebSocketHandshakeAuthenticationFilter(client, initialState);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean continued = new AtomicBoolean();
+
+        unavailableFilter.doFilter(authenticatedRequest(), response,
+                (request, nextResponse) -> continued.set(true));
+
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(continued).isFalse();
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void rejectsHandshakeAfterSubscriptionBecomesUnavailable() throws Exception {
+        subscriptionState.markUnavailable();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean continued = new AtomicBoolean();
+
+        filter.doFilter(authenticatedRequest(), response,
+                (request, nextResponse) -> continued.set(true));
+
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(continued).isFalse();
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void resumesAuthenticationAfterSubscriptionIsRestored() throws Exception {
+        subscriptionState.markUnavailable();
+        subscriptionState.markSubscribed();
+        when(client.authenticate("test-access-token", "test-browser-context"))
+                .thenReturn(new AuthenticationData(
+                        42L, "test-login-session", Instant.parse("2099-01-01T00:00:00Z"),
+                        "test-csrf-token"
+                ));
+        AtomicBoolean continued = new AtomicBoolean();
+
+        filter.doFilter(authenticatedRequest(), new MockHttpServletResponse(),
+                (request, response) -> continued.set(true));
+
+        assertThat(continued).isTrue();
+        verify(client).authenticate("test-access-token", "test-browser-context");
+    }
 
     @AfterEach
     void clearAuthentication() {
@@ -119,6 +174,7 @@ class WebSocketHandshakeAuthenticationFilterTest {
             "GET, /other"
     })
     void skipsAuthenticationForOtherRequests(String method, String path) throws Exception {
+        subscriptionState.markUnavailable();
         AtomicBoolean continued = new AtomicBoolean();
 
         filter.doFilter(request(method, path), new MockHttpServletResponse(),

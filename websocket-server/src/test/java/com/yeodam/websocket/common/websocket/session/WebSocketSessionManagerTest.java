@@ -2,6 +2,7 @@ package com.yeodam.websocket.common.websocket.session;
 
 import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
 import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
+import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -30,11 +31,13 @@ class WebSocketSessionManagerTest {
     private final TaskScheduler scheduler = mock(TaskScheduler.class);
     private final ScheduledFuture<?> reservation = mock(ScheduledFuture.class);
     private final WebSocketSession session = mock(WebSocketSession.class);
-    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler);
+    private final RedisSubscriptionState subscriptionState = new RedisSubscriptionState();
+    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler, subscriptionState);
     private final ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
 
     @BeforeEach
     void prepareConnection() {
+        subscriptionState.markSubscribed();
         when(session.getId()).thenReturn("connection-a");
         Map<String, Object> attributes = new HashMap<>();
         attributes.put(WebSocketSessionCredentials.ATTRIBUTE_NAME,
@@ -48,10 +51,32 @@ class WebSocketSessionManagerTest {
 
     @Test
     void schedulesAtTheConnectionsAccessTokenExpiry() {
-        manager.register(session);
+        assertThat(manager.register(session)).isTrue();
 
         verify(scheduler).schedule(any(Runnable.class), eq(EXPIRES_AT));
         assertThat(manager.getSessions()).containsExactly(session);
+    }
+
+    @Test
+    void refusesRegistrationWithoutSchedulingExpiryWhenSubscriptionIsUnavailable() {
+        subscriptionState.markUnavailable();
+
+        assertThat(manager.register(session)).isFalse();
+
+        assertThat(manager.getSessions()).isEmpty();
+        verifyNoInteractions(scheduler);
+    }
+
+    @Test
+    void allowsRegistrationAfterSubscriptionRecovers() {
+        subscriptionState.markUnavailable();
+        assertThat(manager.register(session)).isFalse();
+        subscriptionState.markSubscribed();
+
+        assertThat(manager.register(session)).isTrue();
+
+        assertThat(manager.getSessions()).containsExactly(session);
+        verify(scheduler).schedule(any(Runnable.class), eq(EXPIRES_AT));
     }
 
     @Test
@@ -124,5 +149,84 @@ class WebSocketSessionManagerTest {
         assertThat(manager.getSessionsByLoginSession()).hasSize(1);
         assertThat(manager.getSessionsByLoginSession().get("login-session"))
                 .containsExactlyInAnyOrder(session, another);
+    }
+
+    @Test
+    void closesOnlyConnectionsCapturedBeforeTheScheduledTaskRuns() throws Exception {
+        manager.register(session);
+        when(session.isOpen()).thenReturn(true);
+        clearInvocations(scheduler);
+
+        manager.closeConnectionsForRedisFailure();
+
+        verify(scheduler).schedule(task.capture(), any(Instant.class));
+        verify(session, never()).close(any(CloseStatus.class));
+        WebSocketSession later = mock(WebSocketSession.class);
+        when(later.getId()).thenReturn("later-connection");
+        var principal = session.getPrincipal();
+        when(later.getPrincipal()).thenReturn(principal);
+        subscriptionState.markSubscribed();
+        assertThat(manager.register(later)).isTrue();
+
+        task.getValue().run();
+
+        verify(session).close(CloseStatus.SERVER_ERROR);
+        verify(later, never()).close(any(CloseStatus.class));
+    }
+
+    @Test
+    void skipsConnectionsThatAreAlreadyClosedWhenTheTaskRuns() throws Exception {
+        manager.register(session);
+        when(session.isOpen()).thenReturn(false);
+        clearInvocations(scheduler);
+
+        manager.closeConnectionsForRedisFailure();
+        verify(scheduler).schedule(task.capture(), any(Instant.class));
+        task.getValue().run();
+
+        verify(session, never()).close(any(CloseStatus.class));
+    }
+
+    @Test
+    void continuesClosingOtherConnectionsWhenOneFails() throws Exception {
+        manager.register(session);
+        when(session.isOpen()).thenReturn(true);
+        WebSocketSession another = mock(WebSocketSession.class);
+        when(another.getId()).thenReturn("connection-b");
+        var principal = session.getPrincipal();
+        when(another.getPrincipal()).thenReturn(principal);
+        when(another.isOpen()).thenReturn(true);
+        manager.register(another);
+        doThrow(new IOException("test close failure"))
+                .when(session).close(CloseStatus.SERVER_ERROR);
+        doThrow(new IllegalStateException("test close failure"))
+                .when(another).close(CloseStatus.SERVER_ERROR);
+        clearInvocations(scheduler);
+
+        manager.closeConnectionsForRedisFailure();
+        verify(scheduler).schedule(task.capture(), any(Instant.class));
+        task.getValue().run();
+
+        verify(session).close(CloseStatus.SERVER_ERROR);
+        verify(another).close(CloseStatus.SERVER_ERROR);
+    }
+
+    @Test
+    void removesCredentialsAndExpiryReservationThroughTheCloseCallback() throws Exception {
+        manager.register(session);
+        when(session.isOpen()).thenReturn(true);
+        doAnswer(invocation -> {
+            manager.unregister("connection-a");
+            return null;
+        }).when(session).close(CloseStatus.SERVER_ERROR);
+        clearInvocations(scheduler);
+
+        manager.closeConnectionsForRedisFailure();
+        verify(scheduler).schedule(task.capture(), any(Instant.class));
+        task.getValue().run();
+
+        assertThat(manager.getSessions()).isEmpty();
+        assertThat(session.getAttributes()).doesNotContainKey(WebSocketSessionCredentials.ATTRIBUTE_NAME);
+        verify(reservation).cancel(false);
     }
 }

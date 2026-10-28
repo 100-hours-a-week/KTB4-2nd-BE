@@ -1,5 +1,6 @@
 package com.yeodam.websocket.common.websocket.security;
 
+import com.yeodam.websocket.RedisTestSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "websocket.backend-auth.service-token=application-test-service-token"
 )
-class WebSocketMessageSecurityTest {
+class WebSocketMessageSecurityTest extends RedisTestSupport {
 
     private static final String CSRF_TOKEN = "existing-test-csrf-token";
 

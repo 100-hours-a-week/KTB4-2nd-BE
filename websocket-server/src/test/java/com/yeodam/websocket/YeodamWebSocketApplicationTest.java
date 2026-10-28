@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "websocket.backend-auth.service-token=application-test-service-token"
 )
-class YeodamWebSocketApplicationTest {
+class YeodamWebSocketApplicationTest extends RedisTestSupport {
 
     @LocalServerPort
     private int port;

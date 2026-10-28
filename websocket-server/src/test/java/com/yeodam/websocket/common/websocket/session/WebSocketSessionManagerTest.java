@@ -56,6 +56,68 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
+    void refusesAdmissionAndRegistrationAfterShutdownEvenIfSubscriptionRecovers() {
+        manager.shutdownConnections();
+        subscriptionState.markSubscribed();
+
+        assertThat(manager.canAcceptConnection()).isFalse();
+        assertThat(manager.register(session)).isFalse();
+        verifyNoInteractions(scheduler);
+    }
+
+    @Test
+    void closesWithRestartCodeAndCleansResourcesThroughTheCloseCallback() throws Exception {
+        manager.register(session);
+        when(session.isOpen()).thenReturn(true);
+        doAnswer(invocation -> {
+            assertThat(manager.canAcceptConnection()).isFalse();
+            assertThat(subscriptionState.isReady()).isFalse();
+            manager.unregister("connection-a");
+            return null;
+        }).when(session).close(CloseStatus.SERVICE_RESTARTED);
+
+        manager.shutdownConnections();
+        manager.shutdownConnections();
+
+        verify(session, times(1)).close(CloseStatus.SERVICE_RESTARTED);
+        assertThat(manager.getSessions()).isEmpty();
+        assertThat(session.getAttributes()).doesNotContainKey(WebSocketSessionCredentials.ATTRIBUTE_NAME);
+        verify(reservation).cancel(false);
+    }
+
+    @Test
+    void doesNotScheduleRedisFailureWorkAfterShutdown() {
+        manager.shutdownConnections();
+        subscriptionState.markSubscribed();
+
+        manager.closeConnectionsForRedisFailure();
+
+        verifyNoInteractions(scheduler);
+    }
+
+    @Test
+    void continuesShutdownWhenOneConnectionCannotClose() throws Exception {
+        manager.register(session);
+        when(session.isOpen()).thenReturn(true);
+        WebSocketSession another = mock(WebSocketSession.class);
+        when(another.getId()).thenReturn("shutdown-b");
+        var principal = session.getPrincipal();
+        when(another.getPrincipal()).thenReturn(principal);
+        when(another.isOpen()).thenReturn(true);
+        manager.register(another);
+        doThrow(new IOException("test shutdown close failure"))
+                .when(session).close(CloseStatus.SERVICE_RESTARTED);
+        doThrow(new IllegalStateException("test shutdown close failure"))
+                .when(another).close(CloseStatus.SERVICE_RESTARTED);
+
+        manager.shutdownConnections();
+
+        verify(session).close(CloseStatus.SERVICE_RESTARTED);
+        verify(another).close(CloseStatus.SERVICE_RESTARTED);
+        assertThat(manager.canAcceptConnection()).isFalse();
+    }
+
+    @Test
     void schedulesAtTheConnectionsAccessTokenExpiry() {
         assertThat(manager.register(session)).isTrue();
 

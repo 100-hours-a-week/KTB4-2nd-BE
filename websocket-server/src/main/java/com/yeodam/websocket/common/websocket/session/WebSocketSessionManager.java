@@ -12,6 +12,10 @@ import org.springframework.web.socket.CloseStatus;
 import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
 import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
 import com.yeodam.websocket.common.websocket.config.WebSocketProperties;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -35,6 +39,7 @@ public class WebSocketSessionManager {
     private final TaskScheduler taskScheduler;
     private final RedisSubscriptionState subscriptionState;
     private final int maxConnections;
+    private boolean stopping;
 
     public WebSocketSessionManager(
             @Qualifier("webSocketSessionTaskScheduler")
@@ -48,7 +53,8 @@ public class WebSocketSessionManager {
     }
 
     public synchronized boolean canAcceptConnection() {
-        return subscriptionState.isReady()
+        return !stopping
+                && subscriptionState.isReady()
                 && sessions.size() < maxConnections;
     }
 
@@ -131,8 +137,38 @@ public class WebSocketSessionManager {
         }
     }
 
+    @EventListener(ContextClosedEvent.class)
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public void shutdownConnections() {
+        List<WebSocketSession> affectedSessions;
+
+        synchronized (this) {
+            if (stopping) {
+                return;
+            }
+
+            stopping = true;
+            subscriptionState.markUnavailable();
+            affectedSessions = getSessions();
+        }
+
+        for (WebSocketSession session : affectedSessions) {
+            try {
+                if (session.isOpen()) {
+                    session.close(CloseStatus.SERVICE_RESTARTED);
+                }
+            } catch (IOException | RuntimeException exception) {
+                log.warn(
+                        "Failed to close WebSocket during shutdown. connection_id={}",
+                        session.getId(),
+                        exception
+                );
+            }
+        }
+    }
+
     public synchronized void closeConnectionsForRedisFailure() {
-        if (!subscriptionState.markUnavailable()) {
+        if (stopping || !subscriptionState.markUnavailable()) {
             return;
         }
 

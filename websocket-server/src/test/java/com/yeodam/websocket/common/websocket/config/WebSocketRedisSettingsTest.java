@@ -2,6 +2,8 @@ package com.yeodam.websocket.common.websocket.config;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.env.StandardEnvironment;
@@ -51,8 +53,13 @@ class WebSocketRedisSettingsTest {
         });
     }
 
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(WebSocketEventProperties.class)
+    static class SettingsOnlyConfig {
+    }
+
     private ApplicationContextRunner context() {
-        return new ApplicationContextRunner().withUserConfiguration(RedisPubSubConfig.class).withInitializer(context -> {
+        return new ApplicationContextRunner().withUserConfiguration(SettingsOnlyConfig.class).withInitializer(context -> {
             context.getEnvironment().getPropertySources()
                     .remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
             new ConfigDataApplicationContextInitializer().initialize(context);

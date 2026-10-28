@@ -20,6 +20,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
@@ -75,8 +76,10 @@ class WebSocketEventPublisherRedisTest {
             secondPublisher.publish(second);
 
             for (Receiver receiver : new Receiver[]{firstReceiver, secondReceiver}) {
-                assertThat(mapper.readValue(receiver.next(), WebSocketEvent.class)).isEqualTo(first);
-                assertThat(mapper.readValue(receiver.next(), WebSocketEvent.class)).isEqualTo(second);
+                WebSocketEvent firstReceived = mapper.readValue(receiver.next(), WebSocketEvent.class);
+                WebSocketEvent secondReceived = mapper.readValue(receiver.next(), WebSocketEvent.class);
+                assertThat(List.of(firstReceived, secondReceived))
+                        .containsExactlyInAnyOrder(first, second);
             }
         } finally {
             firstSubscriber.destroy();

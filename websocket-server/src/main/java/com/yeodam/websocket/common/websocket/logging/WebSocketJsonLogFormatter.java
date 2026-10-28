@@ -23,6 +23,9 @@ public class WebSocketJsonLogFormatter extends JsonWriterStructuredLogFormatter<
         for (String key : new String[]{"event", "result", "failure", "event_id", "connection_id", "cause_type"}) {
             members.add(key, event -> contextValue(event, key));
         }
+        members.add("connections", event -> contextValue(event, "connections"));
+        members.add("subscriptions", event -> contextValue(event, "subscriptions"));
+        members.add("redis_subscription_ready", event -> contextValue(event, "redis_subscription_ready"));
         members.add("release", environment.getProperty("RELEASE", "unknown"));
         members.add("stack_trace", event -> event.getThrowableProxy() == null
                 ? null : converter.convert(event));

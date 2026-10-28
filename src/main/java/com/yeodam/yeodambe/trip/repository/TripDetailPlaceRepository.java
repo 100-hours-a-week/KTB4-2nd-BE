@@ -51,6 +51,26 @@ public interface TripDetailPlaceRepository extends JpaRepository<TripDetailPlace
             Pageable pageable
     );
 
+    @Query("""
+            select new com.yeodam.yeodambe.trip.repository.TripDetailMapMarker(
+                    place.id, place.placeName, place.latitude, place.longitude,
+                    place.thumbnailKey, count(attachment)
+            )
+            from TripAttachment attachment
+            join attachment.tripPlace place
+            join attachment.file file
+            where place.tripId = :tripId
+              and place.deletedAt is null
+              and attachment.tripId = place.tripId
+              and attachment.classificationStatus =
+                  com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE
+              and attachment.deletedAt is null
+              and file.deletedAt is null
+            group by place.id, place.placeName, place.latitude, place.longitude, place.thumbnailKey
+            order by place.placeName asc, place.id asc
+            """)
+    List<TripDetailMapMarker> findMapMarkers(@Param("tripId") Long tripId);
+
     long countByTripIdAndDeletedAtIsNull(Long tripId);
 
     @Modifying

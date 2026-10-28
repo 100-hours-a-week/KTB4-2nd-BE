@@ -18,6 +18,7 @@ import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -60,7 +61,8 @@ class TripReadStateControllerTest {
         TripService service = new TripService(
                 mock(AdditionalAttachmentModificationGuard.class), trips, regions,
                 executions, mock(RegionCatalog.class), attachments, storage, access,
-                mapper, mock(StoryRepository.class), mock(TripMapCacheStore.class), Clock.systemUTC()
+                mapper, mock(StoryRepository.class), mock(TripMapCacheStore.class), Clock.systemUTC(),
+                places
         );
         TripController controller = new TripController(
                 service, mock(TripProcessingStatusService.class),
@@ -96,6 +98,23 @@ class TripReadStateControllerTest {
         when(trip.getEndDate()).thenReturn(LocalDate.of(2026, 10, 2));
     }
 
+    @Test
+    void 지도는_완료된_여행의_빈_마커를_반환한다() throws Exception {
+        mvc.perform(get("/trips/7/map"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_DETAIL_MAP_FOUND"))
+                .andExpect(jsonPath("$.data.tripId").value(7))
+                .andExpect(jsonPath("$.data.markers").isEmpty());
+    }
+
+    @Test
+    void 지도는_접근할_수_없는_여행을_404로_반환한다() throws Exception {
+        mvc.perform(get("/trips/8/map"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"));
+        verify(places, never()).findMapMarkers(anyLong());
+    }
+
     @AfterEach
     void clearAuthentication() {
         SecurityContextHolder.clearContext();
@@ -104,6 +123,7 @@ class TripReadStateControllerTest {
     @ParameterizedTest
     @CsvSource({
             "/trips/7, TRIP_DETAIL_NOT_AVAILABLE",
+            "/trips/7/map, TRIP_DETAIL_NOT_AVAILABLE",
             "/trips/7/edit, TRIP_UPDATE_NOT_ALLOWED",
             "/trips/7/place-folders, TRIP_DETAIL_NOT_AVAILABLE",
             "/trips/7/story/source-folders, STORY_GENERATION_NOT_ALLOWED",
@@ -125,6 +145,7 @@ class TripReadStateControllerTest {
     @ParameterizedTest
     @CsvSource({
             "/trips/7, TRIP_DETAIL_NOT_AVAILABLE",
+            "/trips/7/map, TRIP_DETAIL_NOT_AVAILABLE",
             "/trips/7/edit, TRIP_UPDATE_NOT_ALLOWED",
             "/trips/7/story/source-folders, STORY_GENERATION_NOT_ALLOWED"
     })
@@ -143,7 +164,7 @@ class TripReadStateControllerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/trips/7", "/trips/7/edit", "/trips/7/place-folders",
+            "/trips/7", "/trips/7/map", "/trips/7/edit", "/trips/7/place-folders",
             "/trips/7/story/source-folders", "/trips/7/unclassified-folders",
             "/trips/7/unclassified-folders/BLURRY/attachments",
             "/trips/7/place-folders/3/attachments"
@@ -153,7 +174,7 @@ class TripReadStateControllerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"/trips/7", "/trips/7/edit", "/trips/7/story/source-folders"})
+    @ValueSource(strings = {"/trips/7", "/trips/7/map", "/trips/7/edit", "/trips/7/story/source-folders"})
     void 추가_실행이_종료되면_다시_조회할_수_있다(String path) throws Exception {
         when(executions.existsByTripIdAndEndedAtIsNull(7L)).thenReturn(true, false);
 
@@ -178,6 +199,8 @@ class TripReadStateControllerTest {
             "FAILED, /trips/7/place-folders, 409, TRIP_DETAIL_NOT_AVAILABLE",
             "CANCELED, /trips/7/place-folders, 409, TRIP_DETAIL_NOT_AVAILABLE",
             "CANCELED, /trips/7, 404, TRIP_NOT_FOUND",
+            "CANCELED, /trips/7/map, 404, TRIP_NOT_FOUND",
+            "FAILED, /trips/7/map, 409, TRIP_DETAIL_NOT_AVAILABLE",
             "CANCELED, /trips/7/edit, 409, TRIP_UPDATE_NOT_ALLOWED"
     })
     void 실패와_취소_상태의_오류_계약을_유지한다(

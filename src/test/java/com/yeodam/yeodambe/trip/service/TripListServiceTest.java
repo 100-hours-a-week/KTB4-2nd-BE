@@ -55,7 +55,8 @@ class TripListServiceTest {
                 mock(TripAccessService.class),
                 objectMapper,
                 mock(StoryRepository.class), mock(TripMapCacheStore.class),
-                Clock.systemUTC()
+                Clock.systemUTC(),
+                mock(com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository.class)
         );
     }
 

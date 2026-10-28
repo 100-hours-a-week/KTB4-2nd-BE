@@ -17,7 +17,10 @@ import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "websocket.backend-auth.service-token=application-test-service-token"
+)
 class YeodamWebSocketApplicationTest {
 
     @LocalServerPort
@@ -39,8 +42,10 @@ class YeodamWebSocketApplicationTest {
     }
 
     @Test
-    void doesNotExposePrometheusBeforeMonitoringIsConfigured() throws Exception {
-        assertThat(get("/api/actuator/prometheus").statusCode()).isEqualTo(404);
+    void rejectsUnauthenticatedRequestsOutsideHealth() throws Exception {
+        assertThat(get("/api/actuator/prometheus").statusCode()).isEqualTo(401);
+        assertThat(get("/api/ws").statusCode()).isEqualTo(401);
+        assertThat(get("/api/login").statusCode()).isEqualTo(401);
     }
 
     @Test

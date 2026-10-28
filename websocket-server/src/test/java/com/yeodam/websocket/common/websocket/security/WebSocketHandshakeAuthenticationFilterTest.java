@@ -9,12 +9,19 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.http.server.ServletServerHttpRequest;
+import org.springframework.http.server.ServletServerHttpResponse;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.messaging.web.socket.server.CsrfTokenHandshakeInterceptor;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.DeferredCsrfToken;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -22,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class WebSocketHandshakeAuthenticationFilterTest {
@@ -59,6 +67,43 @@ class WebSocketHandshakeAuthenticationFilterTest {
 
         assertThat(continued).isTrue();
         verify(client).authenticate("test-access-token", "test-browser-context");
+    }
+
+    @Test
+    void reusesTheBackendCsrfTokenInSpringHandshakeAttributes() throws Exception {
+        when(client.authenticate("test-access-token", "test-browser-context"))
+                .thenReturn(new AuthenticationData(
+                        42L, "test-login-session", Instant.parse("2099-01-01T00:00:00Z"),
+                        "existing-backend-csrf-token"
+                ));
+        MockHttpServletRequest request = authenticatedRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (nextRequest, nextResponse) -> {
+            DeferredCsrfToken deferred = (DeferredCsrfToken) request.getAttribute(
+                    DeferredCsrfToken.class.getName()
+            );
+            assertThat(deferred).isNotNull();
+            assertThat(deferred.isGenerated()).isFalse();
+            assertThat(deferred.get()).isSameAs(deferred.get());
+
+            var attributes = new HashMap<String, Object>();
+            boolean allowed = new CsrfTokenHandshakeInterceptor().beforeHandshake(
+                    new ServletServerHttpRequest(request),
+                    new ServletServerHttpResponse(response),
+                    new TextWebSocketHandler(),
+                    attributes
+            );
+
+            assertThat(allowed).isTrue();
+            CsrfToken copiedToken = (CsrfToken) attributes.get(CsrfToken.class.getName());
+            assertThat(copiedToken).isNotNull();
+            assertThat(copiedToken.getToken()).isEqualTo("existing-backend-csrf-token");
+            assertThat(copiedToken.getHeaderName()).isEqualTo("X-CSRF-TOKEN");
+        });
+
+        verify(client).authenticate("test-access-token", "test-browser-context");
+        verifyNoMoreInteractions(client);
     }
 
     @ParameterizedTest

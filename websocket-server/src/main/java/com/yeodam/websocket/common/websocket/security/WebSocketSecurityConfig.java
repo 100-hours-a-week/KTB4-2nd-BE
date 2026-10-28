@@ -11,9 +11,15 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import com.yeodam.websocket.common.websocket.client.BackendAuthenticationClient;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
-
+import org.springframework.messaging.Message;
+import org.springframework.messaging.simp.SimpMessageType;
+import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.config.annotation.web.socket.EnableWebSocketSecurity;
+import org.springframework.security.messaging.access.intercept.MessageMatcherDelegatingAuthorizationManager;
+import org.springframework.security.messaging.web.csrf.CsrfChannelInterceptor;
 
 @Configuration(proxyBeanMethods = false)
+@EnableWebSocketSecurity
 public class WebSocketSecurityConfig {
 
     @Bean
@@ -23,6 +29,7 @@ public class WebSocketSecurityConfig {
     ) throws Exception {
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                .requestMatchers(HttpMethod.GET, "/ws").authenticated()
                 .anyRequest().denyAll()
         );
 
@@ -46,5 +53,30 @@ public class WebSocketSecurityConfig {
         );
 
         return http.build();
+    }
+
+    @Bean
+    CsrfChannelInterceptor csrfChannelInterceptor() {
+        return new CsrfChannelInterceptor();
+    }
+
+    @Bean
+    AuthorizationManager<Message<?>> webSocketMessageAuthorizationManager(
+            MessageMatcherDelegatingAuthorizationManager.Builder messages
+    ) {
+        messages
+                .simpTypeMatchers(
+                        SimpMessageType.CONNECT,
+                        SimpMessageType.UNSUBSCRIBE,
+                        SimpMessageType.DISCONNECT,
+                        SimpMessageType.HEARTBEAT
+                ).authenticated()
+                .simpSubscribeDestMatchers(
+                        "/user/queue/ai-tasks",
+                        "/user/queue/command-results"
+                ).authenticated()
+                .anyMessage().denyAll();
+
+        return messages.build();
     }
 }

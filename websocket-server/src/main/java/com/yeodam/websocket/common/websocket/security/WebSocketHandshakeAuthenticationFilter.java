@@ -3,6 +3,9 @@ package com.yeodam.websocket.common.websocket.security;
 import com.yeodam.websocket.common.websocket.client.BackendAuthenticationClient;
 import com.yeodam.websocket.common.websocket.client.response.BackendAuthenticationResponse.AuthenticationData;
 import com.yeodam.websocket.common.websocket.exception.BackendAuthenticationException;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.DefaultCsrfToken;
+import org.springframework.security.web.csrf.DeferredCsrfToken;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -52,6 +55,11 @@ public class WebSocketHandshakeAuthenticationFilter extends OncePerRequestFilter
                     cookieValue(request, "CSRF_CONTEXT")
             );
 
+            request.setAttribute(
+                    DeferredCsrfToken.class.getName(),
+                    existingCsrfToken(data.csrfToken())
+            );
+
             WebSocketPrincipal principal = new WebSocketPrincipal(
                     data.userId(),
                     data.sessionId(),
@@ -88,6 +96,26 @@ public class WebSocketHandshakeAuthenticationFilter extends OncePerRequestFilter
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private DeferredCsrfToken existingCsrfToken(String value) {
+        CsrfToken token = new DefaultCsrfToken(
+                "X-CSRF-TOKEN",
+                "_csrf",
+                value
+        );
+
+        return new DeferredCsrfToken() {
+            @Override
+            public CsrfToken get() {
+                return token;
+            }
+
+            @Override
+            public boolean isGenerated() {
+                return false;
+            }
+        };
     }
 
     private String cookieValue(HttpServletRequest request, String name) {

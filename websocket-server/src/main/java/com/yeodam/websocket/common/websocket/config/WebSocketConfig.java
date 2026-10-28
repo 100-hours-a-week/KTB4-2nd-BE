@@ -10,6 +10,9 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
+import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
+import com.yeodam.websocket.common.websocket.session.WebSocketSessionTrackingDecorator;
+import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentialsHandshakeInterceptor;
 
 @Configuration(proxyBeanMethods = false)
 @EnableWebSocketMessageBroker
@@ -18,19 +21,25 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WebSocketProperties properties;
     private final TaskScheduler messageBrokerTaskScheduler;
+    private final WebSocketSessionManager sessionManager;
 
     public WebSocketConfig(
             WebSocketProperties properties,
             @Lazy @Qualifier("messageBrokerTaskScheduler")
-            TaskScheduler messageBrokerTaskScheduler
+            TaskScheduler messageBrokerTaskScheduler,
+            WebSocketSessionManager sessionManager
     ) {
         this.properties = properties;
         this.messageBrokerTaskScheduler = messageBrokerTaskScheduler;
+        this.sessionManager = sessionManager;
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
+                .addInterceptors(
+                        new WebSocketSessionCredentialsHandshakeInterceptor()
+                )
                 .setAllowedOrigins(
                         properties.allowedOrigins().toArray(String[]::new)
                 );
@@ -53,5 +62,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.setMessageSizeLimit(64 * 1024)
                 .setSendBufferSizeLimit(512 * 1024)
                 .setSendTimeLimit(10_000);
+
+        registry.addDecoratorFactory(handler ->
+                new WebSocketSessionTrackingDecorator(handler, sessionManager)
+        );
     }
 }

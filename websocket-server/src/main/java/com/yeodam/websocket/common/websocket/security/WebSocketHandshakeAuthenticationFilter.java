@@ -56,6 +56,14 @@ public class WebSocketHandshakeAuthenticationFilter extends OncePerRequestFilter
             );
 
             request.setAttribute(
+                    WebSocketSessionCredentials.ATTRIBUTE_NAME,
+                    new WebSocketSessionCredentials(
+                            cookieValue(request, "accessToken"),
+                            cookieValue(request, "CSRF_CONTEXT")
+                    )
+            );
+
+            request.setAttribute(
                     DeferredCsrfToken.class.getName(),
                     existingCsrfToken(data.csrfToken())
             );

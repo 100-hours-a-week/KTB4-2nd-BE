@@ -8,6 +8,9 @@ import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripService;
+import com.yeodam.yeodambe.trip.service.ShareTripService;
+import com.yeodam.yeodambe.trip.service.request.TripShareCreateRequest;
+import com.yeodam.yeodambe.trip.service.response.TripShareCreateResponse;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
@@ -48,6 +51,19 @@ public class TripController {
     private final TripPlaceFolderListService tripPlaceFolderListService;
     private final TripDeletionService tripDeletionService;
     private final ObjectMapper objectMapper;
+    private final ShareTripService shareTripService;
+
+    @PostMapping("/trips/{tripId}/shares")
+    public ResponseEntity<ApiResponse<TripShareCreateResponse>> registerShare(
+            @Positive @PathVariable Long tripId,
+            @Valid @RequestBody TripShareCreateRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long ownerId = Long.valueOf(jwt.getSubject());
+        TripShareCreateResponse data = shareTripService.register(tripId, ownerId, request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new ApiResponse<>(SuccessMessage.TRIP_SHARE_CREATE_SUCCESS, data));
+    }
 
     @PostMapping("/trips")
     public ResponseEntity<ApiResponse<TripCreateResponse>> createTrip(

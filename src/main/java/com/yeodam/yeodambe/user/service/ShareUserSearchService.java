@@ -21,4 +21,8 @@ public class ShareUserSearchService {
         return new UserSearchResponse(user.getUserId(), user.getNickname(), user.getEmail());
     }
 
+    public User requireActiveUser(Long userId) {
+        return userRepository.findByUserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(UserNotFoundException::new);
+    }
 }

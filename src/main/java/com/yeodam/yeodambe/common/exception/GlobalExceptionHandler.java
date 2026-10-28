@@ -8,6 +8,10 @@ import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
 import com.yeodam.yeodambe.user.service.request.UserSearchRequest;
+import com.yeodam.yeodambe.trip.service.request.TripShareCreateRequest;
+import com.yeodam.yeodambe.trip.controller.TripController;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import io.sentry.Sentry;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -79,6 +83,9 @@ public class GlobalExceptionHandler {
         }
         if (target instanceof UserSearchRequest) {
             return ErrorMessage.INVALID_EMAIL_FORMAT;
+        }
+        if (target instanceof TripShareCreateRequest) {
+            return ErrorMessage.INVALID_TRIP_SHARE_REQUEST;
         }
         boolean singleRequest = target instanceof AttachmentRestoreRequest;
         boolean bulkRequest = target instanceof BulkAttachmentRestoreRequest;
@@ -177,6 +184,9 @@ public class GlobalExceptionHandler {
     ) {
         Object matchedPath = request.getAttribute(
                 HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        if (isShareRegistration(request)) {
+            return new ApiResponse<>(ErrorMessage.INVALID_TRIP_SHARE_REQUEST, null);
+        }
         if ("PATCH".equals(request.getMethod())
                 && "/trips/{tripId}".equals(matchedPath)) {
             return new ApiResponse<>(ErrorMessage.INVALID_TRIP_REQUEST, null);
@@ -208,7 +218,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    ApiResponse<Void> handleMethodArgumentTypeMismatch(MethodArgumentTypeMismatchException e) {
+    ApiResponse<Void> handleMethodArgumentTypeMismatch(
+            MethodArgumentTypeMismatchException e,
+            HttpServletRequest request
+    ) {
+        if (isShareRegistration(request)) {
+            return new ApiResponse<>(ErrorMessage.INVALID_TRIP_SHARE_REQUEST, null);
+        }
         return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
     }
 
@@ -418,6 +434,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HandlerMethodValidationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleMethodValidation(HandlerMethodValidationException e) {
+        if (e.getMethod().getDeclaringClass() == TripController.class
+                && "registerShare".equals(e.getMethod().getName())) {
+            return new ApiResponse<>(ErrorMessage.INVALID_TRIP_SHARE_REQUEST, null);
+        }
         ErrorMessage error = e.getParameterValidationResults().stream()
                 .filter(ParameterErrors.class::isInstance)
                 .map(ParameterErrors.class::cast)
@@ -605,6 +625,57 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
     ApiResponse<Void> handleUnsupportedAttachmentFormat(UnsupportedAttachmentFormatException e) {
         return new ApiResponse<>(ErrorMessage.UNSUPPORTED_ATTACHMENT_FORMAT, null);
+    }
+
+    @ExceptionHandler(InvalidTripShareRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidTripShareRequest(InvalidTripShareRequestException exception) {
+        return new ApiResponse<>(ErrorMessage.INVALID_TRIP_SHARE_REQUEST, null);
+    }
+
+    @ExceptionHandler(TripShareCreateForbiddenException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    ApiResponse<Void> handleTripShareForbidden(TripShareCreateForbiddenException exception) {
+        return new ApiResponse<>(ErrorMessage.TRIP_SHARE_CREATE_FORBIDDEN, null);
+    }
+
+    @ExceptionHandler(TripShareNotAvailableException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleTripShareNotAvailable(TripShareNotAvailableException exception) {
+        return new ApiResponse<>(ErrorMessage.TRIP_SHARE_NOT_AVAILABLE, null);
+    }
+
+    @ExceptionHandler(TripShareAlreadyExistsException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleTripShareAlreadyExists(TripShareAlreadyExistsException exception) {
+        return new ApiResponse<>(ErrorMessage.TRIP_SHARE_ALREADY_EXISTS, null);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(
+            DataIntegrityViolationException exception,
+            HttpServletRequest request
+    ) {
+        if (isShareRegistration(request)) {
+            for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+                if (cause instanceof ConstraintViolationException violation) {
+                    String constraint = violation.getConstraintName();
+                    if (constraint != null && (constraint.equals("uk_trip_share_trip_grantee")
+                            || constraint.endsWith(".uk_trip_share_trip_grantee"))) {
+                        return ResponseEntity.status(HttpStatus.CONFLICT)
+                                .body(new ApiResponse<>(ErrorMessage.TRIP_SHARE_ALREADY_EXISTS, null));
+                    }
+                }
+            }
+        }
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(handleUnexpectedException(exception));
+    }
+
+    private boolean isShareRegistration(HttpServletRequest request) {
+        return "POST".equals(request.getMethod())
+                && "/trips/{tripId}/shares".equals(request.getAttribute(
+                        HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE));
     }
 
     private void logFailure(

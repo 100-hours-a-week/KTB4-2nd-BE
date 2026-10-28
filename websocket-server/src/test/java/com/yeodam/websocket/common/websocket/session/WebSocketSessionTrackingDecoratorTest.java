@@ -1,6 +1,14 @@
 package com.yeodam.websocket.common.websocket.session;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.ScheduledFuture;
+import static org.mockito.ArgumentMatchers.any;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.WebSocketSession;
@@ -15,10 +23,17 @@ import static org.mockito.Mockito.when;
 
 class WebSocketSessionTrackingDecoratorTest {
 
-    private final WebSocketSessionManager manager = new WebSocketSessionManager();
+    private final TaskScheduler scheduler = mock(TaskScheduler.class);
+    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler);
     private final WebSocketHandler delegate = mock(WebSocketHandler.class);
     private final WebSocketSessionTrackingDecorator decorator =
             new WebSocketSessionTrackingDecorator(delegate, manager);
+
+    @BeforeEach
+    void prepareScheduler() {
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
+                .thenAnswer(invocation -> mock(ScheduledFuture.class));
+    }
 
     @Test
     void registersBeforeDelegatingConnectionEstablished() throws Exception {
@@ -85,6 +100,10 @@ class WebSocketSessionTrackingDecoratorTest {
     private WebSocketSession session(String id) {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.getId()).thenReturn(id);
+        when(session.getPrincipal()).thenReturn(UsernamePasswordAuthenticationToken.authenticated(
+                new WebSocketPrincipal(42L, "login-session", Instant.parse("2099-01-01T00:00:00Z")),
+                null, List.of()
+        ));
         return session;
     }
 }

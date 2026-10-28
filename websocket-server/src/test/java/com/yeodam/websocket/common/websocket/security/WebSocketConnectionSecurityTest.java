@@ -113,10 +113,26 @@ class WebSocketConnectionSecurityTest {
                         .getResponse().statusCode()).isEqualTo(403));
     }
 
+    @Test
+    void closesTheRealConnectionWhenItsAccessTokenExpires() throws Exception {
+        connect("http://localhost:5173", Instant.now().plusSeconds(5));
+        send("CONNECT\naccept-version:1.2\nheart-beat:0,0\nX-CSRF-TOKEN:existing-token\n\n");
+        assertThat(frames.next()).startsWith("CONNECTED");
+
+        assertThat(frames.closed.get(10, TimeUnit.SECONDS)).isEqualTo(1008);
+        org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                assertThat(sessionManager.getSessions()).isEmpty()
+        );
+    }
+
     private void connect(String origin) {
+        connect(origin, Instant.parse("2099-01-01T00:00:00Z"));
+    }
+
+    private void connect(String origin, Instant expiresAt) {
         when(authenticationClient.authenticate("test-access", "test-context"))
                 .thenReturn(new AuthenticationData(
-                        42L, "test-login-session", Instant.parse("2099-01-01T00:00:00Z"), "existing-token"
+                        42L, "test-login-session", expiresAt, "existing-token"
                 ));
         socket = HttpClient.newHttpClient().newWebSocketBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
@@ -134,6 +150,7 @@ class WebSocketConnectionSecurityTest {
 
     private static class Frames implements WebSocket.Listener {
         private final BlockingQueue<String> messages = new LinkedBlockingQueue<>();
+        private final CompletableFuture<Integer> closed = new CompletableFuture<>();
         private final StringBuilder partial = new StringBuilder();
 
         @Override
@@ -149,6 +166,12 @@ class WebSocketConnectionSecurityTest {
                 partial.setLength(0);
             }
             webSocket.request(1);
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            closed.complete(statusCode);
             return CompletableFuture.completedFuture(null);
         }
 

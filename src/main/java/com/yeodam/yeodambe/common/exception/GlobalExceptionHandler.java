@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
+import com.yeodam.yeodambe.user.service.request.UserSearchRequest;
 import io.sentry.Sentry;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -75,6 +76,9 @@ public class GlobalExceptionHandler {
         }
         if (target instanceof InitialAttachmentUploadCompleteRequest) {
             return ErrorMessage.INVALID_ATTACHMENT_UPLOAD;
+        }
+        if (target instanceof UserSearchRequest) {
+            return ErrorMessage.INVALID_EMAIL_FORMAT;
         }
         boolean singleRequest = target instanceof AttachmentRestoreRequest;
         boolean bulkRequest = target instanceof BulkAttachmentRestoreRequest;

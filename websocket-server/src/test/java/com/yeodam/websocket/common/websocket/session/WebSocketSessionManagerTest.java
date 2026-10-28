@@ -1,6 +1,7 @@
 package com.yeodam.websocket.common.websocket.session;
 
 import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
+import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -12,6 +13,8 @@ import org.springframework.web.socket.WebSocketSession;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -33,6 +36,10 @@ class WebSocketSessionManagerTest {
     @BeforeEach
     void prepareConnection() {
         when(session.getId()).thenReturn("connection-a");
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put(WebSocketSessionCredentials.ATTRIBUTE_NAME,
+                new WebSocketSessionCredentials("test-access", "test-context"));
+        when(session.getAttributes()).thenReturn(attributes);
         when(session.getPrincipal()).thenReturn(UsernamePasswordAuthenticationToken.authenticated(
                 new WebSocketPrincipal(42L, "login-session", EXPIRES_AT), null, List.of()
         ));
@@ -54,6 +61,7 @@ class WebSocketSessionManagerTest {
         manager.unregister("connection-a");
 
         verify(reservation).cancel(false);
+        assertThat(session.getAttributes()).doesNotContainKey(WebSocketSessionCredentials.ATTRIBUTE_NAME);
         assertThat(manager.getSessions()).isEmpty();
     }
 
@@ -102,5 +110,19 @@ class WebSocketSessionManagerTest {
         task.getValue().run();
 
         assertThat(manager.getSessions()).containsExactly(session);
+    }
+
+    @Test
+    void groupsConnectionsByLoginSessionRatherThanConnectionId() {
+        manager.register(session);
+        WebSocketSession another = mock(WebSocketSession.class);
+        when(another.getId()).thenReturn("connection-b");
+        var principal = session.getPrincipal();
+        when(another.getPrincipal()).thenReturn(principal);
+        manager.register(another);
+
+        assertThat(manager.getSessionsByLoginSession()).hasSize(1);
+        assertThat(manager.getSessionsByLoginSession().get("login-session"))
+                .containsExactlyInAnyOrder(session, another);
     }
 }

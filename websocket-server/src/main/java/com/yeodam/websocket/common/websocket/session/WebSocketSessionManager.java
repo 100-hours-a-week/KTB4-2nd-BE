@@ -9,12 +9,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.socket.CloseStatus;
+import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
 
 import java.io.IOException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Component
 public class WebSocketSessionManager {
@@ -59,7 +61,12 @@ public class WebSocketSessionManager {
     }
 
     public synchronized void unregister(String connectionId) {
-        sessions.remove(connectionId);
+        WebSocketSession session = sessions.remove(connectionId);
+
+        if (session != null) {
+            session.getAttributes()
+                    .remove(WebSocketSessionCredentials.ATTRIBUTE_NAME);
+        }
 
         ScheduledFuture<?> expirationTask =
                 expirationTasks.remove(connectionId);
@@ -73,6 +80,37 @@ public class WebSocketSessionManager {
         return List.copyOf(sessions.values());
     }
 
+    public Map<String, List<WebSocketSession>> getSessionsByLoginSession() {
+        return getSessions().stream()
+                .collect(Collectors.groupingBy(session -> {
+                    Authentication authentication =
+                            (Authentication) session.getPrincipal();
+
+                    WebSocketPrincipal principal =
+                            (WebSocketPrincipal) authentication.getPrincipal();
+
+                    return principal.sessionId();
+                }));
+    }
+
+    public void closeConnection(String connectionId) {
+        WebSocketSession session = sessions.get(connectionId);
+
+        if (session == null) {
+            return;
+        }
+
+        try {
+            session.close(CloseStatus.POLICY_VIOLATION);
+        } catch (IOException exception) {
+            log.warn(
+                    "Failed to close WebSocket connection. connection_id={}",
+                    connectionId,
+                    exception
+            );
+        }
+    }
+
     private void closeExpiredSession(WebSocketSession session) {
         synchronized (this) {
             if (sessions.get(session.getId()) != session) {
@@ -82,14 +120,6 @@ public class WebSocketSessionManager {
             expirationTasks.remove(session.getId());
         }
 
-        try {
-            session.close(CloseStatus.POLICY_VIOLATION);
-        } catch (IOException exception) {
-            log.warn(
-                    "Failed to close expired WebSocket connection. connection_id={}",
-                    session.getId(),
-                    exception
-            );
-        }
+        closeConnection(session.getId());
     }
 }

@@ -3,6 +3,7 @@ package com.yeodam.websocket.common.websocket.session;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
+import com.yeodam.websocket.common.websocket.service.RedisSubscriptionState;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import java.time.Instant;
 import java.util.List;
@@ -18,21 +19,36 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class WebSocketSessionTrackingDecoratorTest {
 
     private final TaskScheduler scheduler = mock(TaskScheduler.class);
-    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler);
+    private final RedisSubscriptionState subscriptionState = new RedisSubscriptionState();
+    private final WebSocketSessionManager manager = new WebSocketSessionManager(scheduler, subscriptionState);
     private final WebSocketHandler delegate = mock(WebSocketHandler.class);
     private final WebSocketSessionTrackingDecorator decorator =
             new WebSocketSessionTrackingDecorator(delegate, manager);
 
     @BeforeEach
     void prepareScheduler() {
+        subscriptionState.markSubscribed();
         when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
                 .thenAnswer(invocation -> mock(ScheduledFuture.class));
+    }
+
+    @Test
+    void closesConnectionWithoutStartingStompWhenRegistrationIsRefused() throws Exception {
+        WebSocketSession session = session("refused");
+        subscriptionState.markUnavailable();
+
+        decorator.afterConnectionEstablished(session);
+
+        verify(session).close(CloseStatus.SERVER_ERROR);
+        verifyNoInteractions(delegate, scheduler);
+        assertThat(manager.getSessions()).isEmpty();
     }
 
     @Test

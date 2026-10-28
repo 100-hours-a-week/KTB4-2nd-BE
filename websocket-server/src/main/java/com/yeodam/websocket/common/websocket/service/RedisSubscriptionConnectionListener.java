@@ -7,6 +7,7 @@ import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 
 public class RedisSubscriptionConnectionListener
         implements RedisConnectionStateListener, AutoCloseable {
@@ -15,22 +16,22 @@ public class RedisSubscriptionConnectionListener
             LoggerFactory.getLogger(RedisSubscriptionConnectionListener.class);
 
     private final AbstractRedisClient redisClient;
-    private final RedisSubscriptionState subscriptionState;
+    private final WebSocketSessionManager sessionManager;
 
     public RedisSubscriptionConnectionListener(
             LettuceConnectionFactory connectionFactory,
-            RedisSubscriptionState subscriptionState
+            WebSocketSessionManager sessionManager
     ) {
         this.redisClient = connectionFactory.getRequiredNativeClient();
-        this.subscriptionState = subscriptionState;
+        this.sessionManager = sessionManager;
         this.redisClient.addListener(this);
     }
 
     @Override
     public void onRedisDisconnected(RedisChannelHandler<?, ?> connection) {
-        if (connection instanceof StatefulRedisPubSubConnection<?, ?>
-                && subscriptionState.markUnavailable()) {
+        if (connection instanceof StatefulRedisPubSubConnection<?, ?>) {
             log.warn("WebSocket Redis Pub/Sub connection disconnected.");
+            sessionManager.closeConnectionsForRedisFailure();
         }
     }
 

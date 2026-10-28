@@ -4,6 +4,7 @@ import com.yeodam.websocket.common.websocket.exception.WebSocketEventFailure;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEvent;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEventTargetType;
 import com.yeodam.websocket.common.websocket.config.WebSocketEventProperties;
+import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import org.springframework.data.redis.connection.SubscriptionListener;
 
 import java.nio.charset.StandardCharsets;
@@ -29,17 +30,20 @@ public class WebSocketEventSubscriber
     private final SimpMessagingTemplate messagingTemplate;
     private final WebSocketEventProperties properties;
     private final RedisSubscriptionState subscriptionState;
+    private final WebSocketSessionManager sessionManager;
 
     public WebSocketEventSubscriber(
             ObjectMapper objectMapper,
             SimpMessagingTemplate messagingTemplate,
             WebSocketEventProperties properties,
-            RedisSubscriptionState subscriptionState
+            RedisSubscriptionState subscriptionState,
+            WebSocketSessionManager sessionManager
     ) {
         this.objectMapper = objectMapper;
         this.messagingTemplate = messagingTemplate;
         this.properties = properties;
         this.subscriptionState = subscriptionState;
+        this.sessionManager = sessionManager;
     }
 
     @Override
@@ -56,8 +60,9 @@ public class WebSocketEventSubscriber
     public void onChannelUnsubscribed(byte[] channel, long count) {
         if (properties.channel().equals(
                 new String(channel, StandardCharsets.UTF_8)
-        ) && subscriptionState.markUnavailable()) {
+        )) {
             log.warn("WebSocket Redis subscription unavailable.");
+            sessionManager.closeConnectionsForRedisFailure();
         }
     }
 

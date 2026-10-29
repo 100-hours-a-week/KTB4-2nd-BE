@@ -18,6 +18,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import com.yeodam.yeodambe.story.service.StoryGenerationTerminalService;
 import com.yeodam.yeodambe.story.service.StoryGenerationTimeoutService;
+import com.yeodam.yeodambe.story.service.StoryGenerationResultRecoveryService;
 import com.yeodam.yeodambe.story.entity.StoryGenerationOutbox;
 import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
 import java.time.LocalDateTime;
@@ -48,13 +49,14 @@ import static org.mockito.Mockito.*;
         "spring.jpa.show-sql=false"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({StoryGenerationTimeoutService.class, StoryGenerationTerminalService.class, StoryGenerationProgressService.class, StoryGenerationStatusEventHandler.class,
+@Import({StoryGenerationResultRecoveryService.class, StoryGenerationTimeoutService.class, StoryGenerationTerminalService.class, StoryGenerationProgressService.class, StoryGenerationStatusEventHandler.class,
         StoryGenerationStatusEventHandlerMysqlTest.MysqlConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class StoryGenerationStatusEventHandlerMysqlTest {
     @Autowired private StoryGenerationProgressService progress;
     @Autowired private StoryGenerationTerminalService terminal;
     @Autowired private StoryGenerationTimeoutService timeout;
+    @Autowired private StoryGenerationResultRecoveryService recovery;
     @Autowired private StoryGenerationOutboxRepository outboxes;
     @Autowired private StoryGenerationJobRepository jobs;
     @Autowired private TripRepository trips;
@@ -64,6 +66,7 @@ class StoryGenerationStatusEventHandlerMysqlTest {
 
     @TestConfiguration(proxyBeanMethods = false)
     static class MysqlConfig {
+        @Bean tools.jackson.databind.ObjectMapper json() { return new tools.jackson.databind.ObjectMapper(); }
         @Bean
         JdbcConnectionDetails mysql() throws SQLException {
             return SharedTestMysql.createDatabase();
@@ -207,6 +210,41 @@ class StoryGenerationStatusEventHandlerMysqlTest {
         assertThat(stored.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
         assertThat(stored.getStatusVersion()).isEqualTo(1);
         assertThat(stored.getErrorCode()).isNull();
+    }
+
+    @Test
+    void unrecoverableResultFailurePublishesOnceAfterCommit() {
+        var job = fixture();
+        String message = recoveryMessage(job);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            recovery.failIdentifiedJob(message);
+            verifyNoInteractions(publisher);
+        });
+        recovery.failIdentifiedJob(message);
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(publisher).publish(captor.capture());
+        verifyNoMoreInteractions(publisher);
+        var notification = (StoryGenerationStatusNotification) captor.getValue().payload().data();
+        assertThat(notification.status()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(notification.statusVersion()).isEqualTo(2);
+        assertThat(notification.error().code()).isEqualTo("STORY_GENERATION_FAILED");
+        assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode()).isEqualTo("STORY_RESULT_PROCESSING_FAILED");
+    }
+
+    @Test
+    void unrecoverableResultRollbackDoesNotPublishOrFailJob() {
+        var job = fixture();
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            recovery.failIdentifiedJob(recoveryMessage(job));
+            status.setRollbackOnly();
+        });
+        verifyNoInteractions(publisher);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+    }
+
+    private String recoveryMessage(StoryGenerationJob job) {
+        return "{\"type\":\"story_result\",\"trip_id\":" + job.getTripId()
+                + ",\"execution_id\":\"" + job.getExecutionId() + "\"}";
     }
 
     private void prepareTimeout(StoryGenerationJob job, LocalDateTime publishedAt) {

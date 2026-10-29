@@ -395,14 +395,27 @@ public class InitialAttachmentUploadTransactionService {
     public TripProcessingStatusResponse acceptanceStatus(
             Trip trip, TripCreationExecution execution
     ) {
-        var status = switch (execution.getStatus()) {
-            case COMPLETED -> TripProcessingStatusResponse.Status.COMPLETED;
-            case FAILED -> TripProcessingStatusResponse.Status.FAILED;
-            case CANCELED -> throw new TripInitialAttachmentUploadNotAllowedException();
-            default -> TripProcessingStatusResponse.Status.PROCESSING;
-        };
+        if (execution.getStatus() == TripCreationExecution.Status.CANCELED) {
+            throw new TripInitialAttachmentUploadNotAllowedException();
+        }
+
+        var status = TripProcessingStatusResponse.Status.valueOf(execution.getDisplayStatus().name());
+        TripProcessingStatusResponse.Error error = null;
+        if (status == TripProcessingStatusResponse.Status.FAILED) {
+            error = new TripProcessingStatusResponse.Error(
+                    execution.getErrorCode(),
+                    TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message());
+        }
+
         return new TripProcessingStatusResponse(
-                trip.getId(), status, null, null, null);
+                trip.getId(),
+                execution.getExecutionId(),
+                execution.getStatusVersion(),
+                status,
+                execution.getCurrentStep(),
+                null,
+                error
+        );
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

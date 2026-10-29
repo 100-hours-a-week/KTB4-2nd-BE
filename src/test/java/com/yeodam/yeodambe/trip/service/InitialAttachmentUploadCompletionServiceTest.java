@@ -219,7 +219,7 @@ class InitialAttachmentUploadCompletionServiceTest {
                 InitialAttachmentUploadStatus.ACCEPTED, null, List.of());
         when(transactions.loadAcceptanceCandidate(7L, 42L, "upload-id")).thenReturn(snapshot);
         var status = new TripProcessingStatusResponse(
-                7L, TripProcessingStatusResponse.Status.PROCESSING,
+                7L, "execution-id", 1L, TripProcessingStatusResponse.Status.PROCESSING,
                 null, null, null);
         when(transactions.startProcessing(7L, 42L, "upload-id")).thenReturn(status);
 
@@ -238,7 +238,7 @@ class InitialAttachmentUploadCompletionServiceTest {
         when(storage.size("key-one")).thenReturn(1024L);
         when(storage.openHeader("key-one")).thenReturn(new ByteArrayInputStream(jpeg(1024)));
         var status = new TripProcessingStatusResponse(
-                7L, TripProcessingStatusResponse.Status.PROCESSING, null, null, null);
+                7L, "execution-id", 1L, TripProcessingStatusResponse.Status.PROCESSING, null, null, null);
         when(transactions.startProcessing(7L, 42L, "upload-id")).thenReturn(status);
 
         assertThat(service.complete(7L, 42L, new InitialAttachmentUploadCompleteRequest("upload-id")))
@@ -259,7 +259,7 @@ class InitialAttachmentUploadCompletionServiceTest {
                 InitialAttachmentUploadStatus.READY, null, List.of());
         when(transactions.loadAcceptanceCandidate(7L, 42L, "upload-id")).thenReturn(snapshot);
         var status = new TripProcessingStatusResponse(
-                7L, TripProcessingStatusResponse.Status.COMPLETED, null, null, null);
+                7L, "execution-id", 1L, TripProcessingStatusResponse.Status.COMPLETED, null, null, null);
         when(transactions.startProcessing(7L, 42L, "upload-id")).thenReturn(status);
 
         assertThat(service.complete(7L, 42L, new InitialAttachmentUploadCompleteRequest("upload-id")))

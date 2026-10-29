@@ -411,7 +411,7 @@ class TripAttachmentSecurityIntegrationTest {
         String token = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
         var request = new InitialAttachmentUploadCompleteRequest("upload-id");
-        given(uploadCompletion.complete(7L, 42L, request)).willReturn(new TripProcessingStatusResponse(7L, TripProcessingStatusResponse.Status.PROCESSING, null, null, null));
+        given(uploadCompletion.complete(7L, 42L, request)).willReturn(new TripProcessingStatusResponse(7L, "execution-id", 1L, TripProcessingStatusResponse.Status.PROCESSING, null, null, null));
         mockMvc.perform(post("/api/trips/7/initial-attachments").contextPath("/api")
                         .servletPath("/trips/7/initial-attachments")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"uploadId\":\"upload-id\"}")
@@ -428,7 +428,7 @@ class TripAttachmentSecurityIntegrationTest {
         String token = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
         given(uploadCompletion.complete(eq(7L), eq(42L), any())).willReturn(
-                new TripProcessingStatusResponse(7L, TripProcessingStatusResponse.Status.COMPLETED,
+                new TripProcessingStatusResponse(7L, "execution-id", 1L, TripProcessingStatusResponse.Status.COMPLETED,
                         null,
                         new TripProcessingStatusResponse.Result(7L, 1, 2, 0), null));
         mockMvc.perform(post("/trips/7/initial-attachments").contentType(MediaType.APPLICATION_JSON)

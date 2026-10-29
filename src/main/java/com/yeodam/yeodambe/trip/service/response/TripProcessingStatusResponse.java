@@ -2,6 +2,8 @@ package com.yeodam.yeodambe.trip.service.response;
 
 public record TripProcessingStatusResponse(
         Long tripId,
+        String executionId,
+        long statusVersion,
         Status status,
         String currentStep,
         Result result,

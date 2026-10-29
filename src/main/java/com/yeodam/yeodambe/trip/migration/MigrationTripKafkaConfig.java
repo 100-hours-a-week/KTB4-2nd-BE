@@ -7,6 +7,7 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 
 @Configuration(proxyBeanMethods = false)
 public class MigrationTripKafkaConfig {
@@ -20,9 +21,19 @@ public class MigrationTripKafkaConfig {
         if (concurrency < 1 || concurrency > 4) throw new IllegalArgumentException("Invalid rehearsal concurrency");
         factory.setConcurrency(concurrency);
         factory.setMissingTopicsFatal(true);
-        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
-        // Finish the current record and commit it; leave fetched but unapplied records
-        // in Kafka for the Target instead of draining an entire poll during cutover.
+        factory.setBatchListener(true);
+        // Factory template consumer properties are not copied to every endpoint in 4.1.
+        // Apply this bound to each created trip container, leaving auth consumers intact.
+        factory.setContainerCustomizer(container -> {
+            var properties = container.getContainerProperties().getKafkaConsumerProperties();
+            properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "10");
+            container.getContainerProperties().setKafkaConsumerProperties(properties);
+        });
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.BATCH);
+        factory.getContainerProperties().setSyncCommits(true);
+        // A poll contains at most ten records; finish its DB transactions and offset
+        // commit before stop's callback allows the Cloud controller to fence MySQL.
+        // No fetch-min-bytes or extra batch-fill wait is added.
         factory.getContainerProperties().setStopImmediate(true);
         factory.setCommonErrorHandler(new DefaultErrorHandler(
                 new FixedBackOff(1000L, FixedBackOff.UNLIMITED_ATTEMPTS)));

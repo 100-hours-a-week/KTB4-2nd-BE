@@ -17,25 +17,7 @@ RUN --mount=type=cache,target=/root/.gradle \
     && test -n "${artifact}" \
     && cp "${artifact}" /workspace/app.jar
 
-FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy AS runtime
-WORKDIR /app
-
-ENV SERVER_PORT=8080
-
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends \
-        curl \
-        imagemagick \
-        libimage-exiftool-perl \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system --gid 1001 spring \
-    && useradd --system --uid 1001 --gid spring spring
-
+# Rehearsal branch only: preserve the successful image's exact JRE/OS/tools.
+# Build from the same deployed parent; change the application jar only.
+FROM ghcr.io/100-hours-a-week/yeodam-backend@sha256:d39fd16fc92e77d9c51be9056a2d0c79e355fdf0ad81e38a8d463ab554fd2010 AS runtime
 COPY --from=build --chown=spring:spring /workspace/app.jar /app/app.jar
-COPY --chown=spring:spring data/ /app/data/
-
-USER spring
-
-EXPOSE 8080
-
-CMD ["java", "-jar", "/app/app.jar"]

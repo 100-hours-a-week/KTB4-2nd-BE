@@ -51,7 +51,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private final AdditionalAttachmentUploadUrlService service = new AdditionalAttachmentUploadUrlService(
             tripRepository, batchRepository, itemRepository, attachmentRepository,
-            mock(TripAttachmentStorageClient.class), executionRepository, userStatsService, jdbcTemplate, mock(StoryGenerationJobRepository.class));
+            mock(TripAttachmentStorageClient.class), executionRepository, userStatsService, jdbcTemplate, mock(StoryGenerationJobRepository.class), mock(org.springframework.context.ApplicationEventPublisher.class));
     private final Trip trip = mock(Trip.class);
 
     @BeforeEach

@@ -7,6 +7,9 @@ import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededExcepti
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
 import org.springframework.stereotype.Service;
+import com.yeodam.yeodambe.trip.event.TripProcessingStatusChangedEvent;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStateSnapshot;
+import org.springframework.context.ApplicationEventPublisher;
 import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -49,6 +52,7 @@ public class AdditionalAttachmentUploadUrlService {
     private final UserStatsService userStatsService;
     private final JdbcTemplate jdbcTemplate;
     private final StoryGenerationJobRepository storyGenerationJobRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final long MAX_ADDITION_BYTES = 3L * 1024 * 1024 * 1024;
     private static final Duration UPLOAD_URL_TTL = Duration.ofMinutes(10);
@@ -248,6 +252,17 @@ public class AdditionalAttachmentUploadUrlService {
                             now
                     )
             );
+            var snapshot = new TripProcessingStateSnapshot(
+                    execution.getTripId(),
+                    execution.getExecutionId(),
+                    execution.getStatusVersion(),
+                    execution.getDisplayStatus(),
+                    execution.getCurrentStep(),
+                    execution.getErrorCode()
+            );
+            eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(
+                    execution.getUserId(), snapshot
+            ));
             logWorkflowStarted(tripId, execution.getExecutionId());
         }
 

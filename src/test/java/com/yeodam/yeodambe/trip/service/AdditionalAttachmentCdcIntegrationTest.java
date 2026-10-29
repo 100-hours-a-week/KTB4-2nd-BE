@@ -136,8 +136,42 @@ class AdditionalAttachmentCdcIntegrationTest {
     }
 
     @Test
+    void newAdditionPublishesAfterCommitButReissuingDoesNotRepeatIt() {
+        transaction.executeWithoutResult(status -> {
+            urls.issueUploadUrls(tripId, userId, request(1, 1, true));
+            verifyNoInteractions(notificationPublisher);
+        });
+        urls.issueUploadUrls(tripId, userId, request(1, 1, true));
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).publish(captor.capture());
+        verifyNoMoreInteractions(notificationPublisher);
+        var message = captor.getValue();
+        var notification = (TripProcessingStatusNotification) message.payload().data();
+        assertThat(message.target().id()).isEqualTo(userId);
+        assertThat(notification.tripId()).isEqualTo(tripId);
+        assertThat(notification.executionId()).isEqualTo(additionId);
+        assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.PROCESSING);
+        assertThat(notification.statusVersion()).isEqualTo(1);
+        assertThat(notification.result()).isNull();
+        assertThat(notification.error()).isNull();
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Test
+    void newAdditionRollbackDoesNotPublishOrLeaveAnExecution() {
+        transaction.executeWithoutResult(status -> {
+            urls.issueUploadUrls(tripId, userId, request(1, 1, true));
+            status.setRollbackOnly();
+        });
+        verifyNoInteractions(notificationPublisher);
+        assertThat(executionRepository.findById(additionId)).isEmpty();
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Test
     void failurePublishesOnceAfterCommitAndKeepsExistingPhotos() {
         urls.issueUploadUrls(tripId, userId, request(1, 1, true));
+        clearInvocations(notificationPublisher);
         transaction.executeWithoutResult(status -> {
             transactions.failExecution(additionId, "IMAGE_CONVERSION_FAILED");
             verifyNoInteractions(notificationPublisher);
@@ -161,6 +195,7 @@ class AdditionalAttachmentCdcIntegrationTest {
     @Test
     void rollingBackFailureDoesNotPublishOrChangeTheExecution() {
         urls.issueUploadUrls(tripId, userId, request(1, 1, true));
+        clearInvocations(notificationPublisher);
         transaction.executeWithoutResult(status -> {
             transactions.failExecution(additionId, "IMAGE_CONVERSION_FAILED");
             status.setRollbackOnly();

@@ -173,6 +173,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         prepareAsync();
         publishBoth();
         String raw = successfulPayload();
+        clearInvocations(notificationPublisher);
         if (alreadyFinalizing) {
             transaction.executeWithoutResult(status -> executionRepository.findForUpdate(additionId).orElseThrow()
                     .updateDisplayStatus(TripDisplayStatus.FINALIZING, null));
@@ -207,6 +208,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         prepareAsync();
         publishBoth();
         String raw = successfulPayload();
+        clearInvocations(notificationPublisher);
         transaction.executeWithoutResult(status -> {
             kafkaResults.receive(applicationMapper.readValue(raw,
                     com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class), raw);

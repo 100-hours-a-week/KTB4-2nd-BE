@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import jakarta.persistence.EntityManager;
+import org.springframework.context.ApplicationEventPublisher;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
@@ -50,7 +51,8 @@ class TripProcessingStatusServiceTest {
         additionalExecutions = mock(AdditionalAttachmentExecutionRepository.class);
         service = new TripProcessingStatusService(trips, places, attachments, analysis, executions, mock(InitialAttachmentUploadBatchRepository.class),
                 creationExecutions, additionalExecutions,
-                new TripProcessingStatusSyncService(creationExecutions, mock(EntityManager.class), additionalExecutions));
+                new TripProcessingStatusSyncService(creationExecutions, mock(EntityManager.class),
+                        additionalExecutions, mock(ApplicationEventPublisher.class)));
     }
 
     @Test

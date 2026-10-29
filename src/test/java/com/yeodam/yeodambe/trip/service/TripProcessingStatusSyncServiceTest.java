@@ -6,6 +6,8 @@ import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
 import com.yeodam.yeodambe.trip.entity.TripDisplayStatus;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
+import com.yeodam.yeodambe.trip.event.TripProcessingStatusChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,8 +26,9 @@ class TripProcessingStatusSyncServiceTest {
     private final EntityManager entityManager = mock(EntityManager.class);
     private final AdditionalAttachmentExecutionRepository additionalRepository =
             mock(AdditionalAttachmentExecutionRepository.class);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final TripProcessingStatusSyncService service =
-            new TripProcessingStatusSyncService(repository, entityManager, additionalRepository);
+            new TripProcessingStatusSyncService(repository, entityManager, additionalRepository, eventPublisher);
     private final TripCreationExecution execution = new TripCreationExecution("execution", 7L, 42L, 2);
 
     @BeforeEach
@@ -45,6 +48,8 @@ class TripProcessingStatusSyncServiceTest {
         var order = inOrder(repository, entityManager);
         order.verify(repository).findForUpdate("execution");
         order.verify(entityManager).refresh(execution, LockModeType.PESSIMISTIC_WRITE);
+        verify(eventPublisher).publishEvent(new TripProcessingStatusChangedEvent(42L, snapshot));
+        verifyNoMoreInteractions(eventPublisher);
     }
 
     @Test
@@ -54,6 +59,7 @@ class TripProcessingStatusSyncServiceTest {
         var snapshot = service.synchronizeCreation("execution", 2, TripDisplayStatus.PROCESSING, "EMBEDDING");
 
         assertThat(snapshot.statusVersion()).isEqualTo(2);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -64,6 +70,7 @@ class TripProcessingStatusSyncServiceTest {
 
         assertThat(snapshot.currentStep()).isEqualTo("CLUSTERING");
         assertThat(snapshot.statusVersion()).isEqualTo(2);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -78,6 +85,7 @@ class TripProcessingStatusSyncServiceTest {
         assertThat(snapshot.displayStatus()).isEqualTo(TripDisplayStatus.FINALIZING);
         assertThat(snapshot.currentStep()).isNull();
         assertThat(snapshot.statusVersion()).isEqualTo(2);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -90,6 +98,7 @@ class TripProcessingStatusSyncServiceTest {
         assertThat(snapshot.displayStatus()).isEqualTo(TripDisplayStatus.FAILED);
         assertThat(snapshot.errorCode()).isEqualTo("AI_PROCESSING_FAILED");
         assertThat(snapshot.statusVersion()).isEqualTo(2);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -99,6 +108,7 @@ class TripProcessingStatusSyncServiceTest {
         assertThatThrownBy(() -> service.synchronizeCreation("missing", 1, TripDisplayStatus.PROCESSING, null))
                 .isInstanceOf(TripNotFoundException.class);
         verifyNoInteractions(entityManager);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -113,6 +123,8 @@ class TripProcessingStatusSyncServiceTest {
         assertThat(changed.currentStep()).isEqualTo("EMBEDDING");
         assertThat(changed.statusVersion()).isEqualTo(2);
         assertThat(unchanged).isEqualTo(changed);
+        verify(eventPublisher).publishEvent(new TripProcessingStatusChangedEvent(42L, changed));
+        verifyNoMoreInteractions(eventPublisher);
         verify(entityManager, times(2)).refresh(addition, LockModeType.PESSIMISTIC_WRITE);
         verifyNoInteractions(repository);
     }
@@ -130,6 +142,7 @@ class TripProcessingStatusSyncServiceTest {
         assertThat(snapshot.displayStatus()).isEqualTo(TripDisplayStatus.FINALIZING);
         assertThat(snapshot.currentStep()).isNull();
         assertThat(snapshot.statusVersion()).isEqualTo(2);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -143,6 +156,7 @@ class TripProcessingStatusSyncServiceTest {
         assertThat(snapshot.displayStatus()).isEqualTo(TripDisplayStatus.FAILED);
         assertThat(snapshot.errorCode()).isEqualTo("AI_PROCESSING_FAILED");
         assertThat(snapshot.statusVersion()).isEqualTo(2);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -150,6 +164,7 @@ class TripProcessingStatusSyncServiceTest {
         assertThatThrownBy(() -> service.synchronizeAddition("missing", 1, TripDisplayStatus.PROCESSING, null))
                 .isInstanceOf(TripNotFoundException.class);
         verifyNoInteractions(entityManager);
+        verifyNoInteractions(eventPublisher);
     }
 
     private AdditionalAttachmentExecution additionalExecution() {

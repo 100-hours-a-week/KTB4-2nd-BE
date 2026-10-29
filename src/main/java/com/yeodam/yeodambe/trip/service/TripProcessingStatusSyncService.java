@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.event.TripProcessingStatusChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.trip.entity.TripDisplayStatus;
@@ -18,6 +20,7 @@ public class TripProcessingStatusSyncService {
     private final TripCreationExecutionRepository creationExecutions;
     private final EntityManager entityManager;
     private final AdditionalAttachmentExecutionRepository additionalExecutions;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public TripProcessingStateSnapshot synchronizeCreation(
@@ -31,11 +34,10 @@ public class TripProcessingStatusSyncService {
 
         entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
 
-        if (execution.getStatusVersion() == expectedVersion) {
-            execution.updateDisplayStatus(nextStatus, nextStep);
-        }
+        boolean changed = execution.getStatusVersion() == expectedVersion
+                && execution.updateDisplayStatus(nextStatus, nextStep);
 
-        return new TripProcessingStateSnapshot(
+        var snapshot = new TripProcessingStateSnapshot(
                 execution.getTripId(),
                 execution.getExecutionId(),
                 execution.getStatusVersion(),
@@ -43,6 +45,13 @@ public class TripProcessingStatusSyncService {
                 execution.getCurrentStep(),
                 execution.getErrorCode()
         );
+
+        if (changed) {
+            eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(
+                    execution.getUserId(), snapshot));
+        }
+
+        return snapshot;
     }
     @Transactional
     public TripProcessingStateSnapshot synchronizeAddition(
@@ -56,11 +65,10 @@ public class TripProcessingStatusSyncService {
 
         entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
 
-        if (execution.getStatusVersion() == expectedVersion) {
-            execution.updateDisplayStatus(nextStatus, nextStep);
-        }
+        boolean changed = execution.getStatusVersion() == expectedVersion
+                && execution.updateDisplayStatus(nextStatus, nextStep);
 
-        return new TripProcessingStateSnapshot(
+        var snapshot = new TripProcessingStateSnapshot(
                 execution.getTripId(),
                 execution.getExecutionId(),
                 execution.getStatusVersion(),
@@ -68,5 +76,12 @@ public class TripProcessingStatusSyncService {
                 execution.getCurrentStep(),
                 execution.getErrorCode()
         );
+
+        if (changed) {
+            eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(
+                    execution.getUserId(), snapshot));
+        }
+
+        return snapshot;
     }
 }

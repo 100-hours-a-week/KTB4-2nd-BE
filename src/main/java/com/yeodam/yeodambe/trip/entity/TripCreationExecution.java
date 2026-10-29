@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -26,6 +27,16 @@ public class TripCreationExecution {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 24)
     private Status status = Status.UPLOADING;
+
+    @Column(name = "status_version", nullable = false)
+    private long statusVersion = 0;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "display_status", nullable = false, length = 24)
+    private TripDisplayStatus displayStatus = TripDisplayStatus.PROCESSING;
+
+    @Column(name = "current_step", columnDefinition = "TEXT")
+    private String currentStep;
 
     @Column(name = "total_attachment_count", nullable = false)
     private int totalAttachmentCount;
@@ -142,8 +153,11 @@ public class TripCreationExecution {
     }
 
     public void closeInput() {
+        if (isTerminal() || inputClosed) {
+            return;
+        }
         inputClosed = true;
-        status = Status.IMAGE_PROCESSING;
+        changeStatus(Status.IMAGE_PROCESSING);
     }
 
     public void recordProcessPublished(LocalDateTime now) {
@@ -151,7 +165,7 @@ public class TripCreationExecution {
             processPublishedAt = now;
         }
         if (!isTerminal() && resultRawPayload == null) {
-            status = Status.AI_QUEUED;
+            changeStatus(Status.AI_QUEUED);
         }
     }
 
@@ -160,10 +174,13 @@ public class TripCreationExecution {
             String aiStatus,
             LocalDateTime now
     ) {
+        if (isTerminal() || resultRawPayload != null) {
+            return;
+        }
         resultRawPayload = rawPayload;
         resultAiStatus = aiStatus;
         resultReceivedAt = now;
-        status = Status.RESULT_APPLYING;
+        changeStatus(Status.RESULT_APPLYING);
     }
 
     public void recordConflictingResult(String rawPayload) {
@@ -228,7 +245,10 @@ public class TripCreationExecution {
             String errorCode,
             LocalDateTime now
     ) {
-        this.status = status;
+        if (isTerminal()) {
+            return;
+        }
+        changeStatus(status);
         this.errorCode = errorCode;
         this.endedAt = now;
         resultClaimToken = null;
@@ -241,5 +261,51 @@ public class TripCreationExecution {
 
     public void cancellationDelivered() {
         cancelPending = false;
+    }
+
+    private void changeStatus(Status nextStatus) {
+        if (this.status == nextStatus) {
+            return;
+        }
+
+        this.status = nextStatus;
+
+        switch (nextStatus) {
+            case RESULT_APPLYING ->
+                    updateDisplayStatus(TripDisplayStatus.FINALIZING, null);
+            case COMPLETED ->
+                    updateDisplayStatus(TripDisplayStatus.COMPLETED, null);
+            case FAILED ->
+                    updateDisplayStatus(TripDisplayStatus.FAILED, null);
+            case CANCELED ->
+                    updateDisplayStatus(TripDisplayStatus.CANCELED, null);
+            default -> {
+            }
+        }
+    }
+
+    public boolean updateDisplayStatus(
+            TripDisplayStatus nextStatus,
+            String nextStep
+    ) {
+        if (isTerminal()) {
+            return false;
+        }
+
+        if (this.displayStatus == TripDisplayStatus.FINALIZING
+                && nextStatus == TripDisplayStatus.PROCESSING) {
+            return false;
+        }
+
+        if (this.displayStatus == nextStatus
+                && Objects.equals(this.currentStep, nextStep)) {
+            return false;
+        }
+
+        this.statusVersion = Math.incrementExact(this.statusVersion);
+        this.displayStatus = nextStatus;
+        this.currentStep = nextStep;
+
+        return true;
     }
 }

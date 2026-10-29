@@ -39,6 +39,9 @@ public class StoryGenerationJob {
     @Column(name = "status", nullable = false, length = 20)
     private Status status = Status.QUEUED;
 
+    @Column(name = "status_version", nullable = false)
+    private long statusVersion = 0;
+
     @Column(name = "progress", nullable = false)
     private int progress = 0;
 
@@ -93,7 +96,7 @@ public class StoryGenerationJob {
             );
         }
 
-        this.status = Status.PROCESSING;
+        changeStatus(Status.PROCESSING);
         this.progress = Math.max(this.progress, progress);
     }
 
@@ -108,7 +111,7 @@ public class StoryGenerationJob {
             );
         }
 
-        this.status = Status.COMPLETED;
+        changeStatus(Status.COMPLETED);
         this.progress = 100;
         this.storyId = storyId;
         this.errorCode = null;
@@ -119,7 +122,7 @@ public class StoryGenerationJob {
             return;
         }
 
-        this.status = Status.CANCELED;
+        changeStatus(Status.CANCELED);
         this.errorCode = null;
     }
 
@@ -128,8 +131,17 @@ public class StoryGenerationJob {
             return;
         }
 
-        this.status = Status.FAILED;
+        changeStatus(Status.FAILED);
         this.errorCode = errorCode;
+    }
+
+    private void changeStatus(Status nextStatus) {
+        if (this.status == nextStatus) {
+            return;
+        }
+
+        this.statusVersion = Math.incrementExact(this.statusVersion);
+        this.status = nextStatus;
     }
 
     public enum Status {

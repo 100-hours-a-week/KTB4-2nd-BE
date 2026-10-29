@@ -1,0 +1,42 @@
+{
+  "eventId": "00000000-0000-0000-0000-000000000001",
+  "type": "AI_TASK",
+  "schemaVersion": 1,
+  "occurredAt": "2026-10-29T00:00:00Z",
+  "target": {
+    "type": "USER",
+    "id": 42
+  },
+  "payload": {
+    "message": "TRIP_PROCESSING_STATUS_FOUND",
+    "data": {
+      "eventId": "00000000-0000-0000-0000-000000000001",
+      "occurredAt": "2026-10-29T00:00:00Z",
+      "tripId": 7,
+      "statusVersion": 3,
+      "status": "COMPLETED",
+      "error": null,
+      "eventType": "TRIP_CREATION_COMPLETED",
+      "executionId": "execution",
+      "currentStep": null,
+      "result": {
+        "tripId": 7,
+        "placeFolderCount": 1,
+        "classifiedAttachmentCount": 2,
+        "unclassifiedAttachmentCount": 1
+      },
+      "listItem": {
+        "tripId": 7,
+        "status": "COMPLETED",
+        "tripName": "검증 여행",
+        "startDate": "2026-10-01",
+        "endDate": "2026-10-02",
+        "placeSummary": "서울",
+        "attachmentCount": 3,
+        "isFavorite": false,
+        "thumbnailUrl": "https://storage.test/preview",
+        "sequence": 5
+      }
+    }
+  }
+}

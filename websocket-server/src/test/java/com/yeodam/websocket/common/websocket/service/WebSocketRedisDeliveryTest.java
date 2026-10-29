@@ -77,6 +77,23 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
         }
     }
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"trip", "addition", "story"})
+    void businessCompletionContractReachesOnlyItsUserWithoutFieldLoss(String kind) throws Exception {
+        await().atMost(Duration.ofSeconds(5)).until(listener::isListening);
+        String raw = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "../src/test/resources/websocket/" + kind + "-completed.json"));
+        try (Connection owner = connect(42L, "contract-" + kind, "/user/queue/ai-tasks");
+             Connection other = connect(99L, "other-" + kind, "/user/queue/ai-tasks")) {
+            redis.convertAndSend(CHANNEL, raw);
+            String frame = owner.next();
+            assertThat(frame).startsWith("MESSAGE");
+            String body = frame.substring(frame.indexOf("\n\n") + 2).replace("\u0000", "");
+            assertThat(mapper.readTree(body)).isEqualTo(mapper.readTree(raw).path("payload"));
+            assertThat(other.messages.poll(400, TimeUnit.MILLISECONDS)).isNull();
+        }
+    }
+
     @Test
     void processesAValidEventAfterMalformedJson() throws Exception {
         await().atMost(Duration.ofSeconds(5)).until(listener::isListening);

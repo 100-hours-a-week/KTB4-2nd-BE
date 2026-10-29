@@ -148,8 +148,9 @@ public class InitialAttachmentUploadTransactionService {
         }
 
         String executionId = UUID.randomUUID().toString();
-        executionRepository.save(new TripCreationExecution(
+        var execution = executionRepository.save(new TripCreationExecution(
                 executionId, tripId, userId, request.totalAttachmentCount()));
+        publishStatusChanged(execution);
         logWorkflowStarted(tripId, executionId);
         return executionId;
     }

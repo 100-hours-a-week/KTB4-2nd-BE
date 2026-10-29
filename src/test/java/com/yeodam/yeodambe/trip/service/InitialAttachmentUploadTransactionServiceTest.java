@@ -99,10 +99,46 @@ class InitialAttachmentUploadTransactionServiceTest {
                 transactions.failExecution(execution.getExecutionId(), "TEST_FINISHED"));
     }
 
+    @Test
+    void 최초_접수는_커밋_후_한번_발행하고_재발급은_추가_발행하지_않는다() {
+        var batch = new TransactionTemplate(transactionManager).execute(status -> {
+            var prepared = prepare(true);
+            Mockito.verifyNoInteractions(notificationPublisher);
+            return prepared;
+        });
+        var reissued = prepare(true);
+        assertThat(reissued.executionId()).isEqualTo(batch.executionId());
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        Mockito.verify(notificationPublisher).publish(captor.capture());
+        Mockito.verifyNoMoreInteractions(notificationPublisher);
+        var message = captor.getValue();
+        var notification = (TripProcessingStatusNotification) message.payload().data();
+        assertThat(message.target().id()).isEqualTo(owner.getUserId());
+        assertThat(message.payload().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");
+        assertThat(notification.tripId()).isEqualTo(trip.getId());
+        assertThat(notification.executionId()).isEqualTo(batch.executionId());
+        assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.PROCESSING);
+        assertThat(notification.statusVersion()).isEqualTo(1);
+        assertThat(notification.result()).isNull();
+        assertThat(notification.error()).isNull();
+    }
+
+    @Test
+    void 최초_접수가_롤백되면_알림과_실행을_남기지_않는다() {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            prepare(true);
+            status.setRollbackOnly();
+        });
+        Mockito.verifyNoInteractions(notificationPublisher);
+        assertThat(executions.findByTripId(trip.getId())).isEmpty();
+        assertThat(reserved()).isZero();
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void 실패와_취소는_커밋_후_한번만_개인_알림을_발행한다(boolean failed) {
         var batch = prepare(true);
+        Mockito.clearInvocations(notificationPublisher);
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             finishForNotification(batch.executionId(), failed);
             Mockito.verifyNoInteractions(notificationPublisher);
@@ -132,6 +168,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     @ValueSource(booleans = {true, false})
     void 실패와_취소_저장이_롤백되면_개인_알림을_발행하지_않는다(boolean failed) {
         var batch = prepare(true);
+        Mockito.clearInvocations(notificationPublisher);
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             finishForNotification(batch.executionId(), failed);
             status.setRollbackOnly();

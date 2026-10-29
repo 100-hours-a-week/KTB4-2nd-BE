@@ -102,6 +102,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     @ValueSource(booleans = {true, false})
     void 결과_수신으로_공개상태가_바뀔때만_커밋후_반영중_알림을_보낸다(boolean alreadyFinalizing) {
         String raw = prepareResultNotification();
+        org.mockito.Mockito.clearInvocations(notificationPublisher);
         if (alreadyFinalizing) {
             transaction.executeWithoutResult(status -> executions.findForUpdate(execution().getExecutionId())
                     .orElseThrow().updateDisplayStatus(TripDisplayStatus.FINALIZING, null));
@@ -131,6 +132,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     @Test
     void 결과_수신이_롤백되면_반영중_알림도_보내지_않는다() {
         String raw = prepareResultNotification();
+        org.mockito.Mockito.clearInvocations(notificationPublisher);
         transaction.executeWithoutResult(status -> {
             results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
             status.setRollbackOnly();

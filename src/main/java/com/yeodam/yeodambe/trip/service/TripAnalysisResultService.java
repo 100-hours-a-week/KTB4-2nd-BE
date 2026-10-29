@@ -126,6 +126,7 @@ public class TripAnalysisResultService {
         attachmentRepository.saveAll(attachments);
         userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
+        trips.advanceSequence(tripId);
     }
 
     private void validateCompletedResult(
@@ -195,6 +196,7 @@ public class TripAnalysisResultService {
         attachmentRepository.saveAll(attachments);
         userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
+        trips.advanceSequence(tripId);
     }
 
     private Map<String, Long> savePlaces(

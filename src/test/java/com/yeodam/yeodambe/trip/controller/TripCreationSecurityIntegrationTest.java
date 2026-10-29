@@ -372,7 +372,7 @@ class TripCreationSecurityIntegrationTest {
                         3L,
                         true,
                         "https://cdn.test/7"
-                ), new TripListItemResponse(
+                , 0L), new TripListItemResponse(
                         8L,
                         TripListItemResponse.Status.PROCESSING,
                         "부산 여행",
@@ -382,7 +382,7 @@ class TripCreationSecurityIntegrationTest {
                         0L,
                         false,
                         null
-                )), false, null));
+                , 0L)), false, null));
 
         mockMvc.perform(get("/trips")
                         .queryParam("sort", "OLDEST")
@@ -409,7 +409,7 @@ class TripCreationSecurityIntegrationTest {
                         7L, TripListItemResponse.Status.UPDATING, "수정 중인 여행",
                         LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2),
                         "제주", 3L, false, "https://cdn.test/7"
-                )), false, null));
+                , 0L)), false, null));
 
         mockMvc.perform(get("/trips").cookie(new Cookie("accessToken", accessToken)))
                 .andExpect(status().isOk())
@@ -453,7 +453,7 @@ class TripCreationSecurityIntegrationTest {
                 6L,
                 true,
                 true
-        ));
+        , 0L));
 
         mockMvc.perform(get("/trips/7")
                         .cookie(new Cookie("accessToken", accessToken)))
@@ -483,7 +483,7 @@ class TripCreationSecurityIntegrationTest {
                 0L,
                 false,
                 true
-        ));
+        , 0L));
 
         mockMvc.perform(get("/trips/7")
                         .cookie(new Cookie("accessToken", accessToken)))

@@ -1,0 +1,1 @@
+ALTER TABLE trips ADD COLUMN change_sequence BIGINT NOT NULL DEFAULT 0;

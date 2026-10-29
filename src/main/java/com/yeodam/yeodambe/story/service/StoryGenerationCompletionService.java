@@ -166,6 +166,7 @@ public class StoryGenerationCompletionService {
 
             trip.changeCurrentStory(story.getId());
             job.complete(story.getId());
+            tripRepository.advanceSequence(trip.getId());
             logResultApplied(timing);
             logWorkflowCompleted(job);
         }

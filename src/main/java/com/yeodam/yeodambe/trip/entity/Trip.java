@@ -29,6 +29,10 @@ public class Trip {
     @JoinColumn(name = "user_id", nullable = false, insertable = false, updatable = false, columnDefinition = "BIGINT UNSIGNED")
     private User user;
 
+    @org.hibernate.annotations.ColumnDefault("0")
+    @Column(name = "change_sequence", nullable = false, insertable = false, updatable = false)
+    private long sequence;
+
     @Column(name = "trip_name", nullable = false, length = 10)
     private String tripName;
 

@@ -24,6 +24,7 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class TripAttachmentDeletionService {
+    private final com.yeodam.yeodambe.trip.repository.TripRepository tripRepository;
     private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
     private final jakarta.persistence.EntityManager entityManager;
     private static final int MAX_DELETE_COUNT = 200;
@@ -128,6 +129,8 @@ public class TripAttachmentDeletionService {
         affectedTrips.forEach(this::refreshThumbnail);
         userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
+        attachments.stream().map(TripAttachment::getTripId).distinct().sorted()
+                .forEach(tripRepository::advanceSequence);
     }
 
     private void refreshThumbnail(

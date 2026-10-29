@@ -10,6 +10,7 @@ import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import jakarta.persistence.EntityManager;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.ObjectMapper;
@@ -29,7 +30,7 @@ class InitialUploadAcceptanceStatusTest {
                     mock(TripAttachmentRepository.class), mock(TripCreationExecutionRepository.class),
                     mock(UserStatsService.class), mock(ObjectMapper.class), mock(TripRegionRepository.class),
                     mock(EntityManager.class), mock(JdbcTemplate.class), mock(KafkaTopicProperties.class),
-                    mock(TripCreationOutboxRepository.class));
+                    mock(TripCreationOutboxRepository.class), mock(ApplicationEventPublisher.class));
 
     @Test
     void returnsTheStoredDisplayStateStepAndVersion() {

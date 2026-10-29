@@ -8,6 +8,8 @@ import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventTarget
 import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventTargetType;
 import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventType;
 import com.yeodam.yeodambe.trip.event.TripProcessingStatusChangedEvent;
+import com.yeodam.yeodambe.trip.entity.TripDisplayStatus;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusNotification;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,13 @@ public class TripProcessingStatusEventHandler {
         UUID eventId = UUID.randomUUID();
         Instant occurredAt = Instant.now();
 
+        TripProcessingStatusResponse.Error error = null;
+        if (snapshot.displayStatus() == TripDisplayStatus.FAILED) {
+            error = new TripProcessingStatusResponse.Error(
+                    snapshot.errorCode(),
+                    TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message());
+        }
+
         var notification = new TripProcessingStatusNotification(
                 eventId,
                 occurredAt,
@@ -43,7 +52,7 @@ public class TripProcessingStatusEventHandler {
                 ),
                 snapshot.currentStep(),
                 null,
-                null
+                error
         );
 
         var message = new WebSocketEvent(

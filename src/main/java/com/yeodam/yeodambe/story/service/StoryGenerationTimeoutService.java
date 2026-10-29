@@ -6,6 +6,10 @@ import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.story.event.StoryGenerationStatusChangedEvent;
+import com.yeodam.yeodambe.story.service.response.StoryGenerationStatusResponse;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,6 +25,7 @@ public class StoryGenerationTimeoutService {
     private final StoryGenerationJobRepository jobRepository;
     private final StoryGenerationOutboxRepository outboxRepository;
     private final JdbcTemplate jdbc;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public boolean expire(Long generationId) {
@@ -40,6 +45,16 @@ public class StoryGenerationTimeoutService {
         if (!job.failIfTimedOut(outbox.getPublishedAt(), comparisonTime)) {
             return false;
         }
+        var error = new StoryGenerationStatusResponse.Failure(
+                ErrorMessage.STORY_GENERATION_FAILED.name(),
+                StoryGenerationInternalErrorMessage.GENERATION_FAILED.message()
+        );
+        var snapshot = new StoryGenerationStatusResponse(
+                job.getId(), job.getStatus(), job.getStatusVersion(), job.getStoryId(), error
+        );
+        eventPublisher.publishEvent(new StoryGenerationStatusChangedEvent(
+                job.getUserId(), job.getTripId(), snapshot
+        ));
         logGenerationTimedOut(job);
         return true;
     }

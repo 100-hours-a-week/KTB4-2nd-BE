@@ -23,7 +23,7 @@ import static org.mockito.Mockito.*;
 class StoryGenerationCancelServiceTest {
     private final StoryGenerationJobRepository jobs = mock(StoryGenerationJobRepository.class);
     private final StoryGenerationAiClient ai = mock(StoryGenerationAiClient.class);
-    private final StoryGenerationCancelService service = new StoryGenerationCancelService(jobs, ai, new StoryGenerationTerminalService(jobs));
+    private final StoryGenerationCancelService service = new StoryGenerationCancelService(jobs, ai, new StoryGenerationTerminalService(jobs, mock(org.springframework.context.ApplicationEventPublisher.class)));
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class, names = {"QUEUED", "PROCESSING"})

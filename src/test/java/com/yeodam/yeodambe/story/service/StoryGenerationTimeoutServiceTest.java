@@ -22,7 +22,8 @@ class StoryGenerationTimeoutServiceTest {
     private final StoryGenerationOutboxRepository outboxes =
             mock(StoryGenerationOutboxRepository.class);
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
-    private final StoryGenerationTimeoutService service = new StoryGenerationTimeoutService(jobs, outboxes, jdbc);
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
+    private final StoryGenerationTimeoutService service = new StoryGenerationTimeoutService(jobs, outboxes, jdbc, eventPublisher);
     private final LocalDateTime created = LocalDateTime.of(2026, 10, 12, 12, 0);
 
     private StoryGenerationJob prepare() {
@@ -42,6 +43,7 @@ class StoryGenerationTimeoutServiceTest {
                 new StoryGenerationOutbox(1L, "{}", "request")));
         assertThat(service.expire(1L, created.plusDays(2))).isFalse();
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -49,6 +51,7 @@ class StoryGenerationTimeoutServiceTest {
         var job = prepare();
         assertThat(service.expire(1L, created.plusHours(3).minusNanos(1))).isFalse();
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verifyNoInteractions(eventPublisher);
         verifyNoInteractions(jdbc);
     }
 
@@ -97,11 +100,13 @@ class StoryGenerationTimeoutServiceTest {
         assertThat(service.expire(1L, created.plusHours(2))).isTrue();
         assertThat(job.getStatus()).isEqualTo(status);
         assertThat(job.getErrorCode()).isEqualTo(error);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
     void missingJobIsSkipped() {
         when(jobs.findByIdForUpdate(1L)).thenReturn(Optional.empty());
         assertThat(service.expire(1L, created.plusHours(2))).isTrue();
+        verifyNoInteractions(eventPublisher);
     }
 }

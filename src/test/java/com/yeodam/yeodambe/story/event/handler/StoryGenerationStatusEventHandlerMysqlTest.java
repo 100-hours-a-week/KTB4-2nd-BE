@@ -14,6 +14,13 @@ import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import com.yeodam.yeodambe.story.service.StoryGenerationTerminalService;
+import com.yeodam.yeodambe.story.service.StoryGenerationTimeoutService;
+import com.yeodam.yeodambe.story.entity.StoryGenerationOutbox;
+import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
+import java.time.LocalDateTime;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -41,11 +48,14 @@ import static org.mockito.Mockito.*;
         "spring.jpa.show-sql=false"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({StoryGenerationProgressService.class, StoryGenerationStatusEventHandler.class,
+@Import({StoryGenerationTimeoutService.class, StoryGenerationTerminalService.class, StoryGenerationProgressService.class, StoryGenerationStatusEventHandler.class,
         StoryGenerationStatusEventHandlerMysqlTest.MysqlConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class StoryGenerationStatusEventHandlerMysqlTest {
     @Autowired private StoryGenerationProgressService progress;
+    @Autowired private StoryGenerationTerminalService terminal;
+    @Autowired private StoryGenerationTimeoutService timeout;
+    @Autowired private StoryGenerationOutboxRepository outboxes;
     @Autowired private StoryGenerationJobRepository jobs;
     @Autowired private TripRepository trips;
     @Autowired private UserRepository users;
@@ -114,6 +124,106 @@ class StoryGenerationStatusEventHandlerMysqlTest {
         var stored = jobs.findById(job.getId()).orElseThrow();
         assertThat(stored.getStatus()).isEqualTo(StoryGenerationJob.Status.PROCESSING);
         assertThat(stored.getStatusVersion()).isEqualTo(2);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"FAILED", "CANCELED", "USER_CANCEL"})
+    void terminalChangePublishesAfterCommitAndIgnoresRedelivery(String mode) {
+        var job = fixture();
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            terminate(job, mode);
+            verifyNoInteractions(publisher);
+        });
+        terminate(job, mode);
+
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(publisher).publish(captor.capture());
+        verifyNoMoreInteractions(publisher);
+        var notification = (StoryGenerationStatusNotification) captor.getValue().payload().data();
+        assertThat(notification.generationId()).isEqualTo(job.getId());
+        assertThat(notification.statusVersion()).isEqualTo(2);
+        if (mode.equals("FAILED")) {
+            assertThat(notification.status()).isEqualTo(StoryGenerationJob.Status.FAILED);
+            assertThat(notification.error().code()).isEqualTo("STORY_GENERATION_FAILED");
+            assertThat(notification.error().message()).isEqualTo(
+                    com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage.GENERATION_FAILED.message());
+            assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode()).isEqualTo("WORKER_DEAD");
+        } else {
+            assertThat(notification.status()).isEqualTo(StoryGenerationJob.Status.CANCELED);
+            assertThat(notification.error()).isNull();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"FAILED", "CANCELED", "USER_CANCEL"})
+    void rolledBackTerminalChangeDoesNotPublish(String mode) {
+        var job = fixture();
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            terminate(job, mode);
+            status.setRollbackOnly();
+        });
+        verifyNoInteractions(publisher);
+        var stored = jobs.findById(job.getId()).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(stored.getStatusVersion()).isEqualTo(1);
+    }
+
+    @Test
+    void timeoutPublishesAfterCommitOnceAndKeepsDiagnosticCodeInDatabase() {
+        var job = fixture();
+        var publishedAt = LocalDateTime.of(2026, 10, 29, 10, 0);
+        prepareTimeout(job, publishedAt);
+        assertThat(timeout.expire(job.getId(), publishedAt.plusHours(1).minusSeconds(1))).isFalse();
+        verifyNoInteractions(publisher);
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            assertThat(timeout.expire(job.getId(), publishedAt.plusHours(1))).isTrue();
+            verifyNoInteractions(publisher);
+        });
+        assertThat(timeout.expire(job.getId(), publishedAt.plusHours(2))).isTrue();
+
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(publisher).publish(captor.capture());
+        verifyNoMoreInteractions(publisher);
+        var notification = (StoryGenerationStatusNotification) captor.getValue().payload().data();
+        assertThat(notification.status()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(notification.generationId()).isEqualTo(job.getId());
+        assertThat(notification.statusVersion()).isEqualTo(2);
+        assertThat(notification.error().code()).isEqualTo("STORY_GENERATION_FAILED");
+        assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+    }
+
+    @Test
+    void timeoutRollbackDoesNotPublishOrPersistFailure() {
+        var job = fixture();
+        var publishedAt = LocalDateTime.of(2026, 10, 29, 10, 0);
+        prepareTimeout(job, publishedAt);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            assertThat(timeout.expire(job.getId(), publishedAt.plusHours(1))).isTrue();
+            status.setRollbackOnly();
+        });
+        verifyNoInteractions(publisher);
+        var stored = jobs.findById(job.getId()).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(stored.getStatusVersion()).isEqualTo(1);
+        assertThat(stored.getErrorCode()).isNull();
+    }
+
+    private void prepareTimeout(StoryGenerationJob job, LocalDateTime publishedAt) {
+        var outbox = new StoryGenerationOutbox(job.getId(), "{}", "timeout-test");
+        outbox.publicationSucceeded(publishedAt);
+        outboxes.saveAndFlush(outbox);
+    }
+
+    private void terminate(StoryGenerationJob job, String mode) {
+        if (mode.equals("USER_CANCEL")) {
+            terminal.confirmCancellation(job.getUserId(), job.getId());
+            return;
+        }
+        terminal.apply(job.getId(), new StoryGenerationAiResponse(
+                job.getTripId(), job.getExecutionId(), StoryGenerationAiResponse.Status.valueOf(mode),
+                null, null, null, mode.equals("FAILED")
+                ? new StoryGenerationAiResponse.Failure("WORKER_DEAD", "diagnostic", null) : null));
     }
 
     private void update(StoryGenerationJob job, int done) {

@@ -26,7 +26,8 @@ import static org.mockito.Mockito.when;
 
 class StoryGenerationTerminalServiceTest {
     private final StoryGenerationJobRepository repository = mock(StoryGenerationJobRepository.class);
-    private final StoryGenerationTerminalService service = new StoryGenerationTerminalService(repository);
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
+    private final StoryGenerationTerminalService service = new StoryGenerationTerminalService(repository, eventPublisher);
     private final StoryGenerationJob job = new StoryGenerationJob("execution-1", 241L, 2L, Story.Mood.PLAIN);
 
     @Test
@@ -115,6 +116,7 @@ class StoryGenerationTerminalServiceTest {
         assertThat(job.getProgress()).isEqualTo(progress);
         assertThat(job.getStoryId()).isEqualTo(storyId);
         assertThat(job.getErrorCode()).isEqualTo(errorCode);
+        verifyNoInteractions(eventPublisher);
     }
 
     static Stream<Arguments> lateTerminalResponses() {
@@ -127,7 +129,7 @@ class StoryGenerationTerminalServiceTest {
     @MethodSource("otherResponses")
     void rejectsNonTerminalResponsesBeforeLookingUpJob(StoryGenerationAiResponse response) {
         assertThatThrownBy(() -> service.apply(10L, response)).isInstanceOf(IllegalArgumentException.class);
-        verifyNoInteractions(repository);
+        verifyNoInteractions(repository, eventPublisher);
     }
 
     static Stream<StoryGenerationAiResponse> otherResponses() {

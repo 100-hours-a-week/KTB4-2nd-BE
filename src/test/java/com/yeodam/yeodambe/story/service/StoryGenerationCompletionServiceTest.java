@@ -21,6 +21,14 @@ import com.yeodam.yeodambe.user.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
+import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEvent;
+import com.yeodam.yeodambe.story.service.response.StoryGenerationStatusNotification;
+import static org.mockito.Mockito.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +69,8 @@ class StoryGenerationCompletionServiceTest {
     @Autowired private TripAttachmentRepository attachments;
     @Autowired private StoredFileRepository files;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private PlatformTransactionManager transactionManager;
+    @MockitoBean private WebSocketEventPublisher publisher;
 
     private User owner;
     private Trip trip;
@@ -262,8 +272,39 @@ class StoryGenerationCompletionServiceTest {
                 SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
                 WHERE generation_id = ?
                 """, job.getId());
+        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+            verifyNoInteractions(publisher);
+        });
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(publisher).publish(captor.capture());
+        verifyNoMoreInteractions(publisher);
+        var notification = (StoryGenerationStatusNotification) captor.getValue().payload().data();
+        assertThat(notification.generationId()).isEqualTo(job.getId());
+        assertThat(notification.status()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(notification.statusVersion()).isEqualTo(2);
+        assertThat(notification.error().code()).isEqualTo("STORY_GENERATION_FAILED");
         assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+        assertThat(count("stories")).isZero();
+    }
+
+    @Test
+    void rolledBackLateCompletionDoesNotPublishOrPersistTimeout() {
+        jdbc.update("""
+                UPDATE story_generation_outbox
+                SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
+                WHERE generation_id = ?
+                """, job.getId());
+        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+            transaction.setRollbackOnly();
+        });
+        verifyNoInteractions(publisher);
+        var saved = jobs.findById(job.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(saved.getStatusVersion()).isEqualTo(1);
+        assertThat(saved.getErrorCode()).isNull();
         assertThat(count("stories")).isZero();
     }
 

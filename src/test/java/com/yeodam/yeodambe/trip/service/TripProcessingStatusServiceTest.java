@@ -52,7 +52,7 @@ class TripProcessingStatusServiceTest {
         service = new TripProcessingStatusService(trips, places, attachments, analysis, executions, mock(InitialAttachmentUploadBatchRepository.class),
                 creationExecutions, additionalExecutions,
                 new TripProcessingStatusSyncService(creationExecutions, mock(EntityManager.class),
-                        additionalExecutions, mock(ApplicationEventPublisher.class)));
+                        additionalExecutions, mock(ApplicationEventPublisher.class)), mock(TripCompletionSnapshotFactory.class));
     }
 
     @Test

@@ -131,8 +131,30 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
+    void completedStoryRollbackDoesNotPublishOrAdvanceSequence() {
+        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+            verifyNoInteractions(publisher);
+            transaction.setRollbackOnly();
+        });
+        verifyNoInteractions(publisher);
+        assertNoResultSaved();
+        assertThat(jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?", Long.class, trip.getId())).isZero();
+    }
+
+    @Test
     void commitsStoryBlocksSelectionTripLinkAndFinishedJobTogether() {
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(publisher).publish(captor.capture());
+        verifyNoMoreInteractions(publisher);
+        var data = new tools.jackson.databind.ObjectMapper().valueToTree(captor.getValue().payload()).path("data");
+        assertThat(data.path("eventType").asString()).isEqualTo("STORY_GENERATION_COMPLETED");
+        assertThat(data.path("statusVersion").asLong()).isEqualTo(2);
+        assertThat(data.path("listItem").path("sequence").asLong()).isEqualTo(1);
+        assertThat(data.path("listItem").path("mood").asString()).isEqualTo("EMOTIONAL");
+        assertThat(data.path("listItem").path("storySummary").asString()).isEqualTo("여행 이야기");
 
         assertCompletedOnce();
         Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();

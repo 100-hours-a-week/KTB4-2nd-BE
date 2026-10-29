@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.story.service.response;
 
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 
+import com.yeodam.yeodambe.common.websocket.service.request.AiTaskCompletionType;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -13,6 +14,8 @@ public record StoryGenerationStatusNotification(
         long statusVersion,
         StoryGenerationJob.Status status,
         Long storyId,
-        StoryGenerationStatusResponse.Failure error
+        StoryGenerationStatusResponse.Failure error,
+        AiTaskCompletionType eventType,
+        StoryCompletionListItem listItem
 ) {
 }

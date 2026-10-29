@@ -418,7 +418,9 @@ public class InitialAttachmentUploadTransactionService {
                 execution.getStatusVersion(),
                 status,
                 execution.getCurrentStep(),
-                null,
+                status == TripProcessingStatusResponse.Status.COMPLETED && execution.getResultRawPayload() != null
+                        ? TripProcessingStatusResponse.Result.fromAiResult(trip.getId(),
+                        objectMapper.readTree(execution.getResultRawPayload()).path("result")) : null,
                 error
         );
     }

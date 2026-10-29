@@ -42,6 +42,7 @@ public class AdditionalAttachmentKafkaResultService {
     private final EntityManager entityManager;
     private final ObjectMapper json;
     private final ApplicationEventPublisher eventPublisher;
+    private final TripCompletionSnapshotFactory completionSnapshots;
 
     private AdditionalAttachmentExecution lock(String id) {
         var candidate = executionRepository.findById(id).orElseThrow();
@@ -152,6 +153,13 @@ public class AdditionalAttachmentKafkaResultService {
             execution.releaseReservation(execution.getAccountedBytes());
         }
         execution.finish(AdditionalAttachmentExecution.Status.COMPLETED, null, transactions.databaseTime());
+        var completion = completionSnapshots.capture(claim.tripId(), claim.userId(),
+                com.yeodam.yeodambe.common.websocket.service.request.AiTaskCompletionType.TRIP_ANALYSIS_APPLIED,
+                execution.getResultRawPayload());
+        var snapshot = new TripProcessingStateSnapshot(
+                execution.getTripId(), execution.getExecutionId(), execution.getStatusVersion(),
+                execution.getDisplayStatus(), execution.getCurrentStep(), execution.getErrorCode(), execution.getResultRawPayload());
+        eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(execution.getUserId(), snapshot, completion));
         logWorkflowCompleted(claim, execution);
     }
 

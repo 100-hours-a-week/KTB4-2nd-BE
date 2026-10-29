@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventTarget
 import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventType;
 import com.yeodam.yeodambe.story.event.StoryGenerationStatusChangedEvent;
 import com.yeodam.yeodambe.story.service.response.StoryGenerationStatusNotification;
+import com.yeodam.yeodambe.common.websocket.service.request.AiTaskCompletionType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -39,7 +40,9 @@ public class StoryGenerationStatusEventHandler {
                 snapshot.statusVersion(),
                 snapshot.status(),
                 snapshot.storyId(),
-                snapshot.error()
+                snapshot.error(),
+                event.listItem() == null ? null : AiTaskCompletionType.STORY_GENERATION_COMPLETED,
+                event.listItem()
         );
 
         var message = new WebSocketEvent(

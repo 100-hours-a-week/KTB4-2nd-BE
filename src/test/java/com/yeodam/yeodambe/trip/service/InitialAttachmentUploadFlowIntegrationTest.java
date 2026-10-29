@@ -80,6 +80,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     @Autowired private TripCreationOutboxRepository outboxes;
     @MockitoBean private WebSocketEventPublisher notificationPublisher;
     @Autowired private TransactionTemplate transaction;
+    @Autowired private TripProcessingStatusService processingStatus;
     private User owner;
     private Trip trip;
 
@@ -152,6 +153,49 @@ class InitialAttachmentUploadFlowIntegrationTest {
         var process = processOutbox(batch.executionId());
         confirm(process);
         return resultPayload(json.readTree(process.getPayload()), false);
+    }
+
+    @Test
+    void completedResultPublishesACompleteListSnapshotOnce() {
+        String raw = prepareResultNotification();
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        clearInvocations(notificationPublisher);
+        worker.applyPendingResults();
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        worker.applyPendingResults();
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).publish(captor.capture());
+        verifyNoMoreInteractions(notificationPublisher);
+        var data = json.valueToTree(captor.getValue().payload()).path("data");
+        assertThat(data.path("eventType").asString()).isEqualTo("TRIP_CREATION_COMPLETED");
+        assertThat(data.path("status").asString()).isEqualTo("COMPLETED");
+        assertThat(data.path("result").path("unclassifiedAttachmentCount").asInt()).isEqualTo(1);
+        assertThat(data.path("listItem").path("tripId").asLong()).isEqualTo(trip.getId());
+        assertThat(data.path("listItem").path("sequence").asLong()).isEqualTo(1);
+        assertThat(data.path("listItem").path("attachmentCount").asLong()).isEqualTo(1);
+        long version = data.path("statusVersion").asLong();
+        jdbc.update("UPDATE trip_attachments SET deleted_at = CURRENT_TIMESTAMP(6) WHERE trip_id = ?", trip.getId());
+        var restored = processingStatus.findStatus(trip.getId(), owner.getUserId());
+        assertThat(restored.statusVersion()).isEqualTo(version);
+        assertThat(restored.result().unclassifiedAttachmentCount()).isEqualTo(1);
+    }
+
+    @Test
+    void rollingBackCompletedResultDoesNotPublishOrAdvanceTripSequence() {
+        String raw = prepareResultNotification();
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        var claim = results.claimResult().orElseThrow();
+        assertThat(results.startResultAttempt(claim)).isTrue();
+        var validated = results.validateForApplication(claim);
+        clearInvocations(notificationPublisher);
+        transaction.executeWithoutResult(status -> {
+            results.saveKafkaCompleted(claim, validated, Map.of());
+            verifyNoInteractions(notificationPublisher);
+            status.setRollbackOnly();
+        });
+        verifyNoInteractions(notificationPublisher);
+        assertThat(execution().getDisplayStatus()).isEqualTo(TripDisplayStatus.FINALIZING);
+        assertThat(jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?", Long.class, trip.getId())).isZero();
     }
 
     @Test

@@ -12,6 +12,8 @@ import com.yeodam.yeodambe.trip.entity.TripDisplayStatus;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusNotification;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -27,6 +29,7 @@ import java.util.UUID;
 public class TripProcessingStatusEventHandler {
 
     private final WebSocketEventPublisher eventPublisher;
+    private final TripAttachmentStorageClient storage;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handle(TripProcessingStatusChangedEvent event) {
@@ -41,36 +44,48 @@ public class TripProcessingStatusEventHandler {
                     TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message());
         }
 
-        var notification = new TripProcessingStatusNotification(
-                eventId,
-                occurredAt,
-                snapshot.tripId(),
-                snapshot.executionId(),
-                snapshot.statusVersion(),
-                TripProcessingStatusResponse.Status.valueOf(
-                        snapshot.displayStatus().name()
-                ),
-                snapshot.currentStep(),
-                null,
-                error
-        );
-
-        var message = new WebSocketEvent(
-                eventId,
-                WebSocketEventType.AI_TASK,
-                1,
-                occurredAt,
-                new WebSocketEventTarget(
-                        WebSocketEventTargetType.USER,
-                        event.userId()
-                ),
-                new ApiResponse<>(
-                        SuccessMessage.TRIP_PROCESSING_STATUS_FOUND,
-                        notification
-                )
-        );
-
         try {
+            var completion = event.completion();
+            TripListItemResponse listItem = null;
+            if (completion != null) {
+                var item = completion.listItem();
+                String thumbnailUrl = completion.thumbnailKey() == null ? null
+                        : storage.createReadUrl(completion.thumbnailKey());
+                listItem = new TripListItemResponse(item.tripId(), item.status(), item.tripName(),
+                        item.startDate(), item.endDate(), item.placeSummary(), item.attachmentCount(),
+                        item.isFavorite(), thumbnailUrl, item.sequence());
+            }
+            var notification = new TripProcessingStatusNotification(
+                    eventId,
+                    occurredAt,
+                    snapshot.tripId(),
+                    snapshot.executionId(),
+                    snapshot.statusVersion(),
+                    TripProcessingStatusResponse.Status.valueOf(
+                            snapshot.displayStatus().name()
+                    ),
+                    snapshot.currentStep(),
+                    completion == null ? null : completion.result(),
+                    error,
+                    completion == null ? null : completion.eventType(),
+                    listItem
+            );
+
+            var message = new WebSocketEvent(
+                    eventId,
+                    WebSocketEventType.AI_TASK,
+                    1,
+                    occurredAt,
+                    new WebSocketEventTarget(
+                            WebSocketEventTargetType.USER,
+                            event.userId()
+                    ),
+                    new ApiResponse<>(
+                            SuccessMessage.TRIP_PROCESSING_STATUS_FOUND,
+                            notification
+                    )
+            );
+
             eventPublisher.publish(message);
         } catch (RuntimeException failure) {
             log.atWarn()

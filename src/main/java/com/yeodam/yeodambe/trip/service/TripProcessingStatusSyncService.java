@@ -43,7 +43,8 @@ public class TripProcessingStatusSyncService {
                 execution.getStatusVersion(),
                 execution.getDisplayStatus(),
                 execution.getCurrentStep(),
-                execution.getErrorCode()
+                execution.getErrorCode(),
+                execution.getDisplayStatus() == TripDisplayStatus.COMPLETED ? execution.getResultRawPayload() : null
         );
 
         if (changed) {
@@ -74,7 +75,8 @@ public class TripProcessingStatusSyncService {
                 execution.getStatusVersion(),
                 execution.getDisplayStatus(),
                 execution.getCurrentStep(),
-                execution.getErrorCode()
+                execution.getErrorCode(),
+                execution.getDisplayStatus() == TripDisplayStatus.COMPLETED ? execution.getResultRawPayload() : null
         );
 
         if (changed) {

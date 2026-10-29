@@ -167,6 +167,13 @@ public class StoryGenerationCompletionService {
             trip.changeCurrentStory(story.getId());
             job.complete(story.getId());
             tripRepository.advanceSequence(trip.getId());
+            var sequence = jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?", Long.class, trip.getId());
+            var listItem = new com.yeodam.yeodambe.story.service.response.StoryCompletionListItem(
+                    story.getId(), trip.getId(), sequence, story.getMood(), story.getStorySummary());
+            var snapshot = new StoryGenerationStatusResponse(
+                    job.getId(), job.getStatus(), job.getStatusVersion(), job.getStoryId(), null);
+            eventPublisher.publishEvent(new StoryGenerationStatusChangedEvent(
+                    job.getUserId(), job.getTripId(), snapshot, listItem));
             logResultApplied(timing);
             logWorkflowCompleted(job);
         }

@@ -61,6 +61,7 @@ public class TripAnalysisResultService {
     private final EntityManager entityManager;
     private final TripMapCacheStore tripMapCacheStore;
     private final ApplicationEventPublisher eventPublisher;
+    private final TripCompletionSnapshotFactory completionSnapshots;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void saveCompleted(
@@ -555,6 +556,13 @@ public class TripAnalysisResultService {
                 null, uploadTransactions.databaseTime());
         creationExecutions.saveAndFlush(execution);
         persistCompleted(claim.tripId(), claim.userId(), executionAttachments(claim.executionId()), result, placeNames);
+        var completion = completionSnapshots.capture(claim.tripId(), claim.userId(),
+                com.yeodam.yeodambe.common.websocket.service.request.AiTaskCompletionType.TRIP_CREATION_COMPLETED,
+                execution.getResultRawPayload());
+        var snapshot = new com.yeodam.yeodambe.trip.service.response.TripProcessingStateSnapshot(
+                execution.getTripId(), execution.getExecutionId(), execution.getStatusVersion(),
+                execution.getDisplayStatus(), execution.getCurrentStep(), execution.getErrorCode(), execution.getResultRawPayload());
+        eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(execution.getUserId(), snapshot, completion));
         logWorkflowCompleted(claim);
     }
 

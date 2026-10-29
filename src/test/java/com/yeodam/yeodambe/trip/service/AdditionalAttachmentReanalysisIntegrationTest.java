@@ -223,6 +223,28 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
+    void completedAdditionRollbackDoesNotPublishOrChangeOldClassification() {
+        prepareAsync();
+        publishBoth();
+        String raw = successfulPayload();
+        kafkaResults.receive(applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class), raw);
+        jdbc.update("UPDATE additional_attachment_executions SET result_next_attempt_at = '2099-01-01' WHERE execution_id <> ?", additionId);
+        var claim = kafkaResults.claim().orElseThrow();
+        assertThat(kafkaResults.start(claim)).isTrue();
+        var validated = kafkaResults.validate(claim);
+        clearInvocations(notificationPublisher);
+        transaction.executeWithoutResult(status -> {
+            kafkaResults.complete(claim, validated, Map.of("place-one", "new place"));
+            verifyNoInteractions(notificationPublisher);
+            status.setRollbackOnly();
+        });
+        verifyNoInteractions(notificationPublisher);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getDisplayStatus()).isEqualTo(TripDisplayStatus.FINALIZING);
+        assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?", Long.class, tripId)).isZero();
+    }
+
+    @Test
     void asyncPipelinePublishesInOrderAndAppliesAllPhotosOnceWhilePreservingStory() {
         Long storyId = createExistingStory();
         prepareAsync();
@@ -239,7 +261,16 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(kafkaResults.claim()).isEmpty();
         assertThat(kafkaResults.start(claim)).isTrue();
         var validated = kafkaResults.validate(claim);
+        clearInvocations(notificationPublisher);
         kafkaResults.complete(claim, validated, Map.of("place-one", "new place"));
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).publish(captor.capture());
+        verifyNoMoreInteractions(notificationPublisher);
+        var data = applicationMapper.valueToTree(captor.getValue().payload()).path("data");
+        assertThat(data.path("eventType").asString()).isEqualTo("TRIP_ANALYSIS_APPLIED");
+        assertThat(data.path("result").path("classifiedAttachmentCount").asInt()).isEqualTo(2);
+        assertThat(data.path("listItem").path("sequence").asLong()).isEqualTo(1);
+        assertThat(data.path("listItem").path("attachmentCount").asLong()).isEqualTo(2);
         kafkaResults.receive(event, raw);
         assertThat(executionRepository.findById(additionId).orElseThrow().getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.COMPLETED);
         assertThat(attachments.countVisibleForEditByTripId(tripId)).isEqualTo(2);

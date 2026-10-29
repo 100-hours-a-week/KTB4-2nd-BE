@@ -53,6 +53,7 @@ class TripProcessingStatusEventHandlerMysqlTest {
     @Autowired private UserRepository users;
     @Autowired private PlatformTransactionManager transactionManager;
     @MockitoBean private WebSocketEventPublisher publisher;
+    @MockitoBean private com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient storage;
 
     @TestConfiguration(proxyBeanMethods = false)
     static class MysqlConfig {

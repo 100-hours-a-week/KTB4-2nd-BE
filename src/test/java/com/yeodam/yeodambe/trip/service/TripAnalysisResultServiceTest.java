@@ -39,7 +39,7 @@ class TripAnalysisResultServiceTest {
                 mock(InitialAttachmentUploadItemRepository.class),
                 mock(InitialAttachmentUploadTransactionService.class),
                 new ObjectMapper(),
-                mock(EntityManager.class), mapCache, mock(ApplicationEventPublisher.class));
+                mock(EntityManager.class), mapCache, mock(ApplicationEventPublisher.class), mock(TripCompletionSnapshotFactory.class));
     private final ObjectMapper json = new ObjectMapper();
 
     @Test

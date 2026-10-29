@@ -15,7 +15,7 @@ import static org.mockito.Mockito.*;
 
 class TripProcessingStatusEventHandlerTest {
     private final WebSocketEventPublisher publisher = mock(WebSocketEventPublisher.class);
-    private final TripProcessingStatusEventHandler handler = new TripProcessingStatusEventHandler(publisher);
+    private final TripProcessingStatusEventHandler handler = new TripProcessingStatusEventHandler(publisher, mock(com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient.class));
 
     @Test
     void includesTheStoredFailureCodeAndTheExistingUserMessage() {

@@ -4,6 +4,9 @@ import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
 import com.yeodam.yeodambe.integration.service.response.TripPhotoAnalysisStatusResponse;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
+import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import jakarta.persistence.EntityManager;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
@@ -33,6 +36,7 @@ class TripProcessingStatusServiceTest {
     private TripPhotoAnalysisService analysis;
     private InitialUploadExecutionRegistry executions;
     private TripCreationExecutionRepository creationExecutions;
+    private AdditionalAttachmentExecutionRepository additionalExecutions;
     private TripProcessingStatusService service;
 
     @BeforeEach
@@ -43,8 +47,57 @@ class TripProcessingStatusServiceTest {
         analysis = mock(TripPhotoAnalysisService.class);
         executions = mock(InitialUploadExecutionRegistry.class);
         creationExecutions = mock(TripCreationExecutionRepository.class);
+        additionalExecutions = mock(AdditionalAttachmentExecutionRepository.class);
         service = new TripProcessingStatusService(trips, places, attachments, analysis, executions, mock(InitialAttachmentUploadBatchRepository.class),
-                creationExecutions, mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class));
+                creationExecutions, additionalExecutions,
+                new TripProcessingStatusSyncService(creationExecutions, mock(EntityManager.class), additionalExecutions));
+    }
+
+    @Test
+    void 사진_추가_AI_상태가_변하면_저장된_버전도_증가한다() {
+        var addition = publishedAddition();
+        when(analysis.findStatus(7L, "addition"))
+                .thenReturn(new TripPhotoAnalysisStatusResponse(7L,
+                        TripPhotoAnalysisStatusResponse.Status.PROCESSING, null, "EMBEDDING", null, null))
+                .thenReturn(new TripPhotoAnalysisStatusResponse(7L,
+                        TripPhotoAnalysisStatusResponse.Status.COMPLETED, null, null, null, null));
+
+        var processing = service.findStatus(7L, 1L);
+        var finalizing = service.findStatus(7L, 1L);
+
+        assertThat(processing.currentStep()).isEqualTo("EMBEDDING");
+        assertThat(processing.statusVersion()).isEqualTo(1);
+        assertThat(finalizing.status()).isEqualTo(Status.FINALIZING);
+        assertThat(finalizing.statusVersion()).isEqualTo(2);
+        assertThat(addition.getStatusVersion()).isEqualTo(finalizing.statusVersion());
+    }
+
+    @Test
+    void 사진_추가_AI_조회_중_완료되면_늦은_응답으로_되돌리지_않는다() {
+        var addition = publishedAddition();
+        when(analysis.findStatus(7L, "addition")).thenAnswer(invocation -> {
+            addition.finish(AdditionalAttachmentExecution.Status.COMPLETED, null, LocalDateTime.now());
+            return new TripPhotoAnalysisStatusResponse(7L,
+                    TripPhotoAnalysisStatusResponse.Status.PROCESSING, null, "EMBEDDING", null, null);
+        });
+
+        var response = service.findStatus(7L, 1L);
+
+        assertThat(response.status()).isEqualTo(Status.COMPLETED);
+        assertThat(response.statusVersion()).isEqualTo(addition.getStatusVersion());
+        assertThat(response.currentStep()).isNull();
+        assertThat(response.result()).isNotNull();
+    }
+
+    private AdditionalAttachmentExecution publishedAddition() {
+        var addition = new AdditionalAttachmentExecution("addition", 7L, 1L, 2, LocalDateTime.now());
+        addition.recordProcessPublished(LocalDateTime.now());
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
+        when(additionalExecutions.findFirstByTripIdAndUserIdOrderByCreatedAtDescExecutionIdDesc(7L, 1L))
+                .thenReturn(Optional.of(addition));
+        when(additionalExecutions.findForUpdate("addition")).thenReturn(Optional.of(addition));
+        return addition;
     }
 
     @Test
@@ -79,7 +132,72 @@ class TripProcessingStatusServiceTest {
         var execution = new TripCreationExecution(
                 "execution", 7L, 1L, 2);
         execution.recordProcessPublished(LocalDateTime.now());
+        when(creationExecutions.findForUpdate("execution")).thenReturn(Optional.of(execution));
         return execution;
+    }
+
+    @Test
+    void 생성_실행의_ID와_현재_버전을_반환한다() {
+        var execution = publishedExecution();
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)));
+        when(creationExecutions.findByTripId(7L)).thenReturn(Optional.of(execution));
+        when(analysis.findStatus(7L, "execution")).thenReturn(new TripPhotoAnalysisStatusResponse(
+                7L, TripPhotoAnalysisStatusResponse.Status.QUEUED, null, null, null, null));
+
+        var response = service.findStatus(7L, 1L);
+
+        assertThat(response.executionId()).isEqualTo("execution");
+        assertThat(response.statusVersion()).isEqualTo(execution.getStatusVersion());
+        assertThat(response.statusVersion()).isZero();
+    }
+
+    @Test
+    void 완료된_생성도_저장된_실행_ID와_버전을_유지한다() {
+        var execution = publishedExecution();
+        execution.finish(TripCreationExecution.Status.COMPLETED, null, LocalDateTime.now());
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
+        when(creationExecutions.findByTripId(7L)).thenReturn(Optional.of(execution));
+
+        var response = service.findStatus(7L, 1L);
+
+        assertThat(response.executionId()).isEqualTo("execution");
+        assertThat(response.statusVersion()).isEqualTo(1);
+        verifyNoInteractions(analysis);
+    }
+
+    @Test
+    void 실행_정보가_없는_기존_자료는_null과_0을_반환한다() {
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
+
+        var response = service.findStatus(7L, 1L);
+
+        assertThat(response.executionId()).isNull();
+        assertThat(response.statusVersion()).isZero();
+    }
+
+    @Test
+    void AI_응답으로_공개_상태가_바뀌면_이전보다_큰_버전이어야_한다() {
+        var execution = publishedExecution();
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+                .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)));
+        when(creationExecutions.findByTripId(7L)).thenReturn(Optional.of(execution));
+        when(analysis.findStatus(7L, "execution"))
+                .thenReturn(new TripPhotoAnalysisStatusResponse(
+                        7L, TripPhotoAnalysisStatusResponse.Status.PROCESSING,
+                        null, "EMBEDDING", null, null))
+                .thenReturn(new TripPhotoAnalysisStatusResponse(
+                        7L, TripPhotoAnalysisStatusResponse.Status.COMPLETED,
+                        null, null, null, null));
+
+        var processing = service.findStatus(7L, 1L);
+        var finalizing = service.findStatus(7L, 1L);
+
+        assertThat(processing.status()).isEqualTo(Status.PROCESSING);
+        assertThat(finalizing.status()).isEqualTo(Status.FINALIZING);
+        assertThat(finalizing.statusVersion()).isGreaterThan(processing.statusVersion());
     }
 
     @Test

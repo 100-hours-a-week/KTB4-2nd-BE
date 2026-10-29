@@ -89,7 +89,7 @@ class TripControllerTest {
     @Test
     void 소유한_여행의_처리_상태를_조회한다() {
         var status = new TripProcessingStatusResponse(
-                7L, TripProcessingStatusResponse.Status.FINALIZING, null, null, null);
+                7L, "execution-id", 1L, TripProcessingStatusResponse.Status.FINALIZING, null, null, null);
         when(processingStatusService.findStatus(7L, 1L)).thenReturn(status);
 
         var response = controller.getProcessingStatus(7L, jwt());

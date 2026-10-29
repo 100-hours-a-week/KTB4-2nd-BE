@@ -1,9 +1,12 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
+import com.yeodam.yeodambe.story.event.StoryGenerationStatusChangedEvent;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
+import com.yeodam.yeodambe.story.service.response.StoryGenerationStatusResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class StoryGenerationProgressService {
     private final StoryGenerationJobRepository jobRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void updateProcessing(
@@ -53,7 +57,16 @@ public class StoryGenerationProgressService {
             );
         }
 
+        long previousVersion = job.getStatusVersion();
         int percentage = (int) (100L * progress.done() / progress.total());
         job.updateProcessing(percentage);
+        if (job.getStatusVersion() != previousVersion) {
+            var snapshot = new StoryGenerationStatusResponse(
+                    job.getId(), job.getStatus(), job.getStatusVersion(), job.getStoryId(), null
+            );
+            eventPublisher.publishEvent(new StoryGenerationStatusChangedEvent(
+                    job.getUserId(), job.getTripId(), snapshot
+            ));
+        }
     }
 }

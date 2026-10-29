@@ -35,11 +35,11 @@ class TripProcessingStatusSyncServiceTest {
 
     @Test
     void appliesAChangedDisplayStateWhenTheVersionMatches() {
-        var snapshot = service.synchronizeCreation("execution", 0, TripDisplayStatus.PROCESSING, "EMBEDDING");
+        var snapshot = service.synchronizeCreation("execution", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
 
         assertThat(snapshot.tripId()).isEqualTo(7L);
         assertThat(snapshot.executionId()).isEqualTo("execution");
-        assertThat(snapshot.statusVersion()).isEqualTo(1);
+        assertThat(snapshot.statusVersion()).isEqualTo(2);
         assertThat(snapshot.displayStatus()).isEqualTo(TripDisplayStatus.PROCESSING);
         assertThat(snapshot.currentStep()).isEqualTo("EMBEDDING");
         var order = inOrder(repository, entityManager);
@@ -51,19 +51,19 @@ class TripProcessingStatusSyncServiceTest {
     void preservesTheVersionWhenTheDisplayStateIsUnchanged() {
         execution.updateDisplayStatus(TripDisplayStatus.PROCESSING, "EMBEDDING");
 
-        var snapshot = service.synchronizeCreation("execution", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
+        var snapshot = service.synchronizeCreation("execution", 2, TripDisplayStatus.PROCESSING, "EMBEDDING");
 
-        assertThat(snapshot.statusVersion()).isEqualTo(1);
+        assertThat(snapshot.statusVersion()).isEqualTo(2);
     }
 
     @Test
     void ignoresAnAiResponseBasedOnAnOlderVersion() {
         execution.updateDisplayStatus(TripDisplayStatus.PROCESSING, "CLUSTERING");
 
-        var snapshot = service.synchronizeCreation("execution", 0, TripDisplayStatus.PROCESSING, "EMBEDDING");
+        var snapshot = service.synchronizeCreation("execution", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
 
         assertThat(snapshot.currentStep()).isEqualTo("CLUSTERING");
-        assertThat(snapshot.statusVersion()).isEqualTo(1);
+        assertThat(snapshot.statusVersion()).isEqualTo(2);
     }
 
     @Test
@@ -73,11 +73,11 @@ class TripProcessingStatusSyncServiceTest {
             return null;
         }).when(entityManager).refresh(execution, LockModeType.PESSIMISTIC_WRITE);
 
-        var snapshot = service.synchronizeCreation("execution", 0, TripDisplayStatus.PROCESSING, "EMBEDDING");
+        var snapshot = service.synchronizeCreation("execution", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
 
         assertThat(snapshot.displayStatus()).isEqualTo(TripDisplayStatus.FINALIZING);
         assertThat(snapshot.currentStep()).isNull();
-        assertThat(snapshot.statusVersion()).isEqualTo(1);
+        assertThat(snapshot.statusVersion()).isEqualTo(2);
     }
 
     @Test
@@ -85,18 +85,18 @@ class TripProcessingStatusSyncServiceTest {
         execution.finish(TripCreationExecution.Status.FAILED, "AI_PROCESSING_FAILED",
                 LocalDateTime.of(2026, 10, 29, 12, 0));
 
-        var snapshot = service.synchronizeCreation("execution", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
+        var snapshot = service.synchronizeCreation("execution", 2, TripDisplayStatus.PROCESSING, "EMBEDDING");
 
         assertThat(snapshot.displayStatus()).isEqualTo(TripDisplayStatus.FAILED);
         assertThat(snapshot.errorCode()).isEqualTo("AI_PROCESSING_FAILED");
-        assertThat(snapshot.statusVersion()).isEqualTo(1);
+        assertThat(snapshot.statusVersion()).isEqualTo(2);
     }
 
     @Test
     void rejectsAMissingExecutionWithoutRefreshingAnything() {
         when(repository.findForUpdate("missing")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.synchronizeCreation("missing", 0, TripDisplayStatus.PROCESSING, null))
+        assertThatThrownBy(() -> service.synchronizeCreation("missing", 1, TripDisplayStatus.PROCESSING, null))
                 .isInstanceOf(TripNotFoundException.class);
         verifyNoInteractions(entityManager);
     }
@@ -105,13 +105,13 @@ class TripProcessingStatusSyncServiceTest {
     void appliesAndThenPreservesAnAdditionalExecutionDisplayState() {
         var addition = additionalExecution();
 
-        var changed = service.synchronizeAddition("addition", 0, TripDisplayStatus.PROCESSING, "EMBEDDING");
-        var unchanged = service.synchronizeAddition("addition", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
+        var changed = service.synchronizeAddition("addition", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
+        var unchanged = service.synchronizeAddition("addition", 2, TripDisplayStatus.PROCESSING, "EMBEDDING");
 
         assertThat(changed.tripId()).isEqualTo(7L);
         assertThat(changed.executionId()).isEqualTo("addition");
         assertThat(changed.currentStep()).isEqualTo("EMBEDDING");
-        assertThat(changed.statusVersion()).isEqualTo(1);
+        assertThat(changed.statusVersion()).isEqualTo(2);
         assertThat(unchanged).isEqualTo(changed);
         verify(entityManager, times(2)).refresh(addition, LockModeType.PESSIMISTIC_WRITE);
         verifyNoInteractions(repository);
@@ -125,11 +125,11 @@ class TripProcessingStatusSyncServiceTest {
             return null;
         }).when(entityManager).refresh(addition, LockModeType.PESSIMISTIC_WRITE);
 
-        var snapshot = service.synchronizeAddition("addition", 0, TripDisplayStatus.PROCESSING, "EMBEDDING");
+        var snapshot = service.synchronizeAddition("addition", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
 
         assertThat(snapshot.displayStatus()).isEqualTo(TripDisplayStatus.FINALIZING);
         assertThat(snapshot.currentStep()).isNull();
-        assertThat(snapshot.statusVersion()).isEqualTo(1);
+        assertThat(snapshot.statusVersion()).isEqualTo(2);
     }
 
     @Test
@@ -138,16 +138,16 @@ class TripProcessingStatusSyncServiceTest {
         addition.finish(AdditionalAttachmentExecution.Status.FAILED, "AI_PROCESSING_FAILED",
                 LocalDateTime.of(2026, 10, 29, 12, 0));
 
-        var snapshot = service.synchronizeAddition("addition", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
+        var snapshot = service.synchronizeAddition("addition", 2, TripDisplayStatus.PROCESSING, "EMBEDDING");
 
         assertThat(snapshot.displayStatus()).isEqualTo(TripDisplayStatus.FAILED);
         assertThat(snapshot.errorCode()).isEqualTo("AI_PROCESSING_FAILED");
-        assertThat(snapshot.statusVersion()).isEqualTo(1);
+        assertThat(snapshot.statusVersion()).isEqualTo(2);
     }
 
     @Test
     void rejectsAMissingAdditionalExecution() {
-        assertThatThrownBy(() -> service.synchronizeAddition("missing", 0, TripDisplayStatus.PROCESSING, null))
+        assertThatThrownBy(() -> service.synchronizeAddition("missing", 1, TripDisplayStatus.PROCESSING, null))
                 .isInstanceOf(TripNotFoundException.class);
         verifyNoInteractions(entityManager);
     }

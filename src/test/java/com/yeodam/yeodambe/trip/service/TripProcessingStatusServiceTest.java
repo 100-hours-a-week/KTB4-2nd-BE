@@ -66,9 +66,9 @@ class TripProcessingStatusServiceTest {
         var finalizing = service.findStatus(7L, 1L);
 
         assertThat(processing.currentStep()).isEqualTo("EMBEDDING");
-        assertThat(processing.statusVersion()).isEqualTo(1);
+        assertThat(processing.statusVersion()).isEqualTo(2);
         assertThat(finalizing.status()).isEqualTo(Status.FINALIZING);
-        assertThat(finalizing.statusVersion()).isEqualTo(2);
+        assertThat(finalizing.statusVersion()).isEqualTo(3);
         assertThat(addition.getStatusVersion()).isEqualTo(finalizing.statusVersion());
     }
 
@@ -149,7 +149,7 @@ class TripProcessingStatusServiceTest {
 
         assertThat(response.executionId()).isEqualTo("execution");
         assertThat(response.statusVersion()).isEqualTo(execution.getStatusVersion());
-        assertThat(response.statusVersion()).isZero();
+        assertThat(response.statusVersion()).isEqualTo(1);
     }
 
     @Test
@@ -163,7 +163,7 @@ class TripProcessingStatusServiceTest {
         var response = service.findStatus(7L, 1L);
 
         assertThat(response.executionId()).isEqualTo("execution");
-        assertThat(response.statusVersion()).isEqualTo(1);
+        assertThat(response.statusVersion()).isEqualTo(2);
         verifyNoInteractions(analysis);
     }
 

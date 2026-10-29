@@ -44,10 +44,10 @@ class InitialUploadAcceptanceStatusTest {
         assertThat(processing.executionId()).isEqualTo("execution");
         assertThat(processing.status()).isEqualTo(Status.PROCESSING);
         assertThat(processing.currentStep()).isEqualTo("EMBEDDING");
-        assertThat(processing.statusVersion()).isEqualTo(1);
+        assertThat(processing.statusVersion()).isEqualTo(2);
         assertThat(finalizing.status()).isEqualTo(Status.FINALIZING);
         assertThat(finalizing.currentStep()).isNull();
-        assertThat(finalizing.statusVersion()).isEqualTo(2);
+        assertThat(finalizing.statusVersion()).isEqualTo(3);
     }
 
     @Test

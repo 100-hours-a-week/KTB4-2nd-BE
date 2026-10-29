@@ -29,7 +29,7 @@ public class TripCreationExecution {
     private Status status = Status.UPLOADING;
 
     @Column(name = "status_version", nullable = false)
-    private long statusVersion = 0;
+    private long statusVersion = 1;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "display_status", nullable = false, length = 24)

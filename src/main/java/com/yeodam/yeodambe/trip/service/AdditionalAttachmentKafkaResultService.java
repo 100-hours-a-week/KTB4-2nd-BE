@@ -5,6 +5,9 @@ import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
+import com.yeodam.yeodambe.trip.event.TripProcessingStatusChangedEvent;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStateSnapshot;
+import org.springframework.context.ApplicationEventPublisher;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.response.TripAnalysisResultClaim;
 import com.yeodam.yeodambe.user.service.UserStatsService;
@@ -38,6 +41,7 @@ public class AdditionalAttachmentKafkaResultService {
     private final UserStatsService stats;
     private final EntityManager entityManager;
     private final ObjectMapper json;
+    private final ApplicationEventPublisher eventPublisher;
 
     private AdditionalAttachmentExecution lock(String id) {
         var candidate = executionRepository.findById(id).orElseThrow();
@@ -59,10 +63,25 @@ public class AdditionalAttachmentKafkaResultService {
             if (!json.readTree(execution.getResultRawPayload()).equals(json.readTree(raw))) execution.recordConflictingResult(raw);
             return true;
         }
+        long previousVersion = execution.getStatusVersion();
         execution.receiveResult(raw, event.status().name(), transactions.databaseTime());
         logAiResultReceived(event.tripId(), event.executionId());
-        if (event.status() != TripCreateResultEvent.Status.COMPLETED)
+        if (event.status() == TripCreateResultEvent.Status.COMPLETED) {
+            if (execution.getStatusVersion() != previousVersion) {
+                var snapshot = new TripProcessingStateSnapshot(
+                        execution.getTripId(),
+                        execution.getExecutionId(),
+                        execution.getStatusVersion(),
+                        execution.getDisplayStatus(),
+                        execution.getCurrentStep(),
+                        execution.getErrorCode()
+                );
+                eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(
+                        execution.getUserId(), snapshot));
+            }
+        } else {
             transactions.failExecution(event.executionId(), ErrorMessage.AI_PROCESSING_FAILED.name());
+        }
         return true;
     }
 

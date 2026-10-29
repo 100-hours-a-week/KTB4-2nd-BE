@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.trip.service.InitialUploadExecutionRegistry;
 import com.yeodam.yeodambe.trip.service.TripAnalysisResultService;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import jakarta.persistence.EntityManager;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -38,7 +39,7 @@ class TripAnalysisResultServiceTest {
                 mock(InitialAttachmentUploadItemRepository.class),
                 mock(InitialAttachmentUploadTransactionService.class),
                 new ObjectMapper(),
-                mock(EntityManager.class), mapCache);
+                mock(EntityManager.class), mapCache, mock(ApplicationEventPublisher.class));
     private final ObjectMapper json = new ObjectMapper();
 
     @Test

@@ -4,6 +4,14 @@ import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import java.time.Instant;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
+import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEvent;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusNotification;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import org.mockito.ArgumentCaptor;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
@@ -70,6 +78,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     @MockitoBean private TripAttachmentStorageClient storage;
     @MockitoBean private TripAttachmentDerivativeService derivatives;
     @MockitoBean private KakaoLocalClient kakao;
+    @MockitoBean private WebSocketEventPublisher notificationPublisher;
+    @Autowired private TransactionTemplate transaction;
     private Long userId;
     private Long tripId;
     private Long oldPhotoId;
@@ -155,6 +165,59 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     private void confirm(AdditionalAttachmentUploadOutbox outbox) {
         outboxService.recordPublished(outbox.getId(), new OutboxReceipt(
                 outbox.getTopic(), outbox.getTripId().toString(), outbox.getPayload(), Instant.now()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void resultReceptionPublishesFinalizingOnlyWhenTheDisplayStateChanges(boolean alreadyFinalizing) {
+        prepareAsync();
+        publishBoth();
+        String raw = successfulPayload();
+        if (alreadyFinalizing) {
+            transaction.executeWithoutResult(status -> executionRepository.findForUpdate(additionId).orElseThrow()
+                    .updateDisplayStatus(TripDisplayStatus.FINALIZING, null));
+        }
+        var event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
+        transaction.executeWithoutResult(status -> {
+            assertThat(kafkaResults.receive(event, raw)).isTrue();
+            verifyNoInteractions(notificationPublisher);
+        });
+        kafkaResults.receive(event, raw);
+
+        if (alreadyFinalizing) {
+            verifyNoInteractions(notificationPublisher);
+        } else {
+            var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(notificationPublisher).publish(captor.capture());
+            verifyNoMoreInteractions(notificationPublisher);
+            var message = captor.getValue();
+            var notification = (TripProcessingStatusNotification) message.payload().data();
+            assertThat(message.target().id()).isEqualTo(userId);
+            assertThat(notification.executionId()).isEqualTo(additionId);
+            assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.FINALIZING);
+            assertThat(notification.statusVersion()).isEqualTo(executionRepository.findById(additionId).orElseThrow().getStatusVersion());
+            assertThat(notification.result()).isNull();
+            assertThat(notification.error()).isNull();
+        }
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Test
+    void rollingBackResultReceptionDoesNotPublishFinalizing() {
+        prepareAsync();
+        publishBoth();
+        String raw = successfulPayload();
+        transaction.executeWithoutResult(status -> {
+            kafkaResults.receive(applicationMapper.readValue(raw,
+                    com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class), raw);
+            status.setRollbackOnly();
+        });
+
+        verifyNoInteractions(notificationPublisher);
+        var execution = executionRepository.findById(additionId).orElseThrow();
+        assertThat(execution.getResultRawPayload()).isNull();
+        assertThat(execution.getDisplayStatus()).isEqualTo(TripDisplayStatus.PROCESSING);
+        assertThat(execution.getStatusVersion()).isEqualTo(1);
     }
 
     @Test

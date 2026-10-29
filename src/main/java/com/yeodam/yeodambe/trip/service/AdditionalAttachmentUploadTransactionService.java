@@ -25,6 +25,9 @@ import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
+import com.yeodam.yeodambe.trip.event.TripProcessingStatusChangedEvent;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStateSnapshot;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +66,7 @@ public class AdditionalAttachmentUploadTransactionService {
     private final AdditionalAttachmentAnalysisPreparationService analysisPreparationService;
     private final AdditionalAttachmentUploadOutboxService outboxService;
     private final StoryGenerationJobRepository storyGenerationJobRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void markVerified(Long tripId, Long userId, String uploadId) {
@@ -502,6 +506,21 @@ public class AdditionalAttachmentUploadTransactionService {
         entityManager.flush();
         userStatsService.refreshFromActiveTrips(execution.getUserId());
         execution.finish(AdditionalAttachmentExecution.Status.FAILED, errorCode, now);
+        publishStatusChanged(execution);
+    }
+
+    private void publishStatusChanged(AdditionalAttachmentExecution execution) {
+        var snapshot = new TripProcessingStateSnapshot(
+                execution.getTripId(),
+                execution.getExecutionId(),
+                execution.getStatusVersion(),
+                execution.getDisplayStatus(),
+                execution.getCurrentStep(),
+                execution.getErrorCode()
+        );
+
+        eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(
+                execution.getUserId(), snapshot));
     }
 
     private String derivativePrefix(AdditionalAttachmentUploadBatchSnapshot claim, AdditionalAttachmentUploadItem item) {

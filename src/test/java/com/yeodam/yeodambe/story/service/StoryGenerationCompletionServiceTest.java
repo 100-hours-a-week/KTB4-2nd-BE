@@ -95,6 +95,7 @@ class StoryGenerationCompletionServiceTest {
         photo = attachments.saveAndFlush(attachment);
         job = acceptance.accept(owner.getUserId(), trip.getId(),
                 new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(folder.getId())), "completion-test");
+        clearInvocations(publisher);
     }
 
     @AfterEach

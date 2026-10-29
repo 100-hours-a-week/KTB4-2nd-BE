@@ -25,6 +25,14 @@ import com.yeodam.yeodambe.user.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
+import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEvent;
+import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventTarget;
+import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventTargetType;
+import com.yeodam.yeodambe.story.service.response.StoryGenerationStatusNotification;
+import static org.mockito.Mockito.*;
 import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
@@ -74,6 +82,7 @@ class StoryGenerationAcceptanceServiceTest {
     @Autowired private StoredFileRepository files;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
+    @MockitoBean private WebSocketEventPublisher publisher;
 
     private User owner;
     private Trip trip;
@@ -112,6 +121,40 @@ class StoryGenerationAcceptanceServiceTest {
         jdbcTemplate.update("DELETE FROM user_stats WHERE user_id = ?", owner.getUserId());
         files.deleteById(file.getId());
         users.deleteById(owner.getUserId());
+    }
+
+    @Test
+    void queuedNotificationIsPublishedOnlyAfterCommit() {
+        photo(takenAt);
+        var job = new TransactionTemplate(transactionManager).execute(transaction -> {
+            var accepted = service.accept(owner.getUserId(), trip.getId(), request(), "queued-test");
+            verifyNoInteractions(publisher);
+            return accepted;
+        });
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(publisher).publish(captor.capture());
+        verifyNoMoreInteractions(publisher);
+        var event = captor.getValue();
+        assertThat(event.target()).isEqualTo(new WebSocketEventTarget(WebSocketEventTargetType.USER, owner.getUserId()));
+        assertThat(event.payload().message()).isEqualTo("STORY_GENERATION_STATUS_FOUND");
+        var notification = (StoryGenerationStatusNotification) event.payload().data();
+        assertThat(notification.generationId()).isEqualTo(job.getId());
+        assertThat(notification.tripId()).isEqualTo(trip.getId());
+        assertThat(notification.status()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(notification.statusVersion()).isEqualTo(1);
+        assertThat(notification.storyId()).isNull();
+        assertThat(notification.error()).isNull();
+    }
+
+    @Test
+    void rolledBackAcceptanceDoesNotPublishQueuedNotification() {
+        photo(takenAt);
+        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            service.accept(owner.getUserId(), trip.getId(), request(), "request-original");
+            transaction.setRollbackOnly();
+        });
+        verifyNoInteractions(publisher);
+        assertNoSavedGeneration();
     }
 
     @Test
@@ -202,6 +245,7 @@ class StoryGenerationAcceptanceServiceTest {
                 .isInstanceOf(InvalidStoryRequestException.class);
 
         assertNoSavedGeneration();
+        verifyNoInteractions(publisher);
         assertThat(attachments.countActiveByTripId(trip.getId())).isEqualTo(1);
     }
 
@@ -213,6 +257,7 @@ class StoryGenerationAcceptanceServiceTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
 
         assertNoSavedGeneration();
+        verifyNoInteractions(publisher);
         assertThat(attachments.countActiveByTripId(trip.getId())).isEqualTo(1);
     }
 
@@ -225,6 +270,7 @@ class StoryGenerationAcceptanceServiceTest {
                 .isInstanceOf(StoryGenerationNotAllowedException.class);
 
         assertNoSavedGeneration();
+        verifyNoInteractions(publisher);
         assertThat(attachments.countActiveByTripId(trip.getId())).isEqualTo(1);
     }
 

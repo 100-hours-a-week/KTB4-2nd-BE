@@ -9,6 +9,9 @@ import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 import com.yeodam.yeodambe.story.entity.StoryGenerationOutbox;
 import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
 import com.yeodam.yeodambe.story.service.request.StoryGenerationRequest;
+import com.yeodam.yeodambe.story.event.StoryGenerationStatusChangedEvent;
+import com.yeodam.yeodambe.story.service.response.StoryGenerationStatusResponse;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +26,7 @@ public class StoryGenerationAcceptanceService {
     private final StoryGenerationOutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
     private final KafkaTopicProperties topics;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public StoryGenerationJob accept(
@@ -43,6 +47,12 @@ public class StoryGenerationAcceptanceService {
             outboxRepository.saveAndFlush(outbox);
             logAiRequestEnqueued(timing);
         }
+        var snapshot = new StoryGenerationStatusResponse(
+                job.getId(), job.getStatus(), job.getStatusVersion(), job.getStoryId(), null
+        );
+        eventPublisher.publishEvent(new StoryGenerationStatusChangedEvent(
+                job.getUserId(), job.getTripId(), snapshot
+        ));
         return job;
     }
 

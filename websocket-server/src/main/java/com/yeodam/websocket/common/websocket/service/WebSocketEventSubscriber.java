@@ -140,7 +140,7 @@ public class WebSocketEventSubscriber
         Assert.isTrue(event.target().type() == expectedTarget, WebSocketEventFailure.TARGET_TYPE_MISMATCH.name());
         Assert.notNull(event.payload(), WebSocketEventFailure.PAYLOAD_MISSING.name());
         Assert.isTrue(event.payload().isObject(), WebSocketEventFailure.PAYLOAD_FORMAT_INVALID.name());
-        Assert.isTrue(event.payload().path("message").isTextual()
+        Assert.isTrue(event.payload().path("message").isString()
                         && StringUtils.hasText(event.payload().path("message").asString()),
                 WebSocketEventFailure.PAYLOAD_MESSAGE_INVALID.name());
         Assert.isTrue(event.payload().has("data"), WebSocketEventFailure.PAYLOAD_DATA_MISSING.name());

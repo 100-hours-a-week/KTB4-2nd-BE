@@ -99,6 +99,41 @@ class WebSocketEventPublisherTest {
     }
 
     @Test
+    void freezesValidatedJsonWithoutPublishingAndReusesTheExactBytes() {
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("status", "BEFORE");
+        String frozenJson = publisher.serialize(withData(data));
+        verifyNoInteractions(redis);
+        data.put("status", "AFTER");
+
+        publisher.publishSerialized(frozenJson);
+
+        verify(redis).convertAndSend(CHANNEL, frozenJson);
+        assertThat(frozenJson).contains("BEFORE").doesNotContain("AFTER");
+    }
+
+    @Test
+    void serializationAloneEnforcesTheEventContractAndSize() {
+        assertThatThrownBy(() -> publisher.serialize(null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> publisher.serialize(withData("가".repeat(22_000))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(WebSocketEventInternalErrorMessage.EVENT_TOO_LARGE.message());
+        verifyNoInteractions(redis);
+    }
+
+    @Test
+    void serializedPublicationRejectsInvalidSchemaAndOversizedJson() {
+        String validJson = publisher.serialize(withData("data"));
+        assertThatThrownBy(() -> publisher.publishSerialized("not-json"))
+                .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> publisher.publishSerialized(validJson.replace("\"schemaVersion\":1", "\"schemaVersion\":2")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> publisher.publishSerialized(mapper.writeValueAsString(withData("가".repeat(22_000)))))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(redis);
+    }
+
+    @Test
     void acceptsExactlySixtyFourKiB() {
         int overhead = mapper.writeValueAsString(withData("")).getBytes(StandardCharsets.UTF_8).length;
         var boundary = withData("a".repeat(65_536 - overhead));

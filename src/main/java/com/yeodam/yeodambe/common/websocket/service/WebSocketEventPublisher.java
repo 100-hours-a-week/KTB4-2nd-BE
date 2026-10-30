@@ -39,15 +39,34 @@ public class WebSocketEventPublisher {
     }
 
     public void publish(WebSocketEvent event) {
+        send(serialize(event));
+    }
+
+    public String serialize(WebSocketEvent event) {
         validate(event);
 
         String json = objectMapper.writeValueAsString(event);
 
+        validateSize(json);
+        return json;
+    }
+
+    // 저장된 스키마를 검사해도 재직렬화하지 않아 동결한 JSON을 그대로 발행한다.
+    public void publishSerialized(String json) {
+        Assert.hasText(json, WebSocketEventInternalErrorMessage.EVENT_MISSING.message());
+        validateSize(json);
+        validate(objectMapper.readValue(json, WebSocketEvent.class));
+        send(json);
+    }
+
+    private void validateSize(String json) {
         Assert.isTrue(
                 json.getBytes(StandardCharsets.UTF_8).length <= MAX_EVENT_BYTES,
                 WebSocketEventInternalErrorMessage.EVENT_TOO_LARGE.message()
         );
+    }
 
+    private void send(String json) {
         try {
             redisTemplate.convertAndSend(properties.channel(), json);
         } catch (RuntimeException exception) {

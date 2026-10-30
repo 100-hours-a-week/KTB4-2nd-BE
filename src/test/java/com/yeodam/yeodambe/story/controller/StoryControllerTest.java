@@ -4,6 +4,10 @@ import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.story.service.StoryReadService;
+import com.yeodam.yeodambe.story.service.StorySimilarAttachmentService;
+import com.yeodam.yeodambe.story.service.response.StorySimilarAttachmentListResponse;
+import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentAiRequestException;
+import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentInternalErrorMessage;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.UserRepository;
@@ -54,6 +58,9 @@ class StoryControllerTest {
     StoryReadService service;
 
     @MockitoBean
+    StorySimilarAttachmentService similarService;
+
+    @MockitoBean
     LoginSessionStore sessions;
 
     @MockitoBean
@@ -64,6 +71,86 @@ class StoryControllerTest {
 
     @MockitoBean
     CsrfTokenGenerator csrfGenerator;
+
+    @Test
+    void 유사사진_성공응답은_명세의_사진_ID와_점수를_반환한다() throws Exception {
+        when(similarService.findSimilar(42L, 71L, 101L)).thenReturn(
+                new StorySimilarAttachmentListResponse(501L, List.of(
+                        new StorySimilarAttachmentListResponse.Item(507L, 0.94),
+                        new StorySimilarAttachmentListResponse.Item(506L, 0.91))));
+
+        mvc.perform(get("/stories/71/blocks/101/similar-attachments").cookie(authenticated()))
+                .andExpect(status().isOk()).andExpect(content().json("""
+                        {"message":"SIMILAR_ATTACHMENT_LIST_FOUND","data":{
+                          "sourceTripAttachmentId":501,"items":[
+                            {"tripAttachmentId":507,"similarityScore":0.94},
+                            {"tripAttachmentId":506,"similarityScore":0.91}]}}
+                        """));
+        verify(similarService).findSimilar(42L, 71L, 101L);
+    }
+
+    @Test
+    void 유사사진_후보없음은_빈_목록으로_반환한다() throws Exception {
+        when(similarService.findSimilar(42L, 71L, 101L))
+                .thenReturn(new StorySimilarAttachmentListResponse(501L, List.of()));
+        mvc.perform(get("/stories/71/blocks/101/similar-attachments").cookie(authenticated()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items").isEmpty());
+    }
+
+    @Test
+    void 유사사진_접근불가는_블록_404로_반환한다() throws Exception {
+        when(similarService.findSimilar(42L, 71L, 101L)).thenThrow(new StoryBlockNotFoundException());
+        mvc.perform(get("/stories/71/blocks/101/similar-attachments").cookie(authenticated()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("STORY_BLOCK_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(StorySimilarAttachmentInternalErrorMessage.class)
+    void 유사사진_AI오류는_내부내용_없이_500으로_반환한다(
+            StorySimilarAttachmentInternalErrorMessage error
+    ) throws Exception {
+        when(similarService.findSimilar(42L, 71L, 101L))
+                .thenThrow(new StorySimilarAttachmentAiRequestException(error));
+        mvc.perform(get("/stories/71/blocks/101/similar-attachments").cookie(authenticated()))
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().json("""
+                        {"message":"INTERNAL_SERVER_ERROR","data":null}
+                        """));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"abc", "9223372036854775808", "0", "-1"})
+    void 유사사진_잘못된_경로는_서비스_호출없이_400이다(String id) throws Exception {
+        Cookie cookie = authenticated();
+        for (String path : List.of("/stories/" + id + "/blocks/101/similar-attachments",
+                "/stories/71/blocks/" + id + "/similar-attachments")) {
+            mvc.perform(get(path).cookie(cookie)).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        }
+        verifyNoInteractions(similarService);
+    }
+
+    @Test
+    void 유사사진_무인증은_입력검증보다_먼저_401이다() throws Exception {
+        mvc.perform(get("/stories/0/blocks/0/similar-attachments"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+        verifyNoInteractions(similarService);
+    }
+
+    @Test
+    void 유사사진_잘못된_토큰과_폐기된_세션은_401이다() throws Exception {
+        mvc.perform(get("/stories/71/blocks/101/similar-attachments")
+                        .cookie(new Cookie("accessToken", "invalid")))
+                .andExpect(status().isUnauthorized());
+        Cookie cookie = authenticated();
+        when(sessions.findBySid("sid-42")).thenReturn(Optional.empty());
+        mvc.perform(get("/stories/71/blocks/101/similar-attachments").cookie(cookie))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(similarService);
+    }
 
     private Cookie authenticated() {
         when(sessions.findBySid("sid-42")).thenReturn(Optional.of(new LoginSession(42L, "refresh-hash")));

@@ -1,12 +1,12 @@
 package com.yeodam.websocket.common.websocket.session;
 
+import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import com.yeodam.websocket.common.websocket.client.BackendAuthenticationClient;
 import com.yeodam.websocket.common.websocket.exception.BackendAuthenticationException;
 import com.yeodam.websocket.common.websocket.exception.BackendAuthenticationFailure;
 import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
 import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.WebSocketSession;
@@ -15,21 +15,12 @@ import org.springframework.scheduling.annotation.Scheduled;
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class WebSocketSessionRevalidationService {
-
-    private static final Logger log =
-            LoggerFactory.getLogger(WebSocketSessionRevalidationService.class);
 
     private final WebSocketSessionManager sessionManager;
     private final BackendAuthenticationClient authenticationClient;
-
-    public WebSocketSessionRevalidationService(
-            WebSocketSessionManager sessionManager,
-            BackendAuthenticationClient authenticationClient
-    ) {
-        this.sessionManager = sessionManager;
-        this.authenticationClient = authenticationClient;
-    }
 
     @Scheduled(
             scheduler = "webSocketSessionRevalidationTaskScheduler",

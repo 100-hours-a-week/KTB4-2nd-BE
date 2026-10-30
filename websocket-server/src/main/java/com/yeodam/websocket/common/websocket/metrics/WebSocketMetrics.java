@@ -1,5 +1,6 @@
 package com.yeodam.websocket.common.websocket.metrics;
 
+import lombok.RequiredArgsConstructor;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -8,18 +9,11 @@ import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class WebSocketMetrics implements MeterBinder {
 
     private final WebSocketSessionManager sessionManager;
     private final SimpUserRegistry userRegistry;
-
-    public WebSocketMetrics(
-            WebSocketSessionManager sessionManager,
-            SimpUserRegistry userRegistry
-    ) {
-        this.sessionManager = sessionManager;
-        this.userRegistry = userRegistry;
-    }
 
     @Override
     public void bindTo(MeterRegistry registry) {
@@ -38,5 +32,4 @@ public class WebSocketMetrics implements MeterBinder {
                         .sum()
         ).register(registry);
     }
-
 }

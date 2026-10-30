@@ -1,19 +1,16 @@
 package com.yeodam.websocket.common.websocket.service;
 
+import lombok.extern.slf4j.Slf4j;
 import io.lettuce.core.AbstractRedisClient;
 import io.lettuce.core.RedisChannelHandler;
 import io.lettuce.core.RedisConnectionStateListener;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 
+@Slf4j
 public class RedisSubscriptionConnectionListener
         implements RedisConnectionStateListener, AutoCloseable {
-
-    private static final Logger log =
-            LoggerFactory.getLogger(RedisSubscriptionConnectionListener.class);
 
     private final AbstractRedisClient redisClient;
     private final WebSocketSessionManager sessionManager;

@@ -1,5 +1,12 @@
 package com.yeodam.websocket.common.websocket.security;
 
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.experimental.Accessors;
+
+@Getter
+@Accessors(fluent = true)
+@RequiredArgsConstructor
 public final class WebSocketSessionCredentials {
 
     public static final String ATTRIBUTE_NAME =
@@ -7,20 +14,4 @@ public final class WebSocketSessionCredentials {
 
     private final String accessToken;
     private final String browserContext;
-
-    public WebSocketSessionCredentials(
-            String accessToken,
-            String browserContext
-    ) {
-        this.accessToken = accessToken;
-        this.browserContext = browserContext;
-    }
-
-    public String accessToken() {
-        return accessToken;
-    }
-
-    public String browserContext() {
-        return browserContext;
-    }
 }

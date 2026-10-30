@@ -1,5 +1,7 @@
 package com.yeodam.websocket.common.websocket.service;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.yeodam.websocket.common.websocket.exception.WebSocketEventFailure;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEvent;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEventTargetType;
@@ -8,8 +10,6 @@ import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import org.springframework.data.redis.connection.SubscriptionListener;
 
 import java.nio.charset.StandardCharsets;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -20,10 +20,10 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
+@Slf4j
 public class WebSocketEventSubscriber
         implements MessageListener, SubscriptionListener {
 
-    private static final Logger log = LoggerFactory.getLogger(WebSocketEventSubscriber.class);
     private static final int MAX_EVENT_BYTES = 64 * 1024;
 
     private final ObjectMapper objectMapper;

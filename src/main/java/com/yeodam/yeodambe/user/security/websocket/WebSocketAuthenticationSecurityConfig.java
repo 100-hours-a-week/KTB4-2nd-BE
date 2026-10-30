@@ -38,7 +38,8 @@ public class WebSocketAuthenticationSecurityConfig {
         http.authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(
                         HttpMethod.GET,
-                        "/internal/websocket/authentication"
+                        "/internal/websocket/authentication",
+                        "/internal/websocket/trips/*/presence-access"
                 ).authenticated()
                 .anyRequest().denyAll()
         );

@@ -188,6 +188,45 @@ class TripListRepositoryTest {
         assertThat(result).containsExactly(new TripRegionName(trip.getId(), "제주"));
     }
 
+    @Test
+    void 즐겨찾기_전용_목록과_개수에_동일한_소유_완료_미삭제_조건을_적용한다() {
+        User owner = users.save(new User("favorite-only@test.com", "회원"));
+        User other = users.save(new User("favorite-other@test.com", "타인"));
+        Trip visible = save(owner.getUserId(), "대상", true, ProcessingStatus.COMPLETED, null);
+        save(owner.getUserId(), "일반", false, ProcessingStatus.COMPLETED, null);
+        save(owner.getUserId(), "처리중", true, ProcessingStatus.PROCESSING, null);
+        save(owner.getUserId(), "실패", true, ProcessingStatus.FAILED, null);
+        save(owner.getUserId(), "취소", true, ProcessingStatus.CANCELED, null);
+        save(owner.getUserId(), "삭제", true, ProcessingStatus.COMPLETED, LocalDateTime.now());
+        save(other.getUserId(), "타인", true, ProcessingStatus.COMPLETED, null);
+        flushAndClear();
+
+        assertThat(trips.findFavoritePage(owner.getUserId(), null, null, PageRequest.of(0, 11)))
+                .extracting(Trip::getId).containsExactly(visible.getId());
+        assertThat(trips.countFavoriteTrips(owner.getUserId())).isEqualTo(1L);
+        assertThat(trips.findFavoritePage(-1L, null, null, PageRequest.of(0, 11))).isEmpty();
+        assertThat(trips.countFavoriteTrips(-1L)).isZero();
+    }
+
+    @Test
+    void 즐겨찾기는_시작일과_ID_내림차순으로_중복없이_이어진다() {
+        User owner = users.save(new User("favorite-page@test.com", "회원"));
+        Trip earlier = save(owner.getUserId(), "이전", true, ProcessingStatus.COMPLETED, null);
+        Trip sameFirst = save(owner.getUserId(), "동일첫째", true, ProcessingStatus.COMPLETED, null);
+        Trip sameLast = save(owner.getUserId(), "동일둘째", true, ProcessingStatus.COMPLETED, null);
+        ReflectionTestUtils.setField(earlier, "startDate", LocalDate.of(2026, 9, 1));
+        ReflectionTestUtils.setField(sameFirst, "startDate", LocalDate.of(2026, 9, 2));
+        ReflectionTestUtils.setField(sameLast, "startDate", LocalDate.of(2026, 9, 2));
+        flushAndClear();
+
+        var first = trips.findFavoritePage(owner.getUserId(), null, null, PageRequest.of(0, 2));
+        assertThat(first).extracting(Trip::getId).containsExactly(sameLast.getId(), sameFirst.getId());
+        var last = first.getLast();
+        assertThat(trips.findFavoritePage(owner.getUserId(), last.getStartDate(), last.getId(), PageRequest.of(0, 2)))
+                .extracting(Trip::getId).containsExactly(earlier.getId());
+        assertThat(trips.countFavoriteTrips(owner.getUserId())).isEqualTo(3L);
+    }
+
     private Trip save(
             Long userId,
             String name,

@@ -23,6 +23,7 @@ import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.service.request.AttachmentCursor;
+import com.yeodam.yeodambe.trip.service.request.FavoriteTripCursor;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
@@ -30,6 +31,8 @@ import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
+import com.yeodam.yeodambe.trip.service.response.FavoriteTripListItemResponse;
+import com.yeodam.yeodambe.trip.service.response.FavoriteTripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailMapResponse;
@@ -74,6 +77,7 @@ public class TripService {
     private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
     private static final int TRIP_LIST_SIZE = 7;
     private static final int TRIP_LIST_FETCH_SIZE = TRIP_LIST_SIZE + 1;
+    private static final int FAVORITE_TRIP_LIST_SIZE = 10;
     private static final int EDIT_ATTACHMENT_PAGE_SIZE = 18;
     // 후보 400개를 넘으면 이후 사진은 검색하지 않으며, 부하 측정 후 상한을 재검토한다.
     private static final int SEARCH_CANDIDATE_LIMIT = 400;
@@ -667,6 +671,71 @@ public class TripService {
             ).encode(objectMapper);
         }
         return new TripListResponse(items, hasNext, nextCursor);
+    }
+
+    @Transactional(readOnly = true)
+    public FavoriteTripListResponse findFavoriteTrips(
+            Long userId,
+            String cursor
+    ) {
+        FavoriteTripCursor decodedCursor =
+                FavoriteTripCursor.decode(cursor, objectMapper);
+
+        long totalCount = tripRepository.countFavoriteTrips(userId);
+
+        List<Trip> fetched = tripRepository.findFavoritePage(
+                userId,
+                decodedCursor == null ? null : decodedCursor.startDate(),
+                decodedCursor == null ? null : decodedCursor.tripId(),
+                PageRequest.of(0, FAVORITE_TRIP_LIST_SIZE + 1)
+        );
+
+        boolean hasNext = fetched.size() > FAVORITE_TRIP_LIST_SIZE;
+        List<Trip> page = hasNext
+                ? fetched.subList(0, FAVORITE_TRIP_LIST_SIZE)
+                : fetched;
+
+        if (page.isEmpty()) {
+            return new FavoriteTripListResponse(
+                    totalCount, List.of(), false, null
+            );
+        }
+
+        List<Long> tripIds = page.stream()
+                .map(Trip::getId)
+                .toList();
+
+        Map<Long, Long> attachmentCounts = tripAttachmentRepository
+                .countNotDeletedByTripIds(tripIds).stream()
+                .collect(Collectors.toMap(
+                        TripAttachmentCount::tripId,
+                        TripAttachmentCount::attachmentCount
+                ));
+
+        List<FavoriteTripListItemResponse> items = page.stream()
+                .map(trip -> new FavoriteTripListItemResponse(
+                        trip.getId(),
+                        trip.getTripName(),
+                        trip.getStartDate(),
+                        trip.getEndDate(),
+                        attachmentCounts.getOrDefault(trip.getId(), 0L),
+                        createThumbnailUrl(trip),
+                        trip.getFavorite()
+                ))
+                .toList();
+
+        String nextCursor = null;
+        if (hasNext) {
+            Trip last = page.getLast();
+            nextCursor = new FavoriteTripCursor(
+                    last.getStartDate(),
+                    last.getId()
+            ).encode(objectMapper);
+        }
+
+        return new FavoriteTripListResponse(
+                totalCount, items, hasNext, nextCursor
+        );
     }
 
     private List<Trip> findTripPage(

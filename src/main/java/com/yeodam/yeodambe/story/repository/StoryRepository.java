@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.story.repository;
 
 import com.yeodam.yeodambe.story.entity.Story;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -14,6 +16,7 @@ public interface StoryRepository extends JpaRepository<Story, Long> {
             """)
     Optional<Story> findCurrentCompletedByTripId(Long tripId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select story
             from Story story
@@ -30,4 +33,11 @@ public interface StoryRepository extends JpaRepository<Story, Long> {
             Long storyId,
             Long userId
     );
+
+    @Query("""
+            select story.tripId
+            from Story story
+            where story.id = :storyId
+            """)
+    Optional<Long> findTripIdByStoryId(Long storyId);
 }

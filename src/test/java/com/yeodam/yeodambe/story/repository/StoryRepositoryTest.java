@@ -146,29 +146,36 @@ class StoryRepositoryTest {
         Story history = story(trip, Story.Status.COMPLETED);
         Story current = story(trip, Story.Status.COMPLETED);
         select(trip, current);
+        assertThat(stories.findTripIdByStoryId(current.getId())).contains(trip.getId());
+        assertThat(stories.findTripIdByStoryId(-1L)).isEmpty();
+        em.flush();
+        em.clear();
         assertThat(stories.findOwnedCurrentCompletedById(current.getId(), trip.getUserId()))
                 .map(Story::getId).contains(current.getId());
+        Trip managedTrip = org.hibernate.Hibernate.unproxy(
+                em.find(Trip.class, trip.getId()), Trip.class);
+        Story managedCurrent = em.find(Story.class, current.getId());
         assertThat(stories.findOwnedCurrentCompletedById(current.getId(), -1L)).isEmpty();
         assertThat(stories.findOwnedCurrentCompletedById(-1L, trip.getUserId())).isEmpty();
         assertThat(stories.findOwnedCurrentCompletedById(history.getId(), trip.getUserId())).isEmpty();
 
         for (Story.Status status : List.of(Story.Status.PROCESSING, Story.Status.FAILED, Story.Status.CANCELED)) {
-            ReflectionTestUtils.setField(current, "processingStatus", status);
+            ReflectionTestUtils.setField(managedCurrent, "processingStatus", status);
             em.flush();
             assertThat(stories.findOwnedCurrentCompletedById(current.getId(), trip.getUserId())).isEmpty();
         }
-        ReflectionTestUtils.setField(current, "processingStatus", Story.Status.COMPLETED);
+        ReflectionTestUtils.setField(managedCurrent, "processingStatus", Story.Status.COMPLETED);
         for (ProcessingStatus status : List.of(ProcessingStatus.PROCESSING, ProcessingStatus.FAILED, ProcessingStatus.CANCELED)) {
-            ReflectionTestUtils.setField(trip, "processingStatus", status);
+            ReflectionTestUtils.setField(managedTrip, "processingStatus", status);
             em.flush();
             assertThat(stories.findOwnedCurrentCompletedById(current.getId(), trip.getUserId())).isEmpty();
         }
-        ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
-        current.softDelete(LocalDateTime.now());
+        ReflectionTestUtils.setField(managedTrip, "processingStatus", ProcessingStatus.COMPLETED);
+        managedCurrent.softDelete(LocalDateTime.now());
         em.flush();
         assertThat(stories.findOwnedCurrentCompletedById(current.getId(), trip.getUserId())).isEmpty();
-        select(trip, history);
-        trip.softDelete(LocalDateTime.now());
+        select(managedTrip, history);
+        managedTrip.softDelete(LocalDateTime.now());
         em.flush();
         assertThat(stories.findOwnedCurrentCompletedById(history.getId(), trip.getUserId())).isEmpty();
     }

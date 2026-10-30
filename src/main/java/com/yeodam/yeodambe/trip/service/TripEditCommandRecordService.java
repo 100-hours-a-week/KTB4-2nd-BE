@@ -38,16 +38,20 @@ public class TripEditCommandRecordService {
             LocalDateTime now
     ) {
         validateCommand(userId, tripId, requestId, commandType, payloadHash, now);
-        return records.findByUserIdAndRequestId(userId, requestId).map(record -> {
-            if (!record.getRequestId().equals(requestId) || !record.getTripId().equals(tripId)
-                    || record.getCommandType() != commandType || !record.getPayloadHash().equals(payloadHash)) {
-                throw new TripEditCommandMismatchException();
-            }
-            if (!now.isBefore(record.getResultExpiresAt())) {
-                throw new TripEditCommandResultExpiredException();
-            }
-            return readResult(record);
-        });
+        Optional<TripEditCommandRecord> existingRecord = records.findByUserIdAndRequestId(userId, requestId);
+        if (existingRecord.isEmpty()) {
+            return Optional.empty();
+        }
+
+        TripEditCommandRecord record = existingRecord.orElseThrow();
+        if (!record.getRequestId().equals(requestId) || !record.getTripId().equals(tripId)
+                || record.getCommandType() != commandType || !record.getPayloadHash().equals(payloadHash)) {
+            throw new TripEditCommandMismatchException();
+        }
+        if (!now.isBefore(record.getResultExpiresAt())) {
+            throw new TripEditCommandResultExpiredException();
+        }
+        return Optional.of(readResult(record));
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -62,15 +66,18 @@ public class TripEditCommandRecordService {
     ) {
         validateCommand(userId, tripId, requestId, commandType, payloadHash, completedAt);
         Assert.isTrue(isValidResult(result, requestId, tripId), "명령과 일치하는 확정 결과가 필요합니다.");
-        String resultJson;
+        String resultJson = serializeResult(result);
+        records.saveAndFlush(new TripEditCommandRecord(
+                userId, tripId, requestId, commandType, payloadHash, resultJson, completedAt));
+    }
+
+    private String serializeResult(ApiResponse<TripEditCommandResultResponse> result) {
         try {
-            resultJson = objectMapper.writeValueAsString(result);
+            return objectMapper.writeValueAsString(result);
         } catch (JacksonException exception) {
             log.error("공유 편집 결과 직렬화 실패: failure={}", exception.getClass().getSimpleName());
             throw new IllegalStateException("공유 편집 결과를 기록할 수 없습니다.");
         }
-        records.saveAndFlush(new TripEditCommandRecord(
-                userId, tripId, requestId, commandType, payloadHash, resultJson, completedAt));
     }
 
     private ApiResponse<TripEditCommandResultResponse> readResult(TripEditCommandRecord record) {
@@ -100,8 +107,11 @@ public class TripEditCommandRecordService {
         if (!requestId.equals(data.requestId()) || !tripId.equals(data.tripId())) {
             return false;
         }
-        return ("SUCCEEDED".equals(data.status()) && data.sequence() != null && data.sequence() >= 0)
-                || ("REJECTED".equals(data.status()) && data.sequence() == null);
+        return switch (data.status()) {
+            case "SUCCEEDED" -> data.sequence() != null && data.sequence() >= 0;
+            case "REJECTED" -> data.sequence() == null;
+            case null, default -> false;
+        };
     }
 
     private void validateCommand(

@@ -89,7 +89,7 @@ class TripEditCommandRecordServiceTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"SUCCEEDED,", "SUCCEEDED,-1", "REJECTED,7", "PROCESSING,7"})
+    @CsvSource({"SUCCEEDED,", "SUCCEEDED,-1", "REJECTED,7", "PROCESSING,7", ",7"})
     void 확정되지_않았거나_잘못된_결과를_기록하지_않는다(String status, Long sequence) {
         assertThatThrownBy(() -> service.saveResult(1L, 3L, "req-A", CommandType.UPDATE_TRIP,
                 HASH, result(status, sequence), COMPLETED)).isInstanceOf(IllegalArgumentException.class);

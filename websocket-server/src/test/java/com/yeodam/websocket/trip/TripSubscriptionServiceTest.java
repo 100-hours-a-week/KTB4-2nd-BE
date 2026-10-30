@@ -15,6 +15,7 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.socket.CloseStatus;
@@ -37,7 +38,8 @@ class TripSubscriptionServiceTest {
     private final BackendTripEditClient client = mock(BackendTripEditClient.class);
     private final WebSocketSessionManager sessions = mock(WebSocketSessionManager.class);
     private final TaskScheduler scheduler = mock(TaskScheduler.class);
-    private final TripSubscriptionService service = new TripSubscriptionService(client, sessions, scheduler);
+    private final ThreadPoolTaskExecutor executor = mock(ThreadPoolTaskExecutor.class);
+    private final TripSubscriptionService service = new TripSubscriptionService(client, sessions, scheduler, executor);
     private final WebSocketSessionCredentials credentials = new WebSocketSessionCredentials("access", "context");
     private final Authentication user = UsernamePasswordAuthenticationToken.authenticated(
             new WebSocketPrincipal(42L, "login", Instant.now().plusSeconds(300)), null, List.of()
@@ -45,6 +47,12 @@ class TripSubscriptionServiceTest {
 
     @org.junit.jupiter.api.BeforeEach
     void allowAccess() {
+        when(executor.getMaxPoolSize()).thenReturn(10);
+        doAnswer(invocation -> {
+            Runnable work = invocation.getArgument(0);
+            work.run();
+            return null;
+        }).when(executor).execute(any(Runnable.class));
         when(client.checkAccess(anyLong(), anyLong(), any())).thenAnswer(invocation -> Instant.now().plusSeconds(30));
     }
 

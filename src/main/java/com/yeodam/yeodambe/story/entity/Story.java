@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.story.entity;
 
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.common.exception.InvalidStoryUpdateException;
+import com.yeodam.yeodambe.common.validation.TextValidation;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -83,6 +85,19 @@ public class Story {
 
     public void complete() {
         this.processingStatus = Status.COMPLETED;
+    }
+
+    public void updateContent(Mood mood, String storySummary) {
+        if (mood == null
+                || !TextValidation.hasVisibleContent(storySummary)
+                || storySummary.codePointCount(
+                        0, storySummary.length()
+                ) > 20) {
+            throw new InvalidStoryUpdateException();
+        }
+
+        this.mood = mood;
+        this.storySummary = storySummary;
     }
 
     static void validateText(String text) {

@@ -10,7 +10,8 @@ public record TripEditResponse(
         LocalDate endDate,
         List<Region> regions,
         long attachmentCount,
-        TripAttachmentListResponse attachments
+        TripAttachmentListResponse attachments,
+        long sequence
 ) {
     public record Region(
             Long regionId,

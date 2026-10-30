@@ -8,6 +8,8 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.service.request.PlaceFolderCursor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import com.yeodam.yeodambe.trip.entity.Trip;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Pageable;
 import tools.jackson.databind.ObjectMapper;
@@ -29,6 +31,13 @@ class TripPlaceFolderListServiceTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final TripPlaceFolderListService service = new TripPlaceFolderListService(
             accessService, placeRepository, attachmentRepository, storageClient, objectMapper);
+
+    @BeforeEach
+    void readableTrip() {
+        Trip trip = mock(Trip.class);
+        lenient().when(trip.getSequence()).thenReturn(7L);
+        lenient().when(accessService.requireCompletedTrip(7L, 1L)).thenReturn(trip);
+    }
 
     @Test
     void 일곱개를_조회하면_여섯개와_여섯번째_폴더_커서를_반환한다() {

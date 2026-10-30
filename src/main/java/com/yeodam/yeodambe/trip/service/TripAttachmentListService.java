@@ -108,7 +108,8 @@ public class TripAttachmentListService {
         return new TripAttachmentListResponse(
                 items,
                 hasNext,
-                nextCursor
+                nextCursor,
+                trip.getSequence()
         );
     }
 }

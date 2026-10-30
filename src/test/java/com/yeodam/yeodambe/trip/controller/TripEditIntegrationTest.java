@@ -136,15 +136,19 @@ class TripEditIntegrationTest {
                 .andExpect(jsonPath("$.data.attachmentCount").value(1));
         mvc.perform(request(tripId))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sequence").value(7))
+                .andExpect(jsonPath("$.data.attachments.sequence").value(7))
                 .andExpect(jsonPath("$.data.attachments.items[0].tripAttachmentId").value(attachment.getId()));
         mvc.perform(get("/api/trips/" + tripId + "/place-folders").contextPath("/api")
                         .cookie(new Cookie("accessToken", accessToken)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sequence").value(7))
                 .andExpect(jsonPath("$.data.items[0].tripPlaceId").value(place.getId()))
                 .andExpect(jsonPath("$.data.items[0].attachmentCount").value(1));
         mvc.perform(get("/api/trips/" + tripId + "/place-folders/" + place.getId() + "/attachments").contextPath("/api")
                         .cookie(new Cookie("accessToken", accessToken)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sequence").value(7))
                 .andExpect(jsonPath("$.data.items[0].tripAttachmentId").value(attachment.getId()));
         mvc.perform(get("/api/attachments/" + attachment.getId()).contextPath("/api")
                         .cookie(new Cookie("accessToken", accessToken)))

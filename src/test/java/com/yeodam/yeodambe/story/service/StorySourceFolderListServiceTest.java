@@ -45,7 +45,8 @@ class StorySourceFolderListServiceTest {
                         List.of(new TripPlaceFolderListResponse.Item(
                                 101L, "성산일출봉", 42L, "https://storage.test/thumbnail")),
                         true,
-                        "next-cursor"
+                        "next-cursor",
+                        0L
                 ));
 
         var response = service.findFolders(1L, 7L, "cursor");
@@ -65,7 +66,7 @@ class StorySourceFolderListServiceTest {
     @Test
     void 폴더가_없으면_빈목록과_마지막페이지를_반환한다() {
         when(tripPlaceFolderListService.findPlaceFolders(1L, 7L, null))
-                .thenReturn(new TripPlaceFolderListResponse(List.of(), false, null));
+                .thenReturn(new TripPlaceFolderListResponse(List.of(), false, null, 0L));
 
         var response = service.findFolders(1L, 7L, null);
 

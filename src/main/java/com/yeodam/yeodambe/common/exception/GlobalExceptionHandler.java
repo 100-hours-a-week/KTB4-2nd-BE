@@ -460,6 +460,34 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.INVALID_STORY_REQUEST, null);
     }
 
+    @ExceptionHandler(InvalidStoryUpdateException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidStoryUpdate(
+            InvalidStoryUpdateException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.INVALID_STORY_UPDATE, null);
+    }
+
+    @ExceptionHandler(StoryOrAttachmentNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleStoryOrAttachmentNotFound(
+            StoryOrAttachmentNotFoundException exception
+    ) {
+        return new ApiResponse<>(
+                ErrorMessage.STORY_OR_ATTACHMENT_NOT_FOUND, null
+        );
+    }
+
+    @ExceptionHandler(AttachmentCannotBeReusedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleAttachmentCannotBeReused(
+            AttachmentCannotBeReusedException exception
+    ) {
+        return new ApiResponse<>(
+                ErrorMessage.ATTACHMENT_CANNOT_BE_REUSED, null
+        );
+    }
+
     @ExceptionHandler(StoryGenerationInProgressException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     ApiResponse<Void> handleStoryGenerationInProgress(StoryGenerationInProgressException e) {

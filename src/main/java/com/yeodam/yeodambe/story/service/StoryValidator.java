@@ -2,10 +2,15 @@ package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
+import com.yeodam.yeodambe.common.exception.AttachmentCannotBeReusedException;
+import com.yeodam.yeodambe.common.exception.InvalidStoryUpdateException;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
+import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 @Component
 public class StoryValidator {
@@ -24,6 +29,32 @@ public class StoryValidator {
 
     public void validateDisplayBlocks(Long tripId, List<BlockDetail> blocks) {
         blocks.forEach(block -> validateDisplayBlock(tripId, block));
+    }
+
+    public void validateUpdateBlocks(
+            List<StoryUpdateRequest.Block> blocks
+    ) {
+        Set<Long> blockIds = new HashSet<>();
+        Set<Long> attachmentIds = new HashSet<>();
+        Set<Integer> orderNumbers = new HashSet<>();
+
+        for (StoryUpdateRequest.Block block : blocks) {
+            if (block.storyBlockId() != null
+                    && !blockIds.add(block.storyBlockId())) {
+                throw new InvalidStoryUpdateException();
+            }
+
+            if (!attachmentIds.add(block.tripAttachmentId())) {
+                throw new AttachmentCannotBeReusedException();
+            }
+
+            int orderNumber = block.orderNumber();
+            if (orderNumber < 1
+                    || orderNumber > blocks.size()
+                    || !orderNumbers.add(orderNumber)) {
+                throw new InvalidStoryUpdateException();
+            }
+        }
     }
 
     private void validateBlockRelation(Long tripId, BlockDetail block) {

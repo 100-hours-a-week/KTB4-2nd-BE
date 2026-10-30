@@ -45,7 +45,7 @@ public class BackendTripEditClient {
             Instant checkedAt = Instant.parse(data.path("checkedAt").asString());
             Instant validUntil = Instant.parse(data.path("accessValidUntil").asString());
             if (checkedAt.isAfter(now.plusSeconds(5)) || !validUntil.isAfter(now)
-                    || validUntil.isAfter(checkedAt.plusSeconds(30))) {
+                    || validUntil.isAfter(checkedAt.plusSeconds(60))) {
                 throw new AccessDeniedException("Expired trip access response");
             }
             return validUntil;

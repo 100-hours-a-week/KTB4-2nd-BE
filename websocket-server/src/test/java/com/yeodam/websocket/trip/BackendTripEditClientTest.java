@@ -53,12 +53,23 @@ class BackendTripEditClientTest {
         server.verify();
     }
 
+    @Test
+    void acceptsBoundedLeaseDuringTheNextThirtySecondRevalidation() {
+        Instant checkedAt = Instant.now().minusSeconds(31);
+        String response = "{\"message\":\"TRIP_WEBSOCKET_ACCESS_FOUND\",\"data\":{\"tripId\":14,\"userId\":42,\"permission\":\"READ\",\"checkedAt\":\"%s\",\"accessValidUntil\":\"%s\"}}"
+                .formatted(checkedAt, checkedAt.plusSeconds(60));
+        server.expect(requestTo("http://backend/api/internal/websocket/trips/14/access"))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        assertThatCode(() -> client.checkAccess(14, 42, credentials)).doesNotThrowAnyException();
+        server.verify();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"user", "trip", "permission", "expired", "window", "malformed"})
     void rejectsUntrustedAccessResponses(String invalid) {
         String response = access(invalid.equals("trip") ? 15 : 14, invalid.equals("user") ? 99 : 42,
                 invalid.equals("permission") ? "NONE" : "READ",
-                Instant.now().plusSeconds(invalid.equals("expired") ? -1 : invalid.equals("window") ? 60 : 20));
+                Instant.now().plusSeconds(invalid.equals("expired") ? -1 : invalid.equals("window") ? 61 : 20));
         if (invalid.equals("malformed")) {
             response = "{}";
         }

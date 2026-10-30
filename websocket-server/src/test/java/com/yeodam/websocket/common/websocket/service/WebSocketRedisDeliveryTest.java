@@ -102,6 +102,30 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
     }
 
     @Test
+    void JSON_STOMP_명령을_전달하고_Redis_결과와_여행_이벤트만_수신한다() throws Exception {
+        await().atMost(Duration.ofSeconds(5)).until(listener::isListening);
+        String body = "{\"requestId\":\"ws-edit-1\",\"changes\":{\"tripName\":\"Jeju\"}}";
+        try (Connection writer = connect(42L, "editor", "/user/queue/command-results");
+             Connection reader = connect(99L, "reader", "/topic/trips/14/events")) {
+            writer.send("SEND\ndestination:/app/trips/14/update\ncontent-type:application/json\n\n" + body);
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                    org.mockito.Mockito.verify(tripClient).execute(org.mockito.ArgumentMatchers.eq(14L),
+                            org.mockito.ArgumentMatchers.eq("update"), org.mockito.ArgumentMatchers.eq(mapper.readTree(body)),
+                            org.mockito.ArgumentMatchers.argThat(credentials -> "editor-token".equals(credentials.accessToken())),
+                            org.mockito.ArgumentMatchers.eq("csrf")));
+            assertThat(writer.messages.poll(200, TimeUnit.MILLISECONDS)).isNull();
+            String result = "{\"message\":\"TRIP_UPDATE_SUCCESS\",\"data\":{\"requestId\":\"ws-edit-1\",\"tripId\":14,\"status\":\"SUCCEEDED\",\"sequence\":8}}";
+            String tripEvent = "{\"message\":\"TRIP_UPDATED\",\"data\":{\"requestId\":\"ws-edit-1\",\"tripId\":14,\"sequence\":8,\"changes\":{\"tripName\":\"Jeju\"}}}";
+            redis.convertAndSend(CHANNEL, envelope("COMMAND_RESULT", "USER", 42, result));
+            redis.convertAndSend(CHANNEL, envelope("TRIP_EVENT", "TRIP", 14, tripEvent));
+            assertThat(writer.next()).contains("TRIP_UPDATE_SUCCESS", "ws-edit-1");
+            assertThat(reader.next()).contains("TRIP_UPDATED", "Jeju");
+            assertThat(writer.messages.poll(200, TimeUnit.MILLISECONDS)).isNull();
+            assertThat(reader.messages.poll(200, TimeUnit.MILLISECONDS)).isNull();
+        }
+    }
+
+    @Test
     void 개인_권한_변경을_재검증하고_해당_여행의_관련_연결을_모두_종료한다() throws Exception {
         await().atMost(Duration.ofSeconds(5)).until(listener::isListening);
         try (Connection first = connect(42L, "revoked-first", "/topic/trips/14/events");

@@ -11,6 +11,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -26,6 +27,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 })
 @Import(TripAccessService.class)
 class TripAccessServiceTest {
+    @MockitoBean
+    private TripEditAuthorizationService authorizationService;
+
     @Autowired private UserRepository users;
     @Autowired private TripRepository trips;
     @Autowired private TripAccessService service;

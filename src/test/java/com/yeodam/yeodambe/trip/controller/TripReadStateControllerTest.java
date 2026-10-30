@@ -54,7 +54,7 @@ class TripReadStateControllerTest {
     @BeforeEach
     void setUp() {
         ObjectMapper mapper = new ObjectMapper();
-        TripAccessService access = new TripAccessService(trips);
+        TripAccessService access = new TripAccessService(trips, mock(TripEditAuthorizationService.class));
         TripPlaceFolderListService folders = new TripPlaceFolderListService(
                 access, places, attachments, storage, mapper
         );
@@ -70,7 +70,7 @@ class TripReadStateControllerTest {
                 mock(TripDeletionService.class), mapper, mock(ShareTripService.class)
         );
         TripAttachmentController attachmentController = new TripAttachmentController(
-                new TripAttachmentListService(trips, places, attachments, storage, mapper, access),
+                new TripAttachmentListService(places, attachments, storage, mapper, access),
                 mock(TripAttachmentDetailService.class), mock(TripAttachmentDeletionService.class),
                 mock(TripAttachmentDownloadService.class), mock(BulkAttachmentDownloadService.class),
                 mock(InitialAttachmentUploadUrlService.class),
@@ -89,6 +89,7 @@ class TripReadStateControllerTest {
                 .build();
         Jwt jwt = Jwt.withTokenValue("test").header("alg", "none").subject("1").build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        when(trips.findByIdAndDeletedAtIsNull(7L)).thenReturn(Optional.of(trip));
         when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.of(trip));
         when(trips.existsByIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(true);
         when(places.existsByIdAndTripIdAndDeletedAtIsNull(3L, 7L)).thenReturn(true);
@@ -253,6 +254,7 @@ class TripReadStateControllerTest {
         when(attachments.findUnclassifiedByIssueWithCursor(
                 eq(7L), eq(AttachmentIssue.BLURRY), isNull(), isNull(), any()
         )).thenReturn(photos);
+        when(trips.findByIdAndDeletedAtIsNull(8L)).thenReturn(Optional.of(trip));
         when(trips.findByIdAndUserIdAndDeletedAtIsNull(8L, 1L)).thenReturn(Optional.of(trip));
         when(trips.existsByIdAndUserIdAndDeletedAtIsNull(8L, 1L)).thenReturn(true);
         when(places.existsByIdAndTripIdAndDeletedAtIsNull(3L, 8L)).thenReturn(true);
@@ -284,6 +286,7 @@ class TripReadStateControllerTest {
             "/trips/7/place-folders/3/attachments, PLACE_FOLDER_NOT_FOUND"
     })
     void 접근할_수_없으면_상태보다_404를_우선한다(String path, String message) throws Exception {
+        when(trips.findByIdAndDeletedAtIsNull(7L)).thenReturn(Optional.empty());
         when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.empty());
         when(trips.existsByIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(false);
         when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.PROCESSING);

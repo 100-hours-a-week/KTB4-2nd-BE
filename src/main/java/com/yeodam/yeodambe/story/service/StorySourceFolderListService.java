@@ -22,7 +22,7 @@ public class StorySourceFolderListService {
     private final AdditionalAttachmentExecutionRepository additionalExecutionRepository;
 
     public StorySourceFolderListResponse findFolders(Long userId, Long tripId, String cursor) {
-        var trip = tripAccessService.requireReadableTrip(tripId, userId);
+        var trip = tripAccessService.requireOwnedTrip(tripId, userId);
 
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
                 || additionalExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {

@@ -5,7 +5,8 @@ import java.util.List;
 public record TripAttachmentListResponse(
         List<Item> items,
         boolean hasNext,
-        String nextCursor
+        String nextCursor,
+        long sequence
 ) {
     public record Item(
             Long tripAttachmentId,

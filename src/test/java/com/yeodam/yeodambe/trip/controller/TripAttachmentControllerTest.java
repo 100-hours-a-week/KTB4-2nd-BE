@@ -229,7 +229,8 @@ class TripAttachmentControllerTest {
                 .thenReturn(new TripAttachmentListResponse(
                         List.of(new TripAttachmentListResponse.Item(11L, "https://example.com/preview")),
                         true,
-                        "next-cursor"
+                        "next-cursor",
+                        0L
                 ));
 
         MockMvcBuilders.standaloneSetup(controller)

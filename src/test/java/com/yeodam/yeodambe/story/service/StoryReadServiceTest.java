@@ -76,7 +76,7 @@ class StoryReadServiceTest {
         assertThat(response.days().getFirst().blocks().get(1).memo()).isEqualTo("사용자 편집");
         assertThat(response.days()).extracting(StoryDetailResponse.Day::dayLabel).containsExactly("첫째 날", "둘째 날", "첫째 날", "다른 라벨");
         assertThat(first.block().getMemo()).isNull();
-        verify(access).requireReadableTrip(7L, 42L);
+        verify(access).requireOwnedTrip(7L, 42L);
         verify(stories, never()).save(any());
         verify(blocks, never()).save(any());
     }
@@ -133,7 +133,7 @@ class StoryReadServiceTest {
 
     @Test
     void 권한이_없으면_스토리와_URL을_조회하지_않는다() {
-        doThrow(new TripNotFoundException()).when(access).requireReadableTrip(7L, 42L);
+        doThrow(new TripNotFoundException()).when(access).requireOwnedTrip(7L, 42L);
         assertThatThrownBy(() -> service.findStory(42L, 7L)).isInstanceOf(StoryNotFoundException.class);
         verifyNoInteractions(stories, blocks, storage);
     }
@@ -150,7 +150,7 @@ class StoryReadServiceTest {
         found(List.of(row(1, 7, "날", null)));
         when(storage.createReadUrl("preview/1")).thenThrow(new IllegalStateException("발급 실패"));
         assertThatThrownBy(() -> service.findStory(42L, 7L)).isInstanceOf(IllegalStateException.class);
-        doThrow(new DataAccessResourceFailureException("DB 실패")).when(access).requireReadableTrip(7L, 42L);
+        doThrow(new DataAccessResourceFailureException("DB 실패")).when(access).requireOwnedTrip(7L, 42L);
         assertThatThrownBy(() -> service.findStory(42L, 7L)).isInstanceOf(DataAccessResourceFailureException.class);
     }
 }

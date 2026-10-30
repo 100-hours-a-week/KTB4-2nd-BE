@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
+import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
@@ -30,7 +31,7 @@ public class TripPlaceFolderListService {
     private final ObjectMapper objectMapper;
 
     public TripPlaceFolderListResponse findPlaceFolders(Long userId, Long tripId, String cursor) {
-        tripAccessService.requireCompletedTrip(tripId, userId);
+        Trip trip = tripAccessService.requireCompletedTrip(tripId, userId);
         PlaceFolderCursor decoded = PlaceFolderCursor.decode(cursor, tripId, objectMapper);
 
         List<TripDetailPlace> fetched = tripDetailPlaceRepository.findPlaceFoldersWithCursor(
@@ -43,7 +44,7 @@ public class TripPlaceFolderListService {
         List<TripDetailPlace> page = hasNext ? fetched.subList(0, PAGE_SIZE) : fetched;
 
         if (page.isEmpty()) {
-            return new TripPlaceFolderListResponse(List.of(), false, null);
+            return new TripPlaceFolderListResponse(List.of(), false, null, trip.getSequence());
         }
 
         List<Long> placeIds = page.stream()
@@ -70,7 +71,7 @@ public class TripPlaceFolderListService {
             nextCursor = new PlaceFolderCursor(tripId, last.getPlaceName(), last.getId())
                     .encode(objectMapper);
         }
-        return new TripPlaceFolderListResponse(items, hasNext, nextCursor);
+        return new TripPlaceFolderListResponse(items, hasNext, nextCursor, trip.getSequence());
     }
 
     private String createThumbnailUrl(String thumbnailKey) {

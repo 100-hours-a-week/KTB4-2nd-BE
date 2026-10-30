@@ -65,6 +65,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripAttachmentRestorePersistenceTest {
     @MockitoBean
+    private TripEditAuthorizationService authorizationService;
+
+    @MockitoBean
     private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
     @Autowired private TripAttachmentRestoreService service;
     @Autowired private UserRepository users;

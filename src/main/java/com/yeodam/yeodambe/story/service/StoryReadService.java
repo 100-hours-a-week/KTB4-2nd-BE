@@ -57,7 +57,7 @@ public class StoryReadService {
 
     private void requireAccess(Long tripId, Long userId) {
         try {
-            tripAccessService.requireReadableTrip(tripId, userId);
+            tripAccessService.requireOwnedTrip(tripId, userId);
         } catch (TripNotFoundException e) {
             throw new StoryNotFoundException();
         }

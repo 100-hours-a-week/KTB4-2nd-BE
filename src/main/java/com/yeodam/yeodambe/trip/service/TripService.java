@@ -374,7 +374,8 @@ public class TripService {
                 trip.getEndDate(),
                 regions,
                 tripAttachmentRepository.countVisibleForEditByTripId(tripId),
-                new TripAttachmentListResponse(items, hasNext, nextCursor)
+                new TripAttachmentListResponse(items, hasNext, nextCursor, trip.getSequence()),
+                trip.getSequence()
         );
     }
 

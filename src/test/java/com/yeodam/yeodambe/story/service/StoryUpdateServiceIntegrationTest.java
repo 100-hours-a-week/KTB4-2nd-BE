@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.service.TripAccessService;
+import com.yeodam.yeodambe.trip.service.TripEditAuthorizationService;
 import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +49,7 @@ class StoryUpdateServiceIntegrationTest {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired StoryUpdateService service;
     @MockitoBean TripAttachmentStorageClient storage;
+    @MockitoBean TripEditAuthorizationService authorizationService;
     private TransactionTemplate tx;
     private Fixture fixture;
 

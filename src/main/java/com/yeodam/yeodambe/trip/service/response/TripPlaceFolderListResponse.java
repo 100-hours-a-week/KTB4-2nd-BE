@@ -5,7 +5,8 @@ import java.util.List;
 public record TripPlaceFolderListResponse(
         List<Item> items,
         boolean hasNext,
-        String nextCursor
+        String nextCursor,
+        long sequence
 ) {
     public record Item(
             Long tripPlaceId,

@@ -5,7 +5,12 @@ import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
+import com.yeodam.yeodambe.trip.entity.TripSharePermission;
+import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
+import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
@@ -15,6 +20,8 @@ import com.yeodam.yeodambe.user.service.UserRegistrationService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -27,6 +34,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -58,6 +68,10 @@ class TripEditIntegrationTest {
     @Autowired
     private TripAttachmentRepository attachments;
     @Autowired
+    private TripDetailPlaceRepository places;
+    @Autowired
+    private TripShareUserRepository shares;
+    @Autowired
     private StoredFileRepository files;
     @Autowired
     private ObjectMapper mapper;
@@ -75,6 +89,77 @@ class TripEditIntegrationTest {
         accessToken = tokens.issue(userId, sessions.issue(userId).sid());
         tripId = create(userId);
         when(storage.createReadUrl(anyString())).thenAnswer(i -> "https://test.example/" + i.getArgument(0));
+    }
+
+    @Test
+    void 공유_철회와_만료_후에는_실제_여행과_사진을_조회할_수_없다() throws Exception {
+        Long readerId = register();
+        TripAttachment attachment = photo(tripId);
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
+        TripShareUser share = shares.saveAndFlush(new TripShareUser(
+                tripId, userId, readerId, TripSharePermission.READ, now.plusHours(1), now));
+        accessToken = tokens.issue(readerId, sessions.issue(readerId).sid());
+        mvc.perform(request(tripId)).andExpect(status().isOk());
+
+        jdbc.update("UPDATE trip_share_users SET deleted_at = CURRENT_TIMESTAMP WHERE trip_share_id = ?", share.getId());
+        mvc.perform(request(tripId)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/attachments/" + attachment.getId()).contextPath("/api")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isNotFound());
+
+        jdbc.update("UPDATE trip_share_users SET deleted_at = NULL, expires_at = ? WHERE trip_share_id = ?",
+                now.minusSeconds(1), share.getId());
+        mvc.perform(request(tripId)).andExpect(status().isNotFound());
+    }
+
+    @ParameterizedTest
+    @EnumSource(TripSharePermission.class)
+    void 공유자는_재연결_후_실제_데이터와_sequence_사진_폴더를_조회한다(TripSharePermission permission) throws Exception {
+        Long actorId = register();
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
+        shares.saveAndFlush(new TripShareUser(
+                tripId, userId, actorId, permission, now.plusHours(1), now));
+        TripDetailPlace place = places.saveAndFlush(TripDetailPlace.fromAnalysis(
+                tripId, 1, "공유장소", BigDecimal.ONE, BigDecimal.ONE,
+                now.minusHours(2), now.minusHours(1), "preview-shared"));
+        TripAttachment attachment = photo(tripId);
+        jdbc.update("UPDATE trip_attachments SET trip_place_id = ?, classification_status = 'ACTIVE' WHERE trip_attachment_id = ?",
+                place.getId(), attachment.getId());
+        jdbc.update("UPDATE trips SET change_sequence = 7 WHERE trip_id = ?", tripId);
+        accessToken = tokens.issue(actorId, sessions.issue(actorId).sid());
+
+        mvc.perform(get("/api/trips/" + tripId).contextPath("/api")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tripName").value("수정 여행"))
+                .andExpect(jsonPath("$.data.sequence").value(7))
+                .andExpect(jsonPath("$.data.attachmentCount").value(1));
+        mvc.perform(request(tripId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sequence").value(7))
+                .andExpect(jsonPath("$.data.attachments.sequence").value(7))
+                .andExpect(jsonPath("$.data.attachments.items[0].tripAttachmentId").value(attachment.getId()));
+        mvc.perform(get("/api/trips/" + tripId + "/place-folders").contextPath("/api")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sequence").value(7))
+                .andExpect(jsonPath("$.data.items[0].tripPlaceId").value(place.getId()))
+                .andExpect(jsonPath("$.data.items[0].attachmentCount").value(1));
+        mvc.perform(get("/api/trips/" + tripId + "/place-folders/" + place.getId() + "/attachments").contextPath("/api")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sequence").value(7))
+                .andExpect(jsonPath("$.data.items[0].tripAttachmentId").value(attachment.getId()));
+        mvc.perform(get("/api/attachments/" + attachment.getId()).contextPath("/api")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.originalUrl").value("https://test.example/" + files.findById(attachment.getFileId()).orElseThrow().getObjectKey()));
+        mvc.perform(get("/api/attachments/" + attachment.getId() + "/download").contextPath("/api")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/trips/" + tripId + "/story/source-folders").contextPath("/api")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isNotFound());
     }
 
     @Test

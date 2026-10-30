@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.story.service.StoryValidator;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.service.TripAccessService;
+import com.yeodam.yeodambe.trip.service.TripEditAuthorizationService;
 import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.EntityManager;
 import org.hibernate.SessionFactory;
@@ -35,6 +36,9 @@ import static org.mockito.Mockito.*;
 @Import({TestcontainersConfiguration.class, StoryReadService.class, StoryValidator.class, TripAccessService.class})
 @ActiveProfiles("test")
 class StoryRepositoryTest {
+    @MockitoBean
+    private TripEditAuthorizationService authorizationService;
+
     @Autowired
     EntityManager em;
 

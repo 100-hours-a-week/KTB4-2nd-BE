@@ -14,15 +14,22 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class TripAccessService {
     private final TripRepository tripRepository;
+    private final TripEditAuthorizationService authorizationService;
 
     public Trip requireWritableTrip(Long tripId, Long userId) {
+        return requireOwnedTrip(tripId, userId);
+    }
+
+    public Trip requireOwnedTrip(Long tripId, Long userId) {
         return tripRepository.findByIdAndUserIdAndDeletedAtIsNull(tripId, userId)
                 .orElseThrow(TripNotFoundException::new);
     }
 
     public Trip requireReadableTrip(Long tripId, Long userId) {
-        return tripRepository.findByIdAndUserIdAndDeletedAtIsNull(tripId, userId)
+        Trip trip = tripRepository.findByIdAndDeletedAtIsNull(tripId)
                 .orElseThrow(TripNotFoundException::new);
+        authorizationService.requireReadPermission(trip, userId);
+        return trip;
     }
 
     public Trip requireCompletedTrip(Long tripId, Long userId) {

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
@@ -15,6 +16,7 @@ import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.ShareTripService;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.PlaceFolderCursor;
+import com.yeodam.yeodambe.trip.service.request.FavoriteTripCursor;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
@@ -22,6 +24,8 @@ import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
+import com.yeodam.yeodambe.trip.service.response.FavoriteTripListResponse;
+import com.yeodam.yeodambe.trip.service.response.FavoriteTripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.user.security.SecurityConfig;
@@ -780,6 +784,73 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
         verifyNoInteractions(shareTripService);
+    }
+
+    @Test
+    void 즐겨찾기_경로로_인증_사용자의_카드와_다음_페이지_정보를_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        String cursor = new FavoriteTripCursor(LocalDate.of(2026, 10, 20), 80L).encode(objectMapper);
+        var item = new FavoriteTripListItemResponse(79L, "가을 여행", LocalDate.of(2026, 10, 19),
+                LocalDate.of(2026, 10, 21), 3L, "https://image.test/79", true);
+        given(tripService.findFavoriteTrips(42L, cursor))
+                .willReturn(new FavoriteTripListResponse(12L, List.of(item), true, "next-cursor"));
+
+        mockMvc.perform(get("/trips/favorites").queryParam("cursor", cursor)
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("FAVORITE_TRIP_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.totalCount").value(12))
+                .andExpect(jsonPath("$.data.items[0].tripId").value(79))
+                .andExpect(jsonPath("$.data.items[0].tripName").value("가을 여행"))
+                .andExpect(jsonPath("$.data.items[0].startDate").value("2026-10-19"))
+                .andExpect(jsonPath("$.data.items[0].endDate").value("2026-10-21"))
+                .andExpect(jsonPath("$.data.items[0].attachmentCount").value(3))
+                .andExpect(jsonPath("$.data.items[0].thumbnailUrl").value("https://image.test/79"))
+                .andExpect(jsonPath("$.data.items[0].isFavorite").value(true))
+                .andExpect(jsonPath("$.data.items[0].status").doesNotExist())
+                .andExpect(jsonPath("$.data.hasNext").value(true))
+                .andExpect(jsonPath("$.data.nextCursor").value("next-cursor"));
+
+        then(tripService).should().findFavoriteTrips(42L, cursor);
+    }
+
+    @Test
+    void 즐겨찾기_첫_조회는_커서를_생략하고_빈_결과도_200이다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(tripService.findFavoriteTrips(42L, null))
+                .willReturn(new FavoriteTripListResponse(0L, List.of(), false, null));
+
+        mockMvc.perform(get("/trips/favorites").cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalCount").value(0))
+                .andExpect(jsonPath("$.data.items").isEmpty())
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").isEmpty());
+
+        then(tripService).should().findFavoriteTrips(42L, null);
+    }
+
+    @Test
+    void 즐겨찾기_커서_오류는_공통_처리기를_통해_400으로_응답한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(tripService.findFavoriteTrips(42L, "bad-cursor")).willThrow(new InvalidCursorException());
+
+        mockMvc.perform(get("/trips/favorites").queryParam("cursor", "bad-cursor")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_CURSOR"))
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    void 즐겨찾기_API는_쿠키_누락과_잘못된_JWT를_401로_거절한다() throws Exception {
+        mockMvc.perform(get("/trips/favorites"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+        mockMvc.perform(get("/trips/favorites").cookie(new Cookie("accessToken", "invalid-jwt")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+        verifyNoInteractions(tripService);
     }
 
     private String validRequest() {

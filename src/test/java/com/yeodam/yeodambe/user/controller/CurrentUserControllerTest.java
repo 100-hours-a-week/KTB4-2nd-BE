@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.user.controller;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.user.service.CurrentUserService;
 import com.yeodam.yeodambe.user.service.response.CurrentUserResponse;
+import com.yeodam.yeodambe.user.service.response.UserStatsResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -46,5 +47,18 @@ class CurrentUserControllerTest {
         assertThat(response.getBody()).isEqualTo(
                 new ApiResponse<>("USER_FOUND", data)
         );
+    }
+    @Test
+    void 인증된_본인의_통계를_성공_응답으로_반환한다() {
+        Jwt jwt = mock(Jwt.class);
+        UserStatsResponse data = new UserStatsResponse(2, 10, 1, 4096, 30_000_000_000L);
+        given(jwt.getSubject()).willReturn("42");
+        given(service.findStats(42L)).willReturn(data);
+
+        var response = controller.findStats(jwt);
+
+        then(service).should().findStats(42L);
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isEqualTo(new ApiResponse<>("USER_STATS_FOUND", data));
     }
 }

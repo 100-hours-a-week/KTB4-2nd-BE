@@ -16,10 +16,11 @@ import java.util.List;
 import java.util.Optional;
 
 public interface TripRepository extends JpaRepository<Trip, Long> {
+    Optional<Trip> findByIdAndDeletedAtIsNull(Long tripId);
+
     @Modifying(flushAutomatically = true)
     @Query(value = "UPDATE trips SET change_sequence = change_sequence + 1 WHERE trip_id = :tripId", nativeQuery = true)
     int advanceSequence(@Param("tripId") Long tripId);
-
 
     @Query("""
         SELECT trip FROM Trip trip
@@ -194,5 +195,34 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
               and trip.deletedAt is null
             """)
     int softDeleteByUserId(Long userId, LocalDateTime deletedAt);
+
+    @Query("""
+            select trip
+            from Trip trip
+            where trip.userId = :userId
+              and trip.deletedAt is null
+              and trip.processingStatus = 'COMPLETED'
+              and trip.favorite = true
+              and (:startDate is null
+                   or trip.startDate < :startDate
+                   or (trip.startDate = :startDate and trip.id < :tripId))
+            order by trip.startDate desc, trip.id desc
+            """)
+    List<Trip> findFavoritePage(
+            @Param("userId") Long userId,
+            @Param("startDate") LocalDate startDate,
+            @Param("tripId") Long tripId,
+            Pageable pageable
+    );
+
+    @Query("""
+            select count(trip)
+            from Trip trip
+            where trip.userId = :userId
+              and trip.deletedAt is null
+              and trip.processingStatus = 'COMPLETED'
+              and trip.favorite = true
+            """)
+    long countFavoriteTrips(@Param("userId") Long userId);
 
 }

@@ -199,6 +199,55 @@ class StoryRepositoryTest {
         assertThat(blocks.findAllByStoryId(-1L)).isEmpty();
     }
 
+    @Test
+    void 본인의_완료_여행에_연결된_현재_완료_스토리만_집계한다() {
+        Trip owned = trip();
+        ReflectionTestUtils.setField(owned, "processingStatus", ProcessingStatus.COMPLETED);
+        story(owned, Story.Status.COMPLETED);
+        Story current = story(owned, Story.Status.COMPLETED);
+        select(owned, current);
+
+        Trip other = trip();
+        ReflectionTestUtils.setField(other, "processingStatus", ProcessingStatus.COMPLETED);
+        select(other, story(other, Story.Status.COMPLETED));
+
+        assertThat(stories.countCurrentCompletedByUserId(owned.getUserId())).isEqualTo(1);
+        assertThat(stories.countCurrentCompletedByUserId(-1L)).isZero();
+
+        for (Story.Status status : List.of(Story.Status.PROCESSING, Story.Status.FAILED, Story.Status.CANCELED)) {
+            ReflectionTestUtils.setField(current, "processingStatus", status);
+            em.flush();
+            assertThat(stories.countCurrentCompletedByUserId(owned.getUserId())).isZero();
+        }
+        ReflectionTestUtils.setField(current, "processingStatus", Story.Status.COMPLETED);
+        for (ProcessingStatus status : List.of(ProcessingStatus.PROCESSING, ProcessingStatus.FAILED)) {
+            ReflectionTestUtils.setField(owned, "processingStatus", status);
+            em.flush();
+            assertThat(stories.countCurrentCompletedByUserId(owned.getUserId())).isZero();
+        }
+        ReflectionTestUtils.setField(owned, "processingStatus", ProcessingStatus.COMPLETED);
+        current.softDelete(LocalDateTime.now());
+        em.flush();
+        assertThat(stories.countCurrentCompletedByUserId(owned.getUserId())).isZero();
+
+        Story replacement = story(owned, Story.Status.COMPLETED);
+        select(owned, replacement);
+        assertThat(stories.countCurrentCompletedByUserId(owned.getUserId())).isEqualTo(1);
+        owned.softDelete(LocalDateTime.now());
+        em.flush();
+        assertThat(stories.countCurrentCompletedByUserId(owned.getUserId())).isZero();
+    }
+
+    @Test
+    void 다른_여행의_스토리를_잘못_연결해도_집계하지_않는다() {
+        Trip owned = trip();
+        ReflectionTestUtils.setField(owned, "processingStatus", ProcessingStatus.COMPLETED);
+        Trip other = trip();
+        select(owned, story(other, Story.Status.COMPLETED));
+
+        assertThat(stories.countCurrentCompletedByUserId(owned.getUserId())).isZero();
+    }
+
     private Trip trip() {
         User user = new User(java.util.UUID.randomUUID()+"@story.test", "작성자");
         em.persist(user);

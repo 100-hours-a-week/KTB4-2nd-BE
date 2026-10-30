@@ -40,4 +40,17 @@ public interface StoryRepository extends JpaRepository<Story, Long> {
             where story.id = :storyId
             """)
     Optional<Long> findTripIdByStoryId(Long storyId);
+
+    @Query("""
+            select count(story)
+            from Story story
+            join Trip trip on trip.currentStoryId = story.id
+            where trip.userId = :userId
+              and trip.processingStatus = 'COMPLETED'
+              and trip.deletedAt is null
+              and story.tripId = trip.id
+              and story.processingStatus = 'COMPLETED'
+              and story.deletedAt is null
+            """)
+    long countCurrentCompletedByUserId(Long userId);
 }

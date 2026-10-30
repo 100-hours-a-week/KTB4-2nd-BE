@@ -24,6 +24,7 @@ import java.util.UUID;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -64,6 +65,37 @@ class CookieJwtAuthenticationIntegrationTest {
                         .cookie(new Cookie("accessToken", accessToken)))
                 .andExpect(status().isOk())
                 .andExpect(content().string(user.getUserId().toString()));
+    }
+
+    @Test
+    void 새_회원의_통계를_실제_로그인_쿠키로_조회한다() throws Exception {
+        String unique = UUID.randomUUID().toString();
+        User user = userRegistrationService.register(
+                "stats-" + unique + "@yeodam.test", "통계회원",
+                OAuthProvider.KAKAO, "kakao-stats-" + unique);
+        IssuedLoginSession session = loginSessionIssuer.issue(user.getUserId());
+        String accessToken = accessTokenIssuer.issue(user.getUserId(), session.sid());
+
+        mockMvc.perform(get("/users/me/stats")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("USER_STATS_FOUND"))
+                .andExpect(jsonPath("$.data.tripCount").value(0))
+                .andExpect(jsonPath("$.data.attachmentCount").value(0))
+                .andExpect(jsonPath("$.data.storyCount").value(0))
+                .andExpect(jsonPath("$.data.storageUsedBytes").value(0))
+                .andExpect(jsonPath("$.data.storageMaximumBytes").value(30_000_000_000L));
+    }
+
+    @Test
+    void 통계_API는_인증_쿠키가_없거나_잘못되면_거부한다() throws Exception {
+        mockMvc.perform(get("/users/me/stats"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+        mockMvc.perform(get("/users/me/stats")
+                        .cookie(new Cookie("accessToken", "invalid-jwt")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
     }
 
     @Test

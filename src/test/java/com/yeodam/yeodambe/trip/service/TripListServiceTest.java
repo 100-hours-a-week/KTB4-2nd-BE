@@ -11,11 +11,15 @@ import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import com.yeodam.yeodambe.trip.service.request.TripListCursor;
+import com.yeodam.yeodambe.trip.service.request.FavoriteTripCursor;
+import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.Pageable;
 
@@ -25,6 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -192,6 +197,69 @@ class TripListServiceTest {
         assertThat(updating.getProcessingStatus()).isEqualTo(ProcessingStatus.COMPLETED);
         verify(executions).findActiveTripIds(1L, List.of(7L, 6L, 5L));
         verifyNoMoreInteractions(executions);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 10, 11})
+    void 즐겨찾기는_열개를_반환하고_열한번째로_다음_페이지를_판단한다(int size) {
+        List<Trip> fetched = new ArrayList<>();
+        for (long id = size; id > 0; id--) {
+            fetched.add(trip(id, true, ProcessingStatus.COMPLETED, null));
+        }
+        when(tripRepository.countFavoriteTrips(1L)).thenReturn((long) size);
+        when(tripRepository.findFavoritePage(eq(1L), isNull(), isNull(), any(Pageable.class)))
+                .thenReturn(fetched);
+
+        var response = tripService.findFavoriteTrips(1L, null);
+
+        assertThat(response.totalCount()).isEqualTo(size);
+        assertThat(response.items()).hasSize(Math.min(size, 10));
+        assertThat(response.hasNext()).isEqualTo(size > 10);
+        if (size > 10) {
+            var cursor = FavoriteTripCursor.decode(response.nextCursor(), objectMapper);
+            assertThat(cursor.tripId()).isEqualTo(2L);
+            assertThat(cursor.startDate()).isEqualTo(LocalDate.of(2026, 9, 1));
+        } else {
+            assertThat(response.nextCursor()).isNull();
+        }
+        verify(tripRepository).findFavoritePage(eq(1L), isNull(), isNull(),
+                argThat(page -> page.getPageNumber() == 0 && page.getPageSize() == 11));
+        if (size == 0) {
+            verifyNoInteractions(tripAttachmentRepository, storageClient);
+        }
+        verifyNoInteractions(tripRegionRepository, executions);
+    }
+
+    @Test
+    void 다음_페이지의_조회위치를_전달하고_전체개수와_사진수와_썸네일을_반환한다() {
+        var cursor = new FavoriteTripCursor(LocalDate.of(2026, 9, 1), 80L);
+        List<Trip> page = List.of(trip(79L, true, ProcessingStatus.COMPLETED, "thumb/79.webp"),
+                trip(78L, true, ProcessingStatus.COMPLETED, null));
+        when(tripRepository.countFavoriteTrips(1L)).thenReturn(25L);
+        when(tripRepository.findFavoritePage(eq(1L), eq(cursor.startDate()), eq(80L), any(Pageable.class)))
+                .thenReturn(page);
+        when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(79L, 78L)))
+                .thenReturn(List.of(new TripAttachmentCount(79L, 3L)));
+        when(storageClient.createReadUrl("thumb/79.webp")).thenReturn("https://image.test/79");
+
+        var response = tripService.findFavoriteTrips(1L, cursor.encode(objectMapper));
+
+        assertThat(response.totalCount()).isEqualTo(25L);
+        assertThat(response.items()).extracting(item -> item.tripId()).containsExactly(79L, 78L);
+        assertThat(response.items()).extracting(item -> item.attachmentCount()).containsExactly(3L, 0L);
+        assertThat(response.items().getFirst().thumbnailUrl()).isEqualTo("https://image.test/79");
+        assertThat(response.items().getLast().thumbnailUrl()).isNull();
+        assertThat(response.items()).allMatch(item -> item.isFavorite());
+        assertThat(response.nextCursor()).isNull();
+        verify(tripAttachmentRepository).countNotDeletedByTripIds(List.of(79L, 78L));
+        verify(storageClient).createReadUrl("thumb/79.webp");
+    }
+
+    @Test
+    void 잘못된_즐겨찾기_커서는_DB조회_전에_거절한다() {
+        assertThatThrownBy(() -> tripService.findFavoriteTrips(1L, ""))
+                .isInstanceOf(InvalidCursorException.class);
+        verifyNoInteractions(tripRepository, tripAttachmentRepository, storageClient);
     }
 
     private Trip trip(Long id, boolean favorite, ProcessingStatus status, String thumbnailKey) {

@@ -36,7 +36,8 @@ public class TripEditAuthorizationService {
             throw new TripNotFoundException();
         }
         Instant checkedAt = clock.instant();
-        Instant accessValidUntil = checkedAt.plusSeconds(30);
+        // 30초 재검증의 처리 여유를 두되 실제 공유 만료는 넘기지 않는다.
+        Instant accessValidUntil = checkedAt.plusSeconds(60);
         if (trip.getUserId().equals(actorId)) {
             return new TripEditAccess("OWNER", checkedAt, accessValidUntil);
         }

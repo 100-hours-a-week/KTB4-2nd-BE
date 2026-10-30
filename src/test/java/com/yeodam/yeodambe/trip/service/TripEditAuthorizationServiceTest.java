@@ -41,12 +41,12 @@ class TripEditAuthorizationServiceTest {
     }
 
     @Test
-    void 소유자의_읽기_권한은_검사_시각부터_30초간_유효하다() {
+    void 소유자의_읽기_권한은_재검증_여유를_포함해_60초간_유효하다() {
         TripEditAccess access = service.requireReadPermission(trip, 1L);
 
         assertThat(access.permission()).isEqualTo("OWNER");
         assertThat(access.checkedAt()).isEqualTo(clock.instant());
-        assertThat(access.accessValidUntil()).isEqualTo(clock.instant().plusSeconds(30));
+        assertThat(access.accessValidUntil()).isEqualTo(clock.instant().plusSeconds(60));
         verifyNoInteractions(shares);
     }
 
@@ -61,13 +61,13 @@ class TripEditAuthorizationServiceTest {
     }
 
     @Test
-    void WRITE_공유_읽기_검사는_30초를_상한으로_사용한다() {
+    void WRITE_공유_읽기_검사는_60초를_상한으로_사용한다() {
         stored(share(1L, TripSharePermission.WRITE, NOW.plusHours(1)));
 
         TripEditAccess access = service.requireReadPermission(trip, 2L);
 
         assertThat(access.permission()).isEqualTo("WRITE");
-        assertThat(access.accessValidUntil()).isEqualTo(clock.instant().plusSeconds(30));
+        assertThat(access.accessValidUntil()).isEqualTo(clock.instant().plusSeconds(60));
     }
 
     @Test

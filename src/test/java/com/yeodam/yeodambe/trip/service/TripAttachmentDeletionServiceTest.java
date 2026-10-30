@@ -17,6 +17,7 @@ import com.yeodam.yeodambe.user.service.UserStatsService;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.stream.LongStream;
 
@@ -35,6 +36,21 @@ class TripAttachmentDeletionServiceTest {
     private final jakarta.persistence.EntityManager entityManager = mock(jakarta.persistence.EntityManager.class);
     private final TripAttachmentDeletionService service =
             new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.repository.TripRepository.class), guard, entityManager, tripAttachmentRepository, userStats, mapCache);
+
+    @Test
+    void 공유_삭제의_잘못된_ID는_조회와_부분_삭제_전에_거절한다() {
+        Trip trip = mock(Trip.class);
+        List<List<Long>> invalidIds = List.of(
+                List.of(), List.of(1L, 1L), List.of(0L), List.of(-1L),
+                Arrays.asList(1L, null), LongStream.rangeClosed(1, 201).boxed().toList());
+        for (List<Long> ids : invalidIds) {
+            assertThatThrownBy(() -> service.deleteForSharedEditing(trip, ids))
+                    .isInstanceOf(InvalidAttachmentIdsException.class);
+        }
+        assertThatThrownBy(() -> service.deleteForSharedEditing(trip, null))
+                .isInstanceOf(InvalidAttachmentIdsException.class);
+        verifyNoInteractions(tripAttachmentRepository, entityManager, userStats, mapCache);
+    }
 
     @Test
     void 첨부_200개는_일괄_삭제할_수_있다() {
@@ -114,6 +130,9 @@ class TripAttachmentDeletionServiceTest {
 
         when(deletedAttachment.getTripPlace()).thenReturn(place);
         when(deletedAttachment.getTrip()).thenReturn(trip);
+        when(deletedAttachment.getTripId()).thenReturn(99L);
+        when(trip.getId()).thenReturn(99L);
+        when(place.getTripId()).thenReturn(99L);
         when(deletedAttachment.getId()).thenReturn(11L);
         when(deletedAttachment.getPreviewStorageKey()).thenReturn("old-preview");
         when(place.getThumbnailKey()).thenReturn("old-preview");
@@ -121,19 +140,23 @@ class TripAttachmentDeletionServiceTest {
         when(deletedAttachment.getFile()).thenReturn(deletedFile);
         when(lowerEvaluation.getEvaluation()).thenReturn(70);
         when(lowerEvaluation.getId()).thenReturn(13L);
+        when(lowerEvaluation.getTripPlaceId()).thenReturn(7L);
         when(lowerEvaluation.getPreviewStorageKey()).thenReturn("lower-preview");
         when(replacement.getEvaluation()).thenReturn(95);
         when(replacement.getId()).thenReturn(12L);
+        when(replacement.getTripPlaceId()).thenReturn(7L);
         when(replacement.getPreviewStorageKey()).thenReturn("new-preview");
         when(tripAttachmentRepository.findAccessibleById(11L, 1L))
                 .thenReturn(Optional.of(deletedAttachment));
-        when(tripAttachmentRepository.findAllActiveByTripPlaceId(
-                place.getId(), ClassificationStatus.ACTIVE))
+        when(tripAttachmentRepository.findAllActiveByTripId(
+                99L, ClassificationStatus.ACTIVE))
                 .thenReturn(List.of(lowerEvaluation, replacement));
 
         service.deleteOne(1L, 11L);
 
         verify(place).changeThumbnailKey("new-preview");
+        verify(tripAttachmentRepository).findAllActiveByTripId(99L, ClassificationStatus.ACTIVE);
+        verify(tripAttachmentRepository, never()).findAllActiveByTripPlaceId(any(), any());
         verify(deletedAttachment).softDelete(any());
         verify(deletedFile).softDelete(any());
         verify(userStats).refreshFromActiveTrips(1L);

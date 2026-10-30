@@ -91,5 +91,28 @@ class StoryEntityPersistenceTest {
         assertThat(reloaded.getTripAttachmentId()).isEqualTo(attachment.getId());
         assertThat(reloaded.getSourceTripPlaceId()).isEqualTo(place.getId());
         assertThat(reloaded.getSourceDate()).isEqualTo(place.getStartedAt().toLocalDate());
+
+        TripDetailPlace replacementPlace = TripDetailPlace.fromAnalysis(trip.getId(), 2, "새 장소",
+                BigDecimal.ZERO, BigDecimal.ZERO, LocalDateTime.of(2026, 10, 14, 12, 0),
+                LocalDateTime.of(2026, 10, 14, 13, 0), null);
+        em.persist(replacementPlace);
+        StoredFile replacementFile = StoredFile.uploaded(user.getUserId(), "새사진.jpg", "새원본", "image/jpeg");
+        em.persist(replacementFile);
+        TripAttachment replacement = TripAttachment.initial(trip.getId(), replacementFile.getId(), "새분석", "새미리보기");
+        em.persist(replacement);
+        reloaded.replaceAttachment(replacement.getId(), replacementPlace.getId(),
+                replacementPlace.getStartedAt().toLocalDate());
+        reloaded.updateContent("새 날짜 문구", "새 설명", null, 1);
+        em.flush();
+        em.clear();
+
+        StoryBlock changed = em.find(StoryBlock.class, block.getId());
+        assertThat(changed.getTripAttachmentId()).isEqualTo(replacement.getId());
+        assertThat(changed.getAttachment().getId()).isEqualTo(replacement.getId());
+        assertThat(changed.getSourceTripPlaceId()).isEqualTo(replacementPlace.getId());
+        assertThat(changed.getSourceDate()).isEqualTo(LocalDate.of(2026, 10, 14));
+        assertThat(changed.getDayLabel()).isEqualTo("새 날짜 문구");
+        assertThat(changed.getDetailSummary()).isEqualTo("새 설명");
+        assertThat(em.find(TripAttachment.class, attachment.getId()).getDeletedAt()).isNull();
     }
 }

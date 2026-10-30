@@ -11,6 +11,50 @@ import static org.assertj.core.api.Assertions.*;
 
 class StoryEntityTest {
     @Test
+    void 요청_문구를_그대로_수정하고_사진_교체시에만_스냅샷을_변경한다() {
+        var date = LocalDate.of(2026, 10, 13);
+        var block = new StoryBlock(1L, 2L, 5L, date, 1, "첫째 날", "기존 설명", null);
+        block.updateContent(" 새 날짜 문구 ", " 새 설명 ", "메모", 2);
+        assertThat(block.getDayLabel()).isEqualTo(" 새 날짜 문구 ");
+        assertThat(block.getDetailSummary()).isEqualTo(" 새 설명 ");
+        assertThat(block.getSourceDate()).isEqualTo(date);
+        assertThat(block.getSourceTripPlaceId()).isEqualTo(5L);
+        block.replaceAttachment(3L, 6L, date.plusDays(1));
+        assertThat(block.getTripAttachmentId()).isEqualTo(3L);
+        assertThat(block.getSourceTripPlaceId()).isEqualTo(6L);
+        assertThat(block.getSourceDate()).isEqualTo(date.plusDays(1));
+        assertThat(block.getMemo()).isEqualTo("메모");
+    }
+
+    @Test
+    void 잘못된_문구와_사진_참조는_블록을_변경하지_않는다() {
+        var date = LocalDate.of(2026, 10, 13);
+        var block = new StoryBlock(1L, 2L, 5L, date, 1, "기존 날짜", "기존 설명", "메모");
+        for (String text : new String[]{null, "", " ", "\u200B", "😀".repeat(41)}) {
+            assertThatThrownBy(() -> block.updateContent(text, "설명", null, 2))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+            assertThatThrownBy(() -> block.updateContent("날짜", text, null, 2))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+        }
+        assertThatThrownBy(() -> block.updateContent("새 날짜", "새 설명", null, 0))
+                .isInstanceOf(InvalidStoryUpdateException.class);
+        for (Long id : java.util.Arrays.asList(null, 0L, -1L)) {
+            assertThatThrownBy(() -> block.replaceAttachment(id, 6L, date))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+            assertThatThrownBy(() -> block.replaceAttachment(3L, id, date))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+        }
+        assertThatThrownBy(() -> block.replaceAttachment(3L, 6L, null))
+                .isInstanceOf(InvalidStoryUpdateException.class);
+        assertThat(block.getDayLabel()).isEqualTo("기존 날짜");
+        assertThat(block.getDetailSummary()).isEqualTo("기존 설명");
+        assertThat(block.getMemo()).isEqualTo("메모");
+        assertThat(block.getOrderNumber()).isEqualTo(1);
+        assertThat(block.getTripAttachmentId()).isEqualTo(2L);
+        assertThat(block.getSourceTripPlaceId()).isEqualTo(5L);
+    }
+
+    @Test
     void 기존_스토리의_ID와_상태를_유지하며_분위기와_요약만_수정한다() {
         Story story = new Story(7L, Story.Mood.PLAIN, "기존 요약");
         ReflectionTestUtils.setField(story, "id", 3L);

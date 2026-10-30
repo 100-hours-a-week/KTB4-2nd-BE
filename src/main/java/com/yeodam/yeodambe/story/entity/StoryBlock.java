@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.story.entity;
 
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.InvalidStoryUpdateException;
+import com.yeodam.yeodambe.common.validation.TextValidation;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -33,10 +34,10 @@ public class StoryBlock {
     @Column(name = "trip_attachment_id", nullable = false)
     private Long tripAttachmentId;
 
-    @Column(name = "source_trip_place_id", nullable = false, updatable = false)
+    @Column(name = "source_trip_place_id", nullable = false)
     private Long sourceTripPlaceId;
 
-    @Column(name = "source_date", nullable = false, updatable = false)
+    @Column(name = "source_date", nullable = false)
     private LocalDate sourceDate;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -85,6 +86,42 @@ public class StoryBlock {
 
     public void restore() {
         this.deletedAt = null;
+    }
+
+    public void updateContent(
+            String dayLabel,
+            String detailSummary,
+            String memo,
+            int orderNumber
+    ) {
+        if (!TextValidation.hasVisibleContent(dayLabel)
+                || dayLabel.codePointCount(0, dayLabel.length()) > 40
+                || !TextValidation.hasVisibleContent(detailSummary)
+                || detailSummary.codePointCount(
+                        0, detailSummary.length()
+                ) > 40) {
+            throw new InvalidStoryUpdateException();
+        }
+
+        updateMemoAndOrder(memo, orderNumber);
+        this.dayLabel = dayLabel;
+        this.detailSummary = detailSummary;
+    }
+
+    public void replaceAttachment(
+            Long tripAttachmentId,
+            Long sourceTripPlaceId,
+            LocalDate sourceDate
+    ) {
+        if (tripAttachmentId == null || tripAttachmentId <= 0
+                || sourceTripPlaceId == null || sourceTripPlaceId <= 0
+                || sourceDate == null) {
+            throw new InvalidStoryUpdateException();
+        }
+
+        this.tripAttachmentId = tripAttachmentId;
+        this.sourceTripPlaceId = sourceTripPlaceId;
+        this.sourceDate = sourceDate;
     }
 
     public StoryBlock(

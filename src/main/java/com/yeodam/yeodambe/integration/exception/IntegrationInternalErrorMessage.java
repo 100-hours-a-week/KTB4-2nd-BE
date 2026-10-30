@@ -1,6 +1,13 @@
 package com.yeodam.yeodambe.integration.exception;
 
 public enum IntegrationInternalErrorMessage {
+    OUTBOX_SOURCE_UNKNOWN("알 수 없는 Outbox 원본입니다."),
+    OUTBOX_PUBLISHED_AT_MISSING("Outbox 발행 시각이 필요합니다."),
+    OUTBOX_RECEIPT_MISMATCH("Outbox 발행 확인 정보가 저장된 이벤트와 일치하지 않습니다."),
+    CDC_TIMESTAMP_TYPE_INVALID("CDC 요청 토픽은 LogAppendTime을 사용해야 합니다."),
+    CDC_HEADER_MISSING("CDC Outbox 헤더가 없습니다."),
+    CDC_HEADER_VALUE_MISSING("CDC Outbox 헤더 값이 없습니다."),
+    CDC_HEADER_EMPTY("CDC Outbox 헤더가 비어 있습니다."),
     AI_EC2_INSTANCE_NOT_FOUND("AI EC2 인스턴스를 찾을 수 없습니다."),
     AI_EC2_INVALID_START_STATE("AI EC2를 시작할 수 없는 상태입니다: %s"),
     AI_EC2_START_INTERRUPTED("AI EC2 기동 대기가 중단됐습니다."),

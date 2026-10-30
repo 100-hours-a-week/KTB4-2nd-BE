@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.client;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.PlaceQueryProviderUnavailableException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -96,13 +97,13 @@ public class PlaceClient {
      */
     private ProviderPage parse(JsonNode body) {
         if (body == null) {
-            throw new PlaceQueryProviderUnavailableException("응답 본문이 없습니다.");
+            throw new PlaceQueryProviderUnavailableException(TripInternalErrorMessage.PLACE_RESPONSE_BODY_MISSING.message());
         }
 
         JsonNode sections = body.path("StanReginCd");
 
         if (!sections.isArray() || sections.isEmpty()) {
-            throw new PlaceQueryProviderUnavailableException("응답 구조가 올바르지 않습니다.");
+            throw new PlaceQueryProviderUnavailableException(TripInternalErrorMessage.PLACE_RESPONSE_STRUCTURE_INVALID.message());
         }
 
         JsonNode head = sections.get(0).path("head");
@@ -112,13 +113,14 @@ public class PlaceClient {
                 .asString();
 
         if (!"INFO-0".equals(resultCode)) {
-            throw new PlaceQueryProviderUnavailableException("행안부 API 오류: " + resultCode);
+            throw new PlaceQueryProviderUnavailableException(
+                    TripInternalErrorMessage.PLACE_API_ERROR.message().formatted(resultCode));
         }
 
         int totalCount = findHeadValue(head, "totalCount").asInt(-1);
 
         if (totalCount < 0) {
-            throw new PlaceQueryProviderUnavailableException("totalCount가 없습니다.");
+            throw new PlaceQueryProviderUnavailableException(TripInternalErrorMessage.PLACE_TOTAL_COUNT_MISSING.message());
         }
 
         List<ProviderRegion> rows = readRows(sections);
@@ -157,7 +159,8 @@ public class PlaceClient {
                 return node.get(field);
             }
         }
-        throw new PlaceQueryProviderUnavailableException("응답 필드가 없습니다: " + field);
+        throw new PlaceQueryProviderUnavailableException(
+                TripInternalErrorMessage.PLACE_RESPONSE_FIELD_MISSING.message().formatted(field));
     }
 
     private String textOrNull(JsonNode node, String field) {

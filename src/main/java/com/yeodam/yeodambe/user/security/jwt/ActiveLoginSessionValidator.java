@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.security.jwt;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
 import lombok.RequiredArgsConstructor;
@@ -54,7 +55,7 @@ public class ActiveLoginSessionValidator implements OAuth2TokenValidator<Jwt> {
         } catch (DataAccessException e) {
             OAuth2Error error = new OAuth2Error(
                     "auth_store_unavailable",
-                    "인증 저장소에 연결할 수 없습니다.",
+                    UserInternalErrorMessage.AUTH_STORE_UNAVAILABLE.message(),
                     null
             );
 
@@ -67,7 +68,7 @@ public class ActiveLoginSessionValidator implements OAuth2TokenValidator<Jwt> {
 
     private OAuth2TokenValidatorResult invalidToken() {
         return OAuth2TokenValidatorResult.failure(
-                new OAuth2Error("invalid_token", "로그인 세션이 유효하지 않습니다.", null)
+                new OAuth2Error("invalid_token", UserInternalErrorMessage.LOGIN_SESSION_INVALID.message(), null)
         );
     }
 }

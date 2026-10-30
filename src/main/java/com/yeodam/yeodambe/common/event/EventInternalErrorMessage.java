@@ -1,6 +1,9 @@
 package com.yeodam.yeodambe.common.event;
 
 public enum EventInternalErrorMessage {
+    OUTBOX_TRIP_ID_MISSING("Outbox의 여행 ID가 필요합니다."),
+    OUTBOX_TOPIC_MISSING("Outbox 토픽이 필요합니다."),
+    OUTBOX_NOT_CDC_MANAGED("CDC가 관리하는 Outbox가 필요합니다."),
     EVENT_PAYLOAD_MISSING("이벤트 페이로드가 없습니다."),
     EVENT_JSON_BLANK("이벤트 JSON이 비어 있습니다."),
     EVENT_PAYLOAD_TYPE_MISSING("이벤트 페이로드 타입이 없습니다."),

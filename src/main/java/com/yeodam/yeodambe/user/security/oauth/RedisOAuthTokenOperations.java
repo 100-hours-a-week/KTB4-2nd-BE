@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 
 import lombok.RequiredArgsConstructor;
@@ -40,7 +41,7 @@ class RedisOAuthTokenOperations {
         String json = encode(token);
         try {
             if (!Boolean.TRUE.equals(set(redis, key, json, token.expiresAt(), SetCondition.ifAbsent()))) {
-                throw new DataIntegrityViolationException("OAuth 임시 토큰 식별자가 중복되었습니다.");
+                throw new DataIntegrityViolationException(UserInternalErrorMessage.OAUTH_TEMPORARY_TOKEN_DUPLICATE.message());
             }
         } catch (DataIntegrityViolationException exception) {
             throw exception;
@@ -61,7 +62,7 @@ class RedisOAuthTokenOperations {
 
     Optional<OAuthTokenClaim> claim(String key, String browserHash, String owner) {
         if (owner == null || owner.isBlank()) {
-            throw new IllegalArgumentException("OAuth 선점 소유자가 필요합니다.");
+            throw new IllegalArgumentException(UserInternalErrorMessage.OAUTH_CLAIM_OWNER_MISSING.message());
         }
         return execute(operations -> {
             operations.watch(key);
@@ -82,14 +83,14 @@ class RedisOAuthTokenOperations {
 
     void complete(String key, String owner) {
         if (owner == null || owner.isBlank()) {
-            throw new IllegalArgumentException("OAuth 선점 소유자가 필요합니다.");
+            throw new IllegalArgumentException(UserInternalErrorMessage.OAUTH_CLAIM_OWNER_MISSING.message());
         }
         deleteIf(key, token -> owner.equals(token.claimOwner()));
     }
 
     void release(String key, String owner) {
         if (owner == null || owner.isBlank()) {
-            throw new IllegalArgumentException("OAuth 선점 소유자가 필요합니다.");
+            throw new IllegalArgumentException(UserInternalErrorMessage.OAUTH_CLAIM_OWNER_MISSING.message());
         }
         execute(operations -> {
             operations.watch(key);
@@ -104,7 +105,7 @@ class RedisOAuthTokenOperations {
 
     void deleteIfIssuedBy(String key, String issuanceOwner) {
         if (issuanceOwner == null || issuanceOwner.isBlank()) {
-            throw new IllegalArgumentException("OAuth 발급 소유자가 필요합니다.");
+            throw new IllegalArgumentException(UserInternalErrorMessage.OAUTH_ISSUE_OWNER_MISSING.message());
         }
         deleteIf(key, token -> issuanceOwner.equals(token.issuanceOwner()));
     }
@@ -148,7 +149,7 @@ class RedisOAuthTokenOperations {
     void saveState(String key, String browserHash, Duration ttl) {
         try {
             if (!Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(key, browserHash, ttl))) {
-                throw new DataIntegrityViolationException("OAuth state 식별자가 중복되었습니다.");
+                throw new DataIntegrityViolationException(UserInternalErrorMessage.OAUTH_STATE_DUPLICATE.message());
             }
         } catch (DataIntegrityViolationException exception) {
             throw exception;
@@ -249,6 +250,6 @@ class RedisOAuthTokenOperations {
     }
 
     private DataAccessResourceFailureException unavailable() {
-        return new DataAccessResourceFailureException("OAuth 임시 저장소를 사용할 수 없습니다.");
+        return new DataAccessResourceFailureException(UserInternalErrorMessage.OAUTH_TEMPORARY_STORE_UNAVAILABLE.message());
     }
 }

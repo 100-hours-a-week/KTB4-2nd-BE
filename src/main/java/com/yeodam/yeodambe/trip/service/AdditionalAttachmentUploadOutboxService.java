@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 
@@ -76,7 +78,7 @@ public class AdditionalAttachmentUploadOutboxService {
         var execution = executions.findForUpdate(executionId).orElseThrow();
         entityManager.refresh(execution);
         Assert.isTrue(!execution.isTerminal() && tripId.equals(execution.getTripId())
-                && userId.equals(execution.getUserId()), "Outbox execution is not active for this trip");
+                && userId.equals(execution.getUserId()), TripInternalErrorMessage.OUTBOX_EXECUTION_NOT_ACTIVE.message());
         return execution;
     }
 
@@ -114,7 +116,7 @@ public class AdditionalAttachmentUploadOutboxService {
         entityManager.refresh(execution);
         var outbox = outboxRepository.findByIdForUpdate(outboxId).orElseThrow();
         entityManager.refresh(outbox);
-        Assert.isTrue(outbox.isCdcManaged(), "Expected a CDC-managed Outbox");
+        Assert.isTrue(outbox.isCdcManaged(), EventInternalErrorMessage.OUTBOX_NOT_CDC_MANAGED.message());
         receipt.verify(outbox.getTopic(), outbox.getTripId(), outbox.getPayload());
         if (outbox.getPublishedAt() != null) {
             return;

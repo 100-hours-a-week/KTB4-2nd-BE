@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import app.photofox.vipsffm.VImage;
 import app.photofox.vipsffm.VipsHelper;
 import app.photofox.vipsffm.VipsOption;
@@ -73,7 +74,7 @@ final class HeifAttachmentDecoder {
             check((MemorySegment) call(READ, arena, context, arena.allocateFrom(source.toString()), MemorySegment.NULL));
             MemorySegment id = arena.allocate(JAVA_INT);
             if ((int) call(IDS, context, id, 1) != 1) {
-                throw new IllegalArgumentException("HEIC의 첫 이미지를 찾을 수 없습니다.");
+                throw new IllegalArgumentException(TripInternalErrorMessage.HEIC_FIRST_IMAGE_MISSING.message());
             }
             int itemId = id.get(JAVA_INT, 0);
             MemorySegment output = arena.allocate(ADDRESS);
@@ -106,14 +107,14 @@ final class HeifAttachmentDecoder {
         int width = (int) call(WIDTH, image, INTERLEAVED_CHANNEL);
         int height = (int) call(HEIGHT, image, INTERLEAVED_CHANNEL);
         if (width < 1 || height < 1 || (long) width * height > (long) MAXIMUM_WIDTH * MAXIMUM_WIDTH) {
-            throw new IllegalArgumentException("HEIC의 픽셀 크기가 허용 범위를 벗어났습니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.HEIC_PIXEL_DIMENSIONS_INVALID.message());
         }
         MemorySegment strideOutput = arena.allocate(JAVA_INT);
         MemorySegment plane = requirePointer((MemorySegment) call(PLANE, image, INTERLEAVED_CHANNEL, strideOutput));
         int stride = strideOutput.get(JAVA_INT, 0);
         long rowBytes = (long) width * bands;
         if (stride < rowBytes) {
-            throw new IllegalArgumentException("HEIC 픽셀 행의 크기가 올바르지 않습니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.HEIC_PIXEL_ROW_SIZE_INVALID.message());
         }
         MemorySegment source = plane.reinterpret((long) stride * height);
         MemorySegment pixels = arena.allocate(rowBytes * height);
@@ -130,7 +131,7 @@ final class HeifAttachmentDecoder {
             return null;
         }
         if (size < 0 || size > 16 * 1024 * 1024) {
-            throw new IllegalArgumentException("HEIC 색상 프로필이 허용 크기를 벗어났습니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.HEIC_COLOR_PROFILE_SIZE_INVALID.message());
         }
         MemorySegment profile = arena.allocate(size);
         check((MemorySegment) call(PROFILE, arena, handle, profile));
@@ -149,20 +150,20 @@ final class HeifAttachmentDecoder {
         } catch (RuntimeException | Error failure) {
             throw failure;
         } catch (Throwable failure) {
-            throw new IllegalStateException("libheif 네이티브 호출에 실패했습니다.", failure);
+            throw new IllegalStateException(TripInternalErrorMessage.HEIF_NATIVE_CALL_FAILED.message(), failure);
         }
     }
 
     private static void check(MemorySegment error) {
         if (error.get(JAVA_INT, 0) != 0) {
-            throw new IllegalArgumentException("HEIC 디코딩에 실패했습니다. code=" + error.get(JAVA_INT, 0)
-                    + ", subcode=" + error.get(JAVA_INT, 4));
+            throw new IllegalArgumentException(TripInternalErrorMessage.HEIC_DECODE_FAILED.message()
+                    .formatted(error.get(JAVA_INT, 0), error.get(JAVA_INT, 4)));
         }
     }
 
     private static MemorySegment requirePointer(MemorySegment pointer) {
         if (pointer.address() == 0) {
-            throw new IllegalStateException("libheif 네이티브 메모리를 할당할 수 없습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.HEIF_NATIVE_ALLOCATION_FAILED.message());
         }
         return pointer;
     }

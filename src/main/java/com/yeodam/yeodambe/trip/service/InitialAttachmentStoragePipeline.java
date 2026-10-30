@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
@@ -62,7 +63,7 @@ public class InitialAttachmentStoragePipeline {
             @Value("${attachment.derivative.storage-max-staged-bytes:134217728}") long maxBytes
     ) {
         if (maxBytes < 1) {
-            throw new IllegalArgumentException("저장 대기 파일 크기 한도는 양수여야 합니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.STORAGE_PENDING_BYTES_LIMIT_INVALID.message());
         }
         this.storage = storage;
         this.transactions = transactions;
@@ -105,7 +106,8 @@ public class InitialAttachmentStoragePipeline {
         }
         control.execute(() -> {
             batches.stream().filter(batch -> batch.claim.executionId().equals(executionId))
-                    .forEach(batch -> fail(batch, batch.currentItem(), new CancellationException("사진 저장 취소")));
+                    .forEach(batch -> fail(batch, batch.currentItem(),
+                            new CancellationException(TripInternalErrorMessage.STORAGE_CANCELED.message())));
             pump();
         });
     }
@@ -114,7 +116,7 @@ public class InitialAttachmentStoragePipeline {
         try (var scope = WorkflowMdcScope.open(batch.context)) {
             try {
                 if (!transactions.renewLease(batch.claim)) {
-                    throw new CancellationException("사진 저장 선점 만료");
+                    throw new CancellationException(TripInternalErrorMessage.STORAGE_CLAIM_EXPIRED.message());
                 }
             } catch (RuntimeException failure) {
                 fail(batch, batch.currentItem(), failure);
@@ -134,7 +136,8 @@ public class InitialAttachmentStoragePipeline {
             if (batch.next == batch.claim.photos().size() || batch.failure != null || stopping.get()) {
                 slots.release();
                 if (stopping.get()) {
-                    fail(batch, batch.currentItem(), new CancellationException("사진 저장 종료"));
+                    fail(batch, batch.currentItem(),
+                            new CancellationException(TripInternalErrorMessage.STORAGE_TERMINATED.message()));
                 }
                 if (batch.active == 0) {
                     complete(batch);
@@ -147,7 +150,7 @@ public class InitialAttachmentStoragePipeline {
             Timer.Sample preparation = Timer.start(meters);
             try {
                 if (photo.attempts() >= 3) {
-                    throw new IllegalStateException("사진 변환 시도 횟수 초과");
+                    throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_ATTEMPTS_EXHAUSTED.message());
                 }
                 scheduler.submitPrepared(batch.claim.executionId(), photo.contentType(), () -> {
                     try (var conversionScope = WorkflowMdcScope.open(batch.context)) {
@@ -272,7 +275,7 @@ public class InitialAttachmentStoragePipeline {
 
     private void requireActive(Batch batch) {
         if (stopping.get() || batch.failure != null || !transactions.renewLease(batch.claim)) {
-            throw new CancellationException("종료되거나 선점을 잃은 사진 저장");
+            throw new CancellationException(TripInternalErrorMessage.STORAGE_CLAIM_LOST.message());
         }
     }
 
@@ -319,7 +322,8 @@ public class InitialAttachmentStoragePipeline {
             return;
         }
         control.execute(() -> {
-            batches.forEach(batch -> fail(batch, batch.currentItem(), new CancellationException("사진 저장 종료")));
+            batches.forEach(batch -> fail(batch, batch.currentItem(),
+                    new CancellationException(TripInternalErrorMessage.STORAGE_TERMINATED.message())));
             pump();
         });
         try {

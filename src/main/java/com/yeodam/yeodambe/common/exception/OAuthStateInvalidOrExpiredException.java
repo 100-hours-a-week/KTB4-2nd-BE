@@ -3,6 +3,6 @@ package com.yeodam.yeodambe.common.exception;
 public class OAuthStateInvalidOrExpiredException extends RuntimeException {
 
     public OAuthStateInvalidOrExpiredException() {
-        super("OAuth state가 유효하지 않거나 만료되었습니다.");
+        super(CommonExceptionMessage.OAUTH_STATE_INVALID_OR_EXPIRED.message());
     }
 }

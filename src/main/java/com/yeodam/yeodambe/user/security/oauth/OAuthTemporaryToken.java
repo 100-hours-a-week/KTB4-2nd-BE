@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 
 record OAuthTemporaryToken(KakaoUserIdentity identity, String browserContextHash,
@@ -10,7 +11,7 @@ record OAuthTemporaryToken(KakaoUserIdentity identity, String browserContextHash
                 || issuanceOwner == null || issuanceOwner.isBlank()
                 || (claimOwner != null && claimOwner.isBlank())
                 || (browserContextHash != null && !browserContextHash.matches("[0-9a-f]{64}"))) {
-            throw new IllegalArgumentException("OAuth 임시 데이터가 유효하지 않습니다.");
+            throw new IllegalArgumentException(UserInternalErrorMessage.OAUTH_TEMPORARY_DATA_INVALID.message());
         }
     }
 

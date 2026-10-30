@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import app.photofox.vipsffm.VImage;
 import app.photofox.vipsffm.Vips;
 import app.photofox.vipsffm.VipsHelper;
@@ -49,12 +50,13 @@ final class VipsAttachmentConverter {
                         VImage input = switch (mimeType) {
                             case "image/jpeg" -> VImage.jpegload(arena, original.toString());
                             case "image/png" -> VImage.pngload(arena, original.toString());
-                            default -> throw new IllegalArgumentException("지원하지 않는 사진 포맷입니다.");
+                            default -> throw new IllegalArgumentException(
+                                    TripInternalErrorMessage.PHOTO_FORMAT_UNSUPPORTED.message());
                         };
                         String expected = "image/jpeg".equals(mimeType) ? "jpegload" : "pngload";
                         if (!expected.equals(input.getString("vips-loader"))
                                 || input.getWidth() < 1 || input.getHeight() < 1) {
-                            throw new IllegalArgumentException("사진의 실제 포맷과 크기를 확인할 수 없습니다.");
+                            throw new IllegalArgumentException(TripInternalErrorMessage.PHOTO_FORMAT_OR_DIMENSIONS_INVALID.message());
                         }
                         thumbnail = VImage.thumbnail(arena, original.toString(), 1024,
                                 VipsOption.Enum("size", VipsSize.SIZE_DOWN));
@@ -96,7 +98,8 @@ final class VipsAttachmentConverter {
 
         synchronized void check() {
             if (expired) {
-                throw new IllegalStateException("사진 변환 시간이 초과됐습니다.", new TimeoutException());
+                throw new IllegalStateException(
+                        TripInternalErrorMessage.PHOTO_CONVERSION_TIMED_OUT.message(), new TimeoutException());
             }
         }
 

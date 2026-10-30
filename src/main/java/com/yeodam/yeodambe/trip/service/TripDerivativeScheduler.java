@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.service.response.PreparedPhotoDerivative;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Gauge;
@@ -59,7 +60,7 @@ public class TripDerivativeScheduler {
             MeterRegistry meters
     ) {
         if (heicWorkers < 1 || lightWorkers < 1 || heicLimit < heicWorkers || lightLimit < lightWorkers) {
-            throw new IllegalArgumentException("사진 접수 한도는 양수 워커 수 이상이어야 합니다.");
+            throw new IllegalArgumentException(TripInternalErrorMessage.CONVERSION_ADMISSION_LIMIT_INVALID.message());
         }
         this.meters = meters;
         heic = new Lane("heic", heicWorkers, heicLimit);
@@ -118,7 +119,7 @@ public class TripDerivativeScheduler {
         for (Work task : tasks) {
             Objects.requireNonNull(task.action());
             if (task.index() < 0 || task.index() >= tasks.size() || indices[task.index()]) {
-                throw new IllegalArgumentException("사진 index는 중복 없이 0부터 연속해야 합니다.");
+                throw new IllegalArgumentException(TripInternalErrorMessage.PHOTO_INDEX_INVALID.message());
             }
             indices[task.index()] = true;
             if (lane(task.mimeType()) == heic) {
@@ -126,7 +127,8 @@ public class TripDerivativeScheduler {
             }
         }
         if (!active.getAsBoolean()) {
-            return CompletableFuture.failedFuture(new CancellationException("사진 변환이 취소됐습니다."));
+            return CompletableFuture.failedFuture(
+                    new CancellationException(TripInternalErrorMessage.PHOTO_CONVERSION_CANCELED.message()));
         }
         List<Batch> ready = new ArrayList<>();
         Batch batch;
@@ -135,7 +137,7 @@ public class TripDerivativeScheduler {
                 Lane rejected = heavyCount > heic.limit - heic.inflight ? heic : light;
                 rejected.rejected.increment();
                 log.debug("사진 변환 접수 거부: executionId={}, lane={}", executionId, rejected.name);
-                throw new RejectedExecutionException("사진 변환 접수 한도를 초과했습니다.");
+                throw new RejectedExecutionException(TripInternalErrorMessage.CONVERSION_ADMISSION_LIMIT_EXCEEDED.message());
             }
             batch = new Batch(executionId, tasks, active);
             heic.inflight += heavyCount;
@@ -154,7 +156,7 @@ public class TripDerivativeScheduler {
         synchronized (lock) {
             for (Batch batch : List.copyOf(batches)) {
                 if (batch.executionId.equals(executionId)) {
-                    fail(batch, new CancellationException("사진 변환이 취소됐습니다."));
+                    fail(batch, new CancellationException(TripInternalErrorMessage.PHOTO_CONVERSION_CANCELED.message()));
                     collectReady(batch, ready);
                 }
             }
@@ -166,7 +168,7 @@ public class TripDerivativeScheduler {
         return switch (Objects.requireNonNull(mime)) {
             case "image/heic" -> heic;
             case "image/jpeg", "image/png" -> light;
-            default -> throw new IllegalArgumentException("지원하지 않는 사진 포맷입니다.");
+            default -> throw new IllegalArgumentException(TripInternalErrorMessage.PHOTO_FORMAT_UNSUPPORTED.message());
         };
     }
 
@@ -259,7 +261,7 @@ public class TripDerivativeScheduler {
         synchronized (lock) {
             stopping = true;
             for (Batch batch : List.copyOf(batches)) {
-                fail(batch, new CancellationException("사진 변환 실행기를 종료합니다."));
+                fail(batch, new CancellationException(TripInternalErrorMessage.CONVERSION_EXECUTOR_SHUTDOWN.message()));
                 collectReady(batch, ready);
             }
             heic.executor.shutdown();
@@ -384,11 +386,11 @@ public class TripDerivativeScheduler {
             Throwable failure = null;
             try {
                 if (!batch.active.getAsBoolean()) {
-                    throw new CancellationException("사진 변환이 취소됐습니다.");
+                    throw new CancellationException(TripInternalErrorMessage.PHOTO_CONVERSION_CANCELED.message());
                 }
                 result = Objects.requireNonNull(task.action().call());
                 if (!batch.active.getAsBoolean()) {
-                    throw new CancellationException("사진 변환이 취소됐습니다.");
+                    throw new CancellationException(TripInternalErrorMessage.PHOTO_CONVERSION_CANCELED.message());
                 }
             } catch (Throwable cause) {
                 failure = cause;

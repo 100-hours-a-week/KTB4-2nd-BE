@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -21,7 +22,7 @@ public class OAuthStateStore {
 
     public void save(String state, String browserContext) {
         if (isBlank(state) || isBlank(browserContext)) {
-            throw new IllegalArgumentException("OAuth state 입력이 유효하지 않습니다.");
+            throw new IllegalArgumentException(UserInternalErrorMessage.OAUTH_STATE_INPUT_INVALID.message());
         }
         operations.saveState(key(state), hasher.hash(browserContext), Duration.ofMinutes(5));
     }

@@ -53,6 +53,8 @@ public interface StoryBlockRepository extends JpaRepository<StoryBlock, Long> {
             @Param("userId") Long userId
     );
 
+    List<StoryBlock> findAllByStoryId(Long storyId);
+
     interface BlockDetail {
         StoryBlock getBlock();
 

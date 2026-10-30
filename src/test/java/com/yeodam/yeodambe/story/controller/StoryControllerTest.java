@@ -8,6 +8,9 @@ import com.yeodam.yeodambe.story.service.StorySimilarAttachmentService;
 import com.yeodam.yeodambe.story.service.response.StorySimilarAttachmentListResponse;
 import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentAiRequestException;
 import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentInternalErrorMessage;
+
+import com.yeodam.yeodambe.story.service.StoryUpdateService;
+import com.yeodam.yeodambe.story.service.response.StoryUpdateResponse;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.UserRepository;
@@ -36,6 +39,7 @@ import java.util.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(StoryController.class)
@@ -59,6 +63,9 @@ class StoryControllerTest {
 
     @MockitoBean
     StorySimilarAttachmentService similarService;
+
+    @MockitoBean
+    StoryUpdateService updateService;
 
     @MockitoBean
     LoginSessionStore sessions;
@@ -150,6 +157,91 @@ class StoryControllerTest {
         mvc.perform(get("/stories/71/blocks/101/similar-attachments").cookie(cookie))
                 .andExpect(status().isUnauthorized());
         verifyNoInteractions(similarService);
+    }
+
+    @Test
+    void 수정요청은_인증회원과_전체본문을_전달하고_tone으로_응답한다() throws Exception {
+        var data = new StoryUpdateResponse(1L, Story.Mood.CALM, "수정 요약", List.of());
+        when(updateService.update(eq(42L), eq(1L), any())).thenReturn(data);
+
+        updateRequest("csrf-token")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("STORY_UPDATE_SUCCESS"))
+                .andExpect(jsonPath("$.data.storyId").value(1))
+                .andExpect(jsonPath("$.data.tone").value("CALM"))
+                .andExpect(jsonPath("$.data.mood").doesNotExist())
+                .andExpect(jsonPath("$.data.storySummary").value("수정 요약"))
+                .andExpect(jsonPath("$.data.days").isArray());
+        verify(updateService).update(eq(42L), eq(1L), argThat(request ->
+                request.blocks().getFirst().dayLabel().equals("첫째 날")
+                        && request.blocks().getFirst().detailSummary().equals("사진 설명")));
+    }
+
+    @Test
+    void 스토리수정은_CSRF가_유효해도_무인증이면_401이다() throws Exception {
+        when(csrfTokens.find("update-browser")).thenReturn("csrf-token");
+        mvc.perform(put("/stories/1")
+                        .cookie(new Cookie("CSRF_CONTEXT", "update-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token")
+                        .contentType("application/json").content(updateBody()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+        verifyNoInteractions(updateService);
+    }
+
+    @Test
+    void 인증과_CSRF가_모두_없으면_기존_CSRF_필터에서_먼저_403이다() throws Exception {
+        when(csrfGenerator.generate()).thenReturn("csrf-token");
+        mvc.perform(put("/stories/1").contentType("application/json").content(updateBody()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+        verifyNoInteractions(updateService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "wrong-token"})
+    void 스토리수정은_CSRF가_없거나_틀리면_403이다(String csrf) throws Exception {
+        updateRequest(csrf)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+        verifyNoInteractions(updateService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{}",
+            "{\"tone\":\"CALM\",\"storySummary\":\"요약\",\"blocks\":[]}",
+            "{\"tone\":\"CALM\",\"storySummary\":\"요약\",\"blocks\":[{\"tripAttachmentId\":5,\"orderNumber\":1}]}",
+            "{\"tone\":\"CALM\",\"storySummary\":\"요약\",\"blocks\":[{\"tripAttachmentId\":5,\"dayLabel\":\" \",\"detailSummary\":\"설명\",\"orderNumber\":1}]}",
+            "{\"tone\":\"UNKNOWN\",\"storySummary\":\"요약\",\"blocks\":[]}",
+            "{broken-json"
+    })
+    void 수정_입력오류와_JSON오류는_같은_수정전용_코드로_응답한다(String body) throws Exception {
+        when(csrfTokens.find("update-browser")).thenReturn("csrf-token");
+        mvc.perform(put("/stories/1")
+                        .cookie(authenticated(), new Cookie("CSRF_CONTEXT", "update-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_STORY_UPDATE"))
+                .andExpect(jsonPath("$.data").isEmpty());
+        verifyNoInteractions(updateService);
+    }
+
+    private org.springframework.test.web.servlet.ResultActions updateRequest(String csrf) throws Exception {
+        when(csrfTokens.find("update-browser")).thenReturn("csrf-token");
+        return mvc.perform(put("/stories/1")
+                .cookie(authenticated(), new Cookie("CSRF_CONTEXT", "update-browser"))
+                .header("X-CSRF-TOKEN", csrf)
+                .contentType("application/json").content(updateBody()));
+    }
+
+    private String updateBody() {
+        return """
+                {"tone":"CALM","storySummary":"수정 요약","blocks":[
+                  {"storyBlockId":3,"tripAttachmentId":5,"dayLabel":"첫째 날",
+                   "detailSummary":"사진 설명","memo":null,"orderNumber":1}]}
+                """;
     }
 
     private Cookie authenticated() {

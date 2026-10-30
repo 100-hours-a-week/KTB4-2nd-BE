@@ -1,5 +1,7 @@
 package com.yeodam.websocket.common.websocket.security;
 
+import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import com.yeodam.websocket.common.websocket.client.BackendAuthenticationClient;
 import com.yeodam.websocket.common.websocket.client.response.BackendAuthenticationResponse.AuthenticationData;
@@ -12,8 +14,6 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -25,21 +25,12 @@ import org.springframework.web.util.WebUtils;
 import java.io.IOException;
 import java.util.List;
 
+@RequiredArgsConstructor
+@Slf4j
 public class WebSocketHandshakeAuthenticationFilter extends OncePerRequestFilter {
-
-    private static final Logger log =
-            LoggerFactory.getLogger(WebSocketHandshakeAuthenticationFilter.class);
 
     private final BackendAuthenticationClient authenticationClient;
     private final WebSocketSessionManager sessionManager;
-
-    public WebSocketHandshakeAuthenticationFilter(
-            BackendAuthenticationClient authenticationClient,
-            WebSocketSessionManager sessionManager
-    ) {
-        this.authenticationClient = authenticationClient;
-        this.sessionManager = sessionManager;
-    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

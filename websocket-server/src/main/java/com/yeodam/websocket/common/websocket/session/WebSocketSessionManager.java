@@ -1,12 +1,11 @@
 package com.yeodam.websocket.common.websocket.session;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.TaskScheduler;
 import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.socket.CloseStatus;
 import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
@@ -26,9 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Component
+@Slf4j
 public class WebSocketSessionManager {
-    private static final Logger log =
-            LoggerFactory.getLogger(WebSocketSessionManager.class);
 
     private final Map<String, WebSocketSession> sessions =
             new ConcurrentHashMap<>();

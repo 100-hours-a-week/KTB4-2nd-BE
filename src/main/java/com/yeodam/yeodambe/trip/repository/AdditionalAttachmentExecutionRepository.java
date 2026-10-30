@@ -65,4 +65,13 @@ public interface AdditionalAttachmentExecutionRepository
     java.util.List<AdditionalAttachmentExecution> findExpired(
             @Param("uploadBefore") java.time.LocalDateTime uploadBefore,
             @Param("resultBefore") java.time.LocalDateTime resultBefore, org.springframework.data.domain.Pageable pageable);
+    @Query("""
+            select execution
+            from AdditionalAttachmentExecution execution
+            where execution.endedAt is null
+              and execution.processPublishedAt is not null
+              and execution.resultRawPayload is null
+              and execution.displayStatus = 'PROCESSING'
+            """)
+    List<AdditionalAttachmentExecution> findAwaitingAiStatus();
 }

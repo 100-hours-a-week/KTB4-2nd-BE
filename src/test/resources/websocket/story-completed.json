@@ -1,0 +1,31 @@
+{
+  "eventId": "00000000-0000-0000-0000-000000000001",
+  "type": "AI_TASK",
+  "schemaVersion": 1,
+  "occurredAt": "2026-10-29T00:00:00Z",
+  "target": {
+    "type": "USER",
+    "id": 42
+  },
+  "payload": {
+    "message": "STORY_GENERATION_STATUS_FOUND",
+    "data": {
+      "eventId": "00000000-0000-0000-0000-000000000001",
+      "occurredAt": "2026-10-29T00:00:00Z",
+      "tripId": 7,
+      "statusVersion": 3,
+      "status": "COMPLETED",
+      "error": null,
+      "eventType": "STORY_GENERATION_COMPLETED",
+      "generationId": 9,
+      "storyId": 11,
+      "listItem": {
+        "storyId": 11,
+        "tripId": 7,
+        "sequence": 5,
+        "mood": "EMOTIONAL",
+        "storySummary": "여행 이야기"
+      }
+    }
+  }
+}

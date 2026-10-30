@@ -28,14 +28,14 @@ class StoryGenerationStatusServiceTest {
 
         assertThat(first.generationId()).isEqualTo(10L);
         assertThat(first.status()).isEqualTo(StoryGenerationJob.Status.PROCESSING);
-        assertThat(first.statusVersion()).isEqualTo(1);
+        assertThat(first.statusVersion()).isEqualTo(2);
         assertThat(second).isEqualTo(first);
-        assertThat(job.getStatusVersion()).isEqualTo(1);
+        assertThat(job.getStatusVersion()).isEqualTo(2);
 
         job.complete(100L);
         var completed = service.getStatus(2L, 10L);
         assertThat(completed.status()).isEqualTo(StoryGenerationJob.Status.COMPLETED);
-        assertThat(completed.statusVersion()).isEqualTo(2);
+        assertThat(completed.statusVersion()).isEqualTo(3);
         assertThat(completed.storyId()).isEqualTo(100L);
     }
 }

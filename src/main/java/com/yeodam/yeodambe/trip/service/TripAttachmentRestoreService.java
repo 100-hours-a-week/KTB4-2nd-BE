@@ -180,6 +180,7 @@ public class TripAttachmentRestoreService {
         restoreAttachments(userId, attachments, destinations);
         refreshThumbnails(places, trips);
         tripMapCacheStore.evictAfterCommit(userId);
+        trips.forEach(trip -> tripRepository.advanceSequence(trip.getId()));
     }
 
     private List<Trip> lockTrips(Long userId, List<TripAttachment> attachments) {

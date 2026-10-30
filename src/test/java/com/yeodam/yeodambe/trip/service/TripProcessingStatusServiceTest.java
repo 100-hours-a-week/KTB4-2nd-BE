@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import jakarta.persistence.EntityManager;
+import org.springframework.context.ApplicationEventPublisher;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
@@ -50,7 +51,8 @@ class TripProcessingStatusServiceTest {
         additionalExecutions = mock(AdditionalAttachmentExecutionRepository.class);
         service = new TripProcessingStatusService(trips, places, attachments, analysis, executions, mock(InitialAttachmentUploadBatchRepository.class),
                 creationExecutions, additionalExecutions,
-                new TripProcessingStatusSyncService(creationExecutions, mock(EntityManager.class), additionalExecutions));
+                new TripProcessingStatusSyncService(creationExecutions, mock(EntityManager.class),
+                        additionalExecutions, mock(ApplicationEventPublisher.class)), mock(TripCompletionSnapshotFactory.class));
     }
 
     @Test
@@ -66,9 +68,9 @@ class TripProcessingStatusServiceTest {
         var finalizing = service.findStatus(7L, 1L);
 
         assertThat(processing.currentStep()).isEqualTo("EMBEDDING");
-        assertThat(processing.statusVersion()).isEqualTo(1);
+        assertThat(processing.statusVersion()).isEqualTo(2);
         assertThat(finalizing.status()).isEqualTo(Status.FINALIZING);
-        assertThat(finalizing.statusVersion()).isEqualTo(2);
+        assertThat(finalizing.statusVersion()).isEqualTo(3);
         assertThat(addition.getStatusVersion()).isEqualTo(finalizing.statusVersion());
     }
 
@@ -149,7 +151,7 @@ class TripProcessingStatusServiceTest {
 
         assertThat(response.executionId()).isEqualTo("execution");
         assertThat(response.statusVersion()).isEqualTo(execution.getStatusVersion());
-        assertThat(response.statusVersion()).isZero();
+        assertThat(response.statusVersion()).isEqualTo(1);
     }
 
     @Test
@@ -163,7 +165,7 @@ class TripProcessingStatusServiceTest {
         var response = service.findStatus(7L, 1L);
 
         assertThat(response.executionId()).isEqualTo("execution");
-        assertThat(response.statusVersion()).isEqualTo(1);
+        assertThat(response.statusVersion()).isEqualTo(2);
         verifyNoInteractions(analysis);
     }
 

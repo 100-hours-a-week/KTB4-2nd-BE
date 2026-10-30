@@ -82,6 +82,8 @@ app:
   outbox:
     receipt-consumer-group: ${KAFKA_OUTBOX_RECEIPT_CONSUMER_GROUP:yeodam-outbox-receipts}
   public-api-prefix: /api
+  trip:
+    status-polling-enabled: ${TRIP_STATUS_POLLING_ENABLED:true}
   story:
     status-polling-enabled: ${STORY_STATUS_POLLING_ENABLED:true}
     result-listener-enabled: ${STORY_RESULT_LISTENER_ENABLED:true}
@@ -318,6 +320,7 @@ app:
   cors:
     allowed-origin: https://app.yeodam.test
   trip:
+    status-polling-enabled: false
     worker-initial-delay-ms: 3600000
     result-listener-enabled: false
   story:

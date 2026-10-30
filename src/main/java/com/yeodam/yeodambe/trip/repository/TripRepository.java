@@ -16,6 +16,11 @@ import java.util.List;
 import java.util.Optional;
 
 public interface TripRepository extends JpaRepository<Trip, Long> {
+    @Modifying(flushAutomatically = true)
+    @Query(value = "UPDATE trips SET change_sequence = change_sequence + 1 WHERE trip_id = :tripId", nativeQuery = true)
+    int advanceSequence(@Param("tripId") Long tripId);
+
+
     @Query("""
         SELECT trip FROM Trip trip
         WHERE trip.userId = :userId

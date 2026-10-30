@@ -82,7 +82,7 @@ class TripProcessingStatusSyncMysqlTest {
             var a = first.get(15, TimeUnit.SECONDS);
             var b = second.get(15, TimeUnit.SECONDS);
 
-            assertThat(a.statusVersion()).isEqualTo(1);
+            assertThat(a.statusVersion()).isEqualTo(2);
             assertThat(b).isEqualTo(a);
             assertThat(a.currentStep()).isIn("EMBEDDING", "CLUSTERING");
             assertThat(synchronize(creation, id, "OLD_RESPONSE")).isEqualTo(a);
@@ -121,7 +121,7 @@ class TripProcessingStatusSyncMysqlTest {
             var snapshot = synchronize(creation, id, "EMBEDDING");
 
             assertThat(snapshot.displayStatus()).isEqualTo(TripDisplayStatus.COMPLETED);
-            assertThat(snapshot.statusVersion()).isEqualTo(1);
+            assertThat(snapshot.statusVersion()).isEqualTo(2);
             assertThat(snapshot.currentStep()).isNull();
         } finally {
             TransactionSynchronizationManager.unbindResource(entityManagerFactory);
@@ -131,8 +131,8 @@ class TripProcessingStatusSyncMysqlTest {
 
     private TripProcessingStateSnapshot synchronize(boolean creation, String id, String step) {
         return creation
-                ? service.synchronizeCreation(id, 0, TripDisplayStatus.PROCESSING, step)
-                : service.synchronizeAddition(id, 0, TripDisplayStatus.PROCESSING, step);
+                ? service.synchronizeCreation(id, 1, TripDisplayStatus.PROCESSING, step)
+                : service.synchronizeAddition(id, 1, TripDisplayStatus.PROCESSING, step);
     }
 
     private String fixture(boolean creation) {

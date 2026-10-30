@@ -87,6 +87,53 @@ class WebSocketEventPublisherRedisTest {
         }
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"trip", "addition", "story"})
+    void businessCompletionHandlersPublishTheSharedWireContract(String kind) throws Exception {
+        String channel = "yeodam:contract-" + UUID.randomUUID();
+        var mapper = new ObjectMapper();
+        var publisher = new WebSocketEventPublisher(redis, mapper, new WebSocketEventProperties(channel));
+        var receiver = new Receiver();
+        var subscriber = subscriber(channel, receiver);
+        try {
+            subscriber.start();
+            assertThat(receiver.subscribed.await(5, TimeUnit.SECONDS)).isTrue();
+            if (kind.equals("story")) {
+                var handler = new com.yeodam.yeodambe.story.event.handler.StoryGenerationStatusEventHandler(publisher);
+                handler.handle(new com.yeodam.yeodambe.story.event.StoryGenerationStatusChangedEvent(42L, 7L,
+                        new com.yeodam.yeodambe.story.service.response.StoryGenerationStatusResponse(9L,
+                                com.yeodam.yeodambe.story.entity.StoryGenerationJob.Status.COMPLETED, 3, 11L, null),
+                        new com.yeodam.yeodambe.story.service.response.StoryCompletionListItem(11L, 7L, 5,
+                                com.yeodam.yeodambe.story.entity.Story.Mood.EMOTIONAL, "여행 이야기")));
+            } else {
+                var storage = org.mockito.Mockito.mock(com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient.class);
+                org.mockito.Mockito.when(storage.createReadUrl("preview")).thenReturn("https://storage.test/preview");
+                var handler = new com.yeodam.yeodambe.trip.event.handler.TripProcessingStatusEventHandler(publisher, storage);
+                var completion = new com.yeodam.yeodambe.trip.service.response.TripCompletionSnapshot(
+                        kind.equals("trip") ? AiTaskCompletionType.TRIP_CREATION_COMPLETED : AiTaskCompletionType.TRIP_ANALYSIS_APPLIED,
+                        new com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Result(7L, 1, 2, 1),
+                        new com.yeodam.yeodambe.trip.service.response.TripListItemResponse(7L,
+                                com.yeodam.yeodambe.trip.service.response.TripListItemResponse.Status.COMPLETED,
+                                "검증 여행", java.time.LocalDate.parse("2026-10-01"), java.time.LocalDate.parse("2026-10-02"),
+                                "서울", 3, false, null, 5), "preview");
+                handler.handle(new com.yeodam.yeodambe.trip.event.TripProcessingStatusChangedEvent(42L,
+                        new com.yeodam.yeodambe.trip.service.response.TripProcessingStateSnapshot(7L, "execution", 3,
+                                com.yeodam.yeodambe.trip.entity.TripDisplayStatus.COMPLETED, null, null), completion));
+            }
+            var received = (tools.jackson.databind.node.ObjectNode) mapper.readTree(receiver.next());
+            var expected = mapper.readTree(getClass().getResourceAsStream("/websocket/" + kind + "-completed.json"));
+            assertThat(received.path("eventId").asString()).isEqualTo(received.path("payload").path("data").path("eventId").asString());
+            assertThat(received.path("occurredAt").asString()).isEqualTo(received.path("payload").path("data").path("occurredAt").asString());
+            received.put("eventId", expected.path("eventId").asString());
+            received.put("occurredAt", expected.path("occurredAt").asString());
+            var data = (tools.jackson.databind.node.ObjectNode) received.path("payload").path("data");
+            data.put("eventId", expected.path("eventId").asString());
+            data.put("occurredAt", expected.path("occurredAt").asString());
+            assertThat(received).isEqualTo(expected);
+            assertThat(data.has("progress")).isFalse();
+        } finally { subscriber.destroy(); }
+    }
+
     private RedisMessageListenerContainer subscriber(String channel, Receiver receiver) {
         var container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connections);

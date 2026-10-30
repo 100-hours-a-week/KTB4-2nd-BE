@@ -24,6 +24,7 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.event.TripCreateRequestEvent;
+import com.yeodam.yeodambe.trip.event.TripProcessingStatusChangedEvent;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
@@ -34,12 +35,14 @@ import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStateSnapshot;
 import com.yeodam.yeodambe.user.service.UserStatsService;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +78,7 @@ public class InitialAttachmentUploadTransactionService {
     private final JdbcTemplate jdbc;
     private final KafkaTopicProperties topics;
     private final TripCreationOutboxRepository outboxes;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public InitialAttachmentUploadBatchSnapshot prepareBatch(
@@ -144,8 +148,9 @@ public class InitialAttachmentUploadTransactionService {
         }
 
         String executionId = UUID.randomUUID().toString();
-        executionRepository.save(new TripCreationExecution(
+        var execution = executionRepository.save(new TripCreationExecution(
                 executionId, tripId, userId, request.totalAttachmentCount()));
+        publishStatusChanged(execution);
         logWorkflowStarted(tripId, executionId);
         return executionId;
     }
@@ -413,7 +418,9 @@ public class InitialAttachmentUploadTransactionService {
                 execution.getStatusVersion(),
                 status,
                 execution.getCurrentStep(),
-                null,
+                status == TripProcessingStatusResponse.Status.COMPLETED && execution.getResultRawPayload() != null
+                        ? TripProcessingStatusResponse.Result.fromAiResult(trip.getId(),
+                        objectMapper.readTree(execution.getResultRawPayload()).path("result")) : null,
                 error
         );
     }
@@ -600,6 +607,7 @@ public class InitialAttachmentUploadTransactionService {
         if (trip != null) {
             trips.finishInitialUpload(trip.getId(), trip.getUserId(), ProcessingStatus.PROCESSING, ProcessingStatus.FAILED);
         }
+        publishStatusChanged(execution);
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -622,6 +630,21 @@ public class InitialAttachmentUploadTransactionService {
         scheduleExecutionCleanup(execution, "CANCELED");
         softDeleteExecutionPhotos(execution);
         executionRepository.saveAndFlush(execution);
+        publishStatusChanged(execution);
+    }
+
+    private void publishStatusChanged(TripCreationExecution execution) {
+        var snapshot = new TripProcessingStateSnapshot(
+                execution.getTripId(),
+                execution.getExecutionId(),
+                execution.getStatusVersion(),
+                execution.getDisplayStatus(),
+                execution.getCurrentStep(),
+                execution.getErrorCode()
+        );
+
+        eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(
+                execution.getUserId(), snapshot));
     }
 
     private void softDeleteExecutionPhotos(TripCreationExecution execution) {

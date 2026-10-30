@@ -38,7 +38,7 @@ class StoryGenerationStatusSchedulerTest {
     private final StoryGenerationOutboxRepository outboxes = mock(StoryGenerationOutboxRepository.class);
     private final StoryGenerationStatusSyncService sync = mock(StoryGenerationStatusSyncService.class);
     private final StoryGenerationStatusScheduler scheduler = new StoryGenerationStatusScheduler(
-            jobs, outboxes, sync, new StoryGenerationTimeoutService(jobs, outboxes, mock(JdbcTemplate.class)));
+            jobs, outboxes, sync, new StoryGenerationTimeoutService(jobs, outboxes, mock(JdbcTemplate.class), mock(org.springframework.context.ApplicationEventPublisher.class)));
 
     @AfterEach
     void clearMdc() {
@@ -159,7 +159,7 @@ class StoryGenerationStatusSchedulerTest {
         context.registerBean(StoryGenerationOutboxRepository.class, () -> outboxes);
         context.registerBean(StoryGenerationStatusSyncService.class, () -> sync);
         context.registerBean(StoryGenerationTimeoutService.class,
-                () -> new StoryGenerationTimeoutService(jobs, outboxes, mock(JdbcTemplate.class)));
+                () -> new StoryGenerationTimeoutService(jobs, outboxes, mock(JdbcTemplate.class), mock(org.springframework.context.ApplicationEventPublisher.class)));
         context.register(SchedulingConfiguration.class);
         return context;
     }

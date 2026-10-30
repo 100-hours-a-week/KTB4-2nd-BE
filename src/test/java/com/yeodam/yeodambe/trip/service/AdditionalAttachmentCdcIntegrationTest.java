@@ -1,6 +1,11 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
+import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEvent;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusNotification;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import org.mockito.ArgumentCaptor;
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
@@ -57,6 +62,7 @@ class AdditionalAttachmentCdcIntegrationTest {
     @MockitoBean private TripAttachmentStorageClient storage;
     @MockitoBean private TripAttachmentDerivativeService derivatives;
     @MockitoBean private KakaoLocalClient kakao;
+    @MockitoBean private WebSocketEventPublisher notificationPublisher;
     private Long userId;
     private Long tripId;
     private Long oldPhotoId;
@@ -127,6 +133,79 @@ class AdditionalAttachmentCdcIntegrationTest {
     void finishExecution() {
         executionRepository.findById(additionId).filter(execution -> !execution.isTerminal())
                 .ifPresent(execution -> transactions.failExecution(additionId, "TEST_FINISHED"));
+    }
+
+    @Test
+    void newAdditionPublishesAfterCommitButReissuingDoesNotRepeatIt() {
+        transaction.executeWithoutResult(status -> {
+            urls.issueUploadUrls(tripId, userId, request(1, 1, true));
+            verifyNoInteractions(notificationPublisher);
+        });
+        urls.issueUploadUrls(tripId, userId, request(1, 1, true));
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).publish(captor.capture());
+        verifyNoMoreInteractions(notificationPublisher);
+        var message = captor.getValue();
+        var notification = (TripProcessingStatusNotification) message.payload().data();
+        assertThat(message.target().id()).isEqualTo(userId);
+        assertThat(notification.tripId()).isEqualTo(tripId);
+        assertThat(notification.executionId()).isEqualTo(additionId);
+        assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.PROCESSING);
+        assertThat(notification.statusVersion()).isEqualTo(1);
+        assertThat(notification.result()).isNull();
+        assertThat(notification.error()).isNull();
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Test
+    void newAdditionRollbackDoesNotPublishOrLeaveAnExecution() {
+        transaction.executeWithoutResult(status -> {
+            urls.issueUploadUrls(tripId, userId, request(1, 1, true));
+            status.setRollbackOnly();
+        });
+        verifyNoInteractions(notificationPublisher);
+        assertThat(executionRepository.findById(additionId)).isEmpty();
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Test
+    void failurePublishesOnceAfterCommitAndKeepsExistingPhotos() {
+        urls.issueUploadUrls(tripId, userId, request(1, 1, true));
+        clearInvocations(notificationPublisher);
+        transaction.executeWithoutResult(status -> {
+            transactions.failExecution(additionId, "IMAGE_CONVERSION_FAILED");
+            verifyNoInteractions(notificationPublisher);
+        });
+        transactions.failExecution(additionId, "REPEATED_FAILURE");
+
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).publish(captor.capture());
+        verifyNoMoreInteractions(notificationPublisher);
+        var message = captor.getValue();
+        var notification = (TripProcessingStatusNotification) message.payload().data();
+        assertThat(message.target().id()).isEqualTo(userId);
+        assertThat(notification.executionId()).isEqualTo(additionId);
+        assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.FAILED);
+        assertThat(notification.error().code()).isEqualTo("IMAGE_CONVERSION_FAILED");
+        assertThat(notification.statusVersion()).isEqualTo(executionRepository.findById(additionId).orElseThrow().getStatusVersion());
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(trips.findById(tripId).orElseThrow().getProcessingStatus()).isEqualTo(ProcessingStatus.COMPLETED);
+    }
+
+    @Test
+    void rollingBackFailureDoesNotPublishOrChangeTheExecution() {
+        urls.issueUploadUrls(tripId, userId, request(1, 1, true));
+        clearInvocations(notificationPublisher);
+        transaction.executeWithoutResult(status -> {
+            transactions.failExecution(additionId, "IMAGE_CONVERSION_FAILED");
+            status.setRollbackOnly();
+        });
+
+        verifyNoInteractions(notificationPublisher);
+        var execution = executionRepository.findById(additionId).orElseThrow();
+        assertThat(execution.isTerminal()).isFalse();
+        assertThat(execution.getStatusVersion()).isEqualTo(1);
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
     }
 
     @Test

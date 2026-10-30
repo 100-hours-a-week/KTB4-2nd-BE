@@ -40,7 +40,7 @@ public class StoryGenerationJob {
     private Status status = Status.QUEUED;
 
     @Column(name = "status_version", nullable = false)
-    private long statusVersion = 0;
+    private long statusVersion = 1;
 
     @Column(name = "progress", nullable = false)
     private int progress = 0;

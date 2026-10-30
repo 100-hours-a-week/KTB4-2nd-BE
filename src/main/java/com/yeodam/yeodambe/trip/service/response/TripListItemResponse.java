@@ -11,7 +11,8 @@ public record TripListItemResponse(
         String placeSummary,
         long attachmentCount,
         boolean isFavorite,
-        String thumbnailUrl
+        String thumbnailUrl,
+        long sequence
 ) {
     public enum Status {
         PROCESSING,

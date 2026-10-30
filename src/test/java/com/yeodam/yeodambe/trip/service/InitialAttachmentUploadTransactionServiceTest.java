@@ -3,6 +3,12 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
+import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEvent;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusNotification;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
@@ -75,6 +81,8 @@ class InitialAttachmentUploadTransactionServiceTest {
     private TripAttachmentDerivativeService derivatives;
     @MockitoBean
     private TripAttachmentStorageClient storage;
+    @MockitoBean
+    private WebSocketEventPublisher notificationPublisher;
     private User owner;
     private Trip trip;
 
@@ -89,6 +97,93 @@ class InitialAttachmentUploadTransactionServiceTest {
     void finishTestExecution() {
         executions.findByTripId(trip.getId()).ifPresent(execution ->
                 transactions.failExecution(execution.getExecutionId(), "TEST_FINISHED"));
+    }
+
+    @Test
+    void 최초_접수는_커밋_후_한번_발행하고_재발급은_추가_발행하지_않는다() {
+        var batch = new TransactionTemplate(transactionManager).execute(status -> {
+            var prepared = prepare(true);
+            Mockito.verifyNoInteractions(notificationPublisher);
+            return prepared;
+        });
+        var reissued = prepare(true);
+        assertThat(reissued.executionId()).isEqualTo(batch.executionId());
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        Mockito.verify(notificationPublisher).publish(captor.capture());
+        Mockito.verifyNoMoreInteractions(notificationPublisher);
+        var message = captor.getValue();
+        var notification = (TripProcessingStatusNotification) message.payload().data();
+        assertThat(message.target().id()).isEqualTo(owner.getUserId());
+        assertThat(message.payload().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");
+        assertThat(notification.tripId()).isEqualTo(trip.getId());
+        assertThat(notification.executionId()).isEqualTo(batch.executionId());
+        assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.PROCESSING);
+        assertThat(notification.statusVersion()).isEqualTo(1);
+        assertThat(notification.result()).isNull();
+        assertThat(notification.error()).isNull();
+    }
+
+    @Test
+    void 최초_접수가_롤백되면_알림과_실행을_남기지_않는다() {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            prepare(true);
+            status.setRollbackOnly();
+        });
+        Mockito.verifyNoInteractions(notificationPublisher);
+        assertThat(executions.findByTripId(trip.getId())).isEmpty();
+        assertThat(reserved()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void 실패와_취소는_커밋_후_한번만_개인_알림을_발행한다(boolean failed) {
+        var batch = prepare(true);
+        Mockito.clearInvocations(notificationPublisher);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            finishForNotification(batch.executionId(), failed);
+            Mockito.verifyNoInteractions(notificationPublisher);
+        });
+        finishForNotification(batch.executionId(), failed);
+
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        Mockito.verify(notificationPublisher).publish(captor.capture());
+        Mockito.verifyNoMoreInteractions(notificationPublisher);
+        var message = captor.getValue();
+        var notification = (TripProcessingStatusNotification) message.payload().data();
+        assertThat(message.target().id()).isEqualTo(owner.getUserId());
+        assertThat(notification.tripId()).isEqualTo(trip.getId());
+        assertThat(notification.executionId()).isEqualTo(batch.executionId());
+        assertThat(notification.statusVersion()).isEqualTo(execution(batch).getStatusVersion());
+        assertThat(notification.status()).isEqualTo(failed
+                ? TripProcessingStatusResponse.Status.FAILED : TripProcessingStatusResponse.Status.CANCELED);
+        if (failed) {
+            assertThat(notification.error().code()).isEqualTo("AI_PROCESSING_FAILED");
+            assertThat(notification.error().message()).isEqualTo("첨부 처리에 실패했습니다.");
+        } else {
+            assertThat(notification.error()).isNull();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void 실패와_취소_저장이_롤백되면_개인_알림을_발행하지_않는다(boolean failed) {
+        var batch = prepare(true);
+        Mockito.clearInvocations(notificationPublisher);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            finishForNotification(batch.executionId(), failed);
+            status.setRollbackOnly();
+        });
+
+        Mockito.verifyNoInteractions(notificationPublisher);
+        var unchanged = execution(batch);
+        assertThat(unchanged.isTerminal()).isFalse();
+        assertThat(unchanged.getStatusVersion()).isEqualTo(1);
+        assertThat(unchanged.getErrorCode()).isNull();
+    }
+
+    private void finishForNotification(String executionId, boolean failed) {
+        if (failed) transactions.failExecution(executionId, "AI_PROCESSING_FAILED");
+        else transactions.cancelExecution(trip.getId(), owner.getUserId());
     }
 
     @Test

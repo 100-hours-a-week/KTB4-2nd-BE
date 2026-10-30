@@ -14,17 +14,17 @@ class StoryGenerationStatusVersionTest {
     @Test
     void incrementsOnlyWhenThePublicStatusChanges() {
         StoryGenerationJob job = job();
-        assertThat(job.getStatusVersion()).isZero();
+        assertThat(job.getStatusVersion()).isEqualTo(1);
 
         job.updateProcessing(10);
-        assertThat(job.getStatusVersion()).isEqualTo(1);
+        assertThat(job.getStatusVersion()).isEqualTo(2);
 
         job.updateProcessing(40);
         job.updateProcessing(40);
-        assertThat(job.getStatusVersion()).isEqualTo(1);
+        assertThat(job.getStatusVersion()).isEqualTo(2);
 
         job.complete(100L);
-        assertThat(job.getStatusVersion()).isEqualTo(2);
+        assertThat(job.getStatusVersion()).isEqualTo(3);
         assertThat(job.getStoryId()).isEqualTo(100L);
     }
 
@@ -40,14 +40,14 @@ class StoryGenerationStatusVersionTest {
             default -> throw new IllegalArgumentException();
         }
 
-        assertThat(job.getStatusVersion()).isEqualTo(1);
+        assertThat(job.getStatusVersion()).isEqualTo(2);
         job.updateProcessing(90);
         job.complete(200L);
         job.fail("LATE_FAILURE");
         job.cancel();
 
         assertThat(job.getStatus()).isEqualTo(terminal);
-        assertThat(job.getStatusVersion()).isEqualTo(1);
+        assertThat(job.getStatusVersion()).isEqualTo(2);
         assertThat(job.getStoryId()).isEqualTo(terminal == StoryGenerationJob.Status.COMPLETED ? 100L : null);
         assertThat(job.getErrorCode()).isEqualTo(terminal == StoryGenerationJob.Status.FAILED
                 ? "AI_PROCESSING_FAILED" : null);
@@ -61,7 +61,7 @@ class StoryGenerationStatusVersionTest {
         assertThatThrownBy(() -> job.complete(null)).isInstanceOf(IllegalArgumentException.class);
 
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
-        assertThat(job.getStatusVersion()).isZero();
+        assertThat(job.getStatusVersion()).isEqualTo(1);
     }
 
     @Test
@@ -72,7 +72,7 @@ class StoryGenerationStatusVersionTest {
         assertThat(job.failIfTimedOut(now.minusHours(1), now)).isTrue();
         assertThat(job.failIfTimedOut(now.minusHours(1), now.plusMinutes(1))).isFalse();
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
-        assertThat(job.getStatusVersion()).isEqualTo(1);
+        assertThat(job.getStatusVersion()).isEqualTo(2);
     }
 
     private StoryGenerationJob job() {

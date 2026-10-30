@@ -25,6 +25,10 @@ import com.yeodam.yeodambe.story.entity.StorySelectedPlace;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import org.springframework.transaction.annotation.Transactional;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.story.event.StoryGenerationStatusChangedEvent;
+import com.yeodam.yeodambe.story.service.response.StoryGenerationStatusResponse;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -43,6 +47,7 @@ public class StoryGenerationCompletionService {
     private final ObjectMapper objectMapper;
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
     private final JdbcTemplate jdbc;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void complete(
@@ -79,6 +84,16 @@ public class StoryGenerationCompletionService {
                 ? jdbc.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class)
                 : LocalDateTime.now();
         if (job.failIfTimedOut(outbox.getPublishedAt(), now)) {
+            var error = new StoryGenerationStatusResponse.Failure(
+                    ErrorMessage.STORY_GENERATION_FAILED.name(),
+                    StoryGenerationInternalErrorMessage.GENERATION_FAILED.message()
+            );
+            var snapshot = new StoryGenerationStatusResponse(
+                    job.getId(), job.getStatus(), job.getStatusVersion(), job.getStoryId(), error
+            );
+            eventPublisher.publishEvent(new StoryGenerationStatusChangedEvent(
+                    job.getUserId(), job.getTripId(), snapshot
+            ));
             logWorkflowFailed(job);
             return;
         }
@@ -151,6 +166,14 @@ public class StoryGenerationCompletionService {
 
             trip.changeCurrentStory(story.getId());
             job.complete(story.getId());
+            tripRepository.advanceSequence(trip.getId());
+            var sequence = jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?", Long.class, trip.getId());
+            var listItem = new com.yeodam.yeodambe.story.service.response.StoryCompletionListItem(
+                    story.getId(), trip.getId(), sequence, story.getMood(), story.getStorySummary());
+            var snapshot = new StoryGenerationStatusResponse(
+                    job.getId(), job.getStatus(), job.getStatusVersion(), job.getStoryId(), null);
+            eventPublisher.publishEvent(new StoryGenerationStatusChangedEvent(
+                    job.getUserId(), job.getTripId(), snapshot, listItem));
             logResultApplied(timing);
             logWorkflowCompleted(job);
         }

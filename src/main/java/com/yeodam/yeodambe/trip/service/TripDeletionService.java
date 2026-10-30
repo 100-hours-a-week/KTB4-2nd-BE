@@ -93,5 +93,6 @@ public class TripDeletionService {
 
         userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
+        trips.advanceSequence(tripId);
     }
 }

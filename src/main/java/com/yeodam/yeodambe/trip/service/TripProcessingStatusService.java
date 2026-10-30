@@ -36,6 +36,7 @@ public class TripProcessingStatusService {
     private final TripCreationExecutionRepository creationExecutions;
     private final AdditionalAttachmentExecutionRepository additionalExecutions;
     private final TripProcessingStatusSyncService statusSyncService;
+    private final TripCompletionSnapshotFactory completionSnapshots;
 
     public TripProcessingStatusResponse findStatus(
             Long tripId,
@@ -153,6 +154,11 @@ public class TripProcessingStatusService {
         Status status = Status.valueOf(snapshot.displayStatus().name());
 
         if (status == Status.COMPLETED) {
+            var savedResult = completionSnapshots.resultFromRaw(snapshot.tripId(), snapshot.completedRawPayload());
+            if (savedResult != null) {
+                return new TripProcessingStatusResponse(snapshot.tripId(), snapshot.executionId(), snapshot.statusVersion(),
+                        Status.COMPLETED, null, savedResult, null);
+            }
             return completed(
                     snapshot.tripId(),
                     snapshot.executionId(),

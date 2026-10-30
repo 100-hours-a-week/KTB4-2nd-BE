@@ -255,11 +255,18 @@ public class TripService {
             throw new TripNameDuplicatedException();
         }
 
+        boolean changed = !Objects.equals(trip.getTripName(), tripName)
+                || !Objects.equals(trip.getStartDate(), startDate)
+                || !Objects.equals(trip.getEndDate(), endDate)
+                || !new HashSet<>(regionCodes).equals(existingRegions.stream()
+                        .map(TripRegion::getRegionCode).collect(Collectors.toSet()));
         trip.changeInformation(tripName, startDate, endDate);
 
         if (request.regionCodes() != null) {
             updateRegions(trip, existingRegions, requestedRegions);
         }
+
+        if (changed) tripRepository.advanceSequence(tripId);
 
         List<TripUpdateResponse.Region> regions = tripRegionRepository
                 .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId).stream()
@@ -401,7 +408,8 @@ public class TripService {
                     attachmentCount,
                     unclassifiedAttachmentCount,
                     hasStory,
-                    trip.getFavorite()
+                    trip.getFavorite(),
+                    trip.getSequence()
             );
 
             logTripDetailSucceeded(tripId, attachmentCount, startedAt);
@@ -642,7 +650,8 @@ public class TripService {
                         trip.getFavorite(),
                         trip.getProcessingStatus() == ProcessingStatus.PROCESSING
                                 ? null
-                                : createThumbnailUrl(trip)
+                                : createThumbnailUrl(trip),
+                        trip.getSequence()
                 ))
                 .toList();
 

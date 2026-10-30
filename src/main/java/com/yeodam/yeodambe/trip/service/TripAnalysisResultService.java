@@ -8,6 +8,9 @@ import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
+import com.yeodam.yeodambe.trip.event.TripProcessingStatusChangedEvent;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStateSnapshot;
+import org.springframework.context.ApplicationEventPublisher;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
@@ -57,6 +60,8 @@ public class TripAnalysisResultService {
     private final ObjectMapper json;
     private final EntityManager entityManager;
     private final TripMapCacheStore tripMapCacheStore;
+    private final ApplicationEventPublisher eventPublisher;
+    private final TripCompletionSnapshotFactory completionSnapshots;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void saveCompleted(
@@ -122,6 +127,7 @@ public class TripAnalysisResultService {
         attachmentRepository.saveAll(attachments);
         userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
+        trips.advanceSequence(tripId);
     }
 
     private void validateCompletedResult(
@@ -191,6 +197,7 @@ public class TripAnalysisResultService {
         attachmentRepository.saveAll(attachments);
         userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
+        trips.advanceSequence(tripId);
     }
 
     private Map<String, Long> savePlaces(
@@ -437,11 +444,24 @@ public class TripAnalysisResultService {
             }
             return;
         }
+        long previousVersion = execution.getStatusVersion();
         execution.receiveResult(rawPayload, event.status().name(), uploadTransactions.databaseTime());
         logAiResultReceived(event.tripId(), event.executionId());
         switch (event.status()) {
             case COMPLETED -> {
                 // 원문을 먼저 커밋하고 검증·외부 조회·최종 저장은 별도 작업에서 수행한다.
+                if (execution.getStatusVersion() != previousVersion) {
+                    var snapshot = new TripProcessingStateSnapshot(
+                            execution.getTripId(),
+                            execution.getExecutionId(),
+                            execution.getStatusVersion(),
+                            execution.getDisplayStatus(),
+                            execution.getCurrentStep(),
+                            execution.getErrorCode()
+                    );
+                    eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(
+                            execution.getUserId(), snapshot));
+                }
             }
             case FAILED -> uploadTransactions.failExecution(event.executionId(), ErrorMessage.AI_PROCESSING_FAILED.name());
             case CANCELED -> {
@@ -536,6 +556,13 @@ public class TripAnalysisResultService {
                 null, uploadTransactions.databaseTime());
         creationExecutions.saveAndFlush(execution);
         persistCompleted(claim.tripId(), claim.userId(), executionAttachments(claim.executionId()), result, placeNames);
+        var completion = completionSnapshots.capture(claim.tripId(), claim.userId(),
+                com.yeodam.yeodambe.common.websocket.service.request.AiTaskCompletionType.TRIP_CREATION_COMPLETED,
+                execution.getResultRawPayload());
+        var snapshot = new com.yeodam.yeodambe.trip.service.response.TripProcessingStateSnapshot(
+                execution.getTripId(), execution.getExecutionId(), execution.getStatusVersion(),
+                execution.getDisplayStatus(), execution.getCurrentStep(), execution.getErrorCode(), execution.getResultRawPayload());
+        eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(execution.getUserId(), snapshot, completion));
         logWorkflowCompleted(claim);
     }
 

@@ -3,6 +3,8 @@ package com.yeodam.yeodambe.story.service;
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+import com.yeodam.yeodambe.story.event.StoryGenerationStatusChangedEvent;
+import com.yeodam.yeodambe.story.service.response.StoryGenerationStatusResponse;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import org.junit.jupiter.api.Test;
@@ -10,6 +12,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -23,7 +27,8 @@ import static org.mockito.Mockito.when;
 
 class StoryGenerationProgressServiceTest {
     private final StoryGenerationJobRepository jobRepository = mock(StoryGenerationJobRepository.class);
-    private final StoryGenerationProgressService service = new StoryGenerationProgressService(jobRepository);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final StoryGenerationProgressService service = new StoryGenerationProgressService(jobRepository, eventPublisher);
     private final StoryGenerationJob job = new StoryGenerationJob("execution-1", 241L, 2L, Story.Mood.PLAIN);
 
     @Test
@@ -35,6 +40,26 @@ class StoryGenerationProgressServiceTest {
         verify(jobRepository).findByIdForUpdate(10L);
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.PROCESSING);
         assertThat(job.getProgress()).isEqualTo(50);
+        verify(eventPublisher).publishEvent(new StoryGenerationStatusChangedEvent(
+                2L, 241L, new StoryGenerationStatusResponse(10L,
+                StoryGenerationJob.Status.PROCESSING, 2L, null, null)
+        ));
+    }
+
+    @Test
+    void publishesOnlyOnceWhenSubsequentResponseChangesPercentageOnly() {
+        prepareJob();
+
+        service.updateProcessing(10L, response(241L, "execution-1", new StoryGenerationAiResponse.Progress(1, 4)));
+        service.updateProcessing(10L, response(241L, "execution-1", new StoryGenerationAiResponse.Progress(3, 4)));
+
+        assertThat(job.getProgress()).isEqualTo(75);
+        assertThat(job.getStatusVersion()).isEqualTo(2L);
+        verify(eventPublisher).publishEvent(new StoryGenerationStatusChangedEvent(
+                2L, 241L, new StoryGenerationStatusResponse(10L,
+                StoryGenerationJob.Status.PROCESSING, 2L, null, null)
+        ));
+        org.mockito.Mockito.verifyNoMoreInteractions(eventPublisher);
     }
 
     @Test
@@ -64,6 +89,7 @@ class StoryGenerationProgressServiceTest {
         service.updateProcessing(10L, response(241L, "execution-1", new StoryGenerationAiResponse.Progress(1, 4)));
 
         assertThat(job.getProgress()).isEqualTo(75);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -87,6 +113,7 @@ class StoryGenerationProgressServiceTest {
                 .hasMessage(StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH.message());
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
         assertThat(job.getProgress()).isZero();
+        verifyNoInteractions(eventPublisher);
     }
 
     static Stream<Arguments> invalidIdentities() {
@@ -104,6 +131,7 @@ class StoryGenerationProgressServiceTest {
                 .hasMessage(StoryGenerationInternalErrorMessage.JOB_PROGRESS_INVALID.message());
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
         assertThat(job.getProgress()).isZero();
+        verifyNoInteractions(eventPublisher);
     }
 
     static Stream<StoryGenerationAiResponse.Progress> invalidProgress() {
@@ -136,6 +164,7 @@ class StoryGenerationProgressServiceTest {
         assertThat(job.getProgress()).isEqualTo(oldProgress);
         assertThat(job.getErrorCode()).isEqualTo(oldError);
         assertThat(job.getStoryId()).isEqualTo(oldStoryId);
+        verifyNoInteractions(eventPublisher);
     }
 
     @ParameterizedTest
@@ -144,7 +173,7 @@ class StoryGenerationProgressServiceTest {
         assertThatThrownBy(() -> service.updateProcessing(10L, response))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message());
-        verifyNoInteractions(jobRepository);
+        verifyNoInteractions(jobRepository, eventPublisher);
     }
 
     static Stream<StoryGenerationAiResponse> nonProcessingResponses() {
@@ -156,6 +185,7 @@ class StoryGenerationProgressServiceTest {
     }
 
     private void prepareJob() {
+        ReflectionTestUtils.setField(job, "id", 10L);
         when(jobRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(job));
     }
 

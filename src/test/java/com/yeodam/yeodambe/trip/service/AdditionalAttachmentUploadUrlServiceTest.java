@@ -35,7 +35,7 @@ class AdditionalAttachmentUploadUrlServiceTest {
                     mock(AdditionalAttachmentExecutionRepository.class),
                     mock(UserStatsService.class),
                     mock(JdbcTemplate.class),
-                    mock(StoryGenerationJobRepository.class));
+                    mock(StoryGenerationJobRepository.class), mock(org.springframework.context.ApplicationEventPublisher.class));
 
     @Test
     void acceptsSupportedFilesAndReturnsBatchBytes() {

@@ -7,6 +7,10 @@ import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.story.event.StoryGenerationStatusChangedEvent;
+import com.yeodam.yeodambe.story.service.response.StoryGenerationStatusResponse;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +21,7 @@ import com.yeodam.yeodambe.common.exception.StoryGenerationNotFoundException;
 @RequiredArgsConstructor
 public class StoryGenerationTerminalService {
     private final StoryGenerationJobRepository jobRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void apply(
@@ -49,6 +54,7 @@ public class StoryGenerationTerminalService {
 
         if (response.status() == StoryGenerationAiResponse.Status.CANCELED) {
             job.cancel();
+            publishStatusChanged(job);
             logWorkflowFinished(job, "canceled", null);
             return;
         }
@@ -65,6 +71,7 @@ public class StoryGenerationTerminalService {
         }
 
         job.fail(error.code());
+        publishStatusChanged(job);
         logWorkflowFinished(job, "failure", job.getErrorCode());
     }
 
@@ -83,6 +90,7 @@ public class StoryGenerationTerminalService {
         }
 
         job.cancel();
+        publishStatusChanged(job);
 
         WorkflowLog.finished(
                 "story_generation",
@@ -92,6 +100,22 @@ public class StoryGenerationTerminalService {
                 "canceled",
                 null
         );
+    }
+
+    private void publishStatusChanged(StoryGenerationJob job) {
+        StoryGenerationStatusResponse.Failure error = null;
+        if (job.getStatus() == StoryGenerationJob.Status.FAILED) {
+            error = new StoryGenerationStatusResponse.Failure(
+                    ErrorMessage.STORY_GENERATION_FAILED.name(),
+                    StoryGenerationInternalErrorMessage.GENERATION_FAILED.message()
+            );
+        }
+        var snapshot = new StoryGenerationStatusResponse(
+                job.getId(), job.getStatus(), job.getStatusVersion(), job.getStoryId(), error
+        );
+        eventPublisher.publishEvent(new StoryGenerationStatusChangedEvent(
+                job.getUserId(), job.getTripId(), snapshot
+        ));
     }
 
     private void logWorkflowFinished(StoryGenerationJob job, String result, String errorCode) {

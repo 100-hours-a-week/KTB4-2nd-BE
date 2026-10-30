@@ -48,6 +48,15 @@ class TripUpdateServiceTest {
     }
 
     @Test
+    void changingInformationAdvancesSequenceOnceButIdenticalInformationDoesNot() {
+        service.updateTrip(7L, 1L, new TripUpdateRequest("변경 여행", null, null, null));
+        verify(trips).advanceSequence(7L);
+        clearInvocations(trips);
+        service.updateTrip(7L, 1L, new TripUpdateRequest("변경 여행", null, null, List.of("11000")));
+        verify(trips, never()).advanceSequence(anyLong());
+    }
+
+    @Test
     void 한국_자정부터_오전까지_당일로_여행_기간을_수정한다() {
         LocalDate today = LocalDate.of(2030, 10, 22);
         for (String instant : List.of(

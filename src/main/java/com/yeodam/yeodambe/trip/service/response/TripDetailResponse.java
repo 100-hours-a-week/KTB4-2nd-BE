@@ -13,7 +13,8 @@ public record TripDetailResponse(
         long attachmentCount,
         long unclassifiedAttachmentCount,
         boolean hasStory,
-        boolean isFavorite
+        boolean isFavorite,
+        long sequence
 ) {
     public record Region(
             Long regionId,

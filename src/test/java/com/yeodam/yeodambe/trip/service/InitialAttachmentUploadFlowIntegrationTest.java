@@ -4,6 +4,12 @@ import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import java.time.Instant;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
+import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEvent;
+import org.mockito.ArgumentCaptor;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
 import com.yeodam.yeodambe.trip.repository.*;
@@ -39,7 +45,7 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -72,6 +78,9 @@ class InitialAttachmentUploadFlowIntegrationTest {
     @Autowired
     private TripWithdrawalService withdrawal;
     @Autowired private TripCreationOutboxRepository outboxes;
+    @MockitoBean private WebSocketEventPublisher notificationPublisher;
+    @Autowired private TransactionTemplate transaction;
+    @Autowired private TripProcessingStatusService processingStatus;
     private User owner;
     private Trip trip;
 
@@ -88,6 +97,105 @@ class InitialAttachmentUploadFlowIntegrationTest {
     void finishExecution() {
         executions.findByTripId(trip.getId()).ifPresent(execution ->
                 transactions.failExecution(execution.getExecutionId(), "TEST_FINISHED"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void 결과_수신으로_공개상태가_바뀔때만_커밋후_반영중_알림을_보낸다(boolean alreadyFinalizing) {
+        String raw = prepareResultNotification();
+        org.mockito.Mockito.clearInvocations(notificationPublisher);
+        if (alreadyFinalizing) {
+            transaction.executeWithoutResult(status -> executions.findForUpdate(execution().getExecutionId())
+                    .orElseThrow().updateDisplayStatus(TripDisplayStatus.FINALIZING, null));
+        }
+        var event = json.readValue(raw, TripCreateResultEvent.class);
+        transaction.executeWithoutResult(status -> {
+            results.receiveKafkaResult(event, raw);
+            verifyNoInteractions(notificationPublisher);
+        });
+        results.receiveKafkaResult(event, raw);
+
+        if (alreadyFinalizing) {
+            verifyNoInteractions(notificationPublisher);
+        } else {
+            var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(notificationPublisher).publish(captor.capture());
+            verifyNoMoreInteractions(notificationPublisher);
+            var notification = (TripProcessingStatusNotification) captor.getValue().payload().data();
+            assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.FINALIZING);
+            assertThat(notification.statusVersion()).isEqualTo(execution().getStatusVersion());
+            assertThat(notification.currentStep()).isNull();
+            assertThat(notification.result()).isNull();
+            assertThat(notification.error()).isNull();
+        }
+    }
+
+    @Test
+    void 결과_수신이_롤백되면_반영중_알림도_보내지_않는다() {
+        String raw = prepareResultNotification();
+        org.mockito.Mockito.clearInvocations(notificationPublisher);
+        transaction.executeWithoutResult(status -> {
+            results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+            status.setRollbackOnly();
+        });
+
+        verifyNoInteractions(notificationPublisher);
+        assertThat(execution().getResultRawPayload()).isNull();
+        assertThat(execution().getDisplayStatus()).isEqualTo(TripDisplayStatus.PROCESSING);
+        assertThat(execution().getStatusVersion()).isEqualTo(1);
+    }
+
+    private String prepareResultNotification() {
+        var batch = prepare(1, 1, true);
+        accept(batch);
+        convert();
+        confirmBatch(batch.batchId());
+        var process = processOutbox(batch.executionId());
+        confirm(process);
+        return resultPayload(json.readTree(process.getPayload()), false);
+    }
+
+    @Test
+    void completedResultPublishesACompleteListSnapshotOnce() {
+        String raw = prepareResultNotification();
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        clearInvocations(notificationPublisher);
+        worker.applyPendingResults();
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        worker.applyPendingResults();
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).publish(captor.capture());
+        verifyNoMoreInteractions(notificationPublisher);
+        var data = json.valueToTree(captor.getValue().payload()).path("data");
+        assertThat(data.path("eventType").asString()).isEqualTo("TRIP_CREATION_COMPLETED");
+        assertThat(data.path("status").asString()).isEqualTo("COMPLETED");
+        assertThat(data.path("result").path("unclassifiedAttachmentCount").asInt()).isEqualTo(1);
+        assertThat(data.path("listItem").path("tripId").asLong()).isEqualTo(trip.getId());
+        assertThat(data.path("listItem").path("sequence").asLong()).isEqualTo(1);
+        assertThat(data.path("listItem").path("attachmentCount").asLong()).isEqualTo(1);
+        long version = data.path("statusVersion").asLong();
+        jdbc.update("UPDATE trip_attachments SET deleted_at = CURRENT_TIMESTAMP(6) WHERE trip_id = ?", trip.getId());
+        var restored = processingStatus.findStatus(trip.getId(), owner.getUserId());
+        assertThat(restored.statusVersion()).isEqualTo(version);
+        assertThat(restored.result().unclassifiedAttachmentCount()).isEqualTo(1);
+    }
+
+    @Test
+    void rollingBackCompletedResultDoesNotPublishOrAdvanceTripSequence() {
+        String raw = prepareResultNotification();
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        var claim = results.claimResult().orElseThrow();
+        assertThat(results.startResultAttempt(claim)).isTrue();
+        var validated = results.validateForApplication(claim);
+        clearInvocations(notificationPublisher);
+        transaction.executeWithoutResult(status -> {
+            results.saveKafkaCompleted(claim, validated, Map.of());
+            verifyNoInteractions(notificationPublisher);
+            status.setRollbackOnly();
+        });
+        verifyNoInteractions(notificationPublisher);
+        assertThat(execution().getDisplayStatus()).isEqualTo(TripDisplayStatus.FINALIZING);
+        assertThat(jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?", Long.class, trip.getId())).isZero();
     }
 
     @Test

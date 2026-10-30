@@ -17,8 +17,9 @@ import static org.mockito.Mockito.*;
 
 class StoryGenerationResultRecoveryServiceTest {
     private final StoryGenerationJobRepository jobs = mock(StoryGenerationJobRepository.class);
+    private final org.springframework.context.ApplicationEventPublisher publisher = mock(org.springframework.context.ApplicationEventPublisher.class);
     private final StoryGenerationResultRecoveryService service =
-            new StoryGenerationResultRecoveryService(jobs, new ObjectMapper());
+            new StoryGenerationResultRecoveryService(jobs, new ObjectMapper(), publisher, mock(jakarta.persistence.EntityManager.class));
     private final String message = "{\"type\":\"story_result\",\"trip_id\":7,\"execution_id\":\"exec-1\"}";
 
     private StoryGenerationJob prepare() {
@@ -42,6 +43,7 @@ class StoryGenerationResultRecoveryServiceTest {
         var job = prepare();
         service.failIdentifiedJob(message.replace("7", "8"));
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verifyNoInteractions(publisher);
     }
 
     @Test
@@ -51,13 +53,14 @@ class StoryGenerationResultRecoveryServiceTest {
         service.failIdentifiedJob(message);
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.COMPLETED);
         assertThat(job.getStoryId()).isEqualTo(9L);
+        verifyNoInteractions(publisher);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"{broken", "null", "{}", "{\"type\":\"process_result\"}"})
     void unidentifiedMessageDoesNotModifyJobs(String malformed) {
         service.failIdentifiedJob(malformed);
-        verifyNoInteractions(jobs);
+        verifyNoInteractions(jobs, publisher);
     }
 
     @Test

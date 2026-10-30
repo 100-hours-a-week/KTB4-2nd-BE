@@ -1,11 +1,16 @@
 package com.yeodam.websocket.trip.service;
 
+import lombok.extern.slf4j.Slf4j;
 import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
 import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import com.yeodam.websocket.trip.client.BackendTripEditClient;
 import org.springframework.context.event.EventListener;
-import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PreDestroy;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.messaging.Message;
@@ -25,6 +30,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -39,20 +46,26 @@ public class TripSubscriptionService implements ExecutorChannelInterceptor {
     private final BackendTripEditClient client;
     private final WebSocketSessionManager sessionManager;
     private final TaskScheduler scheduler;
+    private final ThreadPoolTaskExecutor executor;
+    private final Map<AccessKey, RevalidationRequest> requests = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedDeque<AccessKey> pending = new ConcurrentLinkedDeque<>();
+    private volatile boolean stopping;
     private final Map<SubscriptionKey, Subscription> subscriptions = new ConcurrentHashMap<>();
 
     public TripSubscriptionService(
             BackendTripEditClient client,
             WebSocketSessionManager sessionManager,
-            @Qualifier("webSocketSessionRevalidationTaskScheduler") TaskScheduler scheduler
+            @Qualifier("tripSubscriptionRevalidationTaskScheduler") TaskScheduler scheduler,
+            @Qualifier("tripSubscriptionRevalidationExecutor") ThreadPoolTaskExecutor executor
     ) {
         this.client = client;
         this.sessionManager = sessionManager;
         this.scheduler = scheduler;
+        this.executor = executor;
     }
 
     public boolean authorize(Message<?> message, Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated()
+        if (stopping || authentication == null || !authentication.isAuthenticated()
                 || !(authentication.getPrincipal() instanceof WebSocketPrincipal principal)) {
             return false;
         }
@@ -84,13 +97,17 @@ public class TripSubscriptionService implements ExecutorChannelInterceptor {
         }
     }
 
-    @Scheduled(scheduler = "webSocketSessionRevalidationTaskScheduler", initialDelay = 30_000, fixedDelay = 30_000)
+    @Scheduled(scheduler = "tripSubscriptionRevalidationTaskScheduler", initialDelay = 30_000, fixedDelay = 30_000)
     public void revalidateSubscriptions() {
+        if (stopping) {
+            return;
+        }
         pruneInactiveSubscriptions();
         Map<AccessKey, List<SubscriptionSnapshot>> groups = subscriptions.entrySet().stream()
                 .map(entry -> new SubscriptionSnapshot(entry.getKey(), entry.getValue()))
                 .collect(Collectors.groupingBy(snapshot -> accessKey(snapshot.subscription())));
-        groups.values().forEach(this::revalidate);
+        groups.forEach((key, affected) -> enqueue(key, affected, false));
+        startWorkers();
     }
 
     private void pruneInactiveSubscriptions() {
@@ -116,13 +133,64 @@ public class TripSubscriptionService implements ExecutorChannelInterceptor {
                 .map(entry -> new SubscriptionSnapshot(entry.getKey(), entry.getValue()))
                 .toList();
         if (!affected.isEmpty()) {
-            revalidate(affected);
+            enqueue(new AccessKey(userId, tripId), affected, true);
+            startWorkers();
         }
     }
 
-    private void revalidate(List<SubscriptionSnapshot> affected) {
-        List<SubscriptionSnapshot> current = affected.stream()
-                .filter(snapshot -> snapshot.subscription() == subscriptions.get(snapshot.key()))
+    private void enqueue(AccessKey key, List<SubscriptionSnapshot> affected, boolean permissionChanged) {
+        if (stopping) {
+            return;
+        }
+        RevalidationRequest request = new RevalidationRequest(affected);
+        RevalidationRequest previous = permissionChanged
+                ? requests.put(key, request) : requests.putIfAbsent(key, request);
+        if (previous == null) {
+            pending.addLast(key);
+        }
+    }
+
+    private void startWorkers() {
+        for (int worker = 0; worker < executor.getMaxPoolSize() && !pending.isEmpty() && !stopping; worker++) {
+            try {
+                executor.execute(this::drainPending);
+            } catch (RejectedExecutionException exception) {
+                log.atDebug().addKeyValue("event", "trip_subscription_revalidation")
+                        .addKeyValue("failure_stage", "dispatch")
+                        .addKeyValue("cause_type", exception.getClass().getSimpleName())
+                        .log("Permission workers are occupied; pending checks remain queued.");
+                return;
+            }
+        }
+    }
+
+    private void drainPending() {
+        AccessKey key;
+        while (!stopping && (key = pending.pollFirst()) != null) {
+            RevalidationRequest request = requests.get(key);
+            if (request == null) {
+                continue;
+            }
+            try {
+                checkPermission(key, request);
+            } finally {
+                finishCheck(key, request);
+            }
+        }
+    }
+
+    private void finishCheck(AccessKey key, RevalidationRequest completed) {
+        RevalidationRequest next = requests.compute(key,
+                (ignored, current) -> current == completed ? null : current);
+        if (next != null && !stopping) {
+            pending.addFirst(key);
+        }
+    }
+
+    private void checkPermission(AccessKey key, RevalidationRequest request) {
+        List<SubscriptionSnapshot> current = request.subscriptions().stream()
+                .map(snapshot -> new SubscriptionSnapshot(snapshot.key(), subscriptions.get(snapshot.key())))
+                .filter(snapshot -> snapshot.subscription() != null && accessKey(snapshot.subscription()).equals(key))
                 .toList();
         if (current.isEmpty()) {
             return;
@@ -130,6 +198,9 @@ public class TripSubscriptionService implements ExecutorChannelInterceptor {
         Subscription selected = current.getFirst().subscription();
         try {
             Instant validUntil = client.checkAccess(selected.tripId(), selected.userId(), selected.credentials());
+            if (requests.get(key) != request || stopping) {
+                return;
+            }
             current.forEach(snapshot -> {
                 Subscription subscription = snapshot.subscription();
                 subscriptions.computeIfPresent(snapshot.key(), (ignored, stored) -> stored == subscription
@@ -138,6 +209,9 @@ public class TripSubscriptionService implements ExecutorChannelInterceptor {
                         : stored);
             });
         } catch (RuntimeException exception) {
+            if (stopping) {
+                return;
+            }
             log.atWarn().addKeyValue("event", "trip_subscription_revalidation")
                     .addKeyValue("trip_id", selected.tripId())
                     .addKeyValue("user_id", selected.userId())
@@ -164,6 +238,9 @@ public class TripSubscriptionService implements ExecutorChannelInterceptor {
     }
 
     private Message<?> authorizeDelivery(Message<?> message) {
+        if (stopping) {
+            return null;
+        }
         SimpMessageHeaderAccessor headers = SimpMessageHeaderAccessor.wrap(message);
         String destination = headers.getDestination();
         if (headers.getMessageType() != SimpMessageType.MESSAGE || destination == null
@@ -198,6 +275,21 @@ public class TripSubscriptionService implements ExecutorChannelInterceptor {
 
     private void removeSession(String sessionId) {
         subscriptions.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+    }
+
+    @EventListener(ContextClosedEvent.class)
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    @PreDestroy
+    public void stopRevalidation() {
+        stopping = true;
+        pending.clear();
+        requests.clear();
+        subscriptions.clear();
+    }
+
+    private record RevalidationRequest(
+            List<SubscriptionSnapshot> subscriptions
+    ) {
     }
 
     private AccessKey accessKey(Subscription subscription) {

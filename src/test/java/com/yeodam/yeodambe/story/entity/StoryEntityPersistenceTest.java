@@ -73,5 +73,23 @@ class StoryEntityPersistenceTest {
         assertThat(em.find(StoredFile.class, file.getId()).getDeletedAt()).isNull();
         assertThat(em.find(Trip.class, trip.getId()).getDeletedAt()).isNull();
         assertThat(em.find(Story.class, story.getId()).getDeletedAt()).isNull();
+
+        Story restoredStory = em.find(Story.class, story.getId());
+        StoryBlock restoredBlock = em.find(StoryBlock.class, block.getId());
+        restoredStory.updateContent(Story.Mood.CALM, "수정 요약");
+        restoredBlock.updateMemoAndOrder("수정 메모", 2);
+        restoredBlock.restore();
+        em.flush();
+        em.clear();
+
+        assertThat(em.find(Story.class, story.getId()).getStorySummary()).isEqualTo("수정 요약");
+        assertThat(em.find(Story.class, story.getId()).getMood()).isEqualTo(Story.Mood.CALM);
+        StoryBlock reloaded = em.find(StoryBlock.class, block.getId());
+        assertThat(reloaded.getDeletedAt()).isNull();
+        assertThat(reloaded.getMemo()).isEqualTo("수정 메모");
+        assertThat(reloaded.getOrderNumber()).isEqualTo(2);
+        assertThat(reloaded.getTripAttachmentId()).isEqualTo(attachment.getId());
+        assertThat(reloaded.getSourceTripPlaceId()).isEqualTo(place.getId());
+        assertThat(reloaded.getSourceDate()).isEqualTo(place.getStartedAt().toLocalDate());
     }
 }

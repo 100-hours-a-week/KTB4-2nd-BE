@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.story.entity;
 
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.common.exception.InvalidStoryUpdateException;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -69,6 +70,21 @@ public class StoryBlock {
         if (this.deletedAt == null) {
             this.deletedAt = deletedAt;
         }
+    }
+
+    public void updateMemoAndOrder(String memo, int orderNumber) {
+        if (orderNumber <= 0
+                || (memo != null
+                && memo.codePointCount(0, memo.length()) > 125)) {
+            throw new InvalidStoryUpdateException();
+        }
+
+        this.memo = memo;
+        this.orderNumber = orderNumber;
+    }
+
+    public void restore() {
+        this.deletedAt = null;
     }
 
     public StoryBlock(

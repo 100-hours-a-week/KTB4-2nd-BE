@@ -12,6 +12,8 @@ import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.service.response.TripPhotoDeletionResult;
+import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserRepository;
@@ -77,6 +79,56 @@ class TripAttachmentDeletionPersistenceTest {
     @MockitoBean
 
     private TripAttachmentStorageClient storage;
+
+    @Test
+    void 공유_삭제는_소유자_통계와_남은_개수_대표사진_삭제폴더를_반환한다() {
+        User owner = users.saveAndFlush(new User("shared-delete@test.com", "공유삭제"));
+        stats.saveAndFlush(new UserStats(owner));
+        Trip trip = trips.saveAndFlush(Trip.localMock(
+                owner.getUserId(), "공유삭제", LocalDate.now(), LocalDate.now(), "preview-old"));
+        ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
+        trips.saveAndFlush(trip);
+        TripDetailPlace retained = savePlace(trip.getId(), "preview-old");
+        TripDetailPlace removed = savePlace(trip.getId(), "preview-last");
+        TripAttachment old = saveAttachment(owner.getUserId(), trip.getId(), retained.getId(), "old", 100);
+        TripAttachment remaining = saveAttachment(owner.getUserId(), trip.getId(), retained.getId(), "remaining", 80);
+        TripAttachment last = saveAttachment(owner.getUserId(), trip.getId(), removed.getId(), "last", 90);
+
+        TripPhotoDeletionResult result = service.deleteForSharedEditing(trip, List.of(old.getId(), last.getId()));
+
+        assertThat(result.attachmentIds()).containsExactly(old.getId(), last.getId());
+        assertThat(result.attachmentCount()).isEqualTo(1);
+        assertThat(result.thumbnailKey()).isEqualTo(remaining.getPreviewStorageKey());
+        assertThat(result.places()).containsExactlyInAnyOrder(
+                new TripPhotoDeletionResult.PlaceChange(
+                        retained.getId(), false, 1, remaining.getPreviewStorageKey()),
+                new TripPhotoDeletionResult.PlaceChange(
+                        removed.getId(), true, 0, null));
+        assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getStorageUsedBytes()).isEqualTo(10);
+        assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isEqualTo(1);
+        assertThat(attachments.findById(old.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(files.findById(old.getFileId()).orElseThrow().getDeletedAt()).isNotNull();
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 공유_삭제에_다른_여행_사진이_섞이면_전부_유지한다() {
+        User owner = users.saveAndFlush(new User("shared-wrong-trip@test.com", "소속검사"));
+        stats.saveAndFlush(new UserStats(owner));
+        Trip first = trips.saveAndFlush(Trip.localMock(
+                owner.getUserId(), "첫여행", LocalDate.now(), LocalDate.now(), null));
+        Trip second = trips.saveAndFlush(Trip.localMock(
+                owner.getUserId(), "두번째", LocalDate.now(), LocalDate.now(), null));
+        TripAttachment own = saveAttachment(owner.getUserId(), first.getId(), null, "own", 100);
+        TripAttachment other = saveAttachment(owner.getUserId(), second.getId(), null, "other", 80);
+
+        assertThatThrownBy(() -> service.deleteForSharedEditing(first, List.of(own.getId(), other.getId())))
+                .isInstanceOf(InvalidAttachmentIdsException.class);
+
+        assertThat(attachments.findById(own.getId()).orElseThrow().getDeletedAt()).isNull();
+        assertThat(files.findById(own.getFileId()).orElseThrow().getDeletedAt()).isNull();
+        verifyNoInteractions(mapCache, storage);
+    }
 
     @Test
     void 대표사진을_삭제하면_남은_사진중_최고평가_사진키를_저장한다() {

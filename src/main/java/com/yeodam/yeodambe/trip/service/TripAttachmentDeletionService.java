@@ -10,7 +10,10 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.service.response.TripPhotoDeletionResult;
 import com.yeodam.yeodambe.user.service.UserStatsService;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -20,13 +23,16 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
 public class TripAttachmentDeletionService {
-    private final com.yeodam.yeodambe.trip.repository.TripRepository tripRepository;
+    private final TripRepository tripRepository;
     private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
-    private final jakarta.persistence.EntityManager entityManager;
+    private final EntityManager entityManager;
     private static final int MAX_DELETE_COUNT = 200;
 
     private static final Comparator<TripAttachment> THUMBNAIL_ORDER = Comparator.comparing(
@@ -75,6 +81,39 @@ public class TripAttachmentDeletionService {
         softDelete(attachments, userId);
     }
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public TripPhotoDeletionResult deleteForSharedEditing(
+            Trip trip,
+            List<Long> attachmentIds
+    ) {
+        validateIds(attachmentIds);
+        List<TripAttachment> attachments = tripAttachmentRepository
+                .findAllActiveWithTripAndFileByIds(attachmentIds);
+        if (attachments.size() != attachmentIds.size()
+                || attachments.stream().anyMatch(attachment -> !trip.getId().equals(attachment.getTripId()))) {
+            throw new InvalidAttachmentIdsException();
+        }
+
+        List<TripDetailPlace> affectedPlaces = attachments.stream()
+                .map(TripAttachment::getTripPlace)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        List<TripAttachment> remaining = softDelete(attachments, trip.getUserId())
+                .get(trip.getId());
+        Trip updatedTrip = attachments.getFirst().getTrip();
+        List<TripPhotoDeletionResult.PlaceChange> places = affectedPlaces.stream()
+                .map(place -> new TripPhotoDeletionResult.PlaceChange(
+                        place.getId(),
+                        place.getDeletedAt() != null,
+                        remaining.stream().filter(attachment -> place.getId().equals(attachment.getTripPlaceId())).count(),
+                        place.getThumbnailKey()
+                ))
+                .toList();
+        return new TripPhotoDeletionResult(
+                List.copyOf(attachmentIds), remaining.size(), updatedTrip.getThumbnailKey(), places);
+    }
+
     private void validateIds(List<Long> tripAttachmentIds) {
         if (tripAttachmentIds == null
                 || tripAttachmentIds.isEmpty()
@@ -85,7 +124,7 @@ public class TripAttachmentDeletionService {
         }
     }
 
-    private void softDelete(List<TripAttachment> attachments, Long userId) {
+    private Map<Long, List<TripAttachment>> softDelete(List<TripAttachment> attachments, Long userId) {
         attachments.stream().map(TripAttachment::getTripId).distinct().sorted()
                 .forEach(tripId -> additionalAttachmentModificationGuard.check(tripId, userId));
         attachments.stream()
@@ -125,44 +164,43 @@ public class TripAttachmentDeletionService {
 
         tripAttachmentRepository.flush();
 
-        affectedPlaces.forEach(place -> refreshThumbnail(place, deletedAt));
-        affectedTrips.forEach(this::refreshThumbnail);
+        Map<Long, List<TripAttachment>> remainingByTrip = new LinkedHashMap<>();
+        attachments.stream().map(TripAttachment::getTripId).distinct()
+                .forEach(tripId -> remainingByTrip.put(tripId, tripAttachmentRepository
+                        .findAllActiveByTripId(tripId, ClassificationStatus.ACTIVE)));
+        affectedPlaces.forEach(place -> refreshThumbnail(
+                place,
+                remainingByTrip.get(place.getTripId()).stream()
+                        .filter(attachment -> place.getId().equals(attachment.getTripPlaceId()))
+                        .toList(),
+                deletedAt
+        ));
+        affectedTrips.forEach(trip -> trip.changeThumbnailKey(
+                thumbnailKey(remainingByTrip.get(trip.getId()))));
         userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
         attachments.stream().map(TripAttachment::getTripId).distinct().sorted()
                 .forEach(tripRepository::advanceSequence);
+        return remainingByTrip;
     }
 
     private void refreshThumbnail(
             TripDetailPlace place,
+            List<TripAttachment> remaining,
             LocalDateTime deletedAt
     ) {
-        TripAttachment replacement = tripAttachmentRepository
-                .findAllActiveByTripPlaceId(
-                        place.getId(),
-                        ClassificationStatus.ACTIVE
-                )
-                .stream()
-                .min(THUMBNAIL_ORDER)
-                .orElse(null);
-
-        if (replacement == null) {
+        if (remaining.isEmpty()) {
             place.softDelete(deletedAt);
             return;
         }
 
-        place.changeThumbnailKey(replacement.getPreviewStorageKey());
+        place.changeThumbnailKey(thumbnailKey(remaining));
     }
 
-    private void refreshThumbnail(Trip trip) {
-        TripAttachment replacement = tripAttachmentRepository
-                .findAllActiveByTripId(trip.getId(), ClassificationStatus.ACTIVE)
-                .stream()
+    private String thumbnailKey(List<TripAttachment> remaining) {
+        return remaining.stream()
                 .min(THUMBNAIL_ORDER)
+                .map(TripAttachment::getPreviewStorageKey)
                 .orElse(null);
-
-        trip.changeThumbnailKey(
-                replacement == null ? null : replacement.getPreviewStorageKey()
-        );
     }
 }

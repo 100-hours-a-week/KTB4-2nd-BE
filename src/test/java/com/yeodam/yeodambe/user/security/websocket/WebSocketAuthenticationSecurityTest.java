@@ -176,6 +176,24 @@ class WebSocketAuthenticationSecurityTest {
         return get("/api" + INTERNAL_PATH).contextPath("/api").servletPath(INTERNAL_PATH);
     }
 
+    @Test
+    void 내부_편집_POST도_쿠키_JWT의_CSRF를_검사한다() throws Exception {
+        mvc.perform(post("/api/internal/websocket/trips/73/update").contextPath("/api")
+                        .servletPath("/internal/websocket/trips/73/update")
+                        .header(SERVICE_HEADER, "test-service-token").cookie(cookie()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void 내부_편집_POST는_기존_CSRF_쿠키와_헤더를_재사용한다() throws Exception {
+        when(csrfTokenStore.find("edit-context")).thenReturn("edit-csrf");
+        mvc.perform(post("/api/internal/websocket/trips/73/update").contextPath("/api")
+                        .servletPath("/internal/websocket/trips/73/update")
+                        .header(SERVICE_HEADER, "test-service-token").cookie(cookie(), new Cookie("CSRF_CONTEXT", "edit-context"))
+                        .header("X-CSRF-TOKEN", "edit-csrf"))
+                .andExpect(status().isOk());
+    }
+
     private Cookie cookie() {
         return new Cookie("accessToken", tokens.issue(42L, "sid-42"));
     }
@@ -187,7 +205,7 @@ class WebSocketAuthenticationSecurityTest {
             return jwt.getSubject();
         }
 
-        @PostMapping({INTERNAL_PATH, "/test/websocket-general-probe"})
+        @PostMapping({INTERNAL_PATH, "/test/websocket-general-probe", "/internal/websocket/trips/73/update"})
         String postProbe() {
             return "unexpected";
         }

@@ -32,6 +32,7 @@ final class ExifToolProcess implements AutoCloseable {
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(120);
 
     private final ReentrantLock commandLock = new ReentrantLock();
+    private final ProcessBuilder processBuilder;
 
     private Process process;
     private BufferedWriter commandWriter;
@@ -40,6 +41,14 @@ final class ExifToolProcess implements AutoCloseable {
 
     private long sequence;
     private boolean closed;
+
+    ExifToolProcess() {
+        this(new ProcessBuilder("exiftool", "-stay_open", "True", "-@", "-"));
+    }
+
+    ExifToolProcess(ProcessBuilder processBuilder) {
+        this.processBuilder = processBuilder;
+    }
 
     Result execute(List<String> arguments) {
         try {
@@ -127,9 +136,7 @@ final class ExifToolProcess implements AutoCloseable {
 
         resetProcess();
 
-        process = new ProcessBuilder(
-                "exiftool", "-stay_open", "True", "-@", "-"
-        )
+        process = processBuilder
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start();
 

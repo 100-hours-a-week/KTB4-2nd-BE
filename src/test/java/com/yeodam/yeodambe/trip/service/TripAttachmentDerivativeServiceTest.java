@@ -39,6 +39,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -249,13 +250,10 @@ class TripAttachmentDerivativeServiceTest {
 
     @Test
     void EXIF_읽기_실패_상태는_메타데이터_추출_오류로_처리한다() {
-        ExifToolProcess runner = mock(ExifToolProcess.class);
-        var target = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry,
-                scheduler, transactions, pipeline, runner);
-        when(runner.execute(any())).thenReturn(new ExifToolProcess.Result("[]", 1));
+        ExifToolProcessTestSupport.응답_설정(exifTool, "[]\n{status1}=1\n{ready1}\n", Executors.newSingleThreadExecutor());
 
         IllegalStateException failure = assertThrows(IllegalStateException.class,
-                () -> ReflectionTestUtils.invokeMethod(target, "metadata", Path.of("photo.jpg")));
+                () -> ReflectionTestUtils.invokeMethod(service, "metadata", Path.of("photo.jpg")));
 
         assertEquals(TripInternalErrorMessage
                 .EXIF_EXTRACTION_FAILED.message(), failure.getMessage());
@@ -264,13 +262,10 @@ class TripAttachmentDerivativeServiceTest {
     @ParameterizedTest
     @ValueSource(strings = {"null", "{}", "[]"})
     void EXIF_응답에_메타데이터_배열이_없으면_실패한다(String output) {
-        ExifToolProcess runner = mock(ExifToolProcess.class);
-        var target = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry,
-                scheduler, transactions, pipeline, runner);
-        when(runner.execute(any())).thenReturn(new ExifToolProcess.Result(output, 0));
+        ExifToolProcessTestSupport.응답_설정(exifTool, output + "\n{status1}=0\n{ready1}\n", Executors.newSingleThreadExecutor());
 
         IllegalStateException failure = assertThrows(IllegalStateException.class,
-                () -> ReflectionTestUtils.invokeMethod(target, "metadata", Path.of("photo.jpg")));
+                () -> ReflectionTestUtils.invokeMethod(service, "metadata", Path.of("photo.jpg")));
 
         assertEquals(TripInternalErrorMessage
                 .EXIF_RESULT_MISSING.message(), failure.getMessage());
@@ -278,16 +273,12 @@ class TripAttachmentDerivativeServiceTest {
 
     @Test
     void EXIF_복사에_실패하면_파생본을_저장하지_않는다() throws Exception {
-        ExifToolProcess runner = mock(ExifToolProcess.class);
-        var target = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry,
-                scheduler, transactions, pipeline, runner);
         when(storage.open("original")).thenReturn(new ByteArrayInputStream(jpeg()));
-        when(runner.execute(any()))
-                .thenReturn(new ExifToolProcess.Result("[{}]", 0))
-                .thenReturn(new ExifToolProcess.Result("copy failed", 1));
+        ExifToolProcessTestSupport.응답_설정(exifTool,
+                "[{}]\n{status1}=0\n{ready1}\ncopy failed\n{status2}=1\n{ready2}\n", Executors.newSingleThreadExecutor());
 
         CompletionException failure = assertThrows(CompletionException.class,
-                () -> target.createAll("copy-failure", List.of("original"), List.of("image/jpeg")).join());
+                () -> service.createAll("copy-failure", List.of("original"), List.of("image/jpeg")).join());
 
         assertEquals(TripInternalErrorMessage.DERIVED_ATTACHMENT_CREATE_FAILED.message(),
                 failure.getCause().getMessage());

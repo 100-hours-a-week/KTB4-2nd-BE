@@ -15,11 +15,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -30,7 +27,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -49,14 +45,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Answers.RETURNS_SELF;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockConstruction;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.withSettings;
 
 @Timeout(20)
 class ExifToolProcessTest {
@@ -257,11 +248,9 @@ class ExifToolProcessTest {
     @ParameterizedTest
     @ValueSource(strings = {"{ready1}\n", "{status1}=not-a-number\n{ready1}\n", "{status1}=0\n"})
     void 불완전한_응답은_실패로_처리하고_자원을_정리한다(String output) throws Exception {
-        Process child = fakeProcess(output);
-        try (var construction = mockConstruction(ProcessBuilder.class,
-                withSettings().defaultAnswer(RETURNS_SELF),
-                (builder, context) -> when(builder.start()).thenReturn(child))) {
-            var failure = assertThrows(IllegalStateException.class, () -> runner.execute(List.of("-ver")));
+        try (runner) {
+            Process child = ExifToolProcessTestSupport.응답_설정(runner, output, Executors.newSingleThreadExecutor());
+            IllegalStateException failure = assertThrows(IllegalStateException.class, () -> runner.execute(List.of("-ver")));
             assertInstanceOf(IOException.class, failure.getCause());
             if (output.equals("{status1}=0\n")) {
                 assertInstanceOf(EOFException.class, failure.getCause());
@@ -269,24 +258,20 @@ class ExifToolProcessTest {
             assertEquals(TripInternalErrorMessage.COMMAND_FAILED.message().formatted("exiftool"), failure.getMessage());
             assertFalse(child.isAlive());
             assertNull(processOf(runner));
+            assertEquals(0, runner.execute(List.of("-ver")).exitStatus());
         }
-        assertEquals(0, runner.execute(List.of("-ver")).exitStatus());
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void 응답_시간_초과는_읽기_취소와_프로세스_정리로_이어진다() throws Exception {
-        Process child = fakeProcess("");
         ExecutorService executor = mock(ExecutorService.class);
         Future<ExifToolProcess.Result> response = mock(Future.class);
         when(executor.submit(ArgumentMatchers.<Callable<ExifToolProcess.Result>>any())).thenReturn(response);
         when(response.get(120_000L, TimeUnit.MILLISECONDS)).thenThrow(new TimeoutException("controlled timeout"));
-        try (var construction = mockConstruction(ProcessBuilder.class,
-                withSettings().defaultAnswer(RETURNS_SELF),
-                (builder, context) -> when(builder.start()).thenReturn(child));
-             var factories = mockStatic(Executors.class)) {
-            factories.when(() -> Executors.newSingleThreadExecutor(any(ThreadFactory.class))).thenReturn(executor);
-            var failure = assertThrows(IllegalStateException.class, () -> runner.execute(List.of("-ver")));
+        try (runner) {
+            Process child = ExifToolProcessTestSupport.응답_설정(runner, "", executor);
+            IllegalStateException failure = assertThrows(IllegalStateException.class, () -> runner.execute(List.of("-ver")));
             assertInstanceOf(TimeoutException.class, failure.getCause());
             assertEquals(TripInternalErrorMessage.COMMAND_TIMEOUT.message().formatted("exiftool"), failure.getMessage());
             verify(response).get(120_000L, TimeUnit.MILLISECONDS);
@@ -294,20 +279,21 @@ class ExifToolProcessTest {
             verify(executor).shutdownNow();
             assertFalse(child.isAlive());
             assertNull(processOf(runner));
+            assertEquals(0, runner.execute(List.of("-ver")).exitStatus());
         }
-        assertEquals(0, runner.execute(List.of("-ver")).exitStatus());
     }
 
     @Test
-    void 도구_실행에_실패하면_원인을_보존하고_다음_호출에서_복구한다() throws Exception {
-        try (var construction = mockConstruction(ProcessBuilder.class,
-                withSettings().defaultAnswer(RETURNS_SELF),
-                (builder, context) -> when(builder.start()).thenThrow(new IOException("tool unavailable")))) {
-            var failure = assertThrows(IllegalStateException.class, () -> runner.execute(List.of("-ver")));
+    void 도구_실행에_실패하면_원인을_보존하고_다음_호출에서_복구한다() {
+        ProcessBuilder builder = new ProcessBuilder(directory.resolve("missing-exiftool").toString());
+        try (ExifToolProcess unavailable = new ExifToolProcess(builder)) {
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> unavailable.execute(List.of("-ver")));
             assertInstanceOf(IOException.class, failure.getCause());
-            assertNull(processOf(runner));
+            assertNull(processOf(unavailable));
+            builder.command("exiftool", "-stay_open", "True", "-@", "-");
+            assertEquals(0, unavailable.execute(List.of("-ver")).exitStatus());
         }
-        assertEquals(0, runner.execute(List.of("-ver")).exitStatus());
     }
 
     @Test
@@ -338,16 +324,4 @@ class ExifToolProcessTest {
         assertTrue(condition.getAsBoolean(), "요청한 상태에 도달해야 합니다.");
     }
 
-    private Process fakeProcess(String output) {
-        Process child = mock(Process.class);
-        var alive = new AtomicBoolean(true);
-        when(child.isAlive()).thenAnswer(invocation -> alive.get());
-        when(child.getOutputStream()).thenReturn(new ByteArrayOutputStream());
-        when(child.getInputStream()).thenReturn(new ByteArrayInputStream(output.getBytes(StandardCharsets.UTF_8)));
-        when(child.destroyForcibly()).thenAnswer(invocation -> {
-            alive.set(false);
-            return child;
-        });
-        return child;
-    }
 }

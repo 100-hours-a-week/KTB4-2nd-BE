@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.entity;
 
+import com.yeodam.yeodambe.common.exception.InvalidStoryUpdateException;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -9,6 +10,130 @@ import java.time.LocalDateTime;
 import static org.assertj.core.api.Assertions.*;
 
 class StoryEntityTest {
+    @Test
+    void 요청_문구를_그대로_수정하고_사진_교체시에만_스냅샷을_변경한다() {
+        var date = LocalDate.of(2026, 10, 13);
+        var block = new StoryBlock(1L, 2L, 5L, date, 1, "첫째 날", "기존 설명", null);
+        block.updateContent(" 새 날짜 문구 ", " 새 설명 ", "메모", 2);
+        assertThat(block.getDayLabel()).isEqualTo(" 새 날짜 문구 ");
+        assertThat(block.getDetailSummary()).isEqualTo(" 새 설명 ");
+        assertThat(block.getSourceDate()).isEqualTo(date);
+        assertThat(block.getSourceTripPlaceId()).isEqualTo(5L);
+        block.replaceAttachment(3L, 6L, date.plusDays(1));
+        assertThat(block.getTripAttachmentId()).isEqualTo(3L);
+        assertThat(block.getSourceTripPlaceId()).isEqualTo(6L);
+        assertThat(block.getSourceDate()).isEqualTo(date.plusDays(1));
+        assertThat(block.getMemo()).isEqualTo("메모");
+    }
+
+    @Test
+    void 잘못된_문구와_사진_참조는_블록을_변경하지_않는다() {
+        var date = LocalDate.of(2026, 10, 13);
+        var block = new StoryBlock(1L, 2L, 5L, date, 1, "기존 날짜", "기존 설명", "메모");
+        for (String text : new String[]{null, "", " ", "\u200B", "😀".repeat(41)}) {
+            assertThatThrownBy(() -> block.updateContent(text, "설명", null, 2))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+            assertThatThrownBy(() -> block.updateContent("날짜", text, null, 2))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+        }
+        assertThatThrownBy(() -> block.updateContent("새 날짜", "새 설명", null, 0))
+                .isInstanceOf(InvalidStoryUpdateException.class);
+        for (Long id : java.util.Arrays.asList(null, 0L, -1L)) {
+            assertThatThrownBy(() -> block.replaceAttachment(id, 6L, date))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+            assertThatThrownBy(() -> block.replaceAttachment(3L, id, date))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+        }
+        assertThatThrownBy(() -> block.replaceAttachment(3L, 6L, null))
+                .isInstanceOf(InvalidStoryUpdateException.class);
+        assertThat(block.getDayLabel()).isEqualTo("기존 날짜");
+        assertThat(block.getDetailSummary()).isEqualTo("기존 설명");
+        assertThat(block.getMemo()).isEqualTo("메모");
+        assertThat(block.getOrderNumber()).isEqualTo(1);
+        assertThat(block.getTripAttachmentId()).isEqualTo(2L);
+        assertThat(block.getSourceTripPlaceId()).isEqualTo(5L);
+    }
+
+    @Test
+    void 기존_스토리의_ID와_상태를_유지하며_분위기와_요약만_수정한다() {
+        Story story = new Story(7L, Story.Mood.PLAIN, "기존 요약");
+        ReflectionTestUtils.setField(story, "id", 3L);
+        story.complete();
+
+        story.updateContent(Story.Mood.CALM, "😀".repeat(20));
+
+        assertThat(story.getId()).isEqualTo(3L);
+        assertThat(story.getTripId()).isEqualTo(7L);
+        assertThat(story.getProcessingStatus()).isEqualTo(Story.Status.COMPLETED);
+        assertThat(story.getMood()).isEqualTo(Story.Mood.CALM);
+        assertThat(story.getStorySummary()).isEqualTo("😀".repeat(20));
+    }
+
+    @Test
+    void 잘못된_요약이나_분위기이면_기존_내용을_변경하지_않는다() {
+        Story story = new Story(7L, Story.Mood.PLAIN, "기존 요약");
+        for (String summary : new String[]{null, "", " ", "\u200B", "😀".repeat(21)}) {
+            assertThatThrownBy(() -> story.updateContent(Story.Mood.CALM, summary))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+        }
+        assertThatThrownBy(() -> story.updateContent(null, "새 요약"))
+                .isInstanceOf(InvalidStoryUpdateException.class);
+        assertThat(story.getMood()).isEqualTo(Story.Mood.PLAIN);
+        assertThat(story.getStorySummary()).isEqualTo("기존 요약");
+    }
+
+    @Test
+    void 메모와_순서만_변경하면_사진과_날짜_장소_문구는_유지한다() {
+        var date = LocalDate.of(2026, 10, 13);
+        var block = new StoryBlock(1L, 2L, 5L, date, 1, "첫째 날", "설명", "기존 메모");
+
+        block.updateMemoAndOrder("😀".repeat(125), 2);
+
+        assertThat(block.getMemo()).isEqualTo("😀".repeat(125));
+        assertThat(block.getOrderNumber()).isEqualTo(2);
+        assertThat(block.getStoryId()).isEqualTo(1L);
+        assertThat(block.getTripAttachmentId()).isEqualTo(2L);
+        assertThat(block.getSourceTripPlaceId()).isEqualTo(5L);
+        assertThat(block.getSourceDate()).isEqualTo(date);
+        assertThat(block.getDayLabel()).isEqualTo("첫째 날");
+        assertThat(block.getDetailSummary()).isEqualTo("설명");
+        block.updateMemoAndOrder(null, 1);
+        assertThat(block.getMemo()).isNull();
+    }
+
+    @Test
+    void 잘못된_메모나_순서이면_블록의_기존_내용을_유지한다() {
+        var block = new StoryBlock(1L, 2L, 5L, LocalDate.of(2026, 10, 13), 1,
+                "첫째 날", "설명", "기존 메모");
+        assertThatThrownBy(() -> block.updateMemoAndOrder("😀".repeat(126), 2))
+                .isInstanceOf(InvalidStoryUpdateException.class);
+        for (int order : new int[]{0, -1}) {
+            assertThatThrownBy(() -> block.updateMemoAndOrder("새 메모", order))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+        }
+        assertThat(block.getMemo()).isEqualTo("기존 메모");
+        assertThat(block.getOrderNumber()).isEqualTo(1);
+    }
+
+    @Test
+    void 삭제된_블록_복구는_삭제_표시만_해제한다() {
+        var block = new StoryBlock(1L, 2L, 5L, LocalDate.of(2026, 10, 13), 1,
+                "첫째 날", "설명", "메모");
+        ReflectionTestUtils.setField(block, "id", 9L);
+        block.softDelete(LocalDateTime.of(2026, 10, 30, 12, 0));
+        block.updateMemoAndOrder("변경 메모", 2);
+        assertThat(block.getDeletedAt()).isNotNull();
+
+        block.restore();
+        block.restore();
+
+        assertThat(block.getDeletedAt()).isNull();
+        assertThat(block.getId()).isEqualTo(9L);
+        assertThat(block.getTripAttachmentId()).isEqualTo(2L);
+        assertThat(block.getMemo()).isEqualTo("변경 메모");
+        assertThat(block.getOrderNumber()).isEqualTo(2);
+    }
+
     @Test
     void 이모지가_포함된_최대_길이의_문구와_메모를_저장한다() {
         String text = "가".repeat(39) + "😀";

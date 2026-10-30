@@ -103,6 +103,9 @@ class GlobalExceptionHandlerTest {
             "story-generation-not-found, 404, STORY_GENERATION_NOT_FOUND",
             "story-generation-cannot-be-canceled, 409, STORY_GENERATION_CANNOT_BE_CANCELED",
             "invalid-story-request, 400, INVALID_STORY_REQUEST",
+            "invalid-story-update, 400, INVALID_STORY_UPDATE",
+            "story-or-attachment-not-found, 404, STORY_OR_ATTACHMENT_NOT_FOUND",
+            "attachment-cannot-be-reused, 409, ATTACHMENT_CANNOT_BE_REUSED",
             "restore-invalid, 400, INVALID_REQUEST",
             "restore-required, 400, RESTORE_PLACE_FOLDER_REQUIRED",
             "restore-mismatch, 409, RESTORE_PLACE_MISMATCH",
@@ -336,6 +339,21 @@ class GlobalExceptionHandlerTest {
 
     @RestController
     static class TestController {
+        @GetMapping("/test/invalid-story-update")
+        void invalidStoryUpdate() {
+            throw new InvalidStoryUpdateException();
+        }
+
+        @GetMapping("/test/story-or-attachment-not-found")
+        void storyOrAttachmentNotFound() {
+            throw new StoryOrAttachmentNotFoundException();
+        }
+
+        @GetMapping("/test/attachment-cannot-be-reused")
+        void attachmentCannotBeReused() {
+            throw new AttachmentCannotBeReusedException();
+        }
+
         @GetMapping("/test/attachment-delete-not-allowed")
         void attachmentDeleteNotAllowed() {
             throw new AttachmentDeleteNotAllowedException();

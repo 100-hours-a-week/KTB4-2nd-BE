@@ -95,6 +95,13 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
         assertDenied(message(SimpMessageType.SUBSCRIBE, destination, true, null));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"/app/trips/14/update", "/app/trips/14/attachments/delete"})
+    void 인증된_두_편집_명령을_허용한다(String destination) {
+        assertThat(send(message(SimpMessageType.MESSAGE, destination, true, null))).isTrue();
+        assertDenied(message(SimpMessageType.MESSAGE, destination, false, null));
+    }
+
     @Test
     void BE_접근_검사로_여행_구독을_검증한다() {
         assertThat(send(message(SimpMessageType.SUBSCRIBE, "/topic/trips/14/events", true, null))).isTrue();
@@ -109,8 +116,8 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/app/trips/14/update",
-            "/app/trips/14/attachments/delete",
+            "/app/trips/0/update",
+            "/app/trips/14/unknown",
             "/topic/trips/14/events",
             "/user/queue/ai-tasks"
     })

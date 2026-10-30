@@ -21,6 +21,8 @@ public interface StoryBlockRepository extends JpaRepository<StoryBlock, Long> {
             """)
     List<BlockDetail> findDetailsByStoryId(Long storyId);
 
+    List<StoryBlock> findAllByStoryId(Long storyId);
+
     interface BlockDetail {
         StoryBlock getBlock();
 

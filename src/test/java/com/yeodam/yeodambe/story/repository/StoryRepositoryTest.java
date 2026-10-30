@@ -139,6 +139,59 @@ class StoryRepositoryTest {
         assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
     }
 
+    @Test
+    void 수정_대상은_본인의_현재_완료_스토리만_조회한다() {
+        Trip trip = trip();
+        ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
+        Story history = story(trip, Story.Status.COMPLETED);
+        Story current = story(trip, Story.Status.COMPLETED);
+        select(trip, current);
+        assertThat(stories.findOwnedCurrentCompletedById(current.getId(), trip.getUserId()))
+                .map(Story::getId).contains(current.getId());
+        assertThat(stories.findOwnedCurrentCompletedById(current.getId(), -1L)).isEmpty();
+        assertThat(stories.findOwnedCurrentCompletedById(-1L, trip.getUserId())).isEmpty();
+        assertThat(stories.findOwnedCurrentCompletedById(history.getId(), trip.getUserId())).isEmpty();
+
+        for (Story.Status status : List.of(Story.Status.PROCESSING, Story.Status.FAILED, Story.Status.CANCELED)) {
+            ReflectionTestUtils.setField(current, "processingStatus", status);
+            em.flush();
+            assertThat(stories.findOwnedCurrentCompletedById(current.getId(), trip.getUserId())).isEmpty();
+        }
+        ReflectionTestUtils.setField(current, "processingStatus", Story.Status.COMPLETED);
+        for (ProcessingStatus status : List.of(ProcessingStatus.PROCESSING, ProcessingStatus.FAILED, ProcessingStatus.CANCELED)) {
+            ReflectionTestUtils.setField(trip, "processingStatus", status);
+            em.flush();
+            assertThat(stories.findOwnedCurrentCompletedById(current.getId(), trip.getUserId())).isEmpty();
+        }
+        ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
+        current.softDelete(LocalDateTime.now());
+        em.flush();
+        assertThat(stories.findOwnedCurrentCompletedById(current.getId(), trip.getUserId())).isEmpty();
+        select(trip, history);
+        trip.softDelete(LocalDateTime.now());
+        em.flush();
+        assertThat(stories.findOwnedCurrentCompletedById(history.getId(), trip.getUserId())).isEmpty();
+    }
+
+    @Test
+    void 수정용_블록조회는_삭제행을_포함하고_다른_스토리를_섞지_않는다() {
+        Trip trip = trip();
+        Story story = story(trip, Story.Status.COMPLETED);
+        StoryBlock active = block(story, trip, null, 1);
+        StoryBlock deleted = block(story, trip, null, 2);
+        deleted.softDelete(LocalDateTime.now());
+        Story other = story(trip, Story.Status.COMPLETED);
+        block(other, trip, null, 1);
+        em.flush();
+        em.clear();
+
+        assertThat(blocks.findAllByStoryId(story.getId())).extracting(StoryBlock::getId)
+                .containsExactlyInAnyOrder(active.getId(), deleted.getId());
+        assertThat(blocks.findDetailsByStoryId(story.getId()))
+                .extracting(row -> row.getBlock().getId()).containsExactly(active.getId());
+        assertThat(blocks.findAllByStoryId(-1L)).isEmpty();
+    }
+
     private Trip trip() {
         User user = new User(java.util.UUID.randomUUID()+"@story.test", "작성자");
         em.persist(user);

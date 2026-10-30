@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
+import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.entity.TripDisplayStatus;
@@ -16,6 +17,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -29,7 +32,8 @@ class InitialUploadAcceptanceStatusTest {
                     mock(InitialAttachmentUploadItemRepository.class), mock(StoredFileRepository.class),
                     mock(TripAttachmentRepository.class), mock(TripCreationExecutionRepository.class),
                     mock(UserStatsService.class), mock(ObjectMapper.class), mock(TripRegionRepository.class),
-                    mock(EntityManager.class), mock(JdbcTemplate.class), mock(KafkaTopicProperties.class),
+                    mock(EntityManager.class), mock(JdbcTemplate.class), new KafkaTopicProperties(Arrays.stream(EventType.values())
+                            .collect(Collectors.toMap(type -> type, type -> "test-" + type.name()))),
                     mock(TripCreationOutboxRepository.class), mock(ApplicationEventPublisher.class));
 
     @Test

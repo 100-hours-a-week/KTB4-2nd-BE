@@ -100,6 +100,10 @@ public class WebSocketSessionManager {
         }
     }
 
+    public WebSocketSession findSession(String connectionId) {
+        return sessions.get(connectionId);
+    }
+
     public List<WebSocketSession> getSessions() {
         return List.copyOf(sessions.values());
     }

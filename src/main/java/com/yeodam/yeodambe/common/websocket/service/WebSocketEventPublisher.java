@@ -83,7 +83,7 @@ public class WebSocketEventPublisher {
 
         WebSocketEventTargetType expectedTarget = switch (event.type()) {
             case AI_TASK, COMMAND_RESULT -> WebSocketEventTargetType.USER;
-            case TRIP_EVENT -> WebSocketEventTargetType.TRIP;
+            case TRIP_EVENT, PRESENCE_SNAPSHOT -> WebSocketEventTargetType.TRIP;
         };
 
         Assert.isTrue(event.target().type() == expectedTarget,

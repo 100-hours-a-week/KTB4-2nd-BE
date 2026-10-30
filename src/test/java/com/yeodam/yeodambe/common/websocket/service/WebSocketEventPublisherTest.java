@@ -34,6 +34,29 @@ class WebSocketEventPublisherTest {
     private final WebSocketEventPublisher publisher =
             new WebSocketEventPublisher(redis, mapper, new WebSocketEventProperties(CHANNEL));
 
+    @Test
+    void Presence_이벤트는_여행_대상으로_발행한다() {
+        WebSocketEvent event = new WebSocketEvent(ID, WebSocketEventType.PRESENCE_SNAPSHOT, 1, TIME,
+                new WebSocketEventTarget(WebSocketEventTargetType.TRIP, 42L),
+                new ApiResponse<>("PRESENCE_SNAPSHOT", Map.of("tripId", 42L)));
+
+        publisher.publish(event);
+
+        verify(redis).convertAndSend(CHANNEL, mapper.writeValueAsString(event));
+    }
+
+    @Test
+    void 사용자_대상의_Presence_이벤트는_Redis_호출_전에_거절한다() {
+        WebSocketEvent event = new WebSocketEvent(ID, WebSocketEventType.PRESENCE_SNAPSHOT, 1, TIME,
+                new WebSocketEventTarget(WebSocketEventTargetType.USER, 42L),
+                new ApiResponse<>("PRESENCE_SNAPSHOT", Map.of("tripId", 42L)));
+
+        assertThatThrownBy(() -> publisher.publish(event))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(WebSocketEventInternalErrorMessage.TARGET_TYPE_MISMATCH.message());
+        verifyNoInteractions(redis);
+    }
+
     @ParameterizedTest
     @MethodSource("validTargets")
     void serializesValidEventsAndPublishesToTheConfiguredChannel(

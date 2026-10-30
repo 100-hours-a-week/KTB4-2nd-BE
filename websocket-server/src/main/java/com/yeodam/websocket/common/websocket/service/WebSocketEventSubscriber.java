@@ -2,6 +2,8 @@ package com.yeodam.websocket.common.websocket.service;
 
 import lombok.extern.slf4j.Slf4j;
 
+import com.yeodam.websocket.trip.service.TripPresenceService;
+import org.springframework.context.annotation.Lazy;
 import com.yeodam.websocket.common.websocket.exception.WebSocketEventFailure;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEvent;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEventTargetType;
@@ -31,19 +33,22 @@ public class WebSocketEventSubscriber
     private final WebSocketEventProperties properties;
     private final RedisSubscriptionState subscriptionState;
     private final WebSocketSessionManager sessionManager;
+    private final TripPresenceService presenceService;
 
     public WebSocketEventSubscriber(
             ObjectMapper objectMapper,
             SimpMessagingTemplate messagingTemplate,
             WebSocketEventProperties properties,
             RedisSubscriptionState subscriptionState,
-            WebSocketSessionManager sessionManager
+            WebSocketSessionManager sessionManager,
+            @Lazy TripPresenceService presenceService
     ) {
         this.objectMapper = objectMapper;
         this.messagingTemplate = messagingTemplate;
         this.properties = properties;
         this.subscriptionState = subscriptionState;
         this.sessionManager = sessionManager;
+        this.presenceService = presenceService;
     }
 
     @Override
@@ -112,6 +117,7 @@ public class WebSocketEventSubscriber
     private void dispatch(WebSocketEvent event) {
         String targetId = event.target().id().toString();
         switch (event.type()) {
+            case PRESENCE_SNAPSHOT -> presenceService.onSnapshotEvent(event);
             case AI_TASK -> messagingTemplate.convertAndSendToUser(targetId, "/queue/ai-tasks", event.payload());
             case COMMAND_RESULT -> messagingTemplate.convertAndSendToUser(targetId, "/queue/command-results", event.payload());
             case TRIP_EVENT -> messagingTemplate.convertAndSend("/topic/trips/" + targetId + "/events", event.payload());
@@ -130,12 +136,12 @@ public class WebSocketEventSubscriber
                 WebSocketEventFailure.TARGET_ID_INVALID.name());
         WebSocketEventTargetType expectedTarget = switch (event.type()) {
             case AI_TASK, COMMAND_RESULT -> WebSocketEventTargetType.USER;
-            case TRIP_EVENT -> WebSocketEventTargetType.TRIP;
+            case TRIP_EVENT, PRESENCE_SNAPSHOT -> WebSocketEventTargetType.TRIP;
         };
         Assert.isTrue(event.target().type() == expectedTarget, WebSocketEventFailure.TARGET_TYPE_MISMATCH.name());
         Assert.notNull(event.payload(), WebSocketEventFailure.PAYLOAD_MISSING.name());
         Assert.isTrue(event.payload().isObject(), WebSocketEventFailure.PAYLOAD_FORMAT_INVALID.name());
-        Assert.isTrue(event.payload().path("message").isTextual()
+        Assert.isTrue(event.payload().path("message").isString()
                         && StringUtils.hasText(event.payload().path("message").asString()),
                 WebSocketEventFailure.PAYLOAD_MESSAGE_INVALID.name());
         Assert.isTrue(event.payload().has("data"), WebSocketEventFailure.PAYLOAD_DATA_MISSING.name());

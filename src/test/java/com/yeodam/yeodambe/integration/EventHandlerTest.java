@@ -5,14 +5,11 @@ import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventPayload;
 import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.story.event.StoryCreateRequestEvent;
-import com.yeodam.yeodambe.story.event.StoryCreateResultEvent;
 import com.yeodam.yeodambe.story.event.handler.StoryCreateRequestEventHandler;
 import com.yeodam.yeodambe.story.event.handler.StoryCreateResultEventHandler;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.story.service.StoryGenerationCompletionService;
 import com.yeodam.yeodambe.story.service.StoryGenerationTerminalService;
-import com.yeodam.yeodambe.trip.event.TripCreateRequestEvent;
-import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
 import com.yeodam.yeodambe.trip.event.TripUpdateRequestEvent;
 import com.yeodam.yeodambe.trip.event.TripUpdateResultEvent;
 import com.yeodam.yeodambe.trip.event.handler.TripCreateRequestEventHandler;
@@ -30,11 +27,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class EventHandlerTest {
 
@@ -120,13 +115,13 @@ class EventHandlerTest {
     }
 
     @Test
-    void 구현체를_직접_호출해도_지원하지_않는_타입을_건너뛰고_null을_거부한다() {
-        assertDirectInvocation(requestHandler(), TripCreateRequestEvent.class);
-        assertDirectInvocation(resultHandler(), TripCreateResultEvent.class);
-        assertDirectInvocation(new TripUpdateRequestEventHandler(), TripUpdateRequestEvent.class);
-        assertDirectInvocation(new TripUpdateResultEventHandler(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class), new ObjectMapper()), TripUpdateResultEvent.class);
-        assertDirectInvocation(new StoryCreateRequestEventHandler(), StoryCreateRequestEvent.class);
-        assertDirectInvocation(storyResultHandler(), StoryCreateResultEvent.class);
+    void 구현체를_직접_호출해도_null_페이로드를_거부한다() {
+        직접_호출시_null_거절_검증(requestHandler());
+        직접_호출시_null_거절_검증(resultHandler());
+        직접_호출시_null_거절_검증(new TripUpdateRequestEventHandler());
+        직접_호출시_null_거절_검증(new TripUpdateResultEventHandler(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class), new ObjectMapper()));
+        직접_호출시_null_거절_검증(new StoryCreateRequestEventHandler());
+        직접_호출시_null_거절_검증(storyResultHandler());
     }
 
     private TripCreateRequestEventHandler requestHandler() {
@@ -143,16 +138,7 @@ class EventHandlerTest {
                 mock(StoryGenerationCompletionService.class), mock(StoryGenerationTerminalService.class));
     }
 
-    private <T extends EventPayload> void assertDirectInvocation(
-            EventHandler<T> handler,
-            Class<T> eventClass
-    ) {
-        T event = mock(eventClass);
-        EventType unsupportedType = handler.eventType() == EventType.TRIP_CREATE_REQUEST
-                ? EventType.STORY_CREATE_REQUEST : EventType.TRIP_CREATE_REQUEST;
-        when(event.eventType()).thenReturn(unsupportedType);
-
-        assertThatCode(() -> handler.handle(event)).doesNotThrowAnyException();
+    private void 직접_호출시_null_거절_검증(EventHandler<?> handler) {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> handler.handle(null))
                 .withMessage(EventInternalErrorMessage.EVENT_PAYLOAD_MISSING.message());

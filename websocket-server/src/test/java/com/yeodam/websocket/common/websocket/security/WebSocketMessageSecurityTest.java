@@ -1,6 +1,8 @@
 package com.yeodam.websocket.common.websocket.security;
 
 import com.yeodam.websocket.RedisTestSupport;
+import com.yeodam.websocket.trip.client.BackendTripEditClient;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -36,6 +38,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 )
 class WebSocketMessageSecurityTest extends RedisTestSupport {
 
+    @MockitoBean
+    private BackendTripEditClient tripClient;
+
     private static final String CSRF_TOKEN = "existing-test-csrf-token";
 
     @Autowired
@@ -50,6 +55,12 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
     @Test
     void 인증된_CONNECT에_기존_CSRF_토큰을_허용한다() {
         assertThat(send(message(SimpMessageType.CONNECT, null, true, CSRF_TOKEN))).isTrue();
+    }
+
+    @org.junit.jupiter.api.BeforeEach
+    void allowTripAccess() {
+        org.mockito.Mockito.when(tripClient.checkAccess(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> Instant.now().plusSeconds(30));
     }
 
     @ParameterizedTest
@@ -76,12 +87,19 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
     @ParameterizedTest
     @ValueSource(strings = {
             "/user/7/queue/ai-tasks",
-            "/topic/trips/14/events",
+            "/topic/trips/*/events",
             "/queue/ai-tasks",
             "/user/queue/*"
     })
     void 그_외_구독은_거절한다(String destination) {
         assertDenied(message(SimpMessageType.SUBSCRIBE, destination, true, null));
+    }
+
+    @Test
+    void BE_접근_검사로_여행_구독을_검증한다() {
+        assertThat(send(message(SimpMessageType.SUBSCRIBE, "/topic/trips/14/events", true, null))).isTrue();
+        org.mockito.Mockito.verify(tripClient).checkAccess(org.mockito.ArgumentMatchers.eq(14L),
+                org.mockito.ArgumentMatchers.eq(42L), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -129,9 +147,12 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
     ) {
         SimpMessageHeaderAccessor headers = SimpMessageHeaderAccessor.create(type);
         headers.setSessionId("message-security-test-session");
+        headers.setSubscriptionId("security-subscription");
         headers.setSessionAttributes(Map.of(
                 CsrfToken.class.getName(),
-                new DefaultCsrfToken("X-CSRF-TOKEN", "_csrf", CSRF_TOKEN)
+                new DefaultCsrfToken("X-CSRF-TOKEN", "_csrf", CSRF_TOKEN),
+                WebSocketSessionCredentials.ATTRIBUTE_NAME,
+                new WebSocketSessionCredentials("access", "context")
         ));
         if (authenticated) {
             headers.setUser(UsernamePasswordAuthenticationToken.authenticated(

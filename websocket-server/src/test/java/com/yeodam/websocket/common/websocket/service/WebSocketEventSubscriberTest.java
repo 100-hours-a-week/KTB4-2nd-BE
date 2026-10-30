@@ -30,10 +30,22 @@ class WebSocketEventSubscriberTest {
     private final RedisSubscriptionState subscriptionState = new RedisSubscriptionState();
     private final TaskScheduler scheduler = mock(TaskScheduler.class);
     private final WebSocketSessionManager sessionManager = new WebSocketSessionManager(scheduler, subscriptionState, new WebSocketProperties(java.util.List.of(), 1000));
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
     private final TripPresenceService presenceService = mock(TripPresenceService.class);
     private final WebSocketEventSubscriber subscriber = new WebSocketEventSubscriber(
-            mapper, template, new WebSocketEventProperties(CHANNEL), subscriptionState, sessionManager, presenceService
+            mapper, template, new WebSocketEventProperties(CHANNEL), subscriptionState, sessionManager, eventPublisher, presenceService
     );
+
+    @Test
+    void 권한_변경은_개인_알림으로_유지하고_여행_권한을_재검증한다() {
+        String json = 이벤트_본문_생성("COMMAND_RESULT", "USER").replace("TEST", "TRIP_PERMISSION_CHANGED");
+        tools.jackson.databind.node.ObjectNode root = (tools.jackson.databind.node.ObjectNode) mapper.readTree(json);
+        ((tools.jackson.databind.node.ObjectNode) root.path("payload")).putObject("data").put("tripId", 14);
+        subscriber.onMessage(Redis_메시지_생성(root.toString()), null);
+        verify(eventPublisher).publishEvent(new com.yeodam.websocket.trip.service.TripPermissionChanged(42, 14));
+        verify(template).convertAndSendToUser("42", "/queue/command-results", root.path("payload"));
+        verifyNoMoreInteractions(template);
+    }
 
     @Test
     void 설정한_채널의_구독_확인_상태를_추적한다() {

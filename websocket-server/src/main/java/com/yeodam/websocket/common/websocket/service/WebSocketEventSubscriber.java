@@ -1,6 +1,7 @@
 package com.yeodam.websocket.common.websocket.service;
 
 import lombok.extern.slf4j.Slf4j;
+import com.yeodam.websocket.common.response.SuccessMessage;
 import com.yeodam.websocket.common.websocket.exception.WebSocketEventFailure;
 import com.yeodam.websocket.common.websocket.exception.WebSocketEventValidationException;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEvent;
@@ -8,6 +9,8 @@ import com.yeodam.websocket.common.websocket.service.request.WebSocketEventTarge
 import com.yeodam.websocket.common.websocket.config.WebSocketEventProperties;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import org.springframework.data.redis.connection.SubscriptionListener;
+import org.springframework.context.ApplicationEventPublisher;
+import com.yeodam.websocket.trip.service.TripPermissionChanged;
 import com.yeodam.websocket.trip.service.TripPresenceService;
 import org.springframework.context.annotation.Lazy;
 
@@ -32,6 +35,7 @@ public class WebSocketEventSubscriber
     private final WebSocketEventProperties properties;
     private final RedisSubscriptionState subscriptionState;
     private final WebSocketSessionManager sessionManager;
+    private final ApplicationEventPublisher eventPublisher;
     private final TripPresenceService presenceService;
 
     public WebSocketEventSubscriber(
@@ -40,6 +44,7 @@ public class WebSocketEventSubscriber
             WebSocketEventProperties properties,
             RedisSubscriptionState subscriptionState,
             WebSocketSessionManager sessionManager,
+            ApplicationEventPublisher eventPublisher,
             @Lazy TripPresenceService presenceService
     ) {
         this.objectMapper = objectMapper;
@@ -47,6 +52,7 @@ public class WebSocketEventSubscriber
         this.properties = properties;
         this.subscriptionState = subscriptionState;
         this.sessionManager = sessionManager;
+        this.eventPublisher = eventPublisher;
         this.presenceService = presenceService;
     }
 
@@ -115,6 +121,13 @@ public class WebSocketEventSubscriber
 
     private void dispatch(WebSocketEvent event) {
         String targetId = event.target().id().toString();
+        if (event.type() == com.yeodam.websocket.common.websocket.service.request.WebSocketEventType.COMMAND_RESULT
+                && SuccessMessage.TRIP_PERMISSION_CHANGED.name().equals(event.payload().path("message").asString())) {
+            tools.jackson.databind.JsonNode tripId = event.payload().path("data").path("tripId");
+            if (tripId.isIntegralNumber() && tripId.canConvertToLong() && tripId.asLong() > 0) {
+                eventPublisher.publishEvent(new TripPermissionChanged(event.target().id(), tripId.asLong()));
+            }
+        }
         switch (event.type()) {
             case PRESENCE_SNAPSHOT -> presenceService.onSnapshotEvent(event);
             case AI_TASK -> messagingTemplate.convertAndSendToUser(targetId, "/queue/ai-tasks", event.payload());

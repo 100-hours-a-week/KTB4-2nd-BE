@@ -62,7 +62,7 @@ class WebSocketConnectionSecurityTest extends RedisTestSupport {
     }
 
     @Test
-    void connectsAndReceivesItsPersonalNotification() throws Exception {
+    void 연결_후_자신의_개인_알림을_받는다() throws Exception {
         connect("http://localhost:5173");
         send("CONNECT\naccept-version:1.2\nheart-beat:0,0\nX-CSRF-TOKEN:existing-token\n\n");
         assertThat(frames.next()).startsWith("CONNECTED");
@@ -92,7 +92,7 @@ class WebSocketConnectionSecurityTest extends RedisTestSupport {
 
     @ParameterizedTest
     @ValueSource(strings = {"", "X-CSRF-TOKEN:wrong-token\n"})
-    void rejectsConnectWithoutMatchingCsrf(String header) throws Exception {
+    void CSRF가_일치하지_않는_CONNECT를_거절한다(String header) throws Exception {
         connect("http://localhost:5173");
         send("CONNECT\naccept-version:1.2\nheart-beat:0,0\n" + header + "\n");
         assertThat(frames.next()).startsWith("ERROR");
@@ -101,9 +101,9 @@ class WebSocketConnectionSecurityTest extends RedisTestSupport {
     @ParameterizedTest
     @ValueSource(strings = {
             "SUBSCRIBE\nid:forbidden\ndestination:/user/7/queue/ai-tasks\n\n",
-            "SEND\ndestination:/app/trips/14/update\n\n{}"
+            "SEND\ndestination:/app/trips/14/unknown\n\n{}"
     })
-    void rejectsForbiddenSubscriptionAndClientSend(String command) throws Exception {
+    void 허용하지_않은_구독과_클라이언트_SEND를_거절한다(String command) throws Exception {
         connect("http://localhost:5173");
         send("CONNECT\naccept-version:1.2\nheart-beat:0,0\nX-CSRF-TOKEN:existing-token\n\n");
         assertThat(frames.next()).startsWith("CONNECTED");
@@ -112,7 +112,7 @@ class WebSocketConnectionSecurityTest extends RedisTestSupport {
     }
 
     @Test
-    void rejectsUnlistedOrigin() {
+    void 허용_목록에_없는_Origin을_거절한다() {
         assertThatThrownBy(() -> connect("https://untrusted.example"))
                 .hasCauseInstanceOf(WebSocketHandshakeException.class)
                 .satisfies(error -> assertThat(((WebSocketHandshakeException) error.getCause())
@@ -120,7 +120,7 @@ class WebSocketConnectionSecurityTest extends RedisTestSupport {
     }
 
     @Test
-    void closesTheRealConnectionWhenItsAccessTokenExpires() throws Exception {
+    void 액세스_토큰이_만료되면_실제_연결을_종료한다() throws Exception {
         connect("http://localhost:5173", Instant.now().plusSeconds(5));
         send("CONNECT\naccept-version:1.2\nheart-beat:0,0\nX-CSRF-TOKEN:existing-token\n\n");
         assertThat(frames.next()).startsWith("CONNECTED");

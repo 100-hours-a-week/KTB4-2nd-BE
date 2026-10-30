@@ -37,7 +37,7 @@ class WebSocketConnectionLimitTest extends RedisTestSupport {
     @MockitoBean private BackendAuthenticationClient authenticationClient;
 
     @Test
-    void rejectsExcessHandshakeWithoutAuthenticationAndAllowsItAfterDisconnect() throws Exception {
+    void 상한을_넘는_핸드셰이크는_인증_전에_거절하고_연결_종료_후_허용한다() throws Exception {
         await().atMost(Duration.ofSeconds(5)).until(subscriptionState::isReady);
         when(authenticationClient.authenticate("limit-token", "context"))
                 .thenReturn(new AuthenticationData(42L, "limit-login", Instant.now().plusSeconds(300), "csrf"));

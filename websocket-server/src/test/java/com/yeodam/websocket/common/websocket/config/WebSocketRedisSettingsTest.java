@@ -3,7 +3,6 @@ package com.yeodam.websocket.common.websocket.config;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import com.yeodam.websocket.common.websocket.exception.WebSocketConfigurationFailure;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
@@ -18,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WebSocketRedisSettingsTest {
 
     @Test
-    void resolvesTheLocalDefaults() {
+    void 로컬_기본_설정을_적용한다() {
         context().run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context).hasSingleBean(WebSocketEventProperties.class);
@@ -35,7 +34,7 @@ class WebSocketRedisSettingsTest {
     }
 
     @Test
-    void resolvesDeploymentOverrides() {
+    void 배포_환경의_설정값을_적용한다() {
         context().withPropertyValues(
                 "REDIS_HOST=redis.test.internal", "REDIS_PORT=16379",
                 "REDIS_USERNAME=test-user", "REDIS_PASSWORD=test-password",
@@ -61,17 +60,17 @@ class WebSocketRedisSettingsTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, -1})
-    void rejectsNonPositiveConnectionLimitsDuringConfigurationBinding(int limit) {
+    void 설정_바인딩에서_양수가_아닌_연결_상한을_거절한다(int limit) {
         context().withPropertyValues("WEBSOCKET_MAX_CONNECTIONS=" + limit).run(context -> {
             assertThat(context).hasFailed();
             assertThat(context.getStartupFailure())
                     .hasRootCauseInstanceOf(IllegalArgumentException.class)
-                    .hasRootCauseMessage(WebSocketConfigurationFailure.INVALID_MAX_CONNECTIONS.name());
+                    .hasRootCauseMessage("웹소켓 연결 상한은 양수여야 합니다.");
         });
     }
 
     @Test
-    void acceptsTheMinimumPositiveConnectionLimit() {
+    void 최소_양수_연결_상한을_허용한다() {
         context().withPropertyValues("WEBSOCKET_MAX_CONNECTIONS=1").run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context.getBean(WebSocketProperties.class).maxConnections()).isEqualTo(1);

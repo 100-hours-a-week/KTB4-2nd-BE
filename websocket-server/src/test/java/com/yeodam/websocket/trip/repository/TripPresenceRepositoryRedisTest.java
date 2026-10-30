@@ -2,6 +2,7 @@ package com.yeodam.websocket.trip.repository;
 
 import com.yeodam.websocket.RedisTestSupport;
 import com.yeodam.websocket.trip.config.TripPresenceProperties;
+import com.yeodam.websocket.trip.exception.TripPresenceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,19 @@ class TripPresenceRepositoryRedisTest extends RedisTestSupport {
     @AfterEach
     void Redis_클라이언트_종료() {
         connectionFactory.destroy();
+    }
+
+    @Test
+    void 참여_상한을_넘으면_기존_참여자를_유지하고_오류_코드를_반환한다() {
+        TripPresenceProperties limited = new TripPresenceProperties(properties.namespace(), 16, 1, 10);
+        TripPresenceRepository repository = new TripPresenceRepository(redis, JsonMapper.builder().build(), limited);
+        repository.join(14L, 참여_정보_생성("a:first", 1L, "지형"));
+
+        assertThatThrownBy(() -> repository.join(14L, 참여_정보_생성("b:second", 2L, "민수")))
+                .isInstanceOf(TripPresenceException.class)
+                .hasMessage("여행 참여 한도를 초과했습니다.");
+        assertThat(repository.findSnapshot(14L).snapshot().members())
+                .singleElement().extracting(member -> member.userId()).isEqualTo(1L);
     }
 
     @Test
@@ -110,14 +124,14 @@ class TripPresenceRepositoryRedisTest extends RedisTestSupport {
         assertThat(first.leave(11L, "a:tab").snapshot().members()).isEmpty();
         assertThat(first.leave(11L, "a:tab").changed()).isFalse();
         assertThatThrownBy(() -> first.heartbeat(11L, "a:tab"))
-                .hasMessageContaining("PRESENCE_NOT_JOINED");
+                .hasMessage("여행 참여 정보가 없습니다.");
     }
 
     @Test
     void 만료된_권한은_참여를_생성하거나_복구할_수_없다() {
         TripPresenceRepository.ConnectionPresence expired = new TripPresenceRepository.ConnectionPresence("a:expired", 1L, "지형", null,
                 "READ", Instant.now(), Instant.now().minusSeconds(1), Instant.now().plusSeconds(60));
-        assertThatThrownBy(() -> first.join(12L, expired)).hasMessageContaining("UNAUTHORIZED");
+        assertThatThrownBy(() -> first.join(12L, expired)).hasMessage("인증이 필요합니다.");
         assertThat(first.findSnapshot(12L).snapshot().members()).isEmpty();
         first.refreshAccess(12L, 참여_정보_생성("a:missing", 1L, "지형"));
         assertThat(first.findSnapshot(12L).snapshot().members()).isEmpty();

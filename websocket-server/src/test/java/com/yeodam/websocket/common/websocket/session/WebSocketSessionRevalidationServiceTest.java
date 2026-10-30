@@ -27,7 +27,7 @@ class WebSocketSessionRevalidationServiceTest {
             new WebSocketSessionRevalidationService(manager, client);
 
     @Test
-    void checksTheLatestTokenOnceForTheSameLoginSession() {
+    void 같은_로그인_세션은_최신_토큰으로_한_번만_검사한다() {
         var old = connection("old", "login-a", 1);
         var recent = connection("recent", "login-a", 2);
         when(manager.getSessionsByLoginSession()).thenReturn(Map.of("login-a", List.of(old, recent)));
@@ -42,7 +42,7 @@ class WebSocketSessionRevalidationServiceTest {
 
     @ParameterizedTest
     @EnumSource(BackendAuthenticationFailure.class)
-    void closesOnlyTheFailedLoginGroupAndContinuesOthers(BackendAuthenticationFailure failure) {
+    void 실패한_로그인_그룹만_닫고_나머지_검사를_계속한다(BackendAuthenticationFailure failure) {
         var first = connection("first", "login-a", 1);
         var second = connection("second", "login-a", 2);
         var other = connection("other", "login-b", 1);
@@ -63,17 +63,17 @@ class WebSocketSessionRevalidationServiceTest {
     }
 
     @Test
-    void rejectsAResponseForAnotherUser() {
+    void 다른_사용자의_응답을_거절한다() {
         assertIdentityRejected(new AuthenticationData(99L, "login-a", expiry(2), "csrf"));
     }
 
     @Test
-    void rejectsAResponseForAnotherLoginSession() {
+    void 다른_로그인_세션의_응답을_거절한다() {
         assertIdentityRejected(valid("another-login"));
     }
 
     @Test
-    void closesMissingCredentialsAndChecksTheRemainingConnection() {
+    void 자격_증명이_없는_연결은_닫고_나머지_연결을_검사한다() {
         var missing = connection("missing", "login-a", 2);
         missing.getAttributes().clear();
         var valid = connection("valid", "login-a", 1);
@@ -88,7 +88,7 @@ class WebSocketSessionRevalidationServiceTest {
     }
 
     @Test
-    void doesNotCallBackendWhenNoConnectionHasCredentials() {
+    void 자격_증명이_있는_연결이_없으면_BE를_호출하지_않는다() {
         var missing = connection("missing", "login-a", 1);
         missing.getAttributes().clear();
         when(manager.getSessionsByLoginSession()).thenReturn(Map.of("login-a", List.of(missing)));
@@ -100,7 +100,7 @@ class WebSocketSessionRevalidationServiceTest {
     }
 
     @Test
-    void doesNotCallBackendWhenThereAreNoConnections() {
+    void 연결이_없으면_BE를_호출하지_않는다() {
         when(manager.getSessionsByLoginSession()).thenReturn(Map.of());
 
         service.revalidateSessions();

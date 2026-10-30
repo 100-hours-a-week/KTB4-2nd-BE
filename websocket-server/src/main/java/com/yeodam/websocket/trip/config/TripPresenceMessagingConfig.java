@@ -1,5 +1,6 @@
 package com.yeodam.websocket.trip.config;
 
+import com.yeodam.websocket.common.response.ErrorMessage;
 import com.yeodam.websocket.trip.exception.TripPresenceException;
 import com.yeodam.websocket.trip.service.TripPresenceService;
 import org.apache.commons.logging.LogFactory;
@@ -180,7 +181,7 @@ public class TripPresenceMessagingConfig implements WebSocketMessageBrokerConfig
             }
             if (pending >= MAX_PENDING_COMMANDS) {
                 closed = true;
-                throw new TripPresenceException("PRESENCE_LIMIT_EXCEEDED");
+                throw new TripPresenceException(ErrorMessage.PRESENCE_LIMIT_EXCEEDED);
             }
             pending++;
             return true;

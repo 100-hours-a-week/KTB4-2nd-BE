@@ -56,7 +56,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void refusesAdmissionAndRegistrationAfterShutdownEvenIfSubscriptionRecovers() {
+    void 종료_후에는_구독이_복구돼도_접속과_등록을_거절한다() {
         manager.shutdownConnections();
         subscriptionState.markSubscribed();
 
@@ -66,7 +66,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void closesWithRestartCodeAndCleansResourcesThroughTheCloseCallback() throws Exception {
+    void 재시작_코드로_연결을_닫고_종료_콜백에서_자원을_정리한다() throws Exception {
         manager.register(session);
         when(session.isOpen()).thenReturn(true);
         doAnswer(invocation -> {
@@ -86,7 +86,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void doesNotScheduleRedisFailureWorkAfterShutdown() {
+    void 서버_종료_후에는_Redis_장애_작업을_예약하지_않는다() {
         manager.shutdownConnections();
         subscriptionState.markSubscribed();
 
@@ -96,7 +96,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void continuesShutdownWhenOneConnectionCannotClose() throws Exception {
+    void 한_연결을_닫지_못해도_나머지_종료를_계속한다() throws Exception {
         manager.register(session);
         when(session.isOpen()).thenReturn(true);
         WebSocketSession another = mock(WebSocketSession.class);
@@ -118,7 +118,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void schedulesAtTheConnectionsAccessTokenExpiry() {
+    void 연결의_액세스_토큰_만료_시각에_종료를_예약한다() {
         assertThat(manager.register(session)).isTrue();
 
         verify(scheduler).schedule(any(Runnable.class), eq(EXPIRES_AT));
@@ -126,7 +126,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void refusesRegistrationWithoutSchedulingExpiryWhenSubscriptionIsUnavailable() {
+    void 구독이_사용_불가이면_만료_예약_없이_등록을_거절한다() {
         subscriptionState.markUnavailable();
 
         assertThat(manager.register(session)).isFalse();
@@ -136,7 +136,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void allowsRegistrationAfterSubscriptionRecovers() {
+    void 구독이_복구되면_연결_등록을_허용한다() {
         subscriptionState.markUnavailable();
         assertThat(manager.register(session)).isFalse();
         subscriptionState.markSubscribed();
@@ -148,7 +148,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void refusesAnExtraConnectionAndAcceptsItAfterTheExistingConnectionCloses() throws Exception {
+    void 상한을_넘는_연결은_거절하고_기존_연결_종료_후_허용한다() throws Exception {
         var limited = new WebSocketSessionManager(scheduler, subscriptionState,
                 new WebSocketProperties(List.of(), 1));
         WebSocketSession another = mock(WebSocketSession.class);
@@ -170,7 +170,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void keepsConcurrentRegistrationsWithinTheConfiguredLimit() throws Exception {
+    void 동시_등록에서도_설정된_연결_상한을_지킨다() throws Exception {
         var limited = new WebSocketSessionManager(scheduler, subscriptionState,
                 new WebSocketProperties(List.of(), 3));
         CountDownLatch start = new CountDownLatch(1);
@@ -202,7 +202,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void cancelsTheReservationWhenConnectionClosesFirst() {
+    void 연결이_먼저_닫히면_만료_예약을_취소한다() {
         manager.register(session);
 
         manager.unregister("connection-a");
@@ -213,7 +213,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void closesExpiredConnectionAndRemovesItThroughTheCloseCallback() throws Exception {
+    void 만료된_연결을_닫고_종료_콜백에서_제거한다() throws Exception {
         manager.register(session);
         verify(scheduler).schedule(task.capture(), eq(EXPIRES_AT));
         doAnswer(invocation -> {
@@ -229,7 +229,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void skipsAnAlreadyRemovedConnectionEvenIfItsTaskStarts() throws Exception {
+    void 예약_작업이_시작돼도_이미_제거된_연결은_건너뛴다() throws Exception {
         manager.register(session);
         verify(scheduler).schedule(task.capture(), eq(EXPIRES_AT));
         manager.unregister("connection-a");
@@ -240,7 +240,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void removesConnectionAndPropagatesSchedulingFailure() {
+    void 예약_실패_시_연결을_제거하고_예외를_전파한다() {
         RejectedExecutionException failure = new RejectedExecutionException("test rejection");
         doThrow(failure).when(scheduler).schedule(any(Runnable.class), any(Instant.class));
 
@@ -249,7 +249,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void retainsConnectionIfClosingFails() throws Exception {
+    void 연결_종료가_실패하면_등록을_유지한다() throws Exception {
         manager.register(session);
         verify(scheduler).schedule(task.capture(), eq(EXPIRES_AT));
         doThrow(new IOException("test close failure")).when(session).close(CloseStatus.POLICY_VIOLATION);
@@ -260,7 +260,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void groupsConnectionsByLoginSessionRatherThanConnectionId() {
+    void 연결_ID가_아닌_로그인_세션으로_연결을_묶는다() {
         manager.register(session);
         WebSocketSession another = mock(WebSocketSession.class);
         when(another.getId()).thenReturn("connection-b");
@@ -274,7 +274,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void closesOnlyConnectionsCapturedBeforeTheScheduledTaskRuns() throws Exception {
+    void 예약_작업_실행_전에_확보한_연결만_종료한다() throws Exception {
         manager.register(session);
         when(session.isOpen()).thenReturn(true);
         clearInvocations(scheduler);
@@ -297,7 +297,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void skipsConnectionsThatAreAlreadyClosedWhenTheTaskRuns() throws Exception {
+    void 작업_실행_시_이미_닫힌_연결은_건너뛴다() throws Exception {
         manager.register(session);
         when(session.isOpen()).thenReturn(false);
         clearInvocations(scheduler);
@@ -310,7 +310,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void continuesClosingOtherConnectionsWhenOneFails() throws Exception {
+    void 한_연결의_종료가_실패해도_나머지를_계속_닫는다() throws Exception {
         manager.register(session);
         when(session.isOpen()).thenReturn(true);
         WebSocketSession another = mock(WebSocketSession.class);
@@ -334,7 +334,7 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
-    void removesCredentialsAndExpiryReservationThroughTheCloseCallback() throws Exception {
+    void 종료_콜백에서_자격_증명과_만료_예약을_제거한다() throws Exception {
         manager.register(session);
         when(session.isOpen()).thenReturn(true);
         doAnswer(invocation -> {

@@ -12,7 +12,7 @@ public class BackendAuthenticationException extends RuntimeException {
     public BackendAuthenticationException(
             BackendAuthenticationFailure failure
     ) {
-        super(failure.name());
+        super(failure.message());
         this.failure = failure;
     }
 }

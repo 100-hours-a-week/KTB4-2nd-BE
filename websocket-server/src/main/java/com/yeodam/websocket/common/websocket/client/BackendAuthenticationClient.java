@@ -1,5 +1,7 @@
 package com.yeodam.websocket.common.websocket.client;
 
+import com.yeodam.websocket.common.response.ErrorMessage;
+import com.yeodam.websocket.common.response.SuccessMessage;
 import com.yeodam.websocket.common.websocket.config.BackendAuthenticationProperties;
 import com.yeodam.websocket.common.websocket.client.response.BackendAuthenticationResponse;
 import com.yeodam.websocket.common.websocket.exception.BackendAuthenticationException;
@@ -81,13 +83,13 @@ public class BackendAuthenticationClient {
 
                         if (status == 403) {
                             if (body != null
-                                    && "CSRF_TOKEN_INVALID".equals(body.message())) {
+                                    && ErrorMessage.CSRF_TOKEN_INVALID.name().equals(body.message())) {
                                 throw new BackendAuthenticationException(
                                         BackendAuthenticationFailure.CSRF_INVALID
                                 );
                             }
                             if (body != null
-                                    && "FORBIDDEN".equals(body.message())) {
+                                    && ErrorMessage.FORBIDDEN.name().equals(body.message())) {
                                 throw new BackendAuthenticationException(
                                         BackendAuthenticationFailure.SERVICE_FORBIDDEN
                                 );
@@ -114,7 +116,7 @@ public class BackendAuthenticationClient {
             BackendAuthenticationResponse response
     ) {
         if (response == null
-                || !"WEBSOCKET_AUTHENTICATION_SUCCESS".equals(response.message())
+                || !SuccessMessage.WEBSOCKET_AUTHENTICATION_SUCCESS.name().equals(response.message())
                 || response.data() == null) {
             throw new BackendAuthenticationException(
                     BackendAuthenticationFailure.INVALID_RESPONSE

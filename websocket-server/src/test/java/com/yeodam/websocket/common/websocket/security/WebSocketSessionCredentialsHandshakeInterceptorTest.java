@@ -19,7 +19,7 @@ class WebSocketSessionCredentialsHandshakeInterceptorTest {
             new WebSocketSessionCredentialsHandshakeInterceptor();
 
     @Test
-    void transfersCredentialsToConnectionAttributesWithoutWritingThemToResponse() {
+    void 자격_증명을_응답에_노출하지_않고_연결_속성으로_전달한다() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
         WebSocketSessionCredentials credentials = new WebSocketSessionCredentials("test-access", "test-context");
@@ -38,19 +38,19 @@ class WebSocketSessionCredentialsHandshakeInterceptorTest {
     }
 
     @Test
-    void rejectsMissingCredentials() {
+    void 자격_증명이_없으면_거절한다() {
         assertRejected(new ServletServerHttpRequest(new MockHttpServletRequest()));
     }
 
     @Test
-    void rejectsAnUnexpectedAttributeType() {
+    void 예상하지_못한_속성_타입을_거절한다() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setAttribute(WebSocketSessionCredentials.ATTRIBUTE_NAME, "unexpected-value");
         assertRejected(new ServletServerHttpRequest(request));
     }
 
     @Test
-    void rejectsUnsupportedRequestType() {
+    void 지원하지_않는_요청_타입을_거절한다() {
         assertRejected(mock(ServerHttpRequest.class));
     }
 

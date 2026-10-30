@@ -1,5 +1,6 @@
 package com.yeodam.websocket.trip.service;
 
+import com.yeodam.websocket.common.response.ErrorMessage;
 import com.yeodam.websocket.trip.client.response.TripPresenceAccessResponse.AccessData;
 import com.yeodam.websocket.trip.exception.TripPresenceException;
 import org.springframework.stereotype.Component;
@@ -30,10 +31,10 @@ public class TripPresenceSessionRegistry {
             requireCurrent(connection);
             Long existingTrip = connection.subscriptions.get(subscriptionId);
             if (existingTrip != null && !existingTrip.equals(tripId)) {
-                throw new TripPresenceException("INVALID_REQUEST");
+                throw new TripPresenceException(ErrorMessage.INVALID_REQUEST);
             }
             if (existingTrip == null && connection.subscriptions.size() >= MAX_SUBSCRIPTIONS_PER_CONNECTION) {
-                throw new TripPresenceException("PRESENCE_LIMIT_EXCEEDED");
+                throw new TripPresenceException(ErrorMessage.PRESENCE_LIMIT_EXCEEDED);
             }
             connection.subscriptions.put(subscriptionId, tripId);
             connection.access.put(tripId, access);
@@ -44,7 +45,7 @@ public class TripPresenceSessionRegistry {
         synchronized (connection) {
             requireCurrent(connection);
             if (!connection.subscriptions.containsValue(tripId)) {
-                throw new TripPresenceException("WS_SUBSCRIPTION_FORBIDDEN");
+                throw new TripPresenceException(ErrorMessage.WS_SUBSCRIPTION_FORBIDDEN);
             }
             AccessData previous = connection.access.get(tripId);
             if (previous == null || !access.checkedAt().isBefore(previous.checkedAt())) {
@@ -112,7 +113,7 @@ public class TripPresenceSessionRegistry {
 
     private void requireCurrent(Connection connection) {
         if (!isCurrent(connection)) {
-            throw new TripPresenceException("UNAUTHORIZED");
+            throw new TripPresenceException(ErrorMessage.UNAUTHORIZED);
         }
     }
 

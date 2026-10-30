@@ -45,7 +45,7 @@ class TripPresenceAccessClientTest {
         server.expect(anything()).andRespond(withSuccess(권한_응답_본문_생성(99L, Instant.now().plusSeconds(20)),
                 MediaType.APPLICATION_JSON));
         assertThatThrownBy(() -> client.findPresenceAccess(10L, 42L, credentials))
-                .hasMessage("INTERNAL_SERVER_ERROR");
+                .hasMessage("서버 내부 오류가 발생했습니다.");
     }
 
     @Test
@@ -53,11 +53,11 @@ class TripPresenceAccessClientTest {
         server.expect(anything()).andRespond(withSuccess(권한_응답_본문_생성(42L, Instant.now().minusSeconds(1)),
                 MediaType.APPLICATION_JSON));
         assertThatThrownBy(() -> client.findPresenceAccess(10L, 42L, credentials))
-                .hasMessage("INTERNAL_SERVER_ERROR");
+                .hasMessage("서버 내부 오류가 발생했습니다.");
         server.reset();
         server.expect(anything()).andRespond(withServerError());
         assertThatThrownBy(() -> client.findPresenceAccess(10L, 42L, credentials))
-                .hasMessage("INTERNAL_SERVER_ERROR");
+                .hasMessage("서버 내부 오류가 발생했습니다.");
     }
 
     private String 권한_응답_본문_생성(Long userId, Instant validUntil) {

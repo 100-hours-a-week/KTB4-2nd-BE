@@ -66,7 +66,7 @@ class TripPresenceMessagingTest extends RedisTestSupport {
     void 미승인_구독과_입장_전_체류_갱신은_거절한다() throws Exception {
         Frames frames = 인증된_소켓_연결();
         when(accessClient.findPresenceAccess(eq(702L), anyLong(), any()))
-                .thenThrow(new TripPresenceException("TRIP_NOT_FOUND"));
+                .thenThrow(new TripPresenceException(com.yeodam.websocket.common.response.ErrorMessage.TRIP_NOT_FOUND));
         프레임_전송(frames.socket, "SUBSCRIBE\nid:p\ndestination:/topic/trips/702/presence\n\n");
         assertThat(frames.다음_프레임_수신()).startsWith("ERROR").contains("TRIP_NOT_FOUND");
 

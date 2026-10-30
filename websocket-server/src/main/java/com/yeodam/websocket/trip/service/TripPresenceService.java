@@ -1,5 +1,7 @@
 package com.yeodam.websocket.trip.service;
 
+import com.yeodam.websocket.common.response.ErrorMessage;
+import com.yeodam.websocket.common.response.SuccessMessage;
 import lombok.extern.slf4j.Slf4j;
 import com.yeodam.websocket.common.websocket.config.WebSocketEventProperties;
 import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
@@ -104,17 +106,17 @@ public class TripPresenceService {
         SimpMessageHeaderAccessor headers = SimpMessageHeaderAccessor.wrap(message);
         String destination = headers.getDestination();
         if (destination == null || !destination.matches("/topic/trips/[0-9]+/presence")) {
-            throw new TripPresenceException("INVALID_REQUEST");
+            throw new TripPresenceException(ErrorMessage.INVALID_REQUEST);
         }
         Long tripId = parseTripId(destination.split("/")[3]);
         Context context = requireContext(tripId.toString(), message);
         String subscriptionId = headers.getSubscriptionId();
         if (subscriptionId == null || subscriptionId.isBlank()) {
-            throw new TripPresenceException("INVALID_REQUEST");
+            throw new TripPresenceException(ErrorMessage.INVALID_REQUEST);
         }
         if (!context.connection().access().containsKey(tripId)
                 && context.connection().access().size() >= properties.maxTripsPerConnection()) {
-            throw new TripPresenceException("PRESENCE_LIMIT_EXCEEDED");
+            throw new TripPresenceException(ErrorMessage.PRESENCE_LIMIT_EXCEEDED);
         }
         AccessData access = fetchAccess(context, tripId);
         registry.subscribe(context.connection(), subscriptionId, tripId, access);
@@ -131,7 +133,7 @@ public class TripPresenceService {
         PresenceChange change = repository.join(tripId, participation(context, access));
         if (!isLive(context) || context.connection().subscriptions(tripId).isEmpty()) {
             publishChange(repository.leave(tripId, connectionKey(context.connection().id())));
-            throw new TripPresenceException("UNAUTHORIZED");
+            throw new TripPresenceException(ErrorMessage.UNAUTHORIZED);
         }
         publishChange(change);
         if (applySnapshotEpoch(change.snapshot())) {
@@ -207,14 +209,14 @@ public class TripPresenceService {
         Throwable current = failure;
         while (current != null) {
             if (current instanceof TripPresenceException presenceFailure) {
-                return presenceFailure.getMessage();
+                return presenceFailure.errorMessage().name();
             }
             if (current instanceof org.springframework.security.access.AccessDeniedException) {
-                return "WS_SUBSCRIPTION_FORBIDDEN";
+                return ErrorMessage.WS_SUBSCRIPTION_FORBIDDEN.name();
             }
             current = current.getCause();
         }
-        return "INTERNAL_SERVER_ERROR";
+        return ErrorMessage.INTERNAL_SERVER_ERROR.name();
     }
 
     public void onSnapshotEvent(WebSocketEvent event) {
@@ -343,7 +345,7 @@ public class TripPresenceService {
     private Context requireContext(String rawTripId, Message<?> message) {
         parseTripId(rawTripId);
         if (!(message.getPayload() instanceof byte[] bytes) || bytes.length != 0) {
-            throw new TripPresenceException("INVALID_REQUEST");
+            throw new TripPresenceException(ErrorMessage.INVALID_REQUEST);
         }
         SimpMessageHeaderAccessor headers = SimpMessageHeaderAccessor.wrap(message);
         String connectionId = headers.getSessionId();
@@ -351,7 +353,7 @@ public class TripPresenceService {
         if (session == null || !session.isOpen() || !(headers.getUser() instanceof Authentication authentication)
                 || !(authentication.getPrincipal() instanceof WebSocketPrincipal user)
                 || !user.equals(principal(session))) {
-            throw new TripPresenceException("UNAUTHORIZED");
+            throw new TripPresenceException(ErrorMessage.UNAUTHORIZED);
         }
         Context context = new Context(registry.connection(connectionId), session, user);
         requireLive(context);
@@ -361,7 +363,7 @@ public class TripPresenceService {
     private Context contextFor(Connection connection) {
         WebSocketSession session = sessions.findSession(connection.id());
         if (session == null) {
-            throw new TripPresenceException("UNAUTHORIZED");
+            throw new TripPresenceException(ErrorMessage.UNAUTHORIZED);
         }
         Context context = new Context(connection, session, principal(session));
         requireLive(context);
@@ -376,7 +378,7 @@ public class TripPresenceService {
     private AccessData fetchAccess(Context context, Long tripId) {
         Object stored = context.session().getAttributes().get(WebSocketSessionCredentials.ATTRIBUTE_NAME);
         if (!(stored instanceof WebSocketSessionCredentials credentials)) {
-            throw new TripPresenceException("UNAUTHORIZED");
+            throw new TripPresenceException(ErrorMessage.UNAUTHORIZED);
         }
         AccessData access = accessClient.findPresenceAccess(tripId, context.principal().userId(), credentials);
         requireLive(context);
@@ -386,7 +388,7 @@ public class TripPresenceService {
     private AccessData requireSubscribed(Context context, Long tripId) {
         AccessData access = context.connection().access().get(tripId);
         if (access == null || context.connection().subscriptions(tripId).isEmpty()) {
-            throw new TripPresenceException("WS_SUBSCRIPTION_FORBIDDEN");
+            throw new TripPresenceException(ErrorMessage.WS_SUBSCRIPTION_FORBIDDEN);
         }
         return access;
     }
@@ -400,7 +402,7 @@ public class TripPresenceService {
     private void requireLive(Context context) {
         if (!isLive(context)) {
             removeConnection(context.connection().id());
-            throw new TripPresenceException("UNAUTHORIZED");
+            throw new TripPresenceException(ErrorMessage.UNAUTHORIZED);
         }
     }
 
@@ -430,17 +432,17 @@ public class TripPresenceService {
         }
         WebSocketEvent event = new WebSocketEvent(UUID.randomUUID(), WebSocketEventType.PRESENCE_SNAPSHOT,
                 1, Instant.now(), new WebSocketEventTarget(WebSocketEventTargetType.TRIP, change.snapshot().tripId()),
-                mapper.valueToTree(new Envelope("PRESENCE_SNAPSHOT", change.snapshot())));
+                mapper.valueToTree(new Envelope(SuccessMessage.PRESENCE_SNAPSHOT.name(), change.snapshot())));
         byte[] encoded = mapper.writeValueAsBytes(event);
         if (encoded.length > 64 * 1024) {
-            throw new TripPresenceException("PRESENCE_LIMIT_EXCEEDED");
+            throw new TripPresenceException(ErrorMessage.PRESENCE_LIMIT_EXCEEDED);
         }
         redis.convertAndSend(eventProperties.channel(), new String(encoded, java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private void broadcastLocal(TripPresenceSnapshotResponse snapshot) {
         messaging.convertAndSend("/topic/trips/" + snapshot.tripId() + "/presence",
-                new Envelope("PRESENCE_SNAPSHOT", snapshot));
+                new Envelope(SuccessMessage.PRESENCE_SNAPSHOT.name(), snapshot));
     }
 
     private void sendCurrentSnapshot(Context context, TripPresenceSnapshotResponse snapshot) {
@@ -451,7 +453,7 @@ public class TripPresenceService {
             headers.setDestination("/topic/trips/" + snapshot.tripId() + "/presence");
             headers.setContentType(MimeTypeUtils.APPLICATION_JSON);
             outbound.send(MessageBuilder.createMessage(
-                    mapper.writeValueAsBytes(new Envelope("PRESENCE_SNAPSHOT", snapshot)), headers.getMessageHeaders()));
+                    mapper.writeValueAsBytes(new Envelope(SuccessMessage.PRESENCE_SNAPSHOT.name(), snapshot)), headers.getMessageHeaders()));
         }
     }
 
@@ -498,22 +500,22 @@ public class TripPresenceService {
                 return tripId;
             }
         } catch (NumberFormatException exception) {
-            throw new TripPresenceException("INVALID_REQUEST");
+            throw new TripPresenceException(ErrorMessage.INVALID_REQUEST);
         }
-        throw new TripPresenceException("INVALID_REQUEST");
+        throw new TripPresenceException(ErrorMessage.INVALID_REQUEST);
     }
 
     private void validateSnapshot(TripPresenceSnapshotResponse snapshot, Long targetId) {
         if (snapshot == null || !targetId.equals(snapshot.tripId()) || snapshot.epoch() == null
                 || snapshot.revision() < 0 || snapshot.members() == null || snapshot.members().size() > 100) {
-            throw new TripPresenceException("INVALID_REQUEST");
+            throw new TripPresenceException(ErrorMessage.INVALID_REQUEST);
         }
         Set<Long> ids = new HashSet<>();
         for (TripPresenceSnapshotResponse.Member member : snapshot.members()) {
             if (member == null || member.userId() == null || member.userId() <= 0 || !ids.add(member.userId())
                     || member.nickname() == null || member.nickname().isBlank() || member.permission() == null
                     || !Set.of("OWNER", "READ", "WRITE").contains(member.permission())) {
-                throw new TripPresenceException("INVALID_REQUEST");
+                throw new TripPresenceException(ErrorMessage.INVALID_REQUEST);
             }
         }
     }

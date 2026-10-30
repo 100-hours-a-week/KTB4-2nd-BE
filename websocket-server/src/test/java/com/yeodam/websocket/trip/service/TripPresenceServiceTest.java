@@ -31,6 +31,21 @@ import static org.mockito.Mockito.*;
 
 class TripPresenceServiceTest {
     @Test
+    void 한국어_예외_설명과_별개로_기존_응답_오류_코드를_유지한다() {
+        TripPresenceService service = new TripPresenceService(new TripPresenceSessionRegistry(),
+                mock(TripPresenceAccessClient.class), mock(TripPresenceRepository.class),
+                mock(WebSocketSessionManager.class), new TripPresenceProperties("test", 16, 100, 10),
+                mock(StringRedisTemplate.class), new WebSocketEventProperties("events"),
+                JsonMapper.builder().build(), mock(SimpMessagingTemplate.class), mock(MessageChannel.class),
+                Runnable::run, Runnable::run);
+        var failure = new com.yeodam.websocket.trip.exception.TripPresenceException(
+                com.yeodam.websocket.common.response.ErrorMessage.INVALID_REQUEST);
+
+        assertThat(failure).hasMessage("요청이 올바르지 않습니다.");
+        assertThat(service.errorCode(new RuntimeException(failure))).isEqualTo("INVALID_REQUEST");
+    }
+
+    @Test
     void 미승인_여행의_퇴장은_Redis_상태를_생성하지_않는다() {
         TripPresenceSessionRegistry registry = new TripPresenceSessionRegistry();
         TripPresenceAccessClient accessClient = mock(TripPresenceAccessClient.class);
@@ -123,7 +138,7 @@ class TripPresenceServiceTest {
         headers.setSessionId("socket");
         headers.setUser(authentication);
         Message<byte[]> message = MessageBuilder.createMessage(new byte[0], headers.getMessageHeaders());
-        assertThatThrownBy(() -> service.join("10", message)).hasMessage("UNAUTHORIZED");
+        assertThatThrownBy(() -> service.join("10", message)).hasMessage("인증이 필요합니다.");
         verify(repository).leave(eq(10L), endsWith(":socket"));
     }
 }

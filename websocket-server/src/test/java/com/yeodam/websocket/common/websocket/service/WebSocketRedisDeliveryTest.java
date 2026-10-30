@@ -60,7 +60,7 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
 
     @ParameterizedTest
     @CsvSource({"AI_TASK,/user/queue/ai-tasks", "COMMAND_RESULT,/user/queue/command-results"})
-    void deliversOnlyToTheTargetUsersConnections(String type, String destination) throws Exception {
+    void 대상_사용자의_연결에만_전달한다(String type, String destination) throws Exception {
         await().atMost(Duration.ofSeconds(5)).until(listener::isListening);
         try (Connection first = connect(42L, "first", destination);
              Connection second = connect(42L, "second", destination);
@@ -79,7 +79,7 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
 
     @ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"trip", "addition", "story"})
-    void businessCompletionContractReachesOnlyItsUserWithoutFieldLoss(String kind) throws Exception {
+    void 업무_완료_계약을_필드_누락_없이_해당_사용자에게만_전달한다(String kind) throws Exception {
         await().atMost(Duration.ofSeconds(5)).until(listener::isListening);
         String raw = java.nio.file.Files.readString(java.nio.file.Path.of(
                 "../src/test/resources/websocket/" + kind + "-completed.json"));
@@ -95,7 +95,7 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
     }
 
     @Test
-    void processesAValidEventAfterMalformedJson() throws Exception {
+    void 잘못된_JSON_다음의_정상_이벤트를_처리한다() throws Exception {
         await().atMost(Duration.ofSeconds(5)).until(listener::isListening);
         try (Connection connection = connect(42L, "recovery", "/user/queue/ai-tasks")) {
             redis.convertAndSend(CHANNEL, "{broken-json");
@@ -105,7 +105,7 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
     }
 
     @Test
-    void deliversAcrossTwoIndependentWebSocketApplications() throws Exception {
+    void 독립된_두_웹소켓_앱_사이에서_이벤트를_전달한다() throws Exception {
         try (var secondApp = new SpringApplicationBuilder(
                 YeodamWebSocketApplication.class, SecondAppAuthentication.class
         ).run("--server.port=0", "--spring.data.redis.host=" + redisHost(),

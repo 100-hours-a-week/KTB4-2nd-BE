@@ -15,7 +15,7 @@ import static org.mockito.Mockito.mock;
 class WebSocketSessionConfigTest {
 
     @Test
-    void registersRevalidationWithItsOwnSchedulerAndThirtySecondDelay() throws Exception {
+    void 재검증을_전용_스케줄러에_30초_간격으로_등록한다() throws Exception {
         try (var context = new AnnotationConfigApplicationContext()) {
             context.register(WebSocketSessionConfig.class);
             context.registerBean(WebSocketSessionRevalidationService.class, () ->

@@ -18,7 +18,7 @@ import static org.mockito.Mockito.*;
 class WebSocketMetricsTest {
 
     @Test
-    void readsCurrentConnectionsAndSubscriptionsRatherThanTheInitialCounts() {
+    void 초기값이_아닌_현재_연결과_구독_수를_조회한다() {
         WebSocketSessionManager sessions = mock(WebSocketSessionManager.class);
         SimpUserRegistry users = mock(SimpUserRegistry.class);
         when(sessions.getSessions()).thenReturn(List.of());

@@ -56,6 +56,11 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    systemProperty 'trip.permission.performance.enabled', providers.gradleProperty('tripPermissionPerformance').getOrElse('false')
+    systemProperty 'websocket.server.jar', providers.gradleProperty('websocketServerJar').getOrElse('')
+    if (providers.gradleProperty('websocketServerJar').isPresent()) {
+        inputs.file(providers.gradleProperty('websocketServerJar')).withPropertyName('websocketServerJar')
+    }
     systemProperty 'spring.test.context.cache.maxSize', '8'
     systemProperty 'spring.datasource.hikari.maximum-pool-size', '3'
 }

@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
+import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
@@ -505,6 +506,9 @@ class TripCreationSecurityIntegrationTest {
     void 장소_폴더_목록_API는_Jwt_subject와_커서를_전달하고_응답을_직렬화한다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         String cursor = new PlaceFolderCursor(7L, "제주", 11L).encode(objectMapper);
+        Trip readableTrip = mock(Trip.class);
+        given(readableTrip.getSequence()).willReturn(7L);
+        given(tripAccessService.requireCompletedTrip(7L, 42L)).willReturn(readableTrip);
         List<TripDetailPlace> fetched = List.of(
                 place(1L, "장소 1", "thumb/1.webp"),
                 place(2L, "장소 2", null),
@@ -528,6 +532,7 @@ class TripCreationSecurityIntegrationTest {
                         .cookie(new Cookie("accessToken", accessToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("PLACE_FOLDER_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.sequence").value(7))
                 .andExpect(jsonPath("$.data.items.length()").value(6))
                 .andExpect(jsonPath("$.data.items[0].tripPlaceId").value(1))
                 .andExpect(jsonPath("$.data.items[0].placeName").value("장소 1"))

@@ -36,13 +36,27 @@ class TripAttachmentListServiceTest {
     private final TripAttachmentRepository tripAttachmentRepository = mock(TripAttachmentRepository.class);
     private final TripAttachmentStorageClient storageClient = mock(TripAttachmentStorageClient.class);
     private final TripAttachmentListService service = new TripAttachmentListService(
-            tripRepository,
             tripDetailPlaceRepository,
             tripAttachmentRepository,
             storageClient,
             new ObjectMapper(),
-            new TripAccessService(tripRepository)
+            new TripAccessService(tripRepository, mock(TripEditAuthorizationService.class))
     );
+
+    @Test
+    void 읽기_권한이_있으면_소유자_전용_필터_없이_폴더_사진을_조회한다() {
+        prepareOwnedPlace();
+        List<TripAttachment> photos = attachments(1);
+        when(tripRepository.existsByIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(false);
+        when(tripAttachmentRepository.findByPlaceFolderWithCursor(
+                eq(7L), eq(3L), eq(ClassificationStatus.ACTIVE), eq(null), eq(null), any(Pageable.class)
+        )).thenReturn(photos);
+
+        TripAttachmentListResponse response = service.findByPlaceFolder(1L, 7L, 3L, null);
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.items().getFirst().tripAttachmentId()).isEqualTo(100L);
+    }
 
     @Test
     void 열아홉개를_조회해_앞_열여덟개와_다음_커서를_반환한다() {
@@ -116,7 +130,7 @@ class TripAttachmentListServiceTest {
     private void prepareOwnedPlace() {
         Trip trip = mock(Trip.class);
         when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
-        when(tripRepository.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
+        when(tripRepository.findByIdAndDeletedAtIsNull(7L))
                 .thenReturn(Optional.of(trip));
         when(tripRepository.existsByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
                 .thenReturn(true);

@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripSharePermission;
 import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
+import com.yeodam.yeodambe.trip.service.response.TripEditAccess;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -20,6 +21,7 @@ import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -36,6 +38,36 @@ class TripEditAuthorizationServiceTest {
     void fixture() {
         trip = new Trip(1L, "권한검사", LocalDate.of(2026, 10, 30), LocalDate.of(2026, 10, 30));
         ReflectionTestUtils.setField(trip, "id", 73L);
+    }
+
+    @Test
+    void 소유자의_읽기_권한은_검사_시각부터_30초간_유효하다() {
+        TripEditAccess access = service.requireReadPermission(trip, 1L);
+
+        assertThat(access.permission()).isEqualTo("OWNER");
+        assertThat(access.checkedAt()).isEqualTo(clock.instant());
+        assertThat(access.accessValidUntil()).isEqualTo(clock.instant().plusSeconds(30));
+        verifyNoInteractions(shares);
+    }
+
+    @Test
+    void READ_공유도_읽을_수_있고_유효기간은_공유_만료를_넘지_않는다() {
+        stored(share(1L, TripSharePermission.READ, NOW.plusSeconds(5)));
+
+        TripEditAccess access = service.requireReadPermission(trip, 2L);
+
+        assertThat(access.permission()).isEqualTo("READ");
+        assertThat(access.accessValidUntil()).isEqualTo(clock.instant().plusSeconds(5));
+    }
+
+    @Test
+    void WRITE_공유_읽기_검사는_30초를_상한으로_사용한다() {
+        stored(share(1L, TripSharePermission.WRITE, NOW.plusHours(1)));
+
+        TripEditAccess access = service.requireReadPermission(trip, 2L);
+
+        assertThat(access.permission()).isEqualTo("WRITE");
+        assertThat(access.accessValidUntil()).isEqualTo(clock.instant().plusSeconds(30));
     }
 
     @Test

@@ -3,12 +3,15 @@ package com.yeodam.yeodambe.trip.service;
 
 import tools.jackson.databind.ObjectMapper;
 import com.yeodam.yeodambe.common.exception.PlaceFolderNotFoundException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
+import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
-import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -26,7 +29,6 @@ public class TripAttachmentListService {
     private static final int PAGE_SIZE = 18;
     private static final int QUERY_SIZE = PAGE_SIZE + 1;
 
-    private final TripRepository tripRepository;
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
@@ -39,17 +41,22 @@ public class TripAttachmentListService {
             Long tripPlaceId,
             String cursor
     ) {
-        if (!tripRepository.existsByIdAndUserIdAndDeletedAtIsNull(
-                tripId,
-                userId
-        ) || !tripDetailPlaceRepository.existsByIdAndTripIdAndDeletedAtIsNull(
+        Trip trip;
+        try {
+            trip = tripAccessService.requireReadableTrip(tripId, userId);
+        } catch (TripNotFoundException e) {
+            throw new PlaceFolderNotFoundException();
+        }
+        if (!tripDetailPlaceRepository.existsByIdAndTripIdAndDeletedAtIsNull(
                 tripPlaceId,
                 tripId
         )) {
             throw new PlaceFolderNotFoundException();
         }
 
-        tripAccessService.requireCompletedTrip(tripId, userId);
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new TripDetailNotAvailableException();
+        }
 
         AttachmentCursor attachmentCursor = AttachmentCursor.decode(
                 cursor,

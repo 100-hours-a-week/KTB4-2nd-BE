@@ -34,7 +34,7 @@ class StorySourceFolderListServiceTest {
 
     @BeforeEach
     void prepareCompletedTrip() {
-        when(tripAccessService.requireReadableTrip(7L, 1L)).thenReturn(trip);
+        when(tripAccessService.requireOwnedTrip(7L, 1L)).thenReturn(trip);
         when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
     }
 
@@ -76,7 +76,7 @@ class StorySourceFolderListServiceTest {
 
     @Test
     void 여행접근실패를_빈목록으로_바꾸지_않는다() {
-        when(tripAccessService.requireReadableTrip(7L, 1L))
+        when(tripAccessService.requireOwnedTrip(7L, 1L))
                 .thenThrow(new TripNotFoundException());
 
         assertThatThrownBy(() -> service.findFolders(1L, 7L, null))

@@ -108,6 +108,8 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
 
     Optional<Trip> findByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
 
+    Optional<Trip> findByIdAndDeletedAtIsNull(Long id);
+
     Optional<Trip> findByIdAndUserIdAndProcessingStatusAndDeletedAtIsNull(
             Long id, Long userId, ProcessingStatus processingStatus);
 

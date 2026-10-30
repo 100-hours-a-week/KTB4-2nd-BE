@@ -6,11 +6,13 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripSharePermission;
 import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
+import com.yeodam.yeodambe.trip.service.response.TripEditAccess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 
@@ -23,20 +25,31 @@ public class TripEditAuthorizationService {
     private final Clock clock;
 
     public void requireWritePermission(Trip trip, Long actorId) {
+        TripEditAccess access = requireReadPermission(trip, actorId);
+        if (TripSharePermission.READ.name().equals(access.permission())) {
+            throw new WritePermissionRequiredException();
+        }
+    }
+
+    public TripEditAccess requireReadPermission(Trip trip, Long actorId) {
         if (trip.getDeletedAt() != null) {
             throw new TripNotFoundException();
         }
+        Instant checkedAt = clock.instant();
+        Instant accessValidUntil = checkedAt.plusSeconds(30);
         if (trip.getUserId().equals(actorId)) {
-            return;
+            return new TripEditAccess("OWNER", checkedAt, accessValidUntil);
         }
 
-        LocalDateTime checkedAt = LocalDateTime.ofInstant(clock.instant(), SHARE_ZONE);
+        LocalDateTime shareCheckedAt = LocalDateTime.ofInstant(checkedAt, SHARE_ZONE);
         TripShareUser share = shareRepository.findByTripIdAndGranteeUserId(trip.getId(), actorId)
                 .filter(found -> found.getUserId().equals(trip.getUserId()))
-                .filter(found -> found.isEffective(checkedAt))
+                .filter(found -> found.isEffective(shareCheckedAt))
                 .orElseThrow(TripNotFoundException::new);
-        if (share.getPermission() != TripSharePermission.WRITE) {
-            throw new WritePermissionRequiredException();
+        Instant shareExpiresAt = share.getExpiresAt().atZone(SHARE_ZONE).toInstant();
+        if (shareExpiresAt.isBefore(accessValidUntil)) {
+            accessValidUntil = shareExpiresAt;
         }
+        return new TripEditAccess(share.getPermission().name(), checkedAt, accessValidUntil);
     }
 }

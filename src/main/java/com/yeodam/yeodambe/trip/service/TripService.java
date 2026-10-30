@@ -218,6 +218,21 @@ public class TripService {
         Trip trip = tripRepository.findOwnedActiveForUpdate(tripId, userId)
                 .orElseThrow(TripNotFoundException::new);
 
+        return updateInformation(trip, request);
+    }
+
+    @Transactional
+    public TripUpdateResponse updateForSharedEditing(
+            Trip trip,
+            TripUpdateRequest request
+    ) {
+        return updateInformation(trip, request);
+    }
+
+    private TripUpdateResponse updateInformation(Trip trip, TripUpdateRequest request) {
+        Long tripId = trip.getId();
+        Long userId = trip.getUserId();
+
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
             throw new TripUpdateNotAllowedException();
         }
@@ -266,7 +281,9 @@ public class TripService {
             updateRegions(trip, existingRegions, requestedRegions);
         }
 
-        if (changed) tripRepository.advanceSequence(tripId);
+        if (changed) {
+            tripRepository.advanceSequence(tripId);
+        }
 
         List<TripUpdateResponse.Region> regions = tripRegionRepository
                 .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId).stream()

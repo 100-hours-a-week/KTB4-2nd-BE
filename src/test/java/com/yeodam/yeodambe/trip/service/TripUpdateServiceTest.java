@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
+import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -45,6 +46,38 @@ class TripUpdateServiceTest {
         when(trips.findOwnedActiveForUpdate(7L, 1L)).thenReturn(Optional.of(trip));
         when(regions.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L)).thenReturn(List.of(seoul));
         when(catalog.getRequired("11000")).thenReturn(reference("11000"));
+    }
+
+    @Test
+    void 공유_편집도_소유자_기준으로_중복과_캐시를_처리하고_부분변경만_반영한다() {
+        TripUpdateResponse response = service.updateForSharedEditing(
+                trip, new TripUpdateRequest("공유 변경", null, null, null));
+
+        assertThat(response.tripName()).isEqualTo("공유 변경");
+        assertThat(response.startDate()).isEqualTo(start);
+        assertThat(response.endDate()).isEqualTo(end);
+        verify(trips).existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(1L, "공유 변경", 7L);
+        verify(mapCache).evictAfterCommit(1L);
+        verify(trips).advanceSequence(7L);
+        verify(trips, never()).findOwnedActiveForUpdate(anyLong(), anyLong());
+
+        clearInvocations(trips);
+        service.updateForSharedEditing(trip, new TripUpdateRequest("공유 변경", null, null, null));
+        verify(trips, never()).advanceSequence(anyLong());
+    }
+
+    @Test
+    void 공유_편집도_소유자_이름_중복이면_변경하지_않는다() {
+        when(trips.existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(1L, "중복", 7L))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.updateForSharedEditing(
+                trip, new TripUpdateRequest("중복", null, null, null)))
+                .isInstanceOf(TripNameDuplicatedException.class);
+
+        assertThat(trip.getTripName()).isEqualTo("기존 여행");
+        verify(trips, never()).advanceSequence(anyLong());
+        verifyNoInteractions(mapCache);
     }
 
     @Test

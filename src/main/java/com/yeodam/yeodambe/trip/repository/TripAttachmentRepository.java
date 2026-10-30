@@ -455,6 +455,7 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
         from TripAttachment attachment
         join fetch attachment.file file
         join fetch attachment.trip trip
+        left join fetch attachment.tripPlace place
         where attachment.id in :tripAttachmentIds
           and attachment.deletedAt is null
           and trip.deletedAt is null

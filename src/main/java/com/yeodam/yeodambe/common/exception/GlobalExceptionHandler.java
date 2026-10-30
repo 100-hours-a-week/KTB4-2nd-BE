@@ -41,6 +41,18 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(TripEditCommandMismatchException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleTripEditCommandMismatch(TripEditCommandMismatchException exception) {
+        return new ApiResponse<>(ErrorMessage.TRIP_EDIT_COMMAND_MISMATCH, null);
+    }
+
+    @ExceptionHandler(TripEditCommandResultExpiredException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleTripEditCommandResultExpired(TripEditCommandResultExpiredException exception) {
+        return new ApiResponse<>(ErrorMessage.TRIP_EDIT_COMMAND_RESULT_EXPIRED, null);
+    }
+
 
     @ExceptionHandler(InvalidRestoreRequestException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)

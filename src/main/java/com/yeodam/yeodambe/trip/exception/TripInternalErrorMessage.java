@@ -1,6 +1,16 @@
 package com.yeodam.yeodambe.trip.exception;
 
 public enum TripInternalErrorMessage {
+    EDIT_COMMAND_RESULT_INVALID("명령과 일치하는 확정 결과가 필요합니다."),
+    EDIT_COMMAND_RESULT_WRITE_FAILED("공유 편집 결과를 기록할 수 없습니다."),
+    EDIT_COMMAND_RESULT_BODY_MISSING("공유 편집 결과 본문이 없습니다."),
+    EDIT_COMMAND_RESULT_READ_FAILED("공유 편집 결과를 읽을 수 없습니다."),
+    EDIT_COMMAND_RESULT_MISMATCH("저장된 공유 편집 결과가 명령과 일치하지 않습니다."),
+    EDIT_COMMAND_IDENTITY_MISSING("사용자와 여행 ID가 필요합니다."),
+    EDIT_COMMAND_REQUEST_ID_INVALID("요청번호는 1~128자여야 합니다."),
+    EDIT_COMMAND_TYPE_MISSING("명령 종류가 필요합니다."),
+    EDIT_COMMAND_HASH_INVALID("SHA-256 본문 식별값이 필요합니다."),
+    EDIT_COMMAND_TIME_MISSING("명령 결과의 기준 시각이 필요합니다."),
     TRIP_LIST_CURSOR_ENCODE_FAILED("여행 목록 커서를 생성할 수 없습니다."),
     ATTACHMENT_CURSOR_ENCODE_FAILED("첨부 목록 커서를 생성할 수 없습니다."),
     PLACE_FOLDER_CURSOR_ENCODE_FAILED("장소 폴더 목록 커서를 생성할 수 없습니다."),

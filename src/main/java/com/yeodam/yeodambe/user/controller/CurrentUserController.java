@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.user.service.CurrentUserService;
 import com.yeodam.yeodambe.user.service.response.CurrentUserResponse;
+import com.yeodam.yeodambe.user.service.response.UserStatsResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -27,6 +28,18 @@ public class CurrentUserController {
 
         return ResponseEntity.ok(
                 new ApiResponse<>(SuccessMessage.USER_FOUND, data)
+        );
+    }
+    @GetMapping("/users/me/stats")
+    public ResponseEntity<ApiResponse<UserStatsResponse>> findStats(
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        UserStatsResponse data = service.findStats(userId);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.USER_STATS_FOUND, data)
         );
     }
 }

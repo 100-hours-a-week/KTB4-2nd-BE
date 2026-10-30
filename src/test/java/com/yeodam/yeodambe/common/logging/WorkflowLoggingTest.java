@@ -10,6 +10,7 @@ import org.slf4j.MDC;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -97,15 +98,25 @@ class WorkflowLoggingTest {
     }
 
     @Test
-    void databaseClockReferenceDoesNotDependOnJvmLocalTime() {
+    void DB_기준_소요시간은_JVM_시각에_의존하지_않고_커밋_대기를_포함한다() throws InterruptedException {
         TransactionSynchronizationManager.initSynchronization();
         LocalDateTime databaseNow = LocalDateTime.of(2026, 1, 1, 0, 0);
+        long observationStartedNanos = System.nanoTime();
         WorkflowLog.finishedFromDatabase("trip_reanalysis", 42L, "job-a",
                 databaseNow.minusSeconds(5), databaseNow, "success", null);
+
+        long commitWaitStartedNanos = System.nanoTime();
+        Thread.sleep(Duration.ofMillis(1100));
+        long minimumDurationMillis = 5000L
+                + Duration.ofNanos(System.nanoTime() - commitWaitStartedNanos).toMillis();
         TransactionSynchronizationManager.getSynchronizations().getFirst().afterCommit();
+        long maximumDurationMillis = 5000L
+                + Duration.ofNanos(System.nanoTime() - observationStartedNanos).toMillis();
+
+        assertThat(events.list).hasSize(1);
         assertThat(events.list.getFirst().getKeyValuePairs()).anySatisfy(pair -> {
             assertThat(pair.key).isEqualTo("duration_ms");
-            assertThat((Long) pair.value).isBetween(5000L, 5999L);
+            assertThat((Long) pair.value).isBetween(minimumDurationMillis, maximumDurationMillis);
         });
     }
 

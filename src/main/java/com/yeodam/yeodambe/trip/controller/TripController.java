@@ -19,6 +19,7 @@ import com.yeodam.yeodambe.trip.service.response.TripDetailMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
+import com.yeodam.yeodambe.trip.service.response.FavoriteTripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
@@ -210,6 +211,21 @@ public class TripController {
                 SuccessMessage.TRIP_LIST_FOUND,
                 tripService.findTrips(Long.valueOf(jwt.getSubject()), request)
         ));
+    }
+
+    @GetMapping("/trips/favorites")
+    public ResponseEntity<ApiResponse<FavoriteTripListResponse>> findFavoriteTrips(
+            @RequestParam(required = false) String cursor,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+
+        FavoriteTripListResponse data =
+                tripService.findFavoriteTrips(userId, cursor);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(SuccessMessage.FAVORITE_TRIP_LIST_FOUND, data)
+        );
     }
 
     @GetMapping("/trips/{tripId}/place-folders")

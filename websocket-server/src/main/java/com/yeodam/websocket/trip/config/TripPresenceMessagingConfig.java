@@ -42,5 +42,4 @@ public class TripPresenceMessagingConfig {
         executor.setQueueCapacity(capacity);
         return executor;
     }
-
 }

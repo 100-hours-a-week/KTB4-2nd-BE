@@ -56,8 +56,6 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
-    // Mockito 계측 환경에서는 테스트 JVM의 CDS를 사용하지 않는다.
-    jvmArgs '-Xshare:off'
     systemProperty 'spring.test.context.cache.maxSize', '8'
     systemProperty 'spring.datasource.hikari.maximum-pool-size', '3'
 }

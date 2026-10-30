@@ -1,6 +1,7 @@
 package com.yeodam.websocket.common.websocket.service;
 
 import lombok.extern.slf4j.Slf4j;
+
 import com.yeodam.websocket.trip.service.TripPresenceService;
 import org.springframework.context.annotation.Lazy;
 import com.yeodam.websocket.common.websocket.exception.WebSocketEventFailure;

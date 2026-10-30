@@ -1,8 +1,5 @@
 package com.yeodam.websocket.common.websocket.security;
 
-import com.yeodam.websocket.trip.service.TripPresenceService;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -17,6 +14,10 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.authorization.AuthorizationDecision;
+import com.yeodam.websocket.trip.service.TripSubscriptionService;
+import com.yeodam.websocket.trip.service.TripPresenceService;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.config.annotation.web.socket.EnableWebSocketSecurity;
 import org.springframework.security.messaging.access.intercept.MessageMatcherDelegatingAuthorizationManager;
 import org.springframework.security.messaging.web.csrf.CsrfChannelInterceptor;
@@ -76,6 +77,7 @@ public class WebSocketSecurityConfig {
     @Bean
     AuthorizationManager<Message<?>> webSocketMessageAuthorizationManager(
             MessageMatcherDelegatingAuthorizationManager.Builder messages,
+            TripSubscriptionService tripSubscriptions,
             @Lazy TripPresenceService presenceService
     ) {
         messages
@@ -89,10 +91,15 @@ public class WebSocketSecurityConfig {
                         "/user/queue/ai-tasks",
                         "/user/queue/command-results"
                 ).authenticated()
+                .simpSubscribeDestMatchers("/topic/trips/*/events")
+                .access((authentication, context) -> new AuthorizationDecision(
+                        tripSubscriptions.authorize(context.getMessage(), authentication.get())
+                ))
                 .simpSubscribeDestMatchers("/topic/trips/*/presence")
-                .access((authentication, message) -> new AuthorizationDecision(
+                .access((authentication, context) -> new AuthorizationDecision(
                         authentication.get().isAuthenticated()
-                                && presenceService.authorizeSubscription(authentication.get(), message.getMessage())))
+                                && presenceService.authorizeSubscription(authentication.get(), context.getMessage())
+                ))
                 .simpTypeMatchers(SimpMessageType.SUBSCRIBE).denyAll()
                 .simpDestMatchers(
                         "/app/trips/*/presence/join",

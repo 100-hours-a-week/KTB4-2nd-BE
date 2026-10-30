@@ -12,6 +12,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.messaging.simp.config.ChannelRegistration;
+import com.yeodam.websocket.trip.service.TripSubscriptionService;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -29,16 +31,19 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final WebSocketProperties properties;
     private final TaskScheduler messageBrokerTaskScheduler;
     private final WebSocketSessionManager sessionManager;
+    private final TripSubscriptionService tripSubscriptions;
 
     public WebSocketConfig(
             WebSocketProperties properties,
             @Lazy @Qualifier("messageBrokerTaskScheduler")
             TaskScheduler messageBrokerTaskScheduler,
-            WebSocketSessionManager sessionManager
+            WebSocketSessionManager sessionManager,
+            TripSubscriptionService tripSubscriptions
     ) {
         this.properties = properties;
         this.messageBrokerTaskScheduler = messageBrokerTaskScheduler;
         this.sessionManager = sessionManager;
+        this.tripSubscriptions = tripSubscriptions;
     }
 
     @Override
@@ -81,6 +86,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.enableSimpleBroker("/queue/", "/topic/")
                 .setTaskScheduler(messageBrokerTaskScheduler)
                 .setHeartbeatValue(new long[]{10_000, 10_000});
+    }
+
+    @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.interceptors(tripSubscriptions);
     }
 
     @Override

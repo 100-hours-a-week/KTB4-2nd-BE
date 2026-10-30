@@ -51,12 +51,19 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
 
     @LocalServerPort private int port;
     @MockitoBean private BackendAuthenticationClient authenticationClient;
+    @MockitoBean private com.yeodam.websocket.trip.client.BackendTripEditClient tripClient;
     @Autowired private StringRedisTemplate redis;
     @Autowired @Qualifier("webSocketEventListenerContainer")
     private RedisMessageListenerContainer listener;
     @Autowired private SimpUserRegistry users;
     @Autowired private RedisSubscriptionState subscriptionState;
     private final ObjectMapper mapper = new ObjectMapper();
+
+    @org.junit.jupiter.api.BeforeEach
+    void allowTripAccess() {
+        org.mockito.Mockito.when(tripClient.checkAccess(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> Instant.now().plusSeconds(30));
+    }
 
     @ParameterizedTest
     @CsvSource({"AI_TASK,/user/queue/ai-tasks", "COMMAND_RESULT,/user/queue/command-results"})
@@ -92,6 +99,28 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
             assertThat(mapper.readTree(body)).isEqualTo(mapper.readTree(raw).path("payload"));
             assertThat(other.messages.poll(400, TimeUnit.MILLISECONDS)).isNull();
         }
+    }
+
+    @Test
+    void 개인_권한_변경을_재검증하고_해당_여행의_관련_연결을_모두_종료한다() throws Exception {
+        await().atMost(Duration.ofSeconds(5)).until(listener::isListening);
+        try (Connection first = connect(42L, "revoked-first", "/topic/trips/14/events");
+             Connection second = connect(42L, "revoked-second", "/topic/trips/14/events");
+             Connection other = connect(99L, "retained-reader", "/topic/trips/14/events")) {
+            org.mockito.Mockito.doThrow(new org.springframework.security.access.AccessDeniedException("revoked"))
+                    .when(tripClient).checkAccess(org.mockito.ArgumentMatchers.eq(14L), org.mockito.ArgumentMatchers.eq(42L), org.mockito.ArgumentMatchers.any());
+            redis.convertAndSend(CHANNEL, envelope("COMMAND_RESULT", "USER", 42,
+                    "{\"message\":\"TRIP_PERMISSION_CHANGED\",\"data\":{\"tripId\":14}}"));
+            assertThat(first.closed.get(5, TimeUnit.SECONDS)).isEqualTo(1008);
+            assertThat(second.closed.get(5, TimeUnit.SECONDS)).isEqualTo(1008);
+            assertThat(other.messages.poll(200, TimeUnit.MILLISECONDS)).isNull();
+            assertThat(other.closed.isDone()).isFalse();
+        }
+    }
+
+    private String envelope(String type, String targetType, long targetId, String payload) {
+        return "{\"eventId\":\"%s\",\"type\":\"%s\",\"schemaVersion\":1,\"occurredAt\":\"%s\",\"target\":{\"type\":\"%s\",\"id\":%d},\"payload\":%s}"
+                .formatted(UUID.randomUUID(), type, Instant.now(), targetType, targetId, payload);
     }
 
     @Test

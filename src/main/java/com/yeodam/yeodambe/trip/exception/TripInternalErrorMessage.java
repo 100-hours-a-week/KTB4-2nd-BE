@@ -39,6 +39,7 @@ public enum TripInternalErrorMessage {
     HEIC_COLOR_PROFILE_SIZE_INVALID("HEIC 색상 프로필이 허용 크기를 벗어났습니다."),
     HEIF_NATIVE_CALL_FAILED("libheif 네이티브 호출에 실패했습니다."),
     HEIF_NATIVE_ALLOCATION_FAILED("libheif 네이티브 메모리를 할당할 수 없습니다."),
+    EDIT_COMMAND_HASH_UNAVAILABLE("SHA-256을 사용할 수 없습니다."),
     EDIT_COMMAND_RESULT_INVALID("명령과 일치하는 확정 결과가 필요합니다."),
     EDIT_COMMAND_RESULT_WRITE_FAILED("공유 편집 결과를 기록할 수 없습니다."),
     EDIT_COMMAND_RESULT_BODY_MISSING("공유 편집 결과 본문이 없습니다."),

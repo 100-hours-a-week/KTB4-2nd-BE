@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import org.springframework.util.Assert;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -86,8 +87,8 @@ public class AdditionalAttachmentUploadOutbox {
     private LocalDateTime nextAttemptAt;
 
     public void enableCdc(Long tripId, String topic) {
-        Assert.notNull(tripId, "Outbox tripId is required");
-        Assert.hasText(topic, "Outbox topic is required");
+        Assert.notNull(tripId, EventInternalErrorMessage.OUTBOX_TRIP_ID_MISSING.message());
+        Assert.hasText(topic, EventInternalErrorMessage.OUTBOX_TOPIC_MISSING.message());
         this.tripId = tripId;
         this.topic = topic;
         this.cdcManaged = true;

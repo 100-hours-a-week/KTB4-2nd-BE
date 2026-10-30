@@ -3,10 +3,10 @@ package com.yeodam.yeodambe.common.exception;
 public class WithdrawalFailedException extends RuntimeException {
 
     public WithdrawalFailedException() {
-        super("회원 탈퇴 처리에 실패했습니다.");
+        super(CommonExceptionMessage.WITHDRAWAL_FAILED.message());
     }
 
     public WithdrawalFailedException(Throwable cause) {
-        super("회원 탈퇴 처리에 실패했습니다.", cause);
+        super(CommonExceptionMessage.WITHDRAWAL_FAILED.message(), cause);
     }
 }

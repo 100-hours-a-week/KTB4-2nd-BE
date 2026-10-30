@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.integration.client;
 
+import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.integration.service.OutboxReceiptService;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 
@@ -36,17 +37,17 @@ public class OutboxReceiptConsumer {
             return;
         }
         Assert.isTrue(record.timestampType() == TimestampType.LOG_APPEND_TIME
-                && record.timestamp() >= 0, "CDC request topic must use LogAppendTime");
+                && record.timestamp() >= 0, IntegrationInternalErrorMessage.CDC_TIMESTAMP_TYPE_INVALID.message());
         String id = header(record.headers().lastHeader("id"));
         receipts.observe(header(source), id, new OutboxReceipt(
                 record.topic(), record.key(), record.value(), Instant.ofEpochMilli(record.timestamp())));
     }
 
     private String header(Header header) {
-        Assert.notNull(header, "CDC Outbox header is missing");
-        Assert.notNull(header.value(), "CDC Outbox header value is missing");
+        Assert.notNull(header, IntegrationInternalErrorMessage.CDC_HEADER_MISSING.message());
+        Assert.notNull(header.value(), IntegrationInternalErrorMessage.CDC_HEADER_VALUE_MISSING.message());
         String value = new String(header.value(), StandardCharsets.UTF_8);
-        Assert.hasText(value, "CDC Outbox header is empty");
+        Assert.hasText(value, IntegrationInternalErrorMessage.CDC_HEADER_EMPTY.message());
         return value;
     }
 }

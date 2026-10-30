@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.migrationprobe.service;
 
+import com.yeodam.yeodambe.migrationprobe.exception.MigrationProbeInternalErrorMessage;
 import com.yeodam.yeodambe.migrationprobe.exception.MigrationProbeHashConflictException;
 import com.yeodam.yeodambe.migrationprobe.exception.MigrationProbeStoreUnavailableException;
 import com.yeodam.yeodambe.migrationprobe.repository.MigrationProbeRepository;
@@ -97,7 +98,7 @@ public class MigrationProbeService {
     private String findExistingHash(String runId, String requestId) {
         try {
             return repository.findPayloadHash(runId, requestId)
-                    .orElseThrow(() -> new IllegalStateException("시험 요청의 저장 결과를 확인할 수 없습니다."));
+                    .orElseThrow(() -> new IllegalStateException(MigrationProbeInternalErrorMessage.STORED_RESULT_MISSING.message()));
         } catch (RuntimeException exception) {
             throw new MigrationProbeStoreUnavailableException("duplicate_read", exception);
         }
@@ -122,7 +123,7 @@ public class MigrationProbeService {
     private static class DuplicateInsertException extends RuntimeException {
 
         private DuplicateInsertException() {
-            super("시험 요청의 키가 이미 존재합니다.");
+            super(MigrationProbeInternalErrorMessage.DUPLICATE_KEY.message());
         }
     }
 }

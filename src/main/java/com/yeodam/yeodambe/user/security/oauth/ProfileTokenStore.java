@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.security.oauth;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import com.yeodam.yeodambe.user.service.response.KakaoUserIdentity;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,7 +29,7 @@ public class ProfileTokenStore {
 
     public void save(String token, KakaoUserIdentity identity, String issuanceOwner) {
         if (isBlank(token)) {
-            throw new IllegalArgumentException("OAuth 가입 토큰 입력이 유효하지 않습니다.");
+            throw new IllegalArgumentException(UserInternalErrorMessage.ONBOARDING_TOKEN_INPUT_INVALID.message());
         }
         operations.save(key(token), identity, null, Duration.ofMinutes(10), issuanceOwner);
     }

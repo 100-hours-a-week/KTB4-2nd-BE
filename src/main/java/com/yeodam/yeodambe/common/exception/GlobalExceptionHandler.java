@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.common.exception;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
@@ -174,7 +175,7 @@ public class GlobalExceptionHandler {
             DataAccessResourceFailureException e
     ) {
         logFailure(log.atWarn(), ErrorMessage.AUTH_STORE_UNAVAILABLE,
-                "인증 저장소에 연결할 수 없습니다.", e);
+                UserInternalErrorMessage.AUTH_STORE_UNAVAILABLE.message(), e);
         return new ApiResponse<>(ErrorMessage.AUTH_STORE_UNAVAILABLE, null);
     }
 
@@ -328,7 +329,7 @@ public class GlobalExceptionHandler {
             OAuthStateCreateFailedException e
     ) {
         logFailure(log.atError(), ErrorMessage.OAUTH_STATE_CREATE_FAILED,
-                "OAuth state 생성에 실패했습니다.", e);
+                CommonExceptionMessage.OAUTH_STATE_CREATE_FAILED.message(), e);
         return new ApiResponse<>(ErrorMessage.OAUTH_STATE_CREATE_FAILED, null);
     }
 
@@ -375,7 +376,7 @@ public class GlobalExceptionHandler {
             LoginTicketIssueFailedException e
     ) {
         logFailure(log.atError(), ErrorMessage.LOGIN_TICKET_ISSUE_FAILED,
-                "로그인 티켓 발급에 실패했습니다.", e);
+                CommonExceptionMessage.LOGIN_TICKET_ISSUE_FAILED.message(), e);
         return new ApiResponse<>(ErrorMessage.LOGIN_TICKET_ISSUE_FAILED, null);
     }
 
@@ -417,7 +418,7 @@ public class GlobalExceptionHandler {
             WithdrawalFailedException exception
     ) {
         logFailure(log.atError(), ErrorMessage.WITHDRAWAL_FAILED,
-                "회원 탈퇴 처리에 실패했습니다.", exception);
+                CommonExceptionMessage.WITHDRAWAL_FAILED.message(), exception);
         return new ApiResponse<>(ErrorMessage.WITHDRAWAL_FAILED, null);
     }
 

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.security.session;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -48,9 +49,9 @@ public class LoginSessionStore {
     }
 
     public void save(String sid, Long userId, String refreshTokenHash) {
-        Objects.requireNonNull(userId, "userId");
+        Objects.requireNonNull(userId, UserInternalErrorMessage.LOGIN_SESSION_USER_ID_MISSING.message());
         if (isBlank(sid) || isBlank(refreshTokenHash) || userId <= 0) {
-            throw new IllegalArgumentException("로그인 세션 입력이 유효하지 않습니다.");
+            throw new IllegalArgumentException(UserInternalErrorMessage.LOGIN_SESSION_INPUT_INVALID.message());
         }
 
         executeWithRetry(operations -> saveSession(operations, sid, userId, refreshTokenHash));
@@ -116,7 +117,7 @@ public class LoginSessionStore {
 
             if (result == null) {
                 throw new DataAccessResourceFailureException(
-                        "토큰 교체 결과를 확인할 수 없습니다."
+                        UserInternalErrorMessage.TOKEN_ROTATION_RESULT_MISSING.message()
                 );
             }
 
@@ -126,7 +127,7 @@ public class LoginSessionStore {
 
             if (result != 1L) {
                 throw new DataAccessResourceFailureException(
-                        "토큰 교체 결과가 유효하지 않습니다."
+                        UserInternalErrorMessage.TOKEN_ROTATION_RESULT_INVALID.message()
                 );
             }
 
@@ -170,7 +171,7 @@ public class LoginSessionStore {
 
         if (Boolean.TRUE.equals(operations.hasKey(sessionKey))
                 || Boolean.TRUE.equals(operations.hasKey(refreshKey))) {
-            throw new DataIntegrityViolationException("로그인 세션 식별자가 중복되었습니다.");
+            throw new DataIntegrityViolationException(UserInternalErrorMessage.LOGIN_SESSION_DUPLICATE.message());
         }
 
         long now = currentRedisTimeMillis();
@@ -299,20 +300,20 @@ public class LoginSessionStore {
             return Optional.empty();
         }
         if (userId == null || refreshTokenHash == null) {
-            throw new DataAccessResourceFailureException("로그인 세션 데이터가 불완전합니다.");
+            throw new DataAccessResourceFailureException(UserInternalErrorMessage.LOGIN_SESSION_DATA_INCOMPLETE.message());
         }
 
         try {
             return Optional.of(new LoginSession(Long.valueOf(userId), refreshTokenHash));
         } catch (NumberFormatException exception) {
-            throw new DataAccessResourceFailureException("로그인 세션 데이터가 유효하지 않습니다.", exception);
+            throw new DataAccessResourceFailureException(UserInternalErrorMessage.LOGIN_SESSION_DATA_INVALID.message(), exception);
         }
     }
 
     private void validateUserIndex(RedisOperations<String, String> operations, String userSessionsKey) {
         DataType type = operations.type(userSessionsKey);
         if (type != DataType.NONE && type != DataType.ZSET) {
-            throw new DataAccessResourceFailureException("로그인 세션 인덱스가 유효하지 않습니다.");
+            throw new DataAccessResourceFailureException(UserInternalErrorMessage.LOGIN_SESSION_INDEX_INVALID.message());
         }
     }
 
@@ -320,7 +321,7 @@ public class LoginSessionStore {
         Long now = redisTemplate.execute((RedisCallback<Long>) connection ->
                 connection.serverCommands().time(TimeUnit.MILLISECONDS));
         if (now == null) {
-            throw new DataAccessResourceFailureException("인증 저장소의 시간을 조회할 수 없습니다.");
+            throw new DataAccessResourceFailureException(UserInternalErrorMessage.AUTH_STORE_TIME_UNAVAILABLE.message());
         }
         return now;
     }
@@ -382,7 +383,7 @@ public class LoginSessionStore {
                             stringOperations.unwatch();
                         }
                     }
-                    throw new DataAccessResourceFailureException("로그인 세션 변경 충돌이 반복되었습니다.");
+                    throw new DataAccessResourceFailureException(UserInternalErrorMessage.LOGIN_SESSION_UPDATE_CONFLICT.message());
                 }
             });
         } catch (DataIntegrityViolationException exception) {
@@ -393,7 +394,7 @@ public class LoginSessionStore {
     }
 
     private DataAccessResourceFailureException storageUnavailable(DataAccessException exception) {
-        return new DataAccessResourceFailureException("인증 저장소에 연결할 수 없습니다.", exception);
+        return new DataAccessResourceFailureException(UserInternalErrorMessage.AUTH_STORE_UNAVAILABLE.message(), exception);
     }
 
     private String sessionKey(String sid) {

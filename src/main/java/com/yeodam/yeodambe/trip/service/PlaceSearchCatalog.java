@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.PlaceQueryProviderUnavailableException;
 import com.yeodam.yeodambe.trip.client.PlaceClient;
 import lombok.extern.slf4j.Slf4j;
@@ -55,7 +56,7 @@ public class PlaceSearchCatalog {
     public List<Entry> entries() {
         List<Entry> current = entries;
         if (current == null) {
-            throw new PlaceQueryProviderUnavailableException("로컬 여행지 검색 데이터가 준비되지 않았습니다.");
+            throw new PlaceQueryProviderUnavailableException(TripInternalErrorMessage.PLACE_CATALOG_NOT_READY.message());
         }
         return current;
     }
@@ -84,7 +85,7 @@ public class PlaceSearchCatalog {
         collected.forEach(entry -> collectedCodes.add(entry.regionCode()));
         for (RegionCatalog.Region region : regions.all()) {
             if (!collectedCodes.contains(region.code())) {
-                throw new PlaceQueryProviderUnavailableException("여행지 수집 결과에 기준 지역이 누락되었습니다.");
+                throw new PlaceQueryProviderUnavailableException(TripInternalErrorMessage.PLACE_COLLECTION_REGION_MISSING.message());
             }
             collected.add(new Entry(region.name(), region.code()));
         }
@@ -95,7 +96,7 @@ public class PlaceSearchCatalog {
         PlaceClient.ProviderPage firstPage = client.search(query, 1);
         int totalCount = firstPage.totalCount();
         if (totalCount < 0) {
-            throw new PlaceQueryProviderUnavailableException("여행지 수집 총건수가 올바르지 않습니다.");
+            throw new PlaceQueryProviderUnavailableException(TripInternalErrorMessage.PLACE_COLLECTION_COUNT_INVALID.message());
         }
         int totalPages = (int) Math.max(1, (totalCount + (long) PlaceClient.PAGE_SIZE - 1)
                 / PlaceClient.PAGE_SIZE);
@@ -105,7 +106,7 @@ public class PlaceSearchCatalog {
                     totalCount - (pageNo - 1) * PlaceClient.PAGE_SIZE);
             if (page.totalCount() != totalCount || page.rows().size() != expectedRows) {
                 throw new PlaceQueryProviderUnavailableException(
-                        "여행지 수집 페이지가 불완전합니다. query=" + query + ", pageNo=" + pageNo);
+                        TripInternalErrorMessage.PLACE_COLLECTION_PAGE_INCOMPLETE.message().formatted(query, pageNo));
             }
             for (PlaceClient.ProviderRegion row : page.rows()) {
                 collect(row, collected);
@@ -141,23 +142,23 @@ public class PlaceSearchCatalog {
     private void validate(Snapshot snapshot) {
         if (snapshot == null || snapshot.schemaVersion() != 1 || snapshot.updatedAt() == null
                 || snapshot.entries() == null || snapshot.entries().isEmpty()) {
-            throw new IllegalStateException("여행지 검색 파일 형식이 올바르지 않습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.PLACE_CATALOG_FORMAT_INVALID.message());
         }
         Instant.parse(snapshot.updatedAt());
         Set<String> codes = new HashSet<>();
         for (Entry entry : snapshot.entries()) {
             if (entry == null || entry.searchName() == null || entry.searchName().isBlank()
                     || entry.regionCode() == null) {
-                throw new IllegalStateException("여행지 검색 항목이 올바르지 않습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.PLACE_CATALOG_ENTRY_INVALID.message());
             }
             RegionCatalog.Region region = regions.getRequired(entry.regionCode());
             if (!region.name().equals(selectedName(entry.searchName()))) {
-                throw new IllegalStateException("검색용 지역명과 선택 지역 코드가 일치하지 않습니다.");
+                throw new IllegalStateException(TripInternalErrorMessage.PLACE_CATALOG_REGION_MISMATCH.message());
             }
             codes.add(entry.regionCode());
         }
         if (!regions.all().stream().allMatch(region -> codes.contains(region.code()))) {
-            throw new IllegalStateException("여행지 검색 파일에 기준 지역이 누락되었습니다.");
+            throw new IllegalStateException(TripInternalErrorMessage.PLACE_CATALOG_REGION_MISSING.message());
         }
     }
 
@@ -169,7 +170,7 @@ public class PlaceSearchCatalog {
             Files.writeString(temporary, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot));
             Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
-            throw new UncheckedIOException("여행지 검색 파일 저장에 실패했습니다.", e);
+            throw new UncheckedIOException(TripInternalErrorMessage.PLACE_CATALOG_WRITE_FAILED.message(), e);
         } finally {
             if (temporary != null) {
                 try {

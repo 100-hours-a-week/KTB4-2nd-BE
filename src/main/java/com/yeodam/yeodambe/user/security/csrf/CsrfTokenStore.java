@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.security.csrf;
 
+import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.common.exception.CsrfStoreUnavailableException;
 import com.yeodam.yeodambe.user.security.TokenHasher;
 import org.springframework.beans.factory.annotation.Value;
@@ -99,7 +100,7 @@ public class CsrfTokenStore {
 
     private static void requireValue(String value) {
         if (isBlank(value)) {
-            throw new IllegalArgumentException("CSRF 저장소 입력이 유효하지 않습니다.");
+            throw new IllegalArgumentException(UserInternalErrorMessage.CSRF_STORE_INPUT_INVALID.message());
         }
     }
 }

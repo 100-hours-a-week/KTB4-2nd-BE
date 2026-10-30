@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+
 import java.io.File;
 import java.lang.foreign.Arena;
 import java.lang.foreign.SymbolLookup;
@@ -67,9 +69,9 @@ final class NativeImageLibraries {
                 }
             }
         }
-        throw new IllegalStateException("이미지 변환 라이브러리를 찾거나 로드할 수 없습니다: " + library
-                + ". 현재 JVM의 OS·아키텍처에 맞는 libvips·libheif 설치와 종속 라이브러리를 확인하세요."
-                + " 파일명=" + names + ", 탐색 디렉터리=" + directories, lastFailure);
+        throw new IllegalStateException(
+                TripInternalErrorMessage.IMAGE_LIBRARY_UNAVAILABLE.message().formatted(library, names, directories),
+                lastFailure);
     }
 
     private static List<String> names(String library) {

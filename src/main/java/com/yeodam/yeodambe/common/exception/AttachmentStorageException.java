@@ -7,7 +7,7 @@ public class AttachmentStorageException extends RuntimeException {
     private final String objectKey;
 
     public AttachmentStorageException(String objectKey, Throwable cause) {
-        super("사진 S3 저장에 실패했습니다.", cause);
+        super(CommonExceptionMessage.ATTACHMENT_STORAGE_FAILED.message(), cause);
         this.objectKey = objectKey;
     }
 }

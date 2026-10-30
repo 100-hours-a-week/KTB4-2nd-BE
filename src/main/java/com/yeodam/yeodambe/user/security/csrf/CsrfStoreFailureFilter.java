@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.security.csrf;
 
+import com.yeodam.yeodambe.common.exception.CommonExceptionMessage;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.common.exception.CsrfStoreUnavailableException;
@@ -33,7 +34,7 @@ public class CsrfStoreFailureFilter extends OncePerRequestFilter {
             log.atWarn().addKeyValue("event", "auth_csrf_store")
                     .addKeyValue("result", "failure")
                     .addKeyValue("error_code", "AUTH_STORE_UNAVAILABLE")
-                    .log("CSRF 저장소를 사용할 수 없습니다.");
+                    .log(CommonExceptionMessage.CSRF_STORE_UNAVAILABLE.message());
             response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());

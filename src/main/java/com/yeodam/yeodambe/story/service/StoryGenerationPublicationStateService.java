@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
 
@@ -35,7 +36,7 @@ public class StoryGenerationPublicationStateService {
         var job = jobRepository.findByIdForUpdate(candidate.getGenerationId()).orElseThrow();
         var outbox = outboxRepository.findByIdForUpdate(outboxId).orElseThrow();
         entityManager.refresh(outbox);
-        Assert.isTrue(outbox.isCdcManaged(), "Expected a CDC-managed Outbox");
+        Assert.isTrue(outbox.isCdcManaged(), EventInternalErrorMessage.OUTBOX_NOT_CDC_MANAGED.message());
         receipt.verify(outbox.getTopic(), outbox.getTripId(), outbox.getPayload());
         var publishedAt = jdbc.queryForObject("SELECT FROM_UNIXTIME(?)", LocalDateTime.class,
                 BigDecimal.valueOf(receipt.publishedAt().toEpochMilli(), 3));

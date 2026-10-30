@@ -1,5 +1,8 @@
 package com.yeodam.websocket.common.websocket.security;
 
+import com.yeodam.websocket.trip.service.TripPresenceService;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -72,7 +75,8 @@ public class WebSocketSecurityConfig {
 
     @Bean
     AuthorizationManager<Message<?>> webSocketMessageAuthorizationManager(
-            MessageMatcherDelegatingAuthorizationManager.Builder messages
+            MessageMatcherDelegatingAuthorizationManager.Builder messages,
+            @Lazy TripPresenceService presenceService
     ) {
         messages
                 .simpTypeMatchers(
@@ -84,6 +88,16 @@ public class WebSocketSecurityConfig {
                 .simpSubscribeDestMatchers(
                         "/user/queue/ai-tasks",
                         "/user/queue/command-results"
+                ).authenticated()
+                .simpSubscribeDestMatchers("/topic/trips/*/presence")
+                .access((authentication, message) -> new AuthorizationDecision(
+                        authentication.get().isAuthenticated()
+                                && presenceService.authorizeSubscription(authentication.get(), message.getMessage())))
+                .simpTypeMatchers(SimpMessageType.SUBSCRIBE).denyAll()
+                .simpDestMatchers(
+                        "/app/trips/*/presence/join",
+                        "/app/trips/*/presence/heartbeat",
+                        "/app/trips/*/presence/leave"
                 ).authenticated()
                 .anyMessage().denyAll();
 

@@ -1,5 +1,12 @@
 package com.yeodam.websocket.common.websocket.config;
 
+import com.yeodam.websocket.trip.exception.TripPresenceException;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.simp.stomp.StompCommand;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.web.socket.messaging.StompSubProtocolErrorHandler;
+import java.nio.charset.StandardCharsets;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
@@ -36,6 +43,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.setErrorHandler(presenceErrorHandler());
         registry.addEndpoint("/ws")
                 .addInterceptors(
                         new WebSocketSessionCredentialsHandshakeInterceptor()
@@ -43,6 +51,26 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 .setAllowedOrigins(
                         properties.allowedOrigins().toArray(String[]::new)
                 );
+    }
+
+    private StompSubProtocolErrorHandler presenceErrorHandler() {
+        return new StompSubProtocolErrorHandler() {
+            @Override
+            public Message<byte[]> handleClientMessageProcessingError(Message<byte[]> message, Throwable failure) {
+                Throwable current = failure;
+                while (current != null) {
+                    if (current instanceof TripPresenceException presenceFailure) {
+                        StompHeaderAccessor error = StompHeaderAccessor.create(StompCommand.ERROR);
+                        error.setLeaveMutable(true);
+                        String body = "{\"message\":\"" + presenceFailure.getMessage() + "\",\"data\":null}";
+                        return MessageBuilder.createMessage(body.getBytes(StandardCharsets.UTF_8),
+                                error.getMessageHeaders());
+                    }
+                    current = current.getCause();
+                }
+                return super.handleClientMessageProcessingError(message, failure);
+            }
+        };
     }
 
     @Override

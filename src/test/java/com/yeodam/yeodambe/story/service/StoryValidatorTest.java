@@ -102,25 +102,25 @@ class StoryValidatorTest {
     @Test
     void 배열_순서와_무관하게_연속된_번호와_여러_신규블록을_허용한다() {
         assertThatCode(() -> validator.validateUpdateBlocks(List.of(
-                new StoryUpdateRequest.Block(null, 10L, null, 3),
-                new StoryUpdateRequest.Block(1L, 11L, "메모", 1),
-                new StoryUpdateRequest.Block(null, 12L, null, 2))))
+                new StoryUpdateRequest.Block(null, 10L, "첫째 날", "설명", null, 3),
+                new StoryUpdateRequest.Block(1L, 11L, "첫째 날", "설명", "메모", 1),
+                new StoryUpdateRequest.Block(null, 12L, "첫째 날", "설명", null, 2))))
                 .doesNotThrowAnyException();
     }
 
     @Test
     void 같은_기존블록을_두번_요청하면_입력오류다() {
         assertThatThrownBy(() -> validator.validateUpdateBlocks(List.of(
-                new StoryUpdateRequest.Block(1L, 10L, null, 1),
-                new StoryUpdateRequest.Block(1L, 11L, null, 2))))
+                new StoryUpdateRequest.Block(1L, 10L, "첫째 날", "설명", null, 1),
+                new StoryUpdateRequest.Block(1L, 11L, "첫째 날", "설명", null, 2))))
                 .isInstanceOf(InvalidStoryUpdateException.class);
     }
 
     @Test
     void 다른_블록이어도_같은_사진을_사용하면_재사용충돌이다() {
         assertThatThrownBy(() -> validator.validateUpdateBlocks(List.of(
-                new StoryUpdateRequest.Block(1L, 10L, null, 1),
-                new StoryUpdateRequest.Block(null, 10L, null, 2))))
+                new StoryUpdateRequest.Block(1L, 10L, "첫째 날", "설명", null, 1),
+                new StoryUpdateRequest.Block(null, 10L, "첫째 날", "설명", null, 2))))
                 .isInstanceOf(AttachmentCannotBeReusedException.class);
     }
 
@@ -128,8 +128,8 @@ class StoryValidatorTest {
     void 순서의_중복과_범위초과와_누락을_거절한다() {
         for (int second : List.of(-1, 0, 1, 3)) {
             assertThatThrownBy(() -> validator.validateUpdateBlocks(List.of(
-                    new StoryUpdateRequest.Block(1L, 10L, null, 1),
-                    new StoryUpdateRequest.Block(null, 11L, null, second))))
+                    new StoryUpdateRequest.Block(1L, 10L, "첫째 날", "설명", null, 1),
+                    new StoryUpdateRequest.Block(null, 11L, "첫째 날", "설명", null, second))))
                     .isInstanceOf(InvalidStoryUpdateException.class);
         }
     }

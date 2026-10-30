@@ -38,12 +38,28 @@ public record StoryUpdateRequest(
             @Positive
             Long tripAttachmentId,
 
+            @NotNull
+            String dayLabel,
+
+            @NotNull
+            String detailSummary,
+
             String memo,
 
             @NotNull
             @Positive
             Integer orderNumber
     ) {
+        @AssertTrue
+        public boolean isBlockTextValid() {
+            return TextValidation.hasVisibleContent(dayLabel)
+                    && dayLabel.codePointCount(0, dayLabel.length()) <= 40
+                    && TextValidation.hasVisibleContent(detailSummary)
+                    && detailSummary.codePointCount(
+                            0, detailSummary.length()
+                    ) <= 40;
+        }
+
         @AssertTrue
         public boolean isMemoLengthValid() {
             return memo == null

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.NullSource;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Collections;
@@ -38,7 +39,7 @@ class StoryUpdateRequestTest {
     void 요약20자와_메모125자는_코드포인트로_검사하고_null메모를_허용한다() {
         for (String memo : java.util.Arrays.asList(null, "", "😀".repeat(125))) {
             var request = new StoryUpdateRequest(Story.Mood.CALM, "😀".repeat(20),
-                    List.of(new StoryUpdateRequest.Block(null, 1L, memo, 1)));
+                    List.of(new StoryUpdateRequest.Block(null, 1L, "첫째 날", "설명", memo, 1)));
             assertThat(validator.validate(request)).isEmpty();
         }
     }
@@ -55,7 +56,7 @@ class StoryUpdateRequestTest {
         assertThat(validator.validate(new StoryUpdateRequest(Story.Mood.CALM, "😀".repeat(21), blocks(1))))
                 .isNotEmpty();
         assertThat(validator.validate(new StoryUpdateRequest(Story.Mood.CALM, "요약",
-                List.of(new StoryUpdateRequest.Block(null, 1L, "😀".repeat(126), 1)))))
+                List.of(new StoryUpdateRequest.Block(null, 1L, "첫째 날", "설명", "😀".repeat(126), 1)))))
                 .isNotEmpty();
     }
 
@@ -76,14 +77,14 @@ class StoryUpdateRequestTest {
     @Test
     void 중첩_블록의_필수값과_양수_조건을_검사한다() {
         List<StoryUpdateRequest.Block> invalid = List.of(
-                new StoryUpdateRequest.Block(0L, 1L, null, 1),
-                new StoryUpdateRequest.Block(-1L, 1L, null, 1),
-                new StoryUpdateRequest.Block(null, null, null, 1),
-                new StoryUpdateRequest.Block(null, 0L, null, 1),
-                new StoryUpdateRequest.Block(null, -1L, null, 1),
-                new StoryUpdateRequest.Block(null, 1L, null, null),
-                new StoryUpdateRequest.Block(null, 1L, null, 0),
-                new StoryUpdateRequest.Block(null, 1L, null, -1));
+                new StoryUpdateRequest.Block(0L, 1L, "첫째 날", "설명", null, 1),
+                new StoryUpdateRequest.Block(-1L, 1L, "첫째 날", "설명", null, 1),
+                new StoryUpdateRequest.Block(null, null, "첫째 날", "설명", null, 1),
+                new StoryUpdateRequest.Block(null, 0L, "첫째 날", "설명", null, 1),
+                new StoryUpdateRequest.Block(null, -1L, "첫째 날", "설명", null, 1),
+                new StoryUpdateRequest.Block(null, 1L, "첫째 날", "설명", null, null),
+                new StoryUpdateRequest.Block(null, 1L, "첫째 날", "설명", null, 0),
+                new StoryUpdateRequest.Block(null, 1L, "첫째 날", "설명", null, -1));
         for (var block : invalid) {
             assertThat(validator.validate(new StoryUpdateRequest(Story.Mood.CALM, "요약", List.of(block))))
                     .isNotEmpty();
@@ -95,7 +96,7 @@ class StoryUpdateRequestTest {
         var mapper = new ObjectMapper();
         var request = mapper.readValue("""
                 {"tone":"CALM","storySummary":"요약",
-                 "blocks":[{"tripAttachmentId":10,"orderNumber":1}]}
+                 "blocks":[{"tripAttachmentId":10,"dayLabel":"첫째 날","detailSummary":"설명","orderNumber":1}]}
                 """, StoryUpdateRequest.class);
         assertThat(request.tone()).isEqualTo(Story.Mood.CALM);
         assertThat(request.blocks().getFirst().storyBlockId()).isNull();
@@ -103,12 +104,57 @@ class StoryUpdateRequestTest {
         assertThat(validator.validate(request)).isEmpty();
         assertThatThrownBy(() -> mapper.readValue("""
                 {"tone":"UNKNOWN","storySummary":"요약",
-                 "blocks":[{"tripAttachmentId":10,"orderNumber":1}]}
+                 "blocks":[{"tripAttachmentId":10,"dayLabel":"첫째 날","detailSummary":"설명","orderNumber":1}]}
                 """, StoryUpdateRequest.class)).isInstanceOf(tools.jackson.core.JacksonException.class);
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", " ", "\u200B", "\u3164", "\u00A0"})
+    void 두_필수_문구의_null과_빈값과_보이지않는_내용을_거절한다(String text) {
+        var invalid = List.of(
+                new StoryUpdateRequest.Block(null, 1L, text, "설명", null, 1),
+                new StoryUpdateRequest.Block(null, 1L, "첫째 날", text, null, 1));
+        for (var block : invalid) {
+            assertThat(validator.validate(new StoryUpdateRequest(Story.Mood.CALM, "요약", List.of(block))))
+                    .isNotEmpty();
+        }
+    }
+
+    @Test
+    void 두_문구는_40코드포인트까지_허용하고_원문을_유지한다() {
+        String text = "😀".repeat(40);
+        var block = new StoryUpdateRequest.Block(null, 1L, text, text, null, 1);
+        assertThat(validator.validate(new StoryUpdateRequest(Story.Mood.CALM, "요약", List.of(block))))
+                .isEmpty();
+        assertThat(block.dayLabel()).isEqualTo(text);
+        assertThat(block.detailSummary()).isEqualTo(text);
+
+        for (var invalid : List.of(
+                new StoryUpdateRequest.Block(null, 1L, text + "가", "설명", null, 1),
+                new StoryUpdateRequest.Block(null, 1L, "첫째 날", text + "가", null, 1))) {
+            assertThat(validator.validate(new StoryUpdateRequest(Story.Mood.CALM, "요약", List.of(invalid))))
+                    .isNotEmpty();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"dayLabel", "detailSummary"})
+    void JSON에서_문구를_생략하면_필수값_검증에_실패한다(String field) {
+        var mapper = new ObjectMapper();
+        String fields = field.equals("dayLabel")
+                ? "\"detailSummary\":\"설명\"" : "\"dayLabel\":\"첫째 날\"";
+        var request = mapper.readValue("""
+                {"tone":"CALM","storySummary":"요약",
+                 "blocks":[{"tripAttachmentId":10,"orderNumber":1,%s}]}
+                """.formatted(fields), StoryUpdateRequest.class);
+        assertThat(validator.validate(request))
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .contains("blocks[0]." + field);
     }
 
     private List<StoryUpdateRequest.Block> blocks(int count) {
         return IntStream.rangeClosed(1, count)
-                .mapToObj(i -> new StoryUpdateRequest.Block(null, (long) i, null, i)).toList();
+                .mapToObj(i -> new StoryUpdateRequest.Block(null, (long) i, "첫째 날", "설명", null, i)).toList();
     }
 }

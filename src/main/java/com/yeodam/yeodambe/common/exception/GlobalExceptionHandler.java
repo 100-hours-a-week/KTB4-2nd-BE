@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.common.exception;
 
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
@@ -77,6 +78,9 @@ public class GlobalExceptionHandler {
             target = bindingResult.getTarget();
         } else if (errors instanceof ParameterErrors parameterErrors) {
             target = parameterErrors.getArgument();
+        }
+        if (target instanceof StoryUpdateRequest) {
+            return ErrorMessage.INVALID_STORY_UPDATE;
         }
         if (target instanceof InitialAttachmentUploadCompleteRequest) {
             return ErrorMessage.INVALID_ATTACHMENT_UPLOAD;
@@ -194,6 +198,10 @@ public class GlobalExceptionHandler {
         if ("POST".equals(request.getMethod())
                 && "/trips/{tripId}/story-generations".equals(matchedPath)) {
             return new ApiResponse<>(ErrorMessage.INVALID_STORY_REQUEST, null);
+        }
+        if ("PUT".equals(request.getMethod())
+                && "/stories/{storyId}".equals(matchedPath)) {
+            return new ApiResponse<>(ErrorMessage.INVALID_STORY_UPDATE, null);
         }
         return new ApiResponse<>(ErrorMessage.INVALID_REQUEST, null);
     }

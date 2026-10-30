@@ -48,19 +48,19 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
     }
 
     @Test
-    void acceptsAuthenticatedConnectWithTheOriginalCsrfToken() {
+    void 인증된_CONNECT에_기존_CSRF_토큰을_허용한다() {
         assertThat(send(message(SimpMessageType.CONNECT, null, true, CSRF_TOKEN))).isTrue();
     }
 
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = "wrong-csrf-token")
-    void rejectsConnectWithoutTheMatchingCsrfToken(String csrfHeader) {
+    void CSRF_토큰이_일치하지_않는_CONNECT를_거절한다(String csrfHeader) {
         assertDenied(message(SimpMessageType.CONNECT, null, true, csrfHeader));
     }
 
     @Test
-    void rejectsUnauthenticatedConnectEvenWithTheCorrectCsrfToken() {
+    void 올바른_CSRF_토큰이_있어도_미인증_CONNECT를_거절한다() {
         assertDenied(message(SimpMessageType.CONNECT, null, false, CSRF_TOKEN));
     }
 
@@ -69,7 +69,7 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
             "/user/queue/ai-tasks",
             "/user/queue/command-results"
     })
-    void acceptsTheTwoPersonalSubscriptions(String destination) {
+    void 두_개인_알림_구독을_허용한다(String destination) {
         assertThat(send(message(SimpMessageType.SUBSCRIBE, destination, true, null))).isTrue();
     }
 
@@ -80,12 +80,12 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
             "/queue/ai-tasks",
             "/user/queue/*"
     })
-    void rejectsOtherSubscriptions(String destination) {
+    void 그_외_구독은_거절한다(String destination) {
         assertDenied(message(SimpMessageType.SUBSCRIBE, destination, true, null));
     }
 
     @Test
-    void rejectsAnUnauthenticatedPersonalSubscription() {
+    void 미인증_개인_구독을_거절한다() {
         assertDenied(message(SimpMessageType.SUBSCRIBE, "/user/queue/ai-tasks", false, null));
     }
 
@@ -96,7 +96,7 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
             "/topic/trips/14/events",
             "/user/queue/ai-tasks"
     })
-    void rejectsClientSendMessages(String destination) {
+    void 클라이언트의_임의_SEND를_거절한다(String destination) {
         assertDenied(message(SimpMessageType.MESSAGE, destination, true, null));
     }
 
@@ -104,7 +104,7 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
     @EnumSource(value = SimpMessageType.class, names = {
             "UNSUBSCRIBE", "DISCONNECT", "HEARTBEAT"
     })
-    void acceptsAuthenticatedConnectionManagementMessages(SimpMessageType type) {
+    void 인증된_연결_관리_메시지를_허용한다(SimpMessageType type) {
         assertThat(send(message(type, null, true, null))).isTrue();
     }
 

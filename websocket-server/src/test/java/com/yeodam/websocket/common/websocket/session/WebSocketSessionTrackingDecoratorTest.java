@@ -41,7 +41,7 @@ class WebSocketSessionTrackingDecoratorTest {
     }
 
     @Test
-    void closesConnectionWithoutStartingStompWhenRegistrationIsRefused() throws Exception {
+    void 등록이_거절되면_STOMP를_시작하지_않고_연결을_닫는다() throws Exception {
         WebSocketSession session = session("refused");
         subscriptionState.markUnavailable();
 
@@ -53,7 +53,7 @@ class WebSocketSessionTrackingDecoratorTest {
     }
 
     @Test
-    void registersBeforeDelegatingConnectionEstablished() throws Exception {
+    void 연결_수립을_위임하기_전에_등록한다() throws Exception {
         WebSocketSession session = session("first");
         doAnswer(invocation -> {
             assertThat(manager.getSessions()).containsExactly(session);
@@ -67,7 +67,7 @@ class WebSocketSessionTrackingDecoratorTest {
     }
 
     @Test
-    void removesConnectionAndRethrowsEstablishmentFailure() throws Exception {
+    void 연결_수립이_실패하면_등록을_제거하고_예외를_다시_던진다() throws Exception {
         WebSocketSession session = session("first");
         Exception failure = new Exception("test establishment failure");
         doThrow(failure).when(delegate).afterConnectionEstablished(session);
@@ -78,7 +78,7 @@ class WebSocketSessionTrackingDecoratorTest {
     }
 
     @Test
-    void closesOneConnectionWithoutRemovingAnother() throws Exception {
+    void 다른_연결을_제거하지_않고_해당_연결만_닫는다() throws Exception {
         WebSocketSession first = session("first");
         WebSocketSession second = session("second");
         decorator.afterConnectionEstablished(first);
@@ -91,7 +91,7 @@ class WebSocketSessionTrackingDecoratorTest {
     }
 
     @Test
-    void removesConnectionEvenWhenDelegateCloseFails() throws Exception {
+    void 위임한_종료가_실패해도_등록을_제거한다() throws Exception {
         WebSocketSession session = session("first");
         manager.register(session);
         Exception failure = new Exception("test close failure");
@@ -103,7 +103,7 @@ class WebSocketSessionTrackingDecoratorTest {
     }
 
     @Test
-    void returnsASnapshotUnaffectedByLaterRemoval() {
+    void 이후의_제거에_영향받지_않는_스냅샷을_반환한다() {
         WebSocketSession session = session("first");
         manager.register(session);
         var snapshot = manager.getSessions();

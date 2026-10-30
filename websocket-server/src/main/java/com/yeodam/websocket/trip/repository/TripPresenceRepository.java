@@ -1,5 +1,6 @@
 package com.yeodam.websocket.trip.repository;
 
+import com.yeodam.websocket.common.response.ErrorMessage;
 import com.yeodam.websocket.trip.config.TripPresenceProperties;
 import com.yeodam.websocket.trip.exception.TripPresenceException;
 import com.yeodam.websocket.trip.service.response.TripPresenceSnapshotResponse;
@@ -16,10 +17,14 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
 public class TripPresenceRepository {
+    private static final Set<ErrorMessage> REDIS_ERRORS = Set.of(
+            ErrorMessage.PRESENCE_NOT_JOINED, ErrorMessage.PRESENCE_LIMIT_EXCEEDED, ErrorMessage.UNAUTHORIZED);
+
     private final StringRedisTemplate redis;
     private final ObjectMapper mapper;
     private final TripPresenceProperties properties;
@@ -78,16 +83,28 @@ public class TripPresenceRepository {
                 partitionPrefix(Math.floorMod(tripId, properties.partitionCount())) + ":active-trips");
         String result = redis.execute(script, keys, operation, connectionKey,
                 encodePresence(presence), "45000", Integer.toString(properties.maxConnectionsPerTrip()),
-                UUID.randomUUID().toString(), tripId.toString());
+                UUID.randomUUID().toString(), tripId.toString(),
+                ErrorMessage.PRESENCE_NOT_JOINED.name(), ErrorMessage.PRESENCE_LIMIT_EXCEEDED.name(),
+                ErrorMessage.UNAUTHORIZED.name());
         if (result == null) {
-            throw new TripPresenceException("INTERNAL_SERVER_ERROR");
+            throw new TripPresenceException(ErrorMessage.INTERNAL_SERVER_ERROR);
         }
         JsonNode decoded = mapper.readTree(result);
         if (decoded.has("error")) {
-            throw new TripPresenceException(decoded.path("error").asString());
+            throw new TripPresenceException(resolveRedisError(decoded.path("error")));
         }
         return new PresenceChange(decoded.path("changed").asBoolean(),
                 mapper.treeToValue(decoded.path("snapshot"), TripPresenceSnapshotResponse.class));
+    }
+
+    private ErrorMessage resolveRedisError(JsonNode error) {
+        if (!error.isTextual()) {
+            return ErrorMessage.INTERNAL_SERVER_ERROR;
+        }
+        return REDIS_ERRORS.stream()
+                .filter(message -> message.name().equals(error.asString()))
+                .findFirst()
+                .orElse(ErrorMessage.INTERNAL_SERVER_ERROR);
     }
 
     private String encodePresence(ConnectionPresence presence) {

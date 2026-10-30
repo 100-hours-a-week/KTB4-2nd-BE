@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class BackendAuthenticationConfigurationTest {
 
     @Test
-    void bindsEnvironmentValuesThroughApplicationYaml() {
+    void 환경변수를_application_yaml을_통해_바인딩한다() {
         new ApplicationContextRunner()
                 .withInitializer(new ConfigDataApplicationContextInitializer())
                 .withUserConfiguration(BackendAuthenticationClientConfig.class)

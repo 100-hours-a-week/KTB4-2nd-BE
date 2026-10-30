@@ -14,7 +14,7 @@ public record WebSocketProperties(
     public WebSocketProperties {
         Assert.isTrue(
                 maxConnections > 0,
-                WebSocketConfigurationFailure.INVALID_MAX_CONNECTIONS.name()
+                WebSocketConfigurationFailure.INVALID_MAX_CONNECTIONS.message()
         );
     }
 }

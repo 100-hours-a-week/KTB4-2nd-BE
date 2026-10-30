@@ -30,7 +30,7 @@ class YeodamWebSocketApplicationTest extends RedisTestSupport {
     private ApplicationContext context;
 
     @Test
-    void healthEndpointUsesApiPrefixAndHidesDetails() throws Exception {
+    void 헬스_엔드포인트는_api_경로를_사용하고_상세정보를_숨긴다() throws Exception {
         var response = get("/api/actuator/health");
         var body = new ObjectMapper().readTree(response.body());
 
@@ -42,14 +42,14 @@ class YeodamWebSocketApplicationTest extends RedisTestSupport {
     }
 
     @Test
-    void rejectsUnauthenticatedRequestsOutsideHealth() throws Exception {
+    void 헬스_외의_미인증_요청을_거절한다() throws Exception {
         assertThat(get("/api/actuator/prometheus").statusCode()).isEqualTo(401);
         assertThat(get("/api/ws").statusCode()).isEqualTo(401);
         assertThat(get("/api/login").statusCode()).isEqualTo(401);
     }
 
     @Test
-    void startsWithoutBackendApplicationOrDatabaseAndStorageClients() {
+    void 백엔드_앱과_DB_스토리지_클라이언트_없이_시작한다() {
         assertThat(context.getBeansOfType(DataSource.class)).isEmpty();
         for (String className : new String[]{
                 "com.yeodam.yeodambe.YeodamBeApplication",

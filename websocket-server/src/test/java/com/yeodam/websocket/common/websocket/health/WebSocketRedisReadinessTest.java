@@ -86,7 +86,7 @@ class WebSocketRedisReadinessTest {
     }
 
     @Test
-    void separatesLivenessFromSubscriptionReadinessAndRecoversAfterRedisRestarts() throws Exception {
+    void 생존과_구독_준비_상태를_구분하고_Redis_재시작_후_복구한다() throws Exception {
         awaitReady();
         assertHealth("liveness", 200, "UP");
         assertHealth("readiness", 200, "UP");
@@ -115,7 +115,7 @@ class WebSocketRedisReadinessTest {
     }
 
     @Test
-    void closesConnectionsAndRejectsAdmissionWhenTheEventSubscriptionStops() throws Exception {
+    void 이벤트_구독이_중단되면_연결을_닫고_신규_접속을_거절한다() throws Exception {
         awaitReady();
         try (Connection connection = connect()) {
             listener.stop();

@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WebSocketJsonLogFormatterTest {
 
     @Test
-    void writesOneJsonLineWithSearchableFieldsAndEscapedStackTrace() {
+    void 검색_필드와_이스케이프한_스택트레이스를_JSON_한_줄로_기록한다() {
         var converter = new ThrowableProxyConverter();
         converter.start();
         var formatter = new WebSocketJsonLogFormatter(new MockEnvironment().withProperty("RELEASE", "test-sha"), converter);
@@ -43,7 +43,7 @@ class WebSocketJsonLogFormatterTest {
     }
 
     @Test
-    void defaultsReleaseAndExcludesUnapprovedContextFields() {
+    void 릴리스_기본값을_적용하고_허용하지_않은_컨텍스트_필드를_제외한다() {
         var converter = new ThrowableProxyConverter();
         converter.start();
         var event = event();

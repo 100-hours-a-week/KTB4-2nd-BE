@@ -26,7 +26,7 @@ import static org.mockito.Mockito.*;
 class WebSocketStatusLoggerTest {
 
     @Test
-    void logsCurrentCountsAsNumbersAndSubscriptionReadinessAsBoolean() {
+    void 현재_개수를_숫자로_구독_준비_상태를_불리언으로_기록한다() {
         var sessions = mock(WebSocketSessionManager.class);
         var users = mock(SimpUserRegistry.class);
         var state = new RedisSubscriptionState();
@@ -76,7 +76,7 @@ class WebSocketStatusLoggerTest {
     }
 
     @Test
-    void schedulesSnapshotsAfterSixtySecondsWithSixtySecondFixedDelay() throws Exception {
+    void 최초_60초_후부터_60초_fixedDelay로_상태를_기록한다() throws Exception {
         var scheduled = WebSocketStatusLogger.class.getMethod("logStatus").getAnnotation(Scheduled.class);
         assertThat(scheduled.scheduler()).isEqualTo("webSocketSessionTaskScheduler");
         assertThat(scheduled.initialDelay()).isEqualTo(60_000);

@@ -28,14 +28,14 @@ class RedisSubscriptionConnectionListenerTest {
     }
 
     @Test
-    void registersWithTheNativeClientAndRemovesItselfOnClose() {
+    void 네이티브_클라이언트에_리스너를_등록하고_종료_시_제거한다() {
         verify(client).addListener(listener);
         listener.close();
         verify(client).removeListener(listener);
     }
 
     @Test
-    void marksSubscriptionUnavailableWhenPubSubConnectionDisconnects() {
+    void PubSub_연결이_끊기면_구독을_사용_불가로_표시한다() {
         RedisChannelHandler<?, ?> connection = mock(
                 RedisChannelHandler.class,
                 withSettings().extraInterfaces(StatefulRedisPubSubConnection.class)
@@ -52,7 +52,7 @@ class RedisSubscriptionConnectionListenerTest {
     }
 
     @Test
-    void keepsSubscriptionReadyWhenAnOrdinaryConnectionDisconnects() {
+    void 일반_Redis_연결이_끊겨도_구독_준비_상태를_유지한다() {
         state.markSubscribed();
 
         listener.onRedisDisconnected(mock(RedisChannelHandler.class));
@@ -62,7 +62,7 @@ class RedisSubscriptionConnectionListenerTest {
     }
 
     @Test
-    void doesNotMarkReadyOnlyBecauseTcpConnectionWasRestored() {
+    void TCP_연결만_복구됐다고_구독_준비_완료로_표시하지_않는다() {
         RedisChannelHandler<?, ?> connection = mock(
                 RedisChannelHandler.class,
                 withSettings().extraInterfaces(StatefulRedisPubSubConnection.class)
@@ -78,7 +78,7 @@ class RedisSubscriptionConnectionListenerTest {
     }
 
     @Test
-    void doesNotRequestClosureBeforeSubscriptionWasReady() {
+    void 구독_준비_전에는_연결_종료를_요청하지_않는다() {
         RedisChannelHandler<?, ?> connection = mock(
                 RedisChannelHandler.class,
                 withSettings().extraInterfaces(StatefulRedisPubSubConnection.class)
@@ -91,7 +91,7 @@ class RedisSubscriptionConnectionListenerTest {
     }
 
     @Test
-    void requestsClosureAgainAfterARecoveredSubscriptionDisconnects() {
+    void 복구된_구독이_다시_끊기면_연결_종료를_다시_요청한다() {
         RedisChannelHandler<?, ?> connection = mock(
                 RedisChannelHandler.class,
                 withSettings().extraInterfaces(StatefulRedisPubSubConnection.class)

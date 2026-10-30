@@ -304,8 +304,9 @@ class TripPresenceFailureRegressionTest extends RedisTestSupport {
         headers.setSessionId("socket");
         headers.setUser(session.getPrincipal());
         Message<byte[]> command = MessageBuilder.createMessage(new byte[0], headers.getMessageHeaders());
-        service.rejectCommand(command, new com.yeodam.websocket.trip.exception.TripPresenceException("INVALID_REQUEST"));
-        assertThatThrownBy(() -> service.join("10", command)).hasMessage("UNAUTHORIZED");
+        service.rejectCommand(command, new com.yeodam.websocket.trip.exception.TripPresenceException(
+                com.yeodam.websocket.common.response.ErrorMessage.INVALID_REQUEST));
+        assertThatThrownBy(() -> service.join("10", command)).hasMessage("인증이 필요합니다.");
         assertThat(registry.connections()).isEmpty();
         verifyNoInteractions(client, repository);
     }

@@ -3,6 +3,9 @@ local connectionKey = ARGV[2]
 local supplied = cjson.decode(ARGV[3])
 local ttl = tonumber(ARGV[4])
 local limit = tonumber(ARGV[5])
+local notJoinedError = ARGV[8]
+local limitExceededError = ARGV[9]
+local unauthorizedError = ARGV[10]
 local epoch = redis.call('HGET', KEYS[3], 'epoch')
 if operation == 'leave' and not epoch then
     return '{"changed":false,"snapshot":{"tripId":' .. ARGV[7]
@@ -17,7 +20,7 @@ if operation == 'heartbeat' then
     local encoded = epoch and redis.call('HGET', KEYS[1], connectionKey)
     local current = encoded and cjson.decode(encoded)
     if not current or current.deadline <= now then
-        return cjson.encode({error = 'PRESENCE_NOT_JOINED'})
+        return cjson.encode({error = notJoinedError})
     end
     current.heartbeatDeadline = now + ttl
     current.deadline = math.min(current.heartbeatDeadline, current.accessValidUntil, current.tokenExpiresAt)
@@ -43,11 +46,11 @@ end
 local current = connections[connectionKey]
 if operation == 'join' or operation == 'refresh' then
     if supplied.accessValidUntil <= now or supplied.tokenExpiresAt <= now then
-        return cjson.encode({error = 'UNAUTHORIZED'})
+        return cjson.encode({error = unauthorizedError})
     end
     if operation == 'join' or current then
         if not current and count >= limit then
-            return cjson.encode({error = 'PRESENCE_LIMIT_EXCEEDED'})
+            return cjson.encode({error = limitExceededError})
         end
         if not current or supplied.checkedAt >= current.checkedAt then
             supplied.heartbeatDeadline = current and current.heartbeatDeadline or now + ttl
@@ -97,7 +100,7 @@ if #members == 0 then
     result = string.gsub(result, '"members":{}', '"members":[]')
 end
 if #result > 60000 then
-    return cjson.encode({error = 'PRESENCE_LIMIT_EXCEEDED'})
+    return cjson.encode({error = limitExceededError})
 end
 redis.call('DEL', KEYS[1], KEYS[2])
 local remaining = 0

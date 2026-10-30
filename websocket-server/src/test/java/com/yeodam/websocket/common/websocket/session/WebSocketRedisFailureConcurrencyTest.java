@@ -38,7 +38,7 @@ class WebSocketRedisFailureConcurrencyTest {
     }
 
     @Test
-    void includesARegistrationAlreadyInProgressWhenFailureArrives() throws Exception {
+    void 장애_발생_당시_등록_중인_연결도_종료_대상에_포함한다() throws Exception {
         WebSocketSession session = session("registering");
         CountDownLatch registering = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -79,7 +79,7 @@ class WebSocketRedisFailureConcurrencyTest {
     }
 
     @Test
-    void excludesARecoveredConnectionFromTheEarlierFailuresCloseTask() throws Exception {
+    void 이전_장애의_종료_작업에서_복구_후의_연결을_제외한다() throws Exception {
         WebSocketSession existing = session("existing");
         WebSocketSession later = session("after-recovery");
         assertThat(manager.register(existing)).isTrue();

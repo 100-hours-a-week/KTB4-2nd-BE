@@ -56,7 +56,7 @@ class WebSocketHandshakeAuthenticationFilterTest {
     }
 
     @Test
-    void rejectsHandshakeBeforeSubscriptionWithoutCallingBackend() throws Exception {
+    void 구독_준비_전에는_BE_호출_없이_핸드셰이크를_거절한다() throws Exception {
         RedisSubscriptionState initialState = new RedisSubscriptionState();
         var unavailableFilter = new WebSocketHandshakeAuthenticationFilter(client,
                 new WebSocketSessionManager(scheduler, initialState, new WebSocketProperties(List.of(), 1000)));
@@ -72,7 +72,7 @@ class WebSocketHandshakeAuthenticationFilterTest {
     }
 
     @Test
-    void rejectsHandshakeAtCapacityWithoutCallingBackend() throws Exception {
+    void 연결_상한에서는_BE_호출_없이_핸드셰이크를_거절한다() throws Exception {
         var limited = new WebSocketSessionManager(scheduler, subscriptionState,
                 new WebSocketProperties(List.of(), 1));
         var capacityFilter = new WebSocketHandshakeAuthenticationFilter(client, limited);
@@ -97,7 +97,7 @@ class WebSocketHandshakeAuthenticationFilterTest {
     }
 
     @Test
-    void rejectsHandshakeAfterSubscriptionBecomesUnavailable() throws Exception {
+    void 구독이_사용_불가_상태가_되면_핸드셰이크를_거절한다() throws Exception {
         subscriptionState.markUnavailable();
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicBoolean continued = new AtomicBoolean();
@@ -111,7 +111,7 @@ class WebSocketHandshakeAuthenticationFilterTest {
     }
 
     @Test
-    void resumesAuthenticationAfterSubscriptionIsRestored() throws Exception {
+    void 구독이_복구되면_인증을_재개한다() throws Exception {
         subscriptionState.markUnavailable();
         subscriptionState.markSubscribed();
         when(client.authenticate("test-access-token", "test-browser-context"))
@@ -134,7 +134,7 @@ class WebSocketHandshakeAuthenticationFilterTest {
     }
 
     @Test
-    void passesVerifiedIdentityToTheNextFilter() throws Exception {
+    void 검증된_신원을_다음_필터로_전달한다() throws Exception {
         Instant expiresAt = Instant.parse("2099-01-01T00:00:00Z");
         when(client.authenticate("test-access-token", "test-browser-context"))
                 .thenReturn(new AuthenticationData(
@@ -166,7 +166,7 @@ class WebSocketHandshakeAuthenticationFilterTest {
     }
 
     @Test
-    void reusesTheBackendCsrfTokenInSpringHandshakeAttributes() throws Exception {
+    void BE의_CSRF_토큰을_스프링_핸드셰이크_속성에_재사용한다() throws Exception {
         when(client.authenticate("test-access-token", "test-browser-context"))
                 .thenReturn(new AuthenticationData(
                         42L, "test-login-session", Instant.parse("2099-01-01T00:00:00Z"),
@@ -208,7 +208,7 @@ class WebSocketHandshakeAuthenticationFilterTest {
             "POST, /ws",
             "GET, /other"
     })
-    void skipsAuthenticationForOtherRequests(String method, String path) throws Exception {
+    void 다른_요청은_인증을_건너뛴다(String method, String path) throws Exception {
         subscriptionState.markUnavailable();
         AtomicBoolean continued = new AtomicBoolean();
 
@@ -228,7 +228,7 @@ class WebSocketHandshakeAuthenticationFilterTest {
             "BACKEND_UNAVAILABLE, 503",
             "INVALID_RESPONSE, 503"
     })
-    void stopsTheChainAndClearsAuthenticationOnFailure(
+    void 인증_실패_시_필터_체인을_중단하고_인증정보를_지운다(
             BackendAuthenticationFailure failure,
             int expectedStatus
     ) throws Exception {
@@ -249,7 +249,7 @@ class WebSocketHandshakeAuthenticationFilterTest {
     }
 
     @Test
-    void passesMissingCookiesToTheAuthenticationClient() throws Exception {
+    void 누락된_쿠키를_인증_클라이언트에_전달한다() throws Exception {
         when(client.authenticate(null, null)).thenThrow(
                 new BackendAuthenticationException(BackendAuthenticationFailure.USER_UNAUTHORIZED)
         );

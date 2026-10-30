@@ -15,7 +15,7 @@ class TripPresenceSessionRegistryTest {
         registry.subscribe(connection, "sub", 10L, 유효한_권한_생성());
         registry.close("socket");
         assertThatThrownBy(() -> registry.updateAccess(connection, 10L, 유효한_권한_생성()))
-                .hasMessageContaining("UNAUTHORIZED");
+                .hasMessage("인증이 필요합니다.");
         assertThat(registry.canDeliver("socket", "sub", 10L, "epoch", Instant.now())).isFalse();
     }
 
@@ -37,7 +37,7 @@ class TripPresenceSessionRegistryTest {
         TripPresenceSessionRegistry.Connection connection = registry.connection("socket");
         registry.subscribe(connection, "sub", 10L, 유효한_권한_생성());
         assertThatThrownBy(() -> registry.subscribe(connection, "sub", 11L, 유효한_권한_생성()))
-                .hasMessageContaining("INVALID_REQUEST");
+                .hasMessage("요청이 올바르지 않습니다.");
     }
 
     private AccessData 유효한_권한_생성() {

@@ -201,7 +201,7 @@ class BackendAuthenticationClientTest {
         var error = catchThrowableOfType(BackendAuthenticationException.class,
                 () -> target.authenticate("test-access-token", "test-browser-context"));
         assertThat(error.failure()).isEqualTo(expected);
-        assertThat(error.getMessage()).isEqualTo(expected.name());
+        assertThat(error.getMessage()).isEqualTo(expected.message());
         assertThat(error.getCause()).isNull();
     }
 

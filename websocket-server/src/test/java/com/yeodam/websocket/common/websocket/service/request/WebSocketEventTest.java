@@ -15,7 +15,7 @@ class WebSocketEventTest {
 
     @ParameterizedTest
     @CsvSource({"AI_TASK,USER", "COMMAND_RESULT,USER", "TRIP_EVENT,TRIP"})
-    void readsTheBackendEnvelopeAndPreservesTheFrontendPayload(
+    void BE_이벤트_봉투를_읽고_프론트_payload를_유지한다(
             WebSocketEventType type, WebSocketEventTargetType targetType
     ) {
         String json = """

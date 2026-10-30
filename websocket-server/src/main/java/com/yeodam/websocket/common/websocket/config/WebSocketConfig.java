@@ -62,7 +62,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     if (current instanceof TripPresenceException presenceFailure) {
                         StompHeaderAccessor error = StompHeaderAccessor.create(StompCommand.ERROR);
                         error.setLeaveMutable(true);
-                        String body = "{\"message\":\"" + presenceFailure.getMessage() + "\",\"data\":null}";
+                        String body = "{\"message\":\"" + presenceFailure.errorMessage().name() + "\",\"data\":null}";
                         return MessageBuilder.createMessage(body.getBytes(StandardCharsets.UTF_8),
                                 error.getMessageHeaders());
                     }

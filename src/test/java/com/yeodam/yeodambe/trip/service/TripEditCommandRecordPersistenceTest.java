@@ -34,6 +34,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -62,6 +63,7 @@ class TripEditCommandRecordPersistenceTest {
     @BeforeEach
     void fixture() {
         transactions = new TransactionTemplate(transactionManager);
+        records.deleteAll();
         userId = users.save(new User(UUID.randomUUID() + "@record.test", "회원")).getUserId();
         tripId = trips.saveAndFlush(new Trip(userId, "원래여행", LocalDate.now(), LocalDate.now())).getId();
     }
@@ -145,6 +147,38 @@ class TripEditCommandRecordPersistenceTest {
         assertThatThrownBy(() -> service.findResult(userId, "req-A", tripId, CommandType.UPDATE_TRIP, HASH, expiresAt))
                 .isInstanceOf(TripEditCommandResultExpiredException.class);
         assertThat(records.findByUserIdAndRequestId(userId, "req-A").orElseThrow().getResultJson()).isNotNull();
+    }
+
+    @Test
+    void 만료_결과의_본문만_지우고_명령_식별값과_기한을_보존한다() {
+        transactions.executeWithoutResult(status -> save("req-A"));
+        TripEditCommandRecord original = records.findByUserIdAndRequestId(userId, "req-A").orElseThrow();
+        TripEditCommandRecord valid = records.saveAndFlush(new TripEditCommandRecord(
+                userId, tripId, "valid", CommandType.UPDATE_TRIP, HASH, "{}", COMPLETED.plusSeconds(1)));
+        records.saveAndFlush(new TripEditCommandRecord(
+                userId, tripId, "cleared", CommandType.UPDATE_TRIP, HASH, null, COMPLETED));
+
+        assertThat(records.clearExpiredResultBodies(COMPLETED.plusHours(24), 200)).isEqualTo(1);
+        TripEditCommandRecord cleared = records.findById(original.getId()).orElseThrow();
+        assertThat(cleared.getResultJson()).isNull();
+        assertThat(cleared).usingRecursiveComparison().ignoringFields("resultJson").isEqualTo(original);
+        assertThat(records.findById(valid.getId()).orElseThrow().getResultJson()).isEqualTo("{}");
+        assertThatThrownBy(() -> service.findResult(userId, "req-A", tripId, CommandType.UPDATE_TRIP,
+                HASH, COMPLETED.plusHours(24))).isInstanceOf(TripEditCommandResultExpiredException.class);
+    }
+
+    @Test
+    void 만료_201개를_200개와_1개로_나누고_정리한_본문을_다시_처리하지_않는다() {
+        records.saveAllAndFlush(IntStream.range(0, 201)
+                .mapToObj(index -> new TripEditCommandRecord(userId, tripId, "req-" + index,
+                        CommandType.UPDATE_TRIP, HASH, "{}", COMPLETED)).toList());
+
+        assertThat(records.clearExpiredResultBodies(COMPLETED.plusHours(24), 200)).isEqualTo(200);
+        assertThat(records.findAll()).hasSize(201)
+                .filteredOn(record -> record.getResultJson() != null).hasSize(1);
+        assertThat(records.clearExpiredResultBodies(COMPLETED.plusHours(24), 200)).isEqualTo(1);
+        assertThat(records.clearExpiredResultBodies(COMPLETED.plusHours(24), 200)).isZero();
+        assertThat(records.count()).isEqualTo(201);
     }
 
     private void changeTrip() {

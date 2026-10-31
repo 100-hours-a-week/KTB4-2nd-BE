@@ -537,6 +537,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.STORY_NOT_FOUND, null);
     }
 
+    @ExceptionHandler(StoryBlockNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    ApiResponse<Void> handleStoryBlockNotFound(
+            StoryBlockNotFoundException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.STORY_BLOCK_NOT_FOUND, null);
+    }
+
     @ExceptionHandler(StoryGenerationNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     ApiResponse<Void> handleStoryGenerationNotFound(StoryGenerationNotFoundException e) {

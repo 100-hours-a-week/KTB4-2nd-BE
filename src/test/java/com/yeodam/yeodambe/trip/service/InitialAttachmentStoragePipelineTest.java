@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.InOrder;
 import org.slf4j.MDC;
 import org.springframework.dao.TransientDataAccessResourceException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -23,6 +24,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -66,6 +68,121 @@ class InitialAttachmentStoragePipelineTest {
         pipeline.close();
         scheduler.stop();
         meters.close();
+    }
+
+    @Test
+    void queuedAcceptedPhotoParticipatesInDrainBeforeItsControlTaskStarts() throws Exception {
+        var photo = new com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo(
+                1L, "image/jpeg", "original/1", 1, 0, null, null);
+        var upload = new CompletableFuture<String>();
+        var putStarted = new CountDownLatch(1);
+        var controlBlocked = new CountDownLatch(1);
+        var releaseControl = new CountDownLatch(1);
+        when(storage.storeDerivedToAsync(eq("1/preview"), any(), anyString())).thenAnswer(call -> {
+            putStarted.countDown();
+            return upload;
+        });
+        var first = pipeline.storePhoto("first", photo, List.of("1/analyze", "1/preview"),
+                (source, keys) -> prepare(source.itemId(), keys), () -> true);
+        var control = (ScheduledThreadPoolExecutor) ReflectionTestUtils.getField(pipeline, "control");
+        var closing = new Thread(pipeline::close);
+        try {
+            assertThat(putStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            control.execute(() -> {
+                controlBlocked.countDown();
+                try {
+                    assertThat(releaseControl.await(10, TimeUnit.SECONDS)).isTrue();
+                } catch (InterruptedException failure) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(failure);
+                }
+            });
+            assertThat(controlBlocked.await(5, TimeUnit.SECONDS)).isTrue();
+            upload.complete("1/preview");
+            var second = pipeline.storePhoto("second", photo, List.of("2/analyze", "2/preview"),
+                    (source, keys) -> {
+                        throw new AssertionError("종료된 실행은 준비를 시작하지 않아야 합니다.");
+                    }, () -> true);
+            closing.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (closing.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
+            assertThat(closing.getState()).isEqualTo(Thread.State.TIMED_WAITING);
+            releaseControl.countDown();
+            closing.join(5000);
+            assertThat(closing.isAlive()).isFalse();
+            assertThat(first).isCompletedExceptionally();
+            assertThat(second).isCompletedExceptionally();
+        } finally {
+            upload.complete("1/preview");
+            releaseControl.countDown();
+            closing.join(5000);
+        }
+    }
+
+    @Test
+    void singlePhotoShutdownWaitsForPutBeforeClosingCallbackExecutor() throws Exception {
+        var photo = new com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo(
+                1L, "image/jpeg", "original/1", 1, 0, null, null);
+        var upload = new CompletableFuture<String>();
+        var started = new CountDownLatch(1);
+        var file = new AtomicReference<Path>();
+        when(storage.storeDerivedToAsync(eq("1/analyze"), any(), anyString())).thenAnswer(call -> {
+            file.set(call.getArgument(1));
+            started.countDown();
+            return upload;
+        });
+        var result = pipeline.storePhoto("execution", photo, List.of("1/analyze", "1/preview"),
+                (source, keys) -> prepare(source.itemId(), keys), () -> true);
+        var closing = new Thread(pipeline::close);
+        try {
+            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+            closing.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (closing.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
+            assertThat(closing.getState()).isEqualTo(Thread.State.TIMED_WAITING);
+            assertThat(result).isNotDone();
+            assertThat(file.get()).exists();
+        } finally {
+            upload.complete("1/analyze");
+            closing.join(5000);
+        }
+        assertThat(closing.isAlive()).isFalse();
+        assertThat(result).isCompletedExceptionally();
+        assertThat(file.get().getParent()).doesNotExist();
+        verify(storage, never()).storeDerivedToAsync(eq("1/preview"), any(), anyString());
+    }
+
+    @Test
+    void singlePhotoCancellationKeepsPutInputUntilUploadSettles() throws Exception {
+        var photo = new com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo(
+                1L, "image/jpeg", "original/1", 1, 0, null, null);
+        var upload = new CompletableFuture<String>();
+        var started = new CountDownLatch(1);
+        var file = new AtomicReference<Path>();
+        when(storage.storeDerivedToAsync(eq("1/analyze"), any(), anyString())).thenAnswer(call -> {
+            file.set(call.getArgument(1));
+            started.countDown();
+            return upload;
+        });
+        var result = pipeline.storePhoto("execution", photo, List.of("1/analyze", "1/preview"),
+                (source, keys) -> prepare(source.itemId(), keys), () -> true);
+        try {
+            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(result.cancel(false)).isTrue();
+            assertThat(upload).isNotDone();
+            assertThat(file.get()).exists();
+        } finally {
+            upload.complete("1/analyze");
+        }
+        pipeline.close();
+        assertThat(file.get().getParent()).doesNotExist();
+        verify(storage, never()).storeDerivedToAsync(eq("1/preview"), any(), anyString());
+        verify(transactions, never()).savePhotoSuccess(any(InitialAttachmentUploadBatchSnapshot.class), any(), any());
+        verify(storage, never()).retain(anyList());
     }
 
     @Test

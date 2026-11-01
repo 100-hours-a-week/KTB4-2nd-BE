@@ -2,12 +2,17 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
 
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Attempt;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo;
 import com.yeodam.yeodambe.trip.service.response.PreparedPhotoDerivative;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -51,6 +56,48 @@ public class TripAttachmentDerivativeService {
     private final AttachmentConversionProperties conversionProperties;
     private final AdditionalAttachmentUploadTransactionService additionalTransactions;
 
+    public CompletableFuture<DerivedPhotoKeys> processConversionPhoto(
+            AttachmentConversionClaim claim,
+            Photo photo,
+            Attempt attempt,
+            BooleanSupplier active
+    ) {
+        var planned = attempt.plannedKeys();
+        List<String> keys = planned.displayKey() == null ? List.of(planned.analyzeKey(), planned.previewKey())
+                : List.of(planned.analyzeKey(), planned.previewKey(), planned.displayKey());
+        String workflow = claim.kind() == Kind.INITIAL
+                ? "trip_creation" : "trip_reanalysis";
+        try (var scope = WorkflowMdcScope.job(workflow, claim.tripId(), claim.executionId(), claim.requestId())) {
+            MDC.put("item_id", photo.itemId().toString());
+            MDC.put("attempts", Integer.toString(attempt.attemptNo()));
+            if (claim.kind() == Kind.INITIAL) {
+                return pipeline.storePhoto(claim.executionId(), photo, keys,
+                        (item, outputs) -> prepareInitialPhoto(item.objectKey(), item.contentType(), outputs), active);
+            }
+            Map<String, String> context = MDC.getCopyOfContextMap();
+            var result = new CompletableFuture<DerivedPhotoKeys>();
+            BooleanSupplier current = () -> !result.isCancelled() && active.getAsBoolean();
+            var task = new TripDerivativeScheduler.PhotoTask(0, photo.contentType(), () -> {
+                try (var conversionScope = WorkflowMdcScope.open(context)) {
+                    var derived = generateAdditional(claim.executionId(), photo.objectKey(), photo.contentType(), keys, current);
+                    requireActive(current);
+                    var retained = new ArrayList<>(keys);
+                    retained.add(photo.objectKey());
+                    storage.retain(retained);
+                    return derived;
+                }
+            });
+            scheduler.submit(claim.executionId(), List.of(task), current).whenComplete((photos, failure) -> {
+                if (failure == null) {
+                    result.complete(photos.getFirst());
+                } else {
+                    result.completeExceptionally(failure);
+                }
+            });
+            return result;
+        }
+    }
+
     public CompletableFuture<List<DerivedPhotoKeys>> createAll(
             String executionId, List<String> originalKeys, List<String> mimeTypes
     ) {
@@ -80,7 +127,7 @@ public class TripAttachmentDerivativeService {
                     MDC.setContextMap(callerMdc);
                 }
                 try {
-                    return generateOne(executionId, original, mime, uploaded, null);
+                    return generateOne(executionId, original, mime, uploaded, null, () -> true);
                 } finally {
                     MDC.clear();
                 }
@@ -181,7 +228,12 @@ public class TripAttachmentDerivativeService {
 
     public DerivedPhotoKeys generateAdditional(String executionId, String originalKey,
             String mimeType, List<String> plannedKeys) {
-        return generateOne(executionId, originalKey, mimeType, new ArrayList<>(), plannedKeys);
+        return generateAdditional(executionId, originalKey, mimeType, plannedKeys, () -> true);
+    }
+
+    private DerivedPhotoKeys generateAdditional(String executionId, String originalKey,
+            String mimeType, List<String> plannedKeys, BooleanSupplier active) {
+        return generateOne(executionId, originalKey, mimeType, new ArrayList<>(), plannedKeys, active);
     }
 
     private DerivedPhotoKeys generateOne(
@@ -189,7 +241,8 @@ public class TripAttachmentDerivativeService {
             String originalKey,
             String mimeType,
             ArrayList<String> uploadedKeys,
-            List<String> plannedKeys
+            List<String> plannedKeys,
+            BooleanSupplier active
     ) {
         Path dir;
         try {
@@ -205,8 +258,9 @@ public class TripAttachmentDerivativeService {
 
         try {
             downloadOriginal(originalKey, original);
+            requireActive(active);
             return generateDerivatives(executionId, originalKey, mimeType, uploadedKeys, plannedKeys,
-                    dir);
+                    dir, active);
         } catch (Exception e) {
             throw new IllegalStateException(TripInternalErrorMessage.DERIVED_ATTACHMENT_CREATE_FAILED.message(), e);
         } finally {
@@ -253,7 +307,8 @@ public class TripAttachmentDerivativeService {
             String mimeType,
             List<String> uploadedKeys,
             List<String> plannedKeys,
-            Path directory
+            Path directory,
+            BooleanSupplier active
     ) {
         Timer.Sample derivativeSample = Timer.start(meterRegistry);
         String derivativeOutcome = "success";
@@ -264,6 +319,7 @@ public class TripAttachmentDerivativeService {
             try (var uploadTiming = startDerivativeUploadLogging()) {
                 for (int index = 0; index < prepared.outputs().size(); index++) {
                     PreparedPhotoDerivative.Output output = prepared.outputs().get(index);
+                    requireActive(active);
                     stored.add(storeTrackedDerivative(executionId, output.file(), output.mimeType(),
                             plannedKeys, index, uploadedKeys));
                 }
@@ -277,6 +333,12 @@ public class TripAttachmentDerivativeService {
             derivativeSample.stop(Timer.builder("yeodam.trip.stage")
                     .tags("stage", "image_derivative", "outcome", derivativeOutcome)
                     .register(meterRegistry));
+        }
+    }
+
+    private void requireActive(BooleanSupplier active) {
+        if (!active.getAsBoolean()) {
+            throw new CancellationException(TripInternalErrorMessage.PHOTO_CONVERSION_CANCELED.message());
         }
     }
 

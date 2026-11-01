@@ -92,6 +92,88 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
+    void guardDatabaseUncertaintyFencesAndReclaimsBeforeAnotherPhysicalAttempt() throws Exception {
+        var first = fixture(Kind.INITIAL, Lane.LIGHT, 1);
+        var nextOwner = new AttachmentConversionClaim(first.taskId(), "next-token", first.kind(), first.lane(), first.batchId(),
+                first.uploadId(), first.executionId(), first.tripId(), first.userId(), first.requestId(), first.photos());
+        when(db.claim(eq(first.taskId()), any(), any())).thenReturn(
+                new AttachmentConversionClaimResult(AttachmentConversionClaimResult.Status.CLAIMED, first, null),
+                new AttachmentConversionClaimResult(AttachmentConversionClaimResult.Status.CLAIMED, nextOwner, null));
+        var uncertain = new AtomicBoolean();
+        var leaked = new AtomicReference<RuntimeException>();
+        when(db.renewLease(any())).thenAnswer(call -> {
+            if (uncertain.getAndSet(false)) {
+                throw new TransientDataAccessResourceException("PUT guard DB unavailable");
+            }
+            return true;
+        });
+        when(db.finishSubBatch(first)).thenReturn(step(AttachmentConversionStepResult.Status.CONTINUE));
+        when(db.beginPhoto(eq(nextOwner), anyLong())).thenReturn(new AttachmentConversionAttemptResult(
+                AttachmentConversionAttemptResult.Status.STARTED, new Attempt(1L, 2, new DerivedPhotoKeys("original/1", "a/2", "p/2")), null));
+        var starts = new AtomicInteger();
+        doAnswer(call -> {
+            if (starts.incrementAndGet() == 1) {
+                uncertain.set(true);
+                try {
+                    ((BooleanSupplier) call.getArgument(3)).getAsBoolean();
+                } catch (RuntimeException failure) {
+                    leaked.set(failure);
+                    return CompletableFuture.failedFuture(failure);
+                }
+                return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("guard fenced"));
+            }
+            var entry = new Call(call.getArgument(0), call.getArgument(1), call.getArgument(2), call.getArgument(3), new CompletableFuture<>());
+            calls.add(entry);
+            allCalls.add(entry);
+            return entry.result();
+        }).when(photos).processConversionPhoto(any(), any(), any(), any());
+        var result = process(first);
+        var resumed = next();
+        try {
+            assertThat(leaked.get()).isNull();
+            assertThat(resumed.claim().claimToken()).isEqualTo("next-token");
+            assertThat(resumed.attempt().attemptNo()).isEqualTo(2);
+            assertThat(starts).hasValue(2);
+        } finally {
+            resumed.succeed();
+        }
+        result.get(5, TimeUnit.SECONDS);
+        verify(db, never()).recordPhotoFailure(any(), anyLong(), anyBoolean());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void stopOrRevokeWhileDatabaseOutcomeIsBlockedPreventsNextPhoto(boolean stop) throws Exception {
+        var claim = fixture(Kind.INITIAL, Lane.LIGHT, 2);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        doAnswer(call -> {
+            entered.countDown();
+            assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+            return step(AttachmentConversionStepResult.Status.CONTINUE);
+        }).when(db).completePhoto(eq(claim), anyLong(), any());
+        var result = process(claim);
+        next().succeed();
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        CompletableFuture<Void> cleanup;
+        if (stop) {
+            worker.stopAccepting();
+            cleanup = worker.drain();
+        } else {
+            cleanup = worker.revoke(topic(claim), Set.of(3));
+        }
+        try {
+            release.countDown();
+            cleanup.get(2, TimeUnit.SECONDS);
+            assertThat(calls).isEmpty();
+            assertThat(result).isNotDone();
+        } finally {
+            release.countDown();
+            allCalls.forEach(call -> call.result().completeExceptionally(new RejectedExecutionException()));
+        }
+    }
+
+    @Test
     void invalidInternalRoutingIsRejectedBeforeAdmission() {
         assertThatThrownBy(() -> worker.process("id", null, Lane.LIGHT, topics.additionalLight(), 0))
                 .isInstanceOf(com.yeodam.yeodambe.trip.client.InvalidAttachmentConversionMessageException.class);
@@ -413,6 +495,45 @@ class AttachmentConversionWorkerTest {
         first.get(5, TimeUnit.SECONDS);
         next().succeed();
         other.get(5, TimeUnit.SECONDS);
+        verify(db, never()).recordPhotoFailure(any(), anyLong(), anyBoolean());
+    }
+
+    @Test
+    void stopDoesNotWaitForLongBackoffBeforeReleasingAnIdleClaim() throws Exception {
+        worker.close();
+        worker = new AttachmentConversionWorker(db, photos, topics, Duration.ofMinutes(2));
+        var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
+        var failed = new CountDownLatch(1);
+        when(db.beginPhoto(eq(claim), anyLong())).thenAnswer(call -> {
+            failed.countDown();
+            throw new TransientDataAccessResourceException("begin uncertain");
+        });
+        var process = process(claim);
+        assertThat(failed.await(5, TimeUnit.SECONDS)).isTrue();
+        worker.drain().get(2, TimeUnit.SECONDS);
+        assertThat(process).isNotDone();
+        verify(db).releaseClaim(claim);
+        verifyNoInteractions(photos);
+    }
+
+    @Test
+    void leaseRenewalRunsWhileTechnicalBackoffIsLongerThanRenewalCadence() throws Exception {
+        worker.close();
+        worker = new AttachmentConversionWorker(db, photos, topics, Duration.ofMinutes(2));
+        var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
+        var renewal = new CountDownLatch(1);
+        var renewals = new AtomicInteger();
+        when(db.renewLease(claim)).thenAnswer(call -> {
+            if (renewals.incrementAndGet() >= 2) {
+                renewal.countDown();
+            }
+            return true;
+        });
+        when(db.beginPhoto(eq(claim), anyLong())).thenThrow(new TransientDataAccessResourceException("DB temporary"));
+        var result = process(claim);
+        assertThat(renewal.await(35, TimeUnit.SECONDS)).isTrue();
+        assertThat(result).isNotDone();
+        verify(db, times(1)).beginPhoto(eq(claim), anyLong());
         verify(db, never()).recordPhotoFailure(any(), anyLong(), anyBoolean());
     }
 

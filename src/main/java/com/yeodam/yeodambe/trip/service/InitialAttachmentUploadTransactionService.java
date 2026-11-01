@@ -79,6 +79,7 @@ public class InitialAttachmentUploadTransactionService {
     private final KafkaTopicProperties topics;
     private final TripCreationOutboxRepository outboxes;
     private final ApplicationEventPublisher eventPublisher;
+    private final AttachmentConversionAdmissionService conversionAdmission;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public InitialAttachmentUploadBatchSnapshot prepareBatch(
@@ -106,7 +107,7 @@ public class InitialAttachmentUploadTransactionService {
         }
 
         if (latest == null) {
-            executionId = createExecution(tripId, userId, request);
+            executionId = createExecution(tripId, userId, request, batchBytes);
         } else {
             InitialAttachmentUploadBatch existing =
                     batches.findByExecutionIdAndBatchNo(
@@ -123,12 +124,9 @@ public class InitialAttachmentUploadTransactionService {
             executionId = latest.getExecutionId();
         }
 
-        List<InitialAttachmentUploadItem> previousItems =
-                latest == null
-                        ? List.of()
-                        : items.findAllByBatch_ExecutionId(executionId);
-
-        validateBatchLimits(previousItems, request, batchBytes);
+        if (latest != null) {
+            validateBatchLimits(items.findAllByBatch_ExecutionId(executionId), request, batchBytes);
+        }
 
         TripCreationExecution execution = requireExecutionForUpdate(executionId);
         userStats.reserveInitialUpload(userId, batchBytes);
@@ -140,13 +138,16 @@ public class InitialAttachmentUploadTransactionService {
     private String createExecution(
             Long tripId,
             Long userId,
-            InitialAttachmentUploadUrlRequest request
+            InitialAttachmentUploadUrlRequest request,
+            long batchBytes
     ) {
         if (request.batchNo() != 1
                 || !attachments.findAllByTripIdAndDeletedAtIsNull(tripId).isEmpty()) {
             throw new TripInitialAttachmentUploadNotAllowedException();
         }
 
+        validateBatchLimits(List.of(), request, batchBytes);
+        conversionAdmission.assertNewExecutionAllowed();
         String executionId = UUID.randomUUID().toString();
         var execution = executionRepository.save(new TripCreationExecution(
                 executionId, tripId, userId, request.totalAttachmentCount()));

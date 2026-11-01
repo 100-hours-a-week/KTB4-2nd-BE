@@ -34,7 +34,8 @@ class InitialUploadAcceptanceStatusTest {
                     mock(UserStatsService.class), mock(ObjectMapper.class), mock(TripRegionRepository.class),
                     mock(EntityManager.class), mock(JdbcTemplate.class), new KafkaTopicProperties(Arrays.stream(EventType.values())
                             .collect(Collectors.toMap(type -> type, type -> "test-" + type.name()))),
-                    mock(TripCreationOutboxRepository.class), mock(ApplicationEventPublisher.class));
+                    mock(TripCreationOutboxRepository.class), mock(ApplicationEventPublisher.class),
+                    mock(AttachmentConversionAdmissionService.class));
 
     @Test
     void returnsTheStoredDisplayStateStepAndVersion() {

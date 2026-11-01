@@ -161,6 +161,57 @@ class AttachmentConversionClaimTest {
         assertThat(journal).hasSize(3).allSatisfy(object -> assertThat(object.startedAt()).isNull());
     }
 
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void revokedPartialPhotoStartsRetentionWithoutFollowingBegin(Kind kind) throws Exception {
+        var fixture = new TransactionTemplate(transactionManager).execute(status -> fixture(kind));
+        var processing = mock(TripAttachmentDerivativeService.class);
+        var photo = new CompletableFuture<DerivedPhotoKeys>();
+        var started = new CountDownLatch(1);
+        var observed = new AtomicReference<AttachmentConversionClaim>();
+        var attempt = new AtomicReference<AttachmentConversionClaim.Attempt>();
+        when(processing.processConversionPhoto(any(), any(), any(), any())).thenAnswer(call -> {
+            observed.set(call.getArgument(0));
+            attempt.set(call.getArgument(2));
+            started.countDown();
+            return photo;
+        });
+        var topics = new Topics(null, null, null, null);
+        String topic = kind == Kind.INITIAL ? topics.initialLight() : topics.additionalLight();
+        var worker = new AttachmentConversionWorker(transactions, processing, topics, Duration.ofMillis(50));
+        try {
+            var ack = worker.process(fixture.taskId(), kind, Lane.LIGHT, topic, 0);
+            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+            var cleanup = worker.revoke(topic, java.util.Set.of(0));
+            assertThat(cleanup).isNotDone();
+            // Task 7 Future 종료는 부분 PUT 및 입력 임시 파일 정리가 끝난 신호다.
+            photo.completeExceptionally(new CancellationException("partial output fenced"));
+            cleanup.get(10, TimeUnit.SECONDS);
+            assertThat(ack).isNotDone();
+            var keys = List.of(attempt.get().plannedKeys().analyzeKey(), attempt.get().plannedKeys().previewKey());
+            String query = "SELECT cleanup_json FROM " + itemTable(kind) + " WHERE upload_item_id = ?";
+            String firstJournal = jdbc.queryForObject(query, String.class, fixture.lightItemId());
+            List<CleanupProbe> journal = json.readValue(firstJournal,
+                    new TypeReference<List<CleanupProbe>>() {});
+            assertThat(journal).filteredOn(object -> keys.contains(object.key())).hasSize(2).allSatisfy(object -> {
+                assertThat(object.startedAt()).isEqualTo(NOW);
+                assertThat(object.deleted()).isFalse();
+            });
+            assertThat(journal).filteredOn(object -> !keys.contains(object.key())).singleElement()
+                    .satisfies(object -> assertThat(object.startedAt()).isNull());
+            doReturn(NOW.plusDays(2)).when(jdbc).queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+            assertThat(transactions.releaseClaim(observed.get())).isFalse();
+            assertThat(jdbc.queryForObject(query, String.class, fixture.lightItemId())).isEqualTo(firstJournal);
+            assertThat(jdbc.queryForObject("SELECT conversion_attempts FROM " + itemTable(kind) + " WHERE upload_item_id = ?",
+                    Integer.class, fixture.lightItemId())).isEqualTo(1);
+        } finally {
+            photo.completeExceptionally(new CancellationException());
+            worker.drain().get(10, TimeUnit.SECONDS);
+            worker.close();
+        }
+    }
+
     private record CleanupProbe(
             String key,
             LocalDateTime startedAt,

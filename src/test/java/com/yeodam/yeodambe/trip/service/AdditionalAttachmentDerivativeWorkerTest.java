@@ -117,7 +117,7 @@ class AdditionalAttachmentDerivativeWorkerTest {
                     .containsEntry("attempts", "1");
             assertThat(retryContext.get()).containsAllEntriesOf(expected);
             assertThat(MDC.getCopyOfContextMap()).containsExactlyEntriesOf(Map.of("request_id", "caller"));
-            verify(transactions, never()).savePhotoSuccess(any(), anyLong(), any());
+            verify(transactions, never()).savePhotoSuccess(any(AdditionalAttachmentUploadBatchSnapshot.class), anyLong(), any());
         } finally {
             worker.shutdown();
             scheduler.stop(5, TimeUnit.SECONDS);
@@ -137,7 +137,7 @@ class AdditionalAttachmentDerivativeWorkerTest {
         try {
             worker.processPendingBatches();
             verify(transactions).releaseSaturatedBatch(claim);
-            verify(transactions, never()).startPhotoAttempt(any(), anyLong());
+            verify(transactions, never()).startPhotoAttempt(any(AdditionalAttachmentUploadBatchSnapshot.class), anyLong());
             verifyNoInteractions(derivatives, storage);
         } finally { worker.shutdown(); }
     }

@@ -12,6 +12,8 @@ import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaimResult;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionAttemptResult;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionStepResult;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +40,32 @@ public class AttachmentConversionTransactionService {
     private final EntityManager entityManager;
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
+    private final InitialAttachmentUploadTransactionService initialSource;
+    private final AdditionalAttachmentUploadTransactionService additionalSource;
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AttachmentConversionAttemptResult beginPhoto(AttachmentConversionClaim claim, Long itemId) {
+        return claim.kind() == Kind.INITIAL ? initialSource.startPhotoAttempt(claim, itemId)
+                : additionalSource.startPhotoAttempt(claim, itemId);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AttachmentConversionStepResult completePhoto(AttachmentConversionClaim claim, Long itemId, DerivedPhotoKeys photo) {
+        return claim.kind() == Kind.INITIAL ? initialSource.savePhotoSuccess(claim, itemId, photo)
+                : additionalSource.savePhotoSuccess(claim, itemId, photo);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AttachmentConversionStepResult recordPhotoFailure(AttachmentConversionClaim claim, Long itemId, boolean permanent) {
+        return claim.kind() == Kind.INITIAL ? initialSource.recordPhotoFailure(claim, itemId, permanent)
+                : additionalSource.recordPhotoFailure(claim, itemId, permanent);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AttachmentConversionStepResult finishSubBatch(AttachmentConversionClaim claim) {
+        return claim.kind() == Kind.INITIAL ? initialSource.completeConvertedBatch(claim)
+                : additionalSource.completeConvertedBatch(claim);
+    }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public AttachmentConversionClaimResult claim(String taskId, Kind expectedKind, Lane expectedLane) {

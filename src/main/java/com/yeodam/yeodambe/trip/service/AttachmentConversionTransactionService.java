@@ -109,6 +109,53 @@ public class AttachmentConversionTransactionService {
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    public boolean releaseClaim(AttachmentConversionClaim claim) {
+        var candidate = tasks.findById(claim.taskId()).orElse(null);
+        if (candidate == null) {
+            return false;
+        }
+        var source = lockSource(candidate);
+        var task = lockTask(claim.taskId());
+        if (source == null || !matchesSource(task, source) || !matchesClaim(task, source, claim)) {
+            return false;
+        }
+        Long itemId = task.getCurrentItemId();
+        boolean abandonedAttempt = claim.claimToken() != null && claim.claimToken().equals(task.getCurrentAttemptToken());
+        boolean released = task.releaseClaim(claim.claimToken());
+        // 다른 소유자의 claim은 유지하고 이전 token이 버린 시도의 정리만 확정한다.
+        if (itemId != null && (released || abandonedAttempt)) {
+            journalReleasedAttempt(task, source, itemId);
+        }
+        return released;
+    }
+
+    private void journalReleasedAttempt(AttachmentConversionTask task, Source source, Long itemId) {
+        if (task.getKind() == Kind.INITIAL) {
+            var item = lockFresh(InitialAttachmentUploadItem.class, itemId);
+            if (item == null || !Objects.equals(item.getBatch().getId(), source.batchId()) || !inLane(item.getContentType(), task.getLane())) {
+                throw new InvalidAttachmentConversionMessageException();
+            }
+            if (item.getDerivedJson() == null && item.getTripAttachmentId() == null) {
+                var keys = initialSource.cleanupObjects(item).stream().filter(object -> !object.deleted())
+                        .map(InitialAttachmentUploadTransactionService.CleanupObject::key)
+                        .filter(key -> !key.equals(item.getObjectKey())).toList();
+                initialSource.scheduleCleanupKeys(item.getObjectKey(), keys, "CONVERSION_CLAIM_RELEASED");
+            }
+        } else {
+            var item = lockFresh(AdditionalAttachmentUploadItem.class, itemId);
+            if (item == null || !Objects.equals(item.getBatch().getId(), source.batchId()) || !inLane(item.getContentType(), task.getLane())) {
+                throw new InvalidAttachmentConversionMessageException();
+            }
+            if (item.getDerivedJson() == null && item.getTripAttachmentId() == null) {
+                var keys = additionalSource.cleanupObjects(item).stream().filter(object -> !object.deleted())
+                        .map(AdditionalAttachmentUploadTransactionService.CleanupObject::key)
+                        .filter(key -> !key.equals(item.getObjectKey())).toList();
+                additionalSource.scheduleCleanupKeys(item.getObjectKey(), keys, "CONVERSION_CLAIM_RELEASED");
+            }
+        }
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public boolean renewLease(AttachmentConversionClaim claim) {
         var candidate = tasks.findById(claim.taskId()).orElse(null);
         if (candidate == null) {
@@ -119,12 +166,7 @@ public class AttachmentConversionTransactionService {
         LocalDateTime now = databaseTime();
         if (source == null || !matchesSource(task, source) || source.route() != AttachmentConversionRoute.KAFKA
                 || source.terminalStatus() != null || !source.processable()
-                || task.getKind() != claim.kind() || task.getLane() != claim.lane()
-                || !Objects.equals(source.batchId(), claim.batchId())
-                || !Objects.equals(source.uploadId(), claim.uploadId())
-                || !Objects.equals(source.executionId(), claim.executionId())
-                || !Objects.equals(source.tripId(), claim.tripId())
-                || !Objects.equals(source.userId(), claim.userId())
+                || !matchesClaim(task, source, claim)
                 || !task.isClaimOwner(claim.claimToken(), now)) {
             return false;
         }
@@ -218,6 +260,15 @@ public class AttachmentConversionTransactionService {
     private boolean matchesSource(AttachmentConversionTask task, Source source) {
         Long batchId = task.getKind() == Kind.INITIAL ? task.getInitialBatchId() : task.getAdditionalBatchId();
         return Objects.equals(batchId, source.batchId()) && Objects.equals(task.getTripId(), source.tripId());
+    }
+
+    private boolean matchesClaim(AttachmentConversionTask task, Source source, AttachmentConversionClaim claim) {
+        return task.getKind() == claim.kind() && task.getLane() == claim.lane()
+                && Objects.equals(source.batchId(), claim.batchId())
+                && Objects.equals(source.uploadId(), claim.uploadId())
+                && Objects.equals(source.executionId(), claim.executionId())
+                && Objects.equals(source.tripId(), claim.tripId())
+                && Objects.equals(source.userId(), claim.userId());
     }
 
     private void requireRouting(AttachmentConversionTask task, Kind kind, Lane lane) {

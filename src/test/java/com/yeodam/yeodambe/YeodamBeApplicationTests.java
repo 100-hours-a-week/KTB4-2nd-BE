@@ -36,6 +36,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class YeodamBeApplicationTests {
 
     @Autowired
+    private org.springframework.context.ApplicationContext context;
+
+    @Autowired
     private MockMvc mockMvc;
 
     @Autowired
@@ -55,6 +58,12 @@ class YeodamBeApplicationTests {
 
     @Autowired
     private TokenHasher tokenHasher;
+
+    @Test
+    void normalStartupDoesNotRunOperations() {
+        assertThat(context.getBeansOfType(com.yeodam.yeodambe.trip.service.AttachmentConversionOperationsRunner.class)).isEmpty();
+        assertThat(context.getBeansOfType(org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor.class)).hasSize(1);
+    }
 
     @Test
     void 애플리케이션_컨텍스트를_불러온다() {

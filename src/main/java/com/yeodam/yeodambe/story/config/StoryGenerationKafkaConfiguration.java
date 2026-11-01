@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.config;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import com.yeodam.yeodambe.integration.service.KafkaDltLogService;
 import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import com.yeodam.yeodambe.story.service.StoryGenerationResultRecoveryService;
@@ -23,6 +24,7 @@ import org.springframework.util.backoff.FixedBackOff;
         name = "app.story.result-listener-enabled",
         havingValue = "true"
 )
+@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
 public class StoryGenerationKafkaConfiguration {
 
     private final KafkaDltLogService dltLogs;

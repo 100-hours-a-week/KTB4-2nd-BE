@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.story.event;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.integration.event.EventJsonCodec;
@@ -19,6 +20,7 @@ import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
         name = "app.story.result-listener-enabled",
         havingValue = "true"
 )
+@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
 public class StoryGenerationResultListener {
 
     private final ObjectMapper objectMapper;

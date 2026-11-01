@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.integration.client;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.integration.service.OutboxReceiptService;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
@@ -17,6 +18,7 @@ import java.time.Instant;
 
 @Component
 @RequiredArgsConstructor
+@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
 public class OutboxReceiptConsumer {
     private final OutboxReceiptService receipts;
 

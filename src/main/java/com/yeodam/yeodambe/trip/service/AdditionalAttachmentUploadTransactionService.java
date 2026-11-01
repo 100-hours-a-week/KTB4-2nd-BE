@@ -634,6 +634,9 @@ public class AdditionalAttachmentUploadTransactionService {
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Optional<AdditionalAttachmentUploadBatchSnapshot> claimBatch() {
+        if (conversionProperties.mode() != AttachmentConversionRoute.DB || conversionProperties.operations().enabled()) {
+            return Optional.empty();
+        }
         for (AdditionalAttachmentUploadBatch candidate : uploadBatchRepository.findPendingConversion(
                 databaseTime(), PageRequest.of(0, 20))) {
             Trip trip = tripRepository.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId())
@@ -1020,7 +1023,8 @@ public class AdditionalAttachmentUploadTransactionService {
     @Transactional
     public ConversionBatch claimConversion(Long tripId, Long userId, String uploadId) {
         VerificationBatch verified = loadForVerification(tripId, userId, uploadId);
-        if (verified.conversionRoute() != AttachmentConversionRoute.DB
+        if (conversionProperties.mode() != AttachmentConversionRoute.DB || conversionProperties.operations().enabled()
+                || verified.conversionRoute() != AttachmentConversionRoute.DB
                 || verified.status() != AdditionalAttachmentUploadStatus.VERIFIED) {
             throw new TripAttachmentAddNotAllowedException();
         }

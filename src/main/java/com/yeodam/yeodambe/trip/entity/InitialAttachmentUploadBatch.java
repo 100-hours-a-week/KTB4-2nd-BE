@@ -212,4 +212,11 @@ public class InitialAttachmentUploadBatch {
         deliveryClaimToken = null;
         deliveryLeaseUntil = null;
     }
+    public void migrateConversionRoute(AttachmentConversionRoute route) {
+        conversionRoute = route;
+        status = InitialAttachmentUploadStatus.ACCEPTED;
+        claimToken = null;
+        leaseUntil = null;
+    }
+
 }

@@ -198,4 +198,11 @@ public class AdditionalAttachmentUploadBatch {
         }
         status = AdditionalAttachmentUploadStatus.FAILED;
     }
+    public void migrateConversionRoute(AttachmentConversionRoute route) {
+        conversionRoute = route;
+        status = AdditionalAttachmentUploadStatus.VERIFIED;
+        workerToken = null;
+        leaseExpiresAt = null;
+    }
+
 }

@@ -36,7 +36,7 @@ class InitialUploadAcceptanceStatusTest {
                             .collect(Collectors.toMap(type -> type, type -> "test-" + type.name()))),
                     mock(TripCreationOutboxRepository.class), mock(ApplicationEventPublisher.class),
                     mock(AttachmentConversionAdmissionService.class),
-                    new com.yeodam.yeodambe.trip.config.AttachmentConversionProperties(null, null, null, null),
+                    new com.yeodam.yeodambe.trip.config.AttachmentConversionProperties(null, null, null, null, null),
                     mock(AttachmentConversionEnqueueService.class), mock(AttachmentConversionTaskRepository.class));
 
     @Test

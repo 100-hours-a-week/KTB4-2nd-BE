@@ -84,6 +84,11 @@ app:
     group-prefix: ${ATTACHMENT_CONVERSION_GROUP_PREFIX:yeodam-image-conversion}
     retry:
       technical-backoff: ${ATTACHMENT_CONVERSION_TECHNICAL_BACKOFF:}
+    recovery:
+      interval: ${ATTACHMENT_CONVERSION_RECOVERY_INTERVAL:}
+      page-size: ${ATTACHMENT_CONVERSION_RECOVERY_PAGE_SIZE:0}
+      max-pages-per-run: ${ATTACHMENT_CONVERSION_RECOVERY_MAX_PAGES_PER_RUN:0}
+      max-reissues-per-run: ${ATTACHMENT_CONVERSION_RECOVERY_MAX_REISSUES_PER_RUN:0}
     kafka:
       fetch-max-bytes: ${ATTACHMENT_CONVERSION_FETCH_MAX_BYTES:0}
       partition-fetch-max-bytes: ${ATTACHMENT_CONVERSION_PARTITION_FETCH_MAX_BYTES:0}

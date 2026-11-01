@@ -99,6 +99,11 @@ public class AttachmentConversionTask {
         this.remainingBytes = totalBytes;
     }
 
+    public long nextDelivery() {
+        latestDeliveryNo++;
+        return latestDeliveryNo;
+    }
+
     public boolean isTerminal() {
         return status == Status.SUCCEEDED || status == Status.CANCELED || status == Status.FAILED;
     }

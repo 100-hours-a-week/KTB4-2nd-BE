@@ -220,7 +220,7 @@ class AttachmentConversionWorkerTest {
         var runner = new ApplicationContextRunner().withUserConfiguration(AttachmentConversionWorker.class)
                 .withBean(AttachmentConversionTransactionService.class, () -> db)
                 .withBean(TripAttachmentDerivativeService.class, () -> photos)
-                .withBean(AttachmentConversionProperties.class, () -> new AttachmentConversionProperties(null, null, null, topics))
+                .withBean(AttachmentConversionProperties.class, () -> new AttachmentConversionProperties(null, null, null, topics, null))
                 .withBean("conversionService", ConversionService.class, ApplicationConversionService::getSharedInstance)
                 .withPropertyValues("app.attachment-conversion.mode=KAFKA");
         runner.run(context -> assertThat(context).hasFailed());

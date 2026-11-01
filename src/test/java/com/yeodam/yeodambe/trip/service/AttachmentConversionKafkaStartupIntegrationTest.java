@@ -37,7 +37,11 @@ import static org.awaitility.Awaitility.await;
         "app.attachment-conversion.admission.max-unfinished-age=1h",
         "app.attachment-conversion.admission.snapshot-max-age=30s",
         "app.attachment-conversion.admission.sample-interval=10s",
-        "app.attachment-conversion.admission.reopen-ratio=0.5"
+        "app.attachment-conversion.admission.reopen-ratio=0.5",
+        "app.attachment-conversion.recovery.interval=5m",
+        "app.attachment-conversion.recovery.page-size=10",
+        "app.attachment-conversion.recovery.max-pages-per-run=2",
+        "app.attachment-conversion.recovery.max-reissues-per-run=10"
 })
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)

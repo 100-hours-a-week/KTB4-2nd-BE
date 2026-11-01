@@ -81,7 +81,15 @@ auth:
 app:
   attachment-conversion:
     mode: ${ATTACHMENT_CONVERSION_MODE:DB}
+    group-prefix: ${ATTACHMENT_CONVERSION_GROUP_PREFIX:yeodam-image-conversion}
+    retry:
+      technical-backoff: ${ATTACHMENT_CONVERSION_TECHNICAL_BACKOFF:}
+    kafka:
+      fetch-max-bytes: ${ATTACHMENT_CONVERSION_FETCH_MAX_BYTES:0}
+      partition-fetch-max-bytes: ${ATTACHMENT_CONVERSION_PARTITION_FETCH_MAX_BYTES:0}
+      max-message-bytes: ${ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES:0}
     topics:
+      dead-letter: ${ATTACHMENT_CONVERSION_DLT_TOPIC:yeodam-image-conversion-dlt}
       initial-light: ${ATTACHMENT_CONVERSION_INITIAL_LIGHT_TOPIC:yeodam-image-initial-light}
       initial-heic: ${ATTACHMENT_CONVERSION_INITIAL_HEIC_TOPIC:yeodam-image-initial-heic}
       additional-light: ${ATTACHMENT_CONVERSION_ADDITIONAL_LIGHT_TOPIC:yeodam-image-additional-light}

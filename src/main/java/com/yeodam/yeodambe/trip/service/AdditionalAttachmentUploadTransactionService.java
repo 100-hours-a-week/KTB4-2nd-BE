@@ -408,52 +408,78 @@ public class AdditionalAttachmentUploadTransactionService {
         if (item.getConversionNextAttemptAt() != null && item.getConversionNextAttemptAt().isAfter(now)) {
             throw new TripAttachmentAddNotAllowedException();
         }
+        startAttempt(claim.executionId(), item);
+        return derivativeKeys(plannedPhoto(claim.executionId(), item));
+    }
+
+    private void startAttempt(String executionId, AdditionalAttachmentUploadItem item) {
+        scheduleUnreferencedAttempts(item, "CONVERSION_RETRY");
+        item.startConversion(databaseTime());
         var journal = new ArrayList<>(cleanupObjects(item));
-        journal.replaceAll(object -> !object.key().equals(item.getObjectKey()) && object.startedAt() == null
-                ? new CleanupObject(object.key(), now, "CONVERSION_RETRY", object.deleted()) : object);
-        item.startConversion(now);
-        String prefix = derivativePrefix(claim, item);
-        List<String> keys = "image/heic".equals(item.getContentType())
-                ? List.of(prefix + "analyze.jpg", prefix + "preview.webp", prefix + "display.jpg")
-                : List.of(prefix + "analyze.jpg", prefix + "preview.webp");
-        keys.forEach(key -> journal.add(new CleanupObject(key, null, null, false)));
+        derivativeKeys(plannedPhoto(executionId, item)).forEach(key -> journal.add(new CleanupObject(key, null, null, false)));
         recordCleanup(item, journal);
-        return keys;
+    }
+
+    private void scheduleUnreferencedAttempts(AdditionalAttachmentUploadItem item, String reason) {
+        recordCleanup(item, cleanupObjects(item).stream().map(object -> !object.key().equals(item.getObjectKey()) && object.startedAt() == null
+                ? new CleanupObject(object.key(), databaseTime(), reason, object.deleted()) : object).toList());
+    }
+
+    private DerivedPhotoKeys plannedPhoto(String executionId, AdditionalAttachmentUploadItem item) {
+        String prefix = attemptPrefix(executionId, item.getId(), item.getConversionAttempts());
+        return new DerivedPhotoKeys(item.getObjectKey(), prefix + "analyze.jpg", prefix + "preview.webp",
+                "image/heic".equals(item.getContentType()) ? prefix + "display.jpg" : null,
+                null, null, null, null, item.getSizeBytes(), null, null, null);
+    }
+
+    private String attemptPrefix(String executionId, Long itemId, int attemptNo) {
+        return "trip-additions/" + executionId + "/derived/" + itemId + "/" + attemptNo + "/";
+    }
+
+    private List<String> derivativeKeys(DerivedPhotoKeys photo) {
+        return photo.displayKey() == null ? List.of(photo.analyzeKey(), photo.previewKey())
+                : List.of(photo.analyzeKey(), photo.previewKey(), photo.displayKey());
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void savePhotoSuccess(AdditionalAttachmentUploadBatchSnapshot claim, Long itemId, DerivedPhotoKeys photo) {
-        try (var scope = WorkflowMdcScope.job("trip_reanalysis", claim.tripId(), claim.executionId());
-             var timing = startAttachmentPersistenceLogging(itemId)) {
-            requireCurrentClaim(claim);
-            AdditionalAttachmentUploadItem item = requireItem(claim, itemId);
-            if (item.getDerivedJson() != null) {
-                logAttachmentAlreadyPersisted(timing);
-                return;
-            }
-            if (photo == null || !item.getObjectKey().equals(photo.originalKey())
-                    || !Objects.equals(item.getSizeBytes(), photo.originalSizeBytes())) {
-                throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_SOURCE_ATTACHMENT_MISMATCH.message());
-            }
-            String prefix = derivativePrefix(claim, item);
-            boolean heic = "image/heic".equals(item.getContentType());
-            if (item.getConversionAttempts() < 1
-                    || !Objects.equals(photo.analyzeKey(), prefix + "analyze.jpg")
-                    || !Objects.equals(photo.previewKey(), prefix + "preview.webp")
-                    || photo.analyzeSizeBytes() == null || photo.analyzeSizeBytes() < 1
-                    || photo.previewSizeBytes() == null || photo.previewSizeBytes() < 1
-                    || (heic && (!Objects.equals(photo.displayKey(), prefix + "display.jpg")
-                        || photo.displaySizeBytes() == null || photo.displaySizeBytes() < 1))
-                    || (!heic && photo.displayKey() != null)) {
-                throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_OUTPUT_KEY_OR_SIZE_INVALID.message());
-            }
-            saveAttachment(claim.tripId(), claim.userId(), item, photo);
-            item.conversionCompleted(objectMapper.writeValueAsString(photo));
-            AdditionalAttachmentExecution execution = executionRepository.findById(claim.executionId()).orElseThrow();
-            userStatsService.releaseInitialUploadReservation(claim.userId(), item.getSizeBytes());
-            execution.accountPhoto(item.getSizeBytes());
-            userStatsService.refreshFromActiveTrips(claim.userId());
+        requireCurrentClaim(claim);
+        var item = requireItem(claim, itemId);
+        if (item.getDerivedJson() != null) {
+            return;
+        }
+        validatePhoto(claim.executionId(), item, photo, item.getConversionAttempts());
+        persistPhoto(claim.tripId(), claim.userId(), executionRepository.findById(claim.executionId()).orElseThrow(), item, photo);
+    }
 
+    private void validatePhoto(String executionId, AdditionalAttachmentUploadItem item, DerivedPhotoKeys photo, int attemptNo) {
+        if (photo == null || !item.getObjectKey().equals(photo.originalKey())
+                || !Objects.equals(item.getSizeBytes(), photo.originalSizeBytes())) {
+            throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_SOURCE_ATTACHMENT_MISMATCH.message());
+        }
+        String prefix = attemptPrefix(executionId, item.getId(), attemptNo);
+        boolean heic = "image/heic".equals(item.getContentType());
+        if (attemptNo < 1 || !Objects.equals(photo.analyzeKey(), prefix + "analyze.jpg")
+                || !Objects.equals(photo.previewKey(), prefix + "preview.webp")
+                || photo.analyzeSizeBytes() == null || photo.analyzeSizeBytes() < 1
+                || photo.previewSizeBytes() == null || photo.previewSizeBytes() < 1
+                || heic && (!Objects.equals(photo.displayKey(), prefix + "display.jpg")
+                    || photo.displaySizeBytes() == null || photo.displaySizeBytes() < 1)
+                || !heic && photo.displayKey() != null) {
+            throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_OUTPUT_KEY_OR_SIZE_INVALID.message());
+        }
+    }
+
+    private void persistPhoto(Long tripId, Long userId, AdditionalAttachmentExecution execution, AdditionalAttachmentUploadItem item, DerivedPhotoKeys photo) {
+        try (var scope = WorkflowMdcScope.job("trip_reanalysis", tripId, execution.getExecutionId());
+             var timing = startAttachmentPersistenceLogging(item.getId())) {
+            var attachment = saveAttachment(tripId, userId, item, photo);
+            item.conversionCompleted(objectMapper.writeValueAsString(photo));
+            userStatsService.releaseInitialUploadReservation(userId, item.getSizeBytes());
+            execution.accountPhoto(item.getSizeBytes());
+            userStatsService.refreshFromActiveTrips(userId);
+            // 같은 트랜잭션의 photosReady 검증 전에 읽기 전용 file 연관관계도 다시 채운다.
+            entityManager.refresh(attachment);
             logAttachmentPersisted(timing);
         }
     }
@@ -477,13 +503,17 @@ public class AdditionalAttachmentUploadTransactionService {
             throw new TripAttachmentAddNotAllowedException();
         }
         batch.releaseConversion(claim.workerToken());
+        completeBatch(batch);
+    }
+
+    private void completeBatch(AdditionalAttachmentUploadBatch batch) {
         batch.markPrepared();
-        logPhotoDerivativesPersisted(claim.tripId(), claim.executionId());
-        var ready = analysisPreparationService.photosReady(claim.tripId(), claim.userId(),
-                claim.uploadId(), claim.executionId());
-        outboxService.save(claim.tripId(), claim.userId(), claim.uploadId(),
+        logPhotoDerivativesPersisted(batch.getTripId(), batch.getAdditionId());
+        var ready = analysisPreparationService.photosReady(batch.getTripId(), batch.getUserId(),
+                batch.getUploadId(), batch.getAdditionId());
+        outboxService.save(batch.getTripId(), batch.getUserId(), batch.getUploadId(),
                 new AdditionalAttachmentUploadCompletionService.PreparedQueueBatch(ready, Optional.empty()),
-                batch.getRequestId() == null ? claim.executionId() : batch.getRequestId());
+                batch.getRequestId() == null ? batch.getAdditionId() : batch.getRequestId());
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -520,12 +550,18 @@ public class AdditionalAttachmentUploadTransactionService {
         var execution = executionRepository.findForUpdate(executionId).orElseThrow();
         entityManager.flush();
         entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
+        failExecution(execution, errorCode);
+    }
+
+    private void failExecution(AdditionalAttachmentExecution execution, String errorCode) {
         if (execution.isTerminal()) {
             return;
         }
+        String executionId = execution.getExecutionId();
         var now = databaseTime();
         logWorkflowFailed(execution, now, errorCode);
         for (var item : uploadItemRepository.findAdditionItems(executionId)) {
+            entityManager.refresh(item, LockModeType.PESSIMISTIC_WRITE);
             if (item.getTripAttachmentId() != null) {
                 var attachment = tripAttachmentRepository.findById(item.getTripAttachmentId()).orElseThrow();
                 attachment.softDelete(now);
@@ -558,11 +594,6 @@ public class AdditionalAttachmentUploadTransactionService {
 
         eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(
                 execution.getUserId(), snapshot));
-    }
-
-    private String derivativePrefix(AdditionalAttachmentUploadBatchSnapshot claim, AdditionalAttachmentUploadItem item) {
-        return "trip-additions/" + claim.executionId() + "/derived/"
-                + item.getId() + "/" + item.getConversionAttempts() + "/";
     }
 
     private AdditionalAttachmentUploadItem requireItem(AdditionalAttachmentUploadBatchSnapshot claim, Long itemId) {
@@ -731,10 +762,6 @@ public class AdditionalAttachmentUploadTransactionService {
 
     private WorkflowLog.Stage startAttachmentPersistenceLogging(Long itemId) {
         return WorkflowLog.stage("attachment_persistence").field("item_id", itemId).debug();
-    }
-
-    private void logAttachmentAlreadyPersisted(WorkflowLog.Stage timing) {
-        timing.field("saved_count", 0).success();
     }
 
     private void logPhotoDerivativesPersisted(Long tripId, String executionId) {

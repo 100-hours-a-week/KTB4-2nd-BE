@@ -53,6 +53,7 @@ public class AdditionalAttachmentUploadUrlService {
     private final JdbcTemplate jdbcTemplate;
     private final StoryGenerationJobRepository storyGenerationJobRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final AttachmentConversionAdmissionService conversionAdmission;
 
     private static final long MAX_ADDITION_BYTES = 3L * 1024 * 1024 * 1024;
     private static final Duration UPLOAD_URL_TTL = Duration.ofMinutes(10);
@@ -243,6 +244,7 @@ public class AdditionalAttachmentUploadUrlService {
                 throw new InvalidAttachmentUploadException();
             }
 
+            conversionAdmission.assertNewExecutionAllowed();
             execution = executionRepository.save(
                     new AdditionalAttachmentExecution(
                             request.additionId(),

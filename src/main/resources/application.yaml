@@ -79,6 +79,8 @@ auth:
     internal-service-token: ${WEBSOCKET_INTERNAL_SERVICE_TOKEN:}
 
 app:
+  attachment-conversion:
+    mode: ${ATTACHMENT_CONVERSION_MODE:DB}
   outbox:
     receipt-consumer-group: ${KAFKA_OUTBOX_RECEIPT_CONSUMER_GROUP:yeodam-outbox-receipts}
   public-api-prefix: /api

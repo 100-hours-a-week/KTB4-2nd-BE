@@ -1,0 +1,258 @@
+package com.yeodam.yeodambe.trip.service;
+
+import com.yeodam.yeodambe.trip.client.InvalidAttachmentConversionMessageException;
+import com.yeodam.yeodambe.trip.entity.*;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Status;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemRepository;
+import com.yeodam.yeodambe.trip.repository.AttachmentConversionOutboxRepository;
+import com.yeodam.yeodambe.trip.repository.AttachmentConversionTaskRepository;
+import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaimResult;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.cfg.DateTimeFeature;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.stream.Stream;
+
+@Service
+@RequiredArgsConstructor
+public class AttachmentConversionTransactionService {
+    private final AttachmentConversionTaskRepository tasks;
+    private final AttachmentConversionOutboxRepository outboxes;
+    private final InitialAttachmentUploadItemRepository initialItems;
+    private final AdditionalAttachmentUploadItemRepository additionalItems;
+    private final EntityManager entityManager;
+    private final JdbcTemplate jdbc;
+    private final ObjectMapper json;
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AttachmentConversionClaimResult claim(String taskId, Kind expectedKind, Lane expectedLane) {
+        var candidate = tasks.findById(taskId).orElseThrow(InvalidAttachmentConversionMessageException::new);
+        requireRouting(candidate, expectedKind, expectedLane);
+        var source = lockSource(candidate);
+        var task = lockTask(taskId);
+        requireRouting(task, expectedKind, expectedLane);
+        LocalDateTime now = databaseTime();
+        if (task.getLeaseUntil() != null && task.getLeaseUntil().isAfter(now)) {
+            return retry(task, now);
+        }
+        if (task.isTerminal()) {
+            return terminal();
+        }
+        if (source == null || !matchesSource(task, source) || source.route() != AttachmentConversionRoute.KAFKA) {
+            return retry(task, now);
+        }
+        if (source.terminalStatus() != null) {
+            task.finish(source.terminalStatus());
+            return terminal();
+        }
+        if (!source.processable()) {
+            return retry(task, now);
+        }
+        var photos = photos(task);
+        if (photos.isEmpty()) {
+            return retry(task, now);
+        }
+        var remaining = photos.stream().filter(photo -> photo.derived() == null).toList();
+        if (!remaining.isEmpty() && task.getNextAttemptAt() != null && task.getNextAttemptAt().isAfter(now)) {
+            return retry(task, now);
+        }
+        task.recordRemaining(remaining.size(), remaining.stream().mapToLong(Photo::sizeBytes).sum());
+        task.claim(UUID.randomUUID().toString(), now.plusMinutes(10));
+        String requestId = outboxes.findRequestId(taskId, task.getLatestDeliveryNo()).orElse(source.executionId());
+        return new AttachmentConversionClaimResult(AttachmentConversionClaimResult.Status.CLAIMED,
+                new AttachmentConversionClaim(taskId, task.getClaimToken(), task.getKind(), task.getLane(),
+                        source.batchId(), source.uploadId(), source.executionId(), source.tripId(), source.userId(),
+                        requestId, photos), null);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public boolean renewLease(AttachmentConversionClaim claim) {
+        var candidate = tasks.findById(claim.taskId()).orElse(null);
+        if (candidate == null) {
+            return false;
+        }
+        var source = lockSource(candidate);
+        var task = lockTask(claim.taskId());
+        LocalDateTime now = databaseTime();
+        if (source == null || !matchesSource(task, source) || source.route() != AttachmentConversionRoute.KAFKA
+                || source.terminalStatus() != null || !source.processable()
+                || task.getKind() != claim.kind() || task.getLane() != claim.lane()
+                || !Objects.equals(source.batchId(), claim.batchId())
+                || !Objects.equals(source.uploadId(), claim.uploadId())
+                || !Objects.equals(source.executionId(), claim.executionId())
+                || !Objects.equals(source.tripId(), claim.tripId())
+                || !Objects.equals(source.userId(), claim.userId())
+                || !task.isClaimOwner(claim.claimToken(), now)) {
+            return false;
+        }
+        task.renewLease(now.plusMinutes(10));
+        return true;
+    }
+
+    private Source lockSource(AttachmentConversionTask task) {
+        return task.getKind() == Kind.INITIAL ? lockInitialSource(task) : lockAdditionalSource(task);
+    }
+
+    private Source lockInitialSource(AttachmentConversionTask task) {
+        var hint = entityManager.find(InitialAttachmentUploadBatch.class, task.getInitialBatchId());
+        if (hint == null || !Objects.equals(hint.getTripId(), task.getTripId())) {
+            return null;
+        }
+        var trip = lockFresh(Trip.class, task.getTripId());
+        var execution = lockFresh(TripCreationExecution.class, hint.getExecutionId());
+        var batch = lockFresh(InitialAttachmentUploadBatch.class, task.getInitialBatchId());
+        if (trip == null || execution == null || batch == null
+                || !Objects.equals(trip.getUserId(), batch.getUserId())
+                || !Objects.equals(execution.getTripId(), batch.getTripId())
+                || !Objects.equals(execution.getUserId(), batch.getUserId())
+                || !Objects.equals(execution.getExecutionId(), batch.getExecutionId())) {
+            return null;
+        }
+        Status terminal = execution.isTerminal() ? switch (execution.getStatus()) {
+            case COMPLETED -> Status.SUCCEEDED;
+            case CANCELED -> Status.CANCELED;
+            case FAILED -> Status.FAILED;
+            default -> null;
+        } : null;
+        if (trip.getDeletedAt() != null || trip.getProcessingStatus() == ProcessingStatus.CANCELED) {
+            terminal = Status.CANCELED;
+        } else if (batch.getStatus() == InitialAttachmentUploadStatus.FAILED) {
+            terminal = Status.FAILED;
+        }
+        boolean processable = !execution.isTerminal() && trip.getProcessingStatus() == ProcessingStatus.PROCESSING
+                && batch.getAcceptedAt() != null && batch.getStatus() != InitialAttachmentUploadStatus.PENDING;
+        return new Source(batch.getId(), batch.getUploadId(), batch.getExecutionId(), batch.getTripId(), batch.getUserId(),
+                batch.getConversionRoute(), processable, terminal);
+    }
+
+    private Source lockAdditionalSource(AttachmentConversionTask task) {
+        var hint = entityManager.find(AdditionalAttachmentUploadBatch.class, task.getAdditionalBatchId());
+        if (hint == null || !Objects.equals(hint.getTripId(), task.getTripId())) {
+            return null;
+        }
+        var trip = lockFresh(Trip.class, task.getTripId());
+        var execution = lockFresh(AdditionalAttachmentExecution.class, hint.getAdditionId());
+        var batch = lockFresh(AdditionalAttachmentUploadBatch.class, task.getAdditionalBatchId());
+        if (trip == null || execution == null || batch == null
+                || !Objects.equals(trip.getUserId(), batch.getUserId())
+                || !Objects.equals(execution.getTripId(), batch.getTripId())
+                || !Objects.equals(execution.getUserId(), batch.getUserId())
+                || !Objects.equals(execution.getExecutionId(), batch.getAdditionId())) {
+            return null;
+        }
+        Status terminal = execution.isTerminal() ? switch (execution.getStatus()) {
+            case COMPLETED -> Status.SUCCEEDED;
+            case CANCELED -> Status.CANCELED;
+            case FAILED -> Status.FAILED;
+            default -> null;
+        } : null;
+        if (trip.getDeletedAt() != null || trip.getProcessingStatus() == ProcessingStatus.CANCELED) {
+            terminal = Status.CANCELED;
+        } else if (batch.getStatus() == AdditionalAttachmentUploadStatus.FAILED) {
+            terminal = Status.FAILED;
+        }
+        boolean processable = !execution.isTerminal() && trip.getProcessingStatus() == ProcessingStatus.COMPLETED
+                && batch.getStatus() != AdditionalAttachmentUploadStatus.PENDING;
+        return new Source(batch.getId(), batch.getUploadId(), batch.getAdditionId(), batch.getTripId(), batch.getUserId(),
+                batch.getConversionRoute(), processable, terminal);
+    }
+
+    private <T> T lockFresh(Class<T> type, Object id) {
+        entityManager.flush();
+        T value = entityManager.find(type, id, LockModeType.PESSIMISTIC_WRITE);
+        if (value != null) {
+            entityManager.refresh(value, LockModeType.PESSIMISTIC_WRITE);
+        }
+        return value;
+    }
+
+    private AttachmentConversionTask lockTask(String taskId) {
+        var task = tasks.findByIdForUpdate(taskId).orElseThrow(InvalidAttachmentConversionMessageException::new);
+        entityManager.refresh(task, LockModeType.PESSIMISTIC_WRITE);
+        return task;
+    }
+
+    private boolean matchesSource(AttachmentConversionTask task, Source source) {
+        Long batchId = task.getKind() == Kind.INITIAL ? task.getInitialBatchId() : task.getAdditionalBatchId();
+        return Objects.equals(batchId, source.batchId()) && Objects.equals(task.getTripId(), source.tripId());
+    }
+
+    private void requireRouting(AttachmentConversionTask task, Kind kind, Lane lane) {
+        if (task.getKind() != kind || task.getLane() != lane) {
+            throw new InvalidAttachmentConversionMessageException();
+        }
+    }
+
+    private List<Photo> photos(AttachmentConversionTask task) {
+        if (task.getKind() == Kind.INITIAL) {
+            var items = initialItems.findAllByBatch_IdOrderByFileOrderAsc(task.getInitialBatchId());
+            for (var item : items) {
+                entityManager.refresh(item, LockModeType.PESSIMISTIC_WRITE);
+            }
+            return items.stream()
+                    .filter(item -> inLane(item.getContentType(), task.getLane()))
+                    .map(item -> new Photo(item.getId(), item.getContentType(), item.getObjectKey(), item.getSizeBytes(),
+                            item.getConversionAttempts(), item.getConversionNextAttemptAt(), readDerived(item.getDerivedJson())))
+                    .toList();
+        }
+        var items = additionalItems.findAllByBatch_IdOrderByFileOrderAsc(task.getAdditionalBatchId());
+        for (var item : items) {
+            entityManager.refresh(item, LockModeType.PESSIMISTIC_WRITE);
+        }
+        return items.stream()
+                .filter(item -> inLane(item.getContentType(), task.getLane()))
+                .map(item -> new Photo(item.getId(), item.getContentType(), item.getObjectKey(), item.getSizeBytes(),
+                        item.getConversionAttempts(), item.getConversionNextAttemptAt(), readDerived(item.getDerivedJson())))
+                .toList();
+    }
+
+    private boolean inLane(String contentType, Lane lane) {
+        return ("image/heic".equals(contentType) ? Lane.HEIC : Lane.LIGHT) == lane;
+    }
+
+    private DerivedPhotoKeys readDerived(String value) {
+        return value == null ? null : json.readerFor(DerivedPhotoKeys.class)
+                .without(DateTimeFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE).readValue(value);
+    }
+
+    private LocalDateTime databaseTime() {
+        return jdbc.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+    }
+
+    private AttachmentConversionClaimResult retry(AttachmentConversionTask task, LocalDateTime now) {
+        LocalDateTime retryAt = Stream.of(task.getLeaseUntil(), task.getNextAttemptAt())
+                .filter(Objects::nonNull).filter(value -> value.isAfter(now)).max(LocalDateTime::compareTo).orElse(null);
+        return new AttachmentConversionClaimResult(AttachmentConversionClaimResult.Status.RETRY_LATER, null, retryAt);
+    }
+
+    private AttachmentConversionClaimResult terminal() {
+        return new AttachmentConversionClaimResult(AttachmentConversionClaimResult.Status.ACK_TERMINAL, null, null);
+    }
+
+    private record Source(
+            Long batchId,
+            String uploadId,
+            String executionId,
+            Long tripId,
+            Long userId,
+            AttachmentConversionRoute route,
+            boolean processable,
+            Status terminalStatus
+    ) {
+    }
+}

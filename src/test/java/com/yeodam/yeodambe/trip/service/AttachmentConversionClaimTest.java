@@ -1,0 +1,391 @@
+package com.yeodam.yeodambe.trip.service;
+
+import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.trip.client.InvalidAttachmentConversionMessageException;
+import com.yeodam.yeodambe.trip.entity.*;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
+import com.yeodam.yeodambe.trip.repository.AttachmentConversionTaskRepository;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaimResult;
+import com.yeodam.yeodambe.user.entity.User;
+import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.dao.TransientDataAccessResourceException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import static com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaimResult.Status.*;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+
+@SpringBootTest(properties = "spring.application.name=conversion-claim-test")
+@ActiveProfiles("test")
+@Import(TestcontainersConfiguration.class)
+@Transactional
+class AttachmentConversionClaimTest {
+    private static final LocalDateTime NOW = LocalDateTime.of(2000, 1, 1, 12, 0);
+    @Autowired private AttachmentConversionTransactionService transactions;
+    @Autowired private EntityManager entityManager;
+    @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private ObjectMapper json;
+    @MockitoSpyBean private JdbcTemplate jdbc;
+    @MockitoSpyBean private AttachmentConversionTaskRepository tasks;
+
+    @BeforeEach
+    void fixedDatabaseTime() {
+        doReturn(NOW).when(jdbc).queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void twoNodesClaimOnlyOnce(Kind kind) throws Exception {
+        var fixture = new TransactionTemplate(transactionManager).execute(status -> fixture(kind));
+        var ready = new CountDownLatch(2);
+        var start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var results = List.of(pool.submit(() -> {
+                ready.countDown();
+                assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
+                return transactions.claim(fixture.taskId(), kind, Lane.LIGHT);
+            }), pool.submit(() -> {
+                ready.countDown();
+                assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
+                return transactions.claim(fixture.taskId(), kind, Lane.LIGHT);
+            }));
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            var actual = List.of(results.get(0).get(10, TimeUnit.SECONDS), results.get(1).get(10, TimeUnit.SECONDS));
+            assertThat(actual).filteredOn(result -> result.status() == CLAIMED).hasSize(1);
+            assertThat(actual).filteredOn(result -> result.status() == RETRY_LATER).singleElement()
+                    .satisfies(result -> assertThat(result.retryAt()).isEqualTo(NOW.plusMinutes(10)));
+            var claim = actual.stream().filter(result -> result.status() == CLAIMED).findFirst().orElseThrow().claim();
+            assertThat(claim.claimToken()).isEqualTo(jdbc.queryForObject(
+                    "SELECT claim_token FROM attachment_conversion_tasks WHERE task_id = ?", String.class, fixture.taskId()));
+            assertThat(claim.photos()).singleElement().satisfies(photo -> {
+                assertThat(photo.itemId()).isEqualTo(fixture.lightItemId());
+                assertThat(photo.objectKey()).isEqualTo("original/" + fixture.uploadId() + "/light");
+                assertThat(photo.attempts()).isZero();
+            });
+            assertThat(claim.kind()).isEqualTo(kind);
+            assertThat(claim.lane()).isEqualTo(Lane.LIGHT);
+            assertThat(claim.batchId()).isEqualTo(fixture.batchId());
+            assertThat(claim.userId()).isEqualTo(fixture.userId());
+            assertThat(claim.tripId()).isEqualTo(fixture.tripId());
+            assertThat(claim.requestId()).isEqualTo("request-before-worker");
+            assertAttemptsUnchanged(fixture);
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void expiredTokenCannotRenewOrPersist(Kind kind) {
+        var fixture = fixture(kind);
+        var first = claimed(fixture);
+        entityManager.flush();
+        jdbc.update("UPDATE attachment_conversion_tasks SET lease_until = ? WHERE task_id = ?", NOW, fixture.taskId());
+        entityManager.clear();
+
+        assertThat(transactions.renewLease(first)).isFalse();
+        var second = claimed(fixture);
+        assertThat(second.claimToken()).isNotEqualTo(first.claimToken());
+        doReturn(NOW.plusMinutes(1)).when(jdbc).queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+        assertThat(transactions.renewLease(first)).isFalse();
+        entityManager.flush();
+        assertThat(jdbc.queryForObject("SELECT lease_until FROM attachment_conversion_tasks WHERE task_id = ?",
+                LocalDateTime.class, fixture.taskId())).isEqualTo(NOW.plusMinutes(10));
+        assertThat(transactions.renewLease(second)).isTrue();
+        entityManager.flush();
+        assertThat(jdbc.queryForObject("SELECT lease_until FROM attachment_conversion_tasks WHERE task_id = ?",
+                LocalDateTime.class, fixture.taskId())).isEqualTo(NOW.plusMinutes(11));
+        assertAttemptsUnchanged(fixture);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void wrongTopicKindOrLaneIsInvalidMessage(Kind kind) {
+        var fixture = fixture(kind);
+        assertThatThrownBy(() -> transactions.claim(fixture.taskId(), kind, Lane.HEIC))
+                .isInstanceOf(InvalidAttachmentConversionMessageException.class);
+        assertThatThrownBy(() -> transactions.claim(fixture.taskId(), kind == Kind.INITIAL ? Kind.ADDITIONAL : Kind.INITIAL, Lane.LIGHT))
+                .isInstanceOf(InvalidAttachmentConversionMessageException.class);
+        assertThatThrownBy(() -> transactions.claim(UUID.randomUUID().toString(), kind, Lane.LIGHT))
+                .isInstanceOf(InvalidAttachmentConversionMessageException.class);
+        assertThat(tasks.findById(fixture.taskId()).orElseThrow().getClaimToken()).isNull();
+        assertAttemptsUnchanged(fixture);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void databaseFailureIsNotTerminalAck(Kind kind) {
+        var fixture = fixture(kind);
+        var failure = new TransientDataAccessResourceException("test DB unavailable");
+        doThrow(failure).when(tasks).findById(fixture.taskId());
+        assertThatThrownBy(() -> transactions.claim(fixture.taskId(), kind, Lane.LIGHT)).isSameAs(failure);
+        assertThat(jdbc.queryForObject("SELECT claim_token FROM attachment_conversion_tasks WHERE task_id = ?",
+                String.class, fixture.taskId())).isNull();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"INITIAL,SUCCEEDED", "INITIAL,CANCELED", "INITIAL,FAILED", "ADDITIONAL,SUCCEEDED", "ADDITIONAL,CANCELED", "ADDITIONAL,FAILED"})
+    void terminalTaskCanBeAcknowledgedWithoutConversion(Kind kind, String state) {
+        var fixture = fixture(kind);
+        jdbc.update("UPDATE attachment_conversion_tasks SET status = ? WHERE task_id = ?", state, fixture.taskId());
+        entityManager.clear();
+        var result = transactions.claim(fixture.taskId(), kind, Lane.LIGHT);
+        assertThat(result.status()).isEqualTo(ACK_TERMINAL);
+        assertThat(result.claim()).isNull();
+        assertThat(result.retryAt()).isNull();
+        assertAttemptsUnchanged(fixture);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void activeLeaseAndRetryDeadlineStayPendingUntilBothAreDue(Kind kind) {
+        var fixture = fixture(kind);
+        jdbc.update("UPDATE attachment_conversion_tasks SET status = 'RUNNING', claim_token = 'other', lease_until = ?, next_attempt_at = ? WHERE task_id = ?",
+                NOW.plusMinutes(3), NOW.plusMinutes(5), fixture.taskId());
+        entityManager.clear();
+        var waiting = transactions.claim(fixture.taskId(), kind, Lane.LIGHT);
+        assertThat(waiting.status()).isEqualTo(RETRY_LATER);
+        assertThat(waiting.claim()).isNull();
+        assertThat(waiting.retryAt()).isEqualTo(NOW.plusMinutes(5));
+        jdbc.update("UPDATE attachment_conversion_tasks SET lease_until = ?, next_attempt_at = ? WHERE task_id = ?", NOW, NOW, fixture.taskId());
+        entityManager.clear();
+        assertThat(transactions.claim(fixture.taskId(), kind, Lane.LIGHT).status()).isEqualTo(CLAIMED);
+        assertAttemptsUnchanged(fixture);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void dbOrHeldParentRouteIsPendingRatherThanMalformed(Kind kind) {
+        var fixture = fixture(kind);
+        for (String route : List.of("DB", "HOLD")) {
+            jdbc.update("UPDATE " + batchTable(kind) + " SET conversion_route = ? WHERE upload_batch_id = ?", route, fixture.batchId());
+            entityManager.clear();
+            assertThat(transactions.claim(fixture.taskId(), kind, Lane.LIGHT).status()).isEqualTo(RETRY_LATER);
+            assertThat(tasks.findById(fixture.taskId()).orElseThrow().getClaimToken()).isNull();
+        }
+        assertAttemptsUnchanged(fixture);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"INITIAL,COMPLETED,SUCCEEDED", "INITIAL,CANCELED,CANCELED", "INITIAL,FAILED,FAILED", "ADDITIONAL,COMPLETED,SUCCEEDED", "ADDITIONAL,CANCELED,CANCELED", "ADDITIONAL,FAILED,FAILED"})
+    void endedParentSettlesTaskWithoutStartingPhotos(Kind kind, String parentStatus, String expectedTaskStatus) {
+        var fixture = fixture(kind);
+        jdbc.update("UPDATE " + executionTable(kind) + " SET status = ?, ended_at = ? WHERE execution_id = ?", parentStatus, NOW, fixture.executionId());
+        entityManager.clear();
+        assertThat(transactions.claim(fixture.taskId(), kind, Lane.LIGHT).status()).isEqualTo(ACK_TERMINAL);
+        entityManager.flush();
+        assertThat(tasks.findById(fixture.taskId()).orElseThrow().getStatus().name()).isEqualTo(expectedTaskStatus);
+        assertAttemptsUnchanged(fixture);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void alreadyConvertedLaneStaysClaimedUntilAtomicParentCompletion(Kind kind) {
+        var fixture = fixture(kind);
+        var derived = new DerivedPhotoKeys("original/" + fixture.uploadId() + "/light", "analyze", "preview", null,
+                null, null, null, null, 100L, 50L, 25L, null);
+        jdbc.update("UPDATE " + itemTable(kind) + " SET derived_json = ? WHERE upload_item_id = ?", json.writeValueAsString(derived), fixture.lightItemId());
+        entityManager.clear();
+        var result = transactions.claim(fixture.taskId(), kind, Lane.LIGHT);
+        assertThat(result.status()).isEqualTo(CLAIMED);
+        assertThat(result.claim().photos()).singleElement().satisfies(photo -> assertThat(photo.derived()).isEqualTo(derived));
+        entityManager.flush();
+        var task = tasks.findById(fixture.taskId()).orElseThrow();
+        assertThat(task.getStatus()).isEqualTo(AttachmentConversionTask.Status.RUNNING);
+        assertThat(task.getRemainingPhotos()).isZero();
+        assertThat(task.getRemainingBytes()).isZero();
+        assertThat(jdbc.queryForObject("SELECT ended_at FROM " + executionTable(kind) + " WHERE execution_id = ?",
+                LocalDateTime.class, fixture.executionId())).isNull();
+        assertAttemptsUnchanged(fixture);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void deletedTripPreventsRenewal(Kind kind) {
+        var fixture = fixture(kind);
+        var claim = claimed(fixture);
+        entityManager.flush();
+        jdbc.update("UPDATE trips SET deleted_at = ? WHERE trip_id = ?", NOW, fixture.tripId());
+        entityManager.clear();
+        assertThat(transactions.renewLease(claim)).isFalse();
+        assertAttemptsUnchanged(fixture);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void heicTaskOnlyContainsHeicPhotos(Kind kind) {
+        var fixture = fixture(kind);
+        var task = new AttachmentConversionTask(UUID.randomUUID().toString(), kind, fixture.batchId(), fixture.tripId(), Lane.HEIC, 1, 200);
+        entityManager.persist(task);
+        entityManager.flush();
+        var result = transactions.claim(task.getId(), kind, Lane.HEIC);
+        assertThat(result.status()).isEqualTo(CLAIMED);
+        assertThat(result.claim().photos()).singleElement().satisfies(photo -> {
+            assertThat(photo.contentType()).isEqualTo("image/heic");
+            assertThat(photo.sizeBytes()).isEqualTo(200);
+        });
+        assertAttemptsUnchanged(fixture);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void activeOtherClaimIsNotAcknowledgedEvenIfPhotosAreSaved(Kind kind) {
+        var fixture = fixture(kind);
+        claimed(fixture);
+        entityManager.flush();
+        jdbc.update("UPDATE " + itemTable(kind) + " SET derived_json = ? WHERE upload_item_id = ?",
+                json.writeValueAsString(new DerivedPhotoKeys("original", "analyze", "preview")), fixture.lightItemId());
+        entityManager.clear();
+        assertThat(transactions.claim(fixture.taskId(), kind, Lane.LIGHT).status()).isEqualTo(RETRY_LATER);
+        assertThat(tasks.findById(fixture.taskId()).orElseThrow().getStatus()).isEqualTo(AttachmentConversionTask.Status.RUNNING);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void forgedParentSnapshotCannotRenew(Kind kind) {
+        var fixture = fixture(kind);
+        var claim = claimed(fixture);
+        var forged = new AttachmentConversionClaim(claim.taskId(), claim.claimToken(), claim.kind(), claim.lane(),
+                claim.batchId(), claim.uploadId(), claim.executionId(), claim.tripId(), claim.userId() + 1,
+                claim.requestId(), claim.photos());
+        assertThat(transactions.renewLease(forged)).isFalse();
+        assertThat(transactions.renewLease(claim)).isTrue();
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void renewalDatabaseFailureIsPropagatedRatherThanLosingOwnership(Kind kind) {
+        var fixture = fixture(kind);
+        var claim = claimed(fixture);
+        var failure = new TransientDataAccessResourceException("test DB unavailable");
+        doThrow(failure).when(tasks).findByIdForUpdate(fixture.taskId());
+        assertThatThrownBy(() -> transactions.renewLease(claim)).isSameAs(failure);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void missingExecutionRemainsPendingWithNoInventedDeadline(Kind kind) {
+        var fixture = fixture(kind);
+        jdbc.update("DELETE FROM " + executionTable(kind) + " WHERE execution_id = ?", fixture.executionId());
+        entityManager.clear();
+        var result = transactions.claim(fixture.taskId(), kind, Lane.LIGHT);
+        assertThat(result.status()).isEqualTo(RETRY_LATER);
+        assertThat(result.retryAt()).isNull();
+        assertThat(tasks.findById(fixture.taskId()).orElseThrow().getStatus()).isEqualTo(AttachmentConversionTask.Status.WAITING);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void terminalTaskWithLiveClaimRemainsPendingUntilCleanupCanReleaseOwnership(Kind kind) {
+        var fixture = fixture(kind);
+        jdbc.update("UPDATE attachment_conversion_tasks SET status = 'SUCCEEDED', claim_token = 'other', lease_until = ? WHERE task_id = ?",
+                NOW.plusMinutes(10), fixture.taskId());
+        entityManager.clear();
+        var result = transactions.claim(fixture.taskId(), kind, Lane.LIGHT);
+        assertThat(result.status()).isEqualTo(RETRY_LATER);
+        assertThat(result.retryAt()).isEqualTo(NOW.plusMinutes(10));
+        assertThat(result.claim()).isNull();
+        assertAttemptsUnchanged(fixture);
+    }
+
+    private AttachmentConversionClaim claimed(Fixture fixture) {
+        var result = transactions.claim(fixture.taskId(), fixture.kind(), Lane.LIGHT);
+        assertThat(result.status()).isEqualTo(CLAIMED);
+        assertThat(result.claim()).isNotNull();
+        return result.claim();
+    }
+
+    private Fixture fixture(Kind kind) {
+        var user = new User(UUID.randomUUID() + "@yeodam.test", "claim");
+        entityManager.persist(user);
+        var trip = new Trip(user.getUserId(), "claim", LocalDate.now(), LocalDate.now());
+        entityManager.persist(trip);
+        String executionId = UUID.randomUUID().toString();
+        String uploadId = UUID.randomUUID().toString();
+        Long batchId;
+        Long itemId;
+        if (kind == Kind.INITIAL) {
+            entityManager.persist(new TripCreationExecution(executionId, trip.getId(), user.getUserId(), 2));
+            var batch = new InitialAttachmentUploadBatch(uploadId, executionId, trip.getId(), user.getUserId(), 1, 2, true);
+            batch.accept(NOW, AttachmentConversionRoute.KAFKA);
+            entityManager.persist(batch);
+            var light = new InitialAttachmentUploadItem(batch, 1, "light.jpg", "image/jpeg", 100L, "original/" + uploadId + "/light");
+            entityManager.persist(light);
+            entityManager.persist(new InitialAttachmentUploadItem(batch, 2, "heic.heic", "image/heic", 200L, "original/" + uploadId + "/heic"));
+            batchId = batch.getId();
+            itemId = light.getId();
+        } else {
+            jdbc.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", trip.getId());
+            entityManager.refresh(trip);
+            entityManager.persist(new AdditionalAttachmentExecution(executionId, trip.getId(), user.getUserId(), 2, NOW));
+            var batch = new AdditionalAttachmentUploadBatch(uploadId, executionId, trip.getId(), user.getUserId(), 1, 2, true);
+            batch.markVerified(AttachmentConversionRoute.KAFKA);
+            entityManager.persist(batch);
+            var light = new AdditionalAttachmentUploadItem(batch, 1, "light.jpg", "image/jpeg", 100L, "original/" + uploadId + "/light");
+            entityManager.persist(light);
+            entityManager.persist(new AdditionalAttachmentUploadItem(batch, 2, "heic.heic", "image/heic", 200L, "original/" + uploadId + "/heic"));
+            batchId = batch.getId();
+            itemId = light.getId();
+        }
+        var task = new AttachmentConversionTask(UUID.randomUUID().toString(), kind, batchId, trip.getId(), Lane.LIGHT, 1, 100);
+        entityManager.persist(task);
+        entityManager.persist(new AttachmentConversionOutbox(UUID.randomUUID().toString(), task.getId(), 1, trip.getId(),
+                "test-conversion", "{}", "request-before-worker"));
+        entityManager.flush();
+        return new Fixture(kind, task.getId(), batchId, uploadId, executionId, trip.getId(), user.getUserId(), itemId);
+    }
+
+    private void assertAttemptsUnchanged(Fixture fixture) {
+        assertThat(jdbc.queryForObject("SELECT SUM(conversion_attempts) FROM " + itemTable(fixture.kind()) + " WHERE upload_batch_id = ?",
+                Long.class, fixture.batchId())).isZero();
+    }
+
+    private String batchTable(Kind kind) {
+        return kind == Kind.INITIAL ? "initial_attachment_upload_batches" : "additional_attachment_upload_batches";
+    }
+
+    private String itemTable(Kind kind) {
+        return kind == Kind.INITIAL ? "initial_attachment_upload_items" : "additional_attachment_upload_items";
+    }
+
+    private String executionTable(Kind kind) {
+        return kind == Kind.INITIAL ? "trip_creation_executions" : "additional_attachment_executions";
+    }
+
+    private record Fixture(
+            Kind kind,
+            String taskId,
+            Long batchId,
+            String uploadId,
+            String executionId,
+            Long tripId,
+            Long userId,
+            Long lightItemId
+    ) {
+    }
+}

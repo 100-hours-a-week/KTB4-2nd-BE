@@ -98,6 +98,47 @@ public class AttachmentConversionTask {
         this.remainingBytes = totalBytes;
     }
 
+    public boolean isTerminal() {
+        return status == Status.SUCCEEDED || status == Status.CANCELED || status == Status.FAILED;
+    }
+
+    public boolean isClaimOwner(String token, LocalDateTime now) {
+        return status == Status.RUNNING && claimToken != null && claimToken.equals(token)
+                && leaseUntil != null && leaseUntil.isAfter(now);
+    }
+
+    public void claim(String token, LocalDateTime until) {
+        status = Status.RUNNING;
+        claimToken = token;
+        leaseUntil = until;
+        nextAttemptAt = null;
+    }
+
+    public void renewLease(LocalDateTime until) {
+        leaseUntil = until;
+    }
+
+    public void recordRemaining(long photos, long bytes) {
+        remainingPhotos = photos;
+        remainingBytes = bytes;
+    }
+
+    public void finish(Status terminal) {
+        if (terminal != Status.SUCCEEDED && terminal != Status.CANCELED && terminal != Status.FAILED) {
+            throw new IllegalArgumentException("변환 작업의 종료 상태가 필요합니다.");
+        }
+        status = terminal;
+        claimToken = null;
+        leaseUntil = null;
+        nextAttemptAt = null;
+        currentItemId = null;
+        currentAttemptNo = null;
+        currentAttemptToken = null;
+        if (terminal == Status.SUCCEEDED) {
+            recordRemaining(0, 0);
+        }
+    }
+
     public enum Kind {
         INITIAL,
         ADDITIONAL

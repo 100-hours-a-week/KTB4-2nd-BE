@@ -117,6 +117,23 @@ class AdditionalAttachmentConversionCandidateTest {
         assertThat(repository.findPendingConversion(NOW, PageRequest.of(0, 20))).isEmpty();
     }
 
+    @Test
+    void heldOrKafkaBatchIsNotClaimedByLegacyWorker() {
+        var db = batch();
+        db.markVerified();
+        var hold = batch();
+        hold.markVerified();
+        var kafka = batch();
+        kafka.markVerified();
+        entityManager.flush();
+        jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET conversion_route = 'HOLD' WHERE upload_batch_id = ?", hold.getId());
+        jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET conversion_route = 'KAFKA' WHERE upload_batch_id = ?", kafka.getId());
+        entityManager.clear();
+
+        assertThat(repository.findPendingConversion(NOW, PageRequest.of(0, 20)))
+                .extracting(AdditionalAttachmentUploadBatch::getId).containsExactly(db.getId());
+    }
+
     private AdditionalAttachmentUploadBatch batch() {
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), trip.getId(), user.getUserId(), 1, NOW);

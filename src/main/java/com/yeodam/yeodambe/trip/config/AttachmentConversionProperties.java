@@ -7,14 +7,17 @@ import org.springframework.util.Assert;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.stream.Stream;
 
 @ConfigurationProperties(prefix = "app.attachment-conversion")
 public record AttachmentConversionProperties(
         AttachmentConversionRoute mode,
         Admission admission,
-        Operations operations
+        Operations operations,
+        Topics topics
 ) {
     public AttachmentConversionProperties {
+        topics = topics == null ? new Topics(null, null, null, null) : topics;
         mode = mode == null ? AttachmentConversionRoute.DB : mode;
         operations = operations == null ? new Operations(false) : operations;
         if (mode == AttachmentConversionRoute.KAFKA) {
@@ -62,6 +65,26 @@ public record AttachmentConversionProperties(
 
         private static void requirePositive(Duration value) {
             Assert.isTrue(value != null && value.isPositive(), "admission 시간 설정은 양수여야 합니다.");
+        }
+    }
+
+    public record Topics(
+            String initialLight,
+            String initialHeic,
+            String additionalLight,
+            String additionalHeic
+    ) {
+        public Topics {
+            initialLight = initialLight == null ? "yeodam-image-initial-light" : initialLight;
+            initialHeic = initialHeic == null ? "yeodam-image-initial-heic" : initialHeic;
+            additionalLight = additionalLight == null ? "yeodam-image-additional-light" : additionalLight;
+            additionalHeic = additionalHeic == null ? "yeodam-image-additional-heic" : additionalHeic;
+            Assert.hasText(initialLight, "초기 LIGHT 토픽이 필요합니다.");
+            Assert.hasText(initialHeic, "초기 HEIC 토픽이 필요합니다.");
+            Assert.hasText(additionalLight, "추가 LIGHT 토픽이 필요합니다.");
+            Assert.hasText(additionalHeic, "추가 HEIC 토픽이 필요합니다.");
+            Assert.isTrue(Stream.of(initialLight, initialHeic, additionalLight, additionalHeic).distinct().count() == 4,
+                    "네 변환 작업 토픽은 서로 달라야 합니다.");
         }
     }
 

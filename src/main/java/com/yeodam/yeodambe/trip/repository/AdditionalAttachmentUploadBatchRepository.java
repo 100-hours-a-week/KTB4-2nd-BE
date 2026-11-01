@@ -31,6 +31,16 @@ public interface AdditionalAttachmentUploadBatchRepository
     List<AdditionalAttachmentUploadBatch>
     findAllByAdditionIdOrderByBatchNoAsc(String additionId);
 
+    @Query("""
+            select batch.additionId from AdditionalAttachmentUploadBatch batch
+            where batch.uploadId = :uploadId and batch.tripId = :tripId and batch.userId = :userId
+            """)
+    Optional<String> findAdditionId(
+            @Param("uploadId") String uploadId,
+            @Param("tripId") Long tripId,
+            @Param("userId") Long userId
+    );
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select batch
@@ -53,6 +63,7 @@ public interface AdditionalAttachmentUploadBatchRepository
               and batch.tripId = execution.tripId
               and batch.userId = execution.userId
               and execution.endedAt is null
+              and batch.conversionRoute = 'DB'
               and batch.status in ('VERIFIED', 'CONVERTING')
               and (batch.leaseExpiresAt is null
                    or batch.leaseExpiresAt <= :now)

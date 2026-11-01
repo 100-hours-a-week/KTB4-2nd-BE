@@ -152,6 +152,26 @@ class InitialAttachmentUploadRepositoryTest {
         assertThat(files.existsById(original.getId())).isTrue();
     }
 
+    @Test
+    void heldOrKafkaBatchIsNotClaimedByLegacyWorker() {
+        var execution = new com.yeodam.yeodambe.trip.entity.TripCreationExecution(
+                UUID.randomUUID().toString(), trip.getId(), owner.getUserId(), 3);
+        entityManager.persist(execution);
+        var db = batches.save(batch(execution.getExecutionId(), 1, false));
+        var hold = batches.save(batch(execution.getExecutionId(), 2, false));
+        var kafka = batches.save(batch(execution.getExecutionId(), 3, true));
+        for (var batch : List.of(db, hold, kafka)) {
+            batch.accept(java.time.LocalDateTime.now());
+        }
+        entityManager.flush();
+        jdbcTemplate.update("UPDATE initial_attachment_upload_batches SET conversion_route = 'HOLD' WHERE upload_batch_id = ?", hold.getId());
+        jdbcTemplate.update("UPDATE initial_attachment_upload_batches SET conversion_route = 'KAFKA' WHERE upload_batch_id = ?", kafka.getId());
+        entityManager.clear();
+
+        assertThat(batches.findPendingConversion(java.time.LocalDateTime.now(), org.springframework.data.domain.PageRequest.of(0, 20)))
+                .extracting(InitialAttachmentUploadBatch::getId).containsExactly(db.getId());
+    }
+
     private InitialAttachmentUploadBatch batch(String executionId, int batchNo, boolean lastBatch) {
         return new InitialAttachmentUploadBatch(UUID.randomUUID().toString(), executionId,
                 trip.getId(), owner.getUserId(), batchNo, 2, lastBatch);

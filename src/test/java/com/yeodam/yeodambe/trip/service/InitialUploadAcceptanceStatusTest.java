@@ -35,7 +35,9 @@ class InitialUploadAcceptanceStatusTest {
                     mock(EntityManager.class), mock(JdbcTemplate.class), new KafkaTopicProperties(Arrays.stream(EventType.values())
                             .collect(Collectors.toMap(type -> type, type -> "test-" + type.name()))),
                     mock(TripCreationOutboxRepository.class), mock(ApplicationEventPublisher.class),
-                    mock(AttachmentConversionAdmissionService.class));
+                    mock(AttachmentConversionAdmissionService.class),
+                    new com.yeodam.yeodambe.trip.config.AttachmentConversionProperties(null, null, null, null),
+                    mock(AttachmentConversionEnqueueService.class));
 
     @Test
     void returnsTheStoredDisplayStateStepAndVersion() {

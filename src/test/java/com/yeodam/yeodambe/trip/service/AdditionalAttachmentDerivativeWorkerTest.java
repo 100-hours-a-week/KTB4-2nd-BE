@@ -1,6 +1,13 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import java.time.Duration;
+
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadBatchSnapshot;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
@@ -23,6 +30,27 @@ class AdditionalAttachmentDerivativeWorkerTest {
     private final DerivedPhotoKeys derived = new DerivedPhotoKeys("original", "analyze", "preview", null,
             null, null, null, null, 12L, 8L, 4L, null);
 
+    @ParameterizedTest
+    @ValueSource(strings = {"HOLD", "KAFKA"})
+    void heldOrKafkaModeDoesNotStartLegacySubmission(String mode) {
+        var admission = new AttachmentConversionProperties.Admission(
+                Map.of(Lane.LIGHT, 100L,
+                        Lane.HEIC, 100L),
+                Map.of(Lane.LIGHT, 100000L,
+                        Lane.HEIC, 100000L),
+                Duration.ofHours(1), Duration.ofSeconds(30), Duration.ofSeconds(10), 0.5);
+        var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives,
+                mock(TripDerivativeScheduler.class), storage,
+                new AttachmentConversionProperties(
+                        AttachmentConversionRoute.valueOf(mode), admission, null, null));
+        try {
+            worker.processPendingBatches();
+            verifyNoInteractions(transactions, derivatives, storage);
+        } finally {
+            worker.shutdown();
+        }
+    }
+
     private AdditionalAttachmentUploadBatchSnapshot claim() {
         return new AdditionalAttachmentUploadBatchSnapshot(1L, "upload", "execution", 7L, 2L, "token", "request", List.of(
                 new AdditionalAttachmentUploadBatchSnapshot.Photo(1L, "saved.jpg", "image/jpeg", 12L, "saved", 1, null, derived),
@@ -39,7 +67,8 @@ class AdditionalAttachmentDerivativeWorkerTest {
         var completed = new CountDownLatch(1);
         doAnswer(call -> { completed.countDown(); return null; }).when(transactions).completeBatch(claim);
         var scheduler = new TripDerivativeScheduler(1, 1, 1, 1, new SimpleMeterRegistry());
-        var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives, scheduler, storage);
+        var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives, scheduler, storage,
+                new AttachmentConversionProperties(null, null, null, null));
         try {
             worker.processPendingBatches();
             assertThat(completed.await(5, TimeUnit.SECONDS)).isTrue();
@@ -70,7 +99,8 @@ class AdditionalAttachmentDerivativeWorkerTest {
         }).when(transactions).retryBatch(eq(claim), eq(2L), anyBoolean());
         var meters = new SimpleMeterRegistry();
         var scheduler = new TripDerivativeScheduler(1, 1, 1, 1, meters);
-        var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives, scheduler, storage);
+        var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives, scheduler, storage,
+                new AttachmentConversionProperties(null, null, null, null));
         MDC.put("request_id", "caller");
         try {
             worker.processPendingBatches();
@@ -102,7 +132,8 @@ class AdditionalAttachmentDerivativeWorkerTest {
         when(transactions.claimBatch()).thenReturn(Optional.of(claim));
         var scheduler = mock(TripDerivativeScheduler.class);
         when(scheduler.submit(anyString(), anyList(), any())).thenThrow(new RejectedExecutionException());
-        var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives, scheduler, storage);
+        var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives, scheduler, storage,
+                new AttachmentConversionProperties(null, null, null, null));
         try {
             worker.processPendingBatches();
             verify(transactions).releaseSaturatedBatch(claim);

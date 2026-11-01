@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
+
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
@@ -45,6 +48,7 @@ public class TripAttachmentDerivativeService {
     private final InitialAttachmentUploadTransactionService transactions;
     private final InitialAttachmentStoragePipeline pipeline;
     private final ExifToolProcess exifTool;
+    private final AttachmentConversionProperties conversionProperties;
 
     public CompletableFuture<List<DerivedPhotoKeys>> createAll(
             String executionId, List<String> originalKeys, List<String> mimeTypes
@@ -104,6 +108,9 @@ public class TripAttachmentDerivativeService {
 
     @Scheduled(initialDelayString = "${app.trip.worker-initial-delay-ms:0}", fixedDelayString = "${app.trip.conversion-delay-ms:5000}")
     public void processPendingBatches() {
+        if (conversionProperties.mode() != AttachmentConversionRoute.DB) {
+            return;
+        }
         transactions.claimBatch().ifPresent(this::startPipeline);
     }
 
@@ -112,6 +119,9 @@ public class TripAttachmentDerivativeService {
             Long userId,
             String uploadId
     ) {
+        if (conversionProperties.mode() != AttachmentConversionRoute.DB) {
+            return;
+        }
         try {
             transactions.claimBatch(tripId, userId, uploadId)
                     .ifPresent(this::startPipeline);

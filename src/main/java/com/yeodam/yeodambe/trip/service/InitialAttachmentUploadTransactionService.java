@@ -3,7 +3,13 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
+import com.yeodam.yeodambe.trip.repository.AttachmentConversionTaskRepository;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionAttemptResult;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionStepResult;
 import com.yeodam.yeodambe.trip.service.request.AttachmentConversionSeed;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.common.event.EventType;
@@ -50,6 +56,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.cfg.DateTimeFeature;
@@ -86,6 +93,265 @@ public class InitialAttachmentUploadTransactionService {
     private final AttachmentConversionAdmissionService conversionAdmission;
     private final AttachmentConversionProperties conversionProperties;
     private final AttachmentConversionEnqueueService conversionEnqueue;
+    private final AttachmentConversionTaskRepository conversionTasks;
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public AttachmentConversionAttemptResult startPhotoAttempt(
+            AttachmentConversionClaim claim,
+            Long itemId
+    ) {
+        var source = lockConversionSource(claim);
+        var item = conversionItem(claim, itemId);
+        var step = conversionStep(source, claim);
+        if (step != null) {
+            return attemptResult(step.status() == AttachmentConversionStepResult.Status.ACK_READY
+                    ? AttachmentConversionAttemptResult.Status.ACK_READY : AttachmentConversionAttemptResult.Status.RETRY_LATER,
+                    null, step.retryAt());
+        }
+        var task = source.task();
+        if (item.getDerivedJson() != null) {
+            return attemptResult(AttachmentConversionAttemptResult.Status.ALREADY_SAVED, null, null);
+        }
+        if (item.getConversionNextAttemptAt() != null && item.getConversionNextAttemptAt().isAfter(now())) {
+            return attemptResult(AttachmentConversionAttemptResult.Status.RETRY_LATER, null, item.getConversionNextAttemptAt());
+        }
+        if (task.hasCurrentAttempt(itemId, claim.claimToken()) && item.getConversionStartedAt() != null
+                && Objects.equals(task.getCurrentAttemptNo(), item.getConversionAttempts())) {
+            return startedAttempt(claim, item);
+        }
+        if (item.getConversionAttempts() >= 3) {
+            failConversion(source, claim, item);
+            return attemptResult(AttachmentConversionAttemptResult.Status.ACK_READY, null, null);
+        }
+        if (task.getCurrentItemId() != null && Objects.equals(task.getCurrentAttemptToken(), claim.claimToken())) {
+            return attemptResult(AttachmentConversionAttemptResult.Status.RETRY_LATER, null, null);
+        }
+        startAttempt(claim.executionId(), item);
+        task.startPhotoAttempt(itemId, item.getConversionAttempts(), claim.claimToken());
+        return startedAttempt(claim, item);
+    }
+
+    private AttachmentConversionAttemptResult startedAttempt(AttachmentConversionClaim claim, InitialAttachmentUploadItem item) {
+        return attemptResult(AttachmentConversionAttemptResult.Status.STARTED,
+                new AttachmentConversionClaim.Attempt(item.getId(), item.getConversionAttempts(),
+                        plannedPhoto(claim.executionId(), item)), null);
+    }
+
+    private AttachmentConversionAttemptResult attemptResult(
+            AttachmentConversionAttemptResult.Status status,
+            AttachmentConversionClaim.Attempt attempt,
+            LocalDateTime retryAt
+    ) {
+        return new AttachmentConversionAttemptResult(status, attempt, retryAt);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public AttachmentConversionStepResult savePhotoSuccess(
+            AttachmentConversionClaim claim,
+            Long itemId,
+            DerivedPhotoKeys photo
+    ) {
+        var source = lockConversionSource(claim);
+        var item = conversionItem(claim, itemId);
+        int attemptNo = outputAttempt(claim.executionId(), item, photo);
+        validatePhoto(claim.executionId(), item, photo, attemptNo);
+        var step = conversionStep(source, claim);
+        if (step != null) {
+            journalLateOutput(source.task(), item, photo);
+            return step;
+        }
+        if (item.getDerivedJson() == null) {
+            if (!source.task().hasCurrentAttempt(itemId, claim.claimToken())
+                    || !Objects.equals(source.task().getCurrentAttemptNo(), attemptNo)
+                    || item.getConversionStartedAt() == null) {
+                journalLateOutput(source.task(), item, photo);
+                return stepResult(AttachmentConversionStepResult.Status.CONTINUE, null);
+            }
+            persistPhoto(claim.tripId(), claim.userId(), claim.executionId(), item, photo);
+            source.task().clearPhotoAttempt();
+        } else if (!Objects.equals(readDerived(item.getDerivedJson()), photo)) {
+            journalLateOutput(source.task(), item, photo);
+        }
+        return finishConvertedBatch(source, claim);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public AttachmentConversionStepResult recordPhotoFailure(
+            AttachmentConversionClaim claim,
+            Long itemId,
+            boolean permanent
+    ) {
+        var source = lockConversionSource(claim);
+        var item = conversionItem(claim, itemId);
+        var step = conversionStep(source, claim);
+        if (step != null) {
+            return step;
+        }
+        if (item.getDerivedJson() != null) {
+            return finishConvertedBatch(source, claim);
+        }
+        var task = source.task();
+        if (item.getConversionAttempts() >= 3
+                || permanent && task.hasCurrentAttempt(itemId, claim.claimToken())) {
+            failConversion(source, claim, item);
+            return stepResult(AttachmentConversionStepResult.Status.ACK_READY, null);
+        }
+        if (task.hasCurrentAttempt(itemId, claim.claimToken())) {
+            scheduleUnreferencedAttempts(item, "CONVERSION_FAILED");
+            item.conversionFailed(now().plusSeconds(10));
+            task.retryPhoto(item.getConversionNextAttemptAt());
+        }
+        return stepResult(AttachmentConversionStepResult.Status.RETRY_LATER, item.getConversionNextAttemptAt());
+    }
+
+    private void failConversion(ConversionSource source, AttachmentConversionClaim claim, InitialAttachmentUploadItem item) {
+        scheduleUnreferencedAttempts(item, "CONVERSION_FAILED");
+        // 기존 실패 처리의 bulk update가 영속성 컨텍스트를 비우기 전에 task도 저장한다.
+        source.task().finish(AttachmentConversionTask.Status.FAILED);
+        failExecution(claim.executionId(), ErrorMessage.IMAGE_CONVERSION_FAILED.name());
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public AttachmentConversionStepResult completeConvertedBatch(AttachmentConversionClaim claim) {
+        var source = lockConversionSource(claim);
+        var step = conversionStep(source, claim);
+        return step == null ? finishConvertedBatch(source, claim) : step;
+    }
+
+    private ConversionSource lockConversionSource(AttachmentConversionClaim claim) {
+        if (claim.kind() != Kind.INITIAL) {
+            throw new InvalidAttachmentUploadException();
+        }
+        entityManager.flush();
+        var trip = entityManager.find(Trip.class, claim.tripId(), LockModeType.PESSIMISTIC_WRITE);
+        if (trip == null) {
+            throw new InvalidAttachmentUploadException();
+        }
+        entityManager.refresh(trip, LockModeType.PESSIMISTIC_WRITE);
+        var execution = requireExecutionForUpdate(claim.executionId());
+        var batch = batches.findForUpdate(claim.uploadId(), claim.tripId(), claim.userId()).orElseThrow(InvalidAttachmentUploadException::new);
+        entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
+        var task = conversionTasks.findByIdForUpdate(claim.taskId()).orElseThrow(InvalidAttachmentUploadException::new);
+        entityManager.refresh(task, LockModeType.PESSIMISTIC_WRITE);
+        if (task.getKind() != Kind.INITIAL || task.getLane() != claim.lane()
+                || !Objects.equals(task.getInitialBatchId(), batch.getId())
+                || !Objects.equals(task.getTripId(), trip.getId())
+                || !Objects.equals(batch.getId(), claim.batchId())
+                || !Objects.equals(batch.getExecutionId(), execution.getExecutionId())
+                || !Objects.equals(trip.getUserId(), claim.userId())
+                || !Objects.equals(execution.getTripId(), trip.getId())
+                || !Objects.equals(execution.getUserId(), claim.userId())) {
+            throw new InvalidAttachmentUploadException();
+        }
+        return new ConversionSource(trip, execution, batch, task);
+    }
+
+    private AttachmentConversionStepResult conversionStep(ConversionSource source, AttachmentConversionClaim claim) {
+        var task = source.task();
+        LocalDateTime now = now();
+        if (task.getLeaseUntil() != null && task.getLeaseUntil().isAfter(now)
+                && !Objects.equals(task.getClaimToken(), claim.claimToken())) {
+            return stepResult(AttachmentConversionStepResult.Status.RETRY_LATER, task.getLeaseUntil());
+        }
+        if (task.isTerminal()) {
+            return stepResult(AttachmentConversionStepResult.Status.ACK_READY, null);
+        }
+        if (source.trip().getDeletedAt() != null || source.trip().getProcessingStatus() == ProcessingStatus.CANCELED) {
+            cancelExecution(claim.tripId(), claim.userId());
+        }
+        if (source.execution().isTerminal()) {
+            task.finish(switch (source.execution().getStatus()) {
+                case COMPLETED -> AttachmentConversionTask.Status.SUCCEEDED;
+                case CANCELED -> AttachmentConversionTask.Status.CANCELED;
+                default -> AttachmentConversionTask.Status.FAILED;
+            });
+            return stepResult(AttachmentConversionStepResult.Status.ACK_READY, null);
+        }
+        if (source.batch().getConversionRoute() != AttachmentConversionRoute.KAFKA
+                || source.batch().getAcceptedAt() == null
+                || source.batch().getStatus() == InitialAttachmentUploadStatus.PENDING
+                || source.trip().getProcessingStatus() != ProcessingStatus.PROCESSING
+                || !task.isClaimOwner(claim.claimToken(), now)) {
+            return stepResult(AttachmentConversionStepResult.Status.RETRY_LATER, null);
+        }
+        return null;
+    }
+
+    private InitialAttachmentUploadItem conversionItem(AttachmentConversionClaim claim, Long itemId) {
+        var item = items.findById(itemId).orElseThrow(InvalidAttachmentUploadException::new);
+        entityManager.refresh(item, LockModeType.PESSIMISTIC_WRITE);
+        if (!Objects.equals(item.getBatch().getId(), claim.batchId()) || !inLane(item, claim.lane())) {
+            throw new InvalidAttachmentUploadException();
+        }
+        return item;
+    }
+
+    private boolean inLane(InitialAttachmentUploadItem item, Lane lane) {
+        return ("image/heic".equals(item.getContentType()) ? Lane.HEIC : Lane.LIGHT) == lane;
+    }
+
+    private AttachmentConversionStepResult finishConvertedBatch(ConversionSource source, AttachmentConversionClaim claim) {
+        entityManager.flush();
+        var all = items.findAllByBatch_IdOrderByFileOrderAsc(source.batch().getId());
+        for (var item : all) {
+            entityManager.refresh(item, LockModeType.PESSIMISTIC_WRITE);
+        }
+        var remaining = all.stream().filter(item -> inLane(item, claim.lane()) && item.getDerivedJson() == null).toList();
+        source.task().recordRemaining(remaining.size(), remaining.stream().mapToLong(InitialAttachmentUploadItem::getSizeBytes).sum());
+        if (!remaining.isEmpty()) {
+            LocalDateTime next = source.task().getNextAttemptAt();
+            return stepResult(next != null && next.isAfter(now())
+                    ? AttachmentConversionStepResult.Status.RETRY_LATER : AttachmentConversionStepResult.Status.CONTINUE, next);
+        }
+        if (all.stream().allMatch(item -> item.getDerivedJson() != null) && source.batch().getOutboxId() == null) {
+            completeBatch(source.batch(), all);
+        }
+        source.task().finish(AttachmentConversionTask.Status.SUCCEEDED);
+        return stepResult(AttachmentConversionStepResult.Status.ACK_READY, null);
+    }
+
+    private AttachmentConversionStepResult stepResult(AttachmentConversionStepResult.Status status, LocalDateTime retryAt) {
+        return new AttachmentConversionStepResult(status, retryAt);
+    }
+
+    private void journalLateOutput(AttachmentConversionTask task, InitialAttachmentUploadItem item, DerivedPhotoKeys photo) {
+        List<String> protectedKeys = new ArrayList<>();
+        if (item.getDerivedJson() != null) {
+            protectedKeys.addAll(derivativeKeys(readDerived(item.getDerivedJson())));
+        }
+        if (task.isClaimOwner(task.getClaimToken(), now()) && task.hasCurrentAttempt(item.getId(), task.getClaimToken())) {
+            protectedKeys.addAll(derivativeKeys(plannedPhoto(item.getBatch().getExecutionId(), item)));
+        }
+        var journal = new ArrayList<>(cleanupObjects(item));
+        for (String key : derivativeKeys(photo)) {
+            if (protectedKeys.contains(key)) {
+                continue;
+            }
+            if (journal.stream().noneMatch(object -> object.key().equals(key))) {
+                journal.add(new CleanupObject(key, now(), "STALE_CONVERSION", false));
+            }
+        }
+        recordCleanup(item, journal.stream().map(object -> derivativeKeys(photo).contains(object.key())
+                && !protectedKeys.contains(object.key()) && object.startedAt() == null
+                ? new CleanupObject(object.key(), now(), "STALE_CONVERSION", object.deleted()) : object).toList());
+    }
+
+    private int outputAttempt(String executionId, InitialAttachmentUploadItem item, DerivedPhotoKeys photo) {
+        for (int attempt = 1; attempt <= item.getConversionAttempts(); attempt++) {
+            if (Objects.equals(photo.analyzeKey(), attemptPrefix(executionId, item.getId(), attempt) + "analyze.jpg")) {
+                return attempt;
+            }
+        }
+        throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_OUTPUT_KEY_OR_SIZE_INVALID.message());
+    }
+
+    private record ConversionSource(
+            Trip trip,
+            TripCreationExecution execution,
+            InitialAttachmentUploadBatch batch,
+            AttachmentConversionTask task
+    ) {
+    }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public InitialAttachmentUploadBatchSnapshot prepareBatch(
@@ -512,17 +778,32 @@ public class InitialAttachmentUploadTransactionService {
         if (item.getDerivedJson() != null || item.getConversionAttempts() >= 3) {
             throw new IllegalStateException(TripInternalErrorMessage.ATTACHMENT_CONVERSION_ATTEMPT_NOT_ALLOWED.message());
         }
+        startAttempt(claim.executionId(), item);
+        return derivativeKeys(plannedPhoto(claim.executionId(), item));
+    }
+
+    private void startAttempt(String executionId, InitialAttachmentUploadItem item) {
         scheduleUnreferencedAttempts(item, "CONVERSION_RETRY");
         item.startConversion(now());
-        String prefix = "trip-uploads/" + claim.executionId() + "/derived/"
-                + item.getId() + "/" + item.getConversionAttempts() + "/";
-        List<String> keys = "image/heic".equals(item.getContentType())
-                ? List.of(prefix + "analyze.jpg", prefix + "preview.webp", prefix + "display.jpg")
-                : List.of(prefix + "analyze.jpg", prefix + "preview.webp");
-        List<CleanupObject> journal = new ArrayList<>(cleanupObjects(item));
-        keys.forEach(key -> journal.add(new CleanupObject(key, null, null, false)));
+        var journal = new ArrayList<>(cleanupObjects(item));
+        derivativeKeys(plannedPhoto(executionId, item)).forEach(key -> journal.add(new CleanupObject(key, null, null, false)));
         recordCleanup(item, journal);
-        return keys;
+    }
+
+    private DerivedPhotoKeys plannedPhoto(String executionId, InitialAttachmentUploadItem item) {
+        String prefix = attemptPrefix(executionId, item.getId(), item.getConversionAttempts());
+        return new DerivedPhotoKeys(item.getObjectKey(), prefix + "analyze.jpg", prefix + "preview.webp",
+                "image/heic".equals(item.getContentType()) ? prefix + "display.jpg" : null,
+                null, null, null, null, item.getSizeBytes(), null, null, null);
+    }
+
+    private String attemptPrefix(String executionId, Long itemId, int attemptNo) {
+        return "trip-uploads/" + executionId + "/derived/" + itemId + "/" + attemptNo + "/";
+    }
+
+    private List<String> derivativeKeys(DerivedPhotoKeys photo) {
+        return photo.displayKey() == null ? List.of(photo.analyzeKey(), photo.previewKey())
+                : List.of(photo.analyzeKey(), photo.previewKey(), photo.displayKey());
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -531,31 +812,37 @@ public class InitialAttachmentUploadTransactionService {
             Long itemId,
             DerivedPhotoKeys photo
     ) {
-        try (var scope = WorkflowMdcScope.job("trip_creation", claim.tripId(), claim.executionId());
-             var timing = startAttachmentPersistenceLogging(itemId)) {
-            requireCurrentClaim(claim);
-            InitialAttachmentUploadItem item = requireItem(claim, itemId);
-            if (!item.getObjectKey().equals(photo.originalKey()) || photo.originalSizeBytes() == null
-                    || !item.getSizeBytes().equals(photo.originalSizeBytes())) {
-                throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_SOURCE_ATTACHMENT_MISMATCH.message());
-            }
-            String prefix = "trip-uploads/" + claim.executionId() + "/derived/"
-                    + itemId + "/" + item.getConversionAttempts() + "/";
-            boolean heic = "image/heic".equals(item.getContentType());
-            if (!Objects.equals(photo.analyzeKey(), prefix + "analyze.jpg")
-                    || !Objects.equals(photo.previewKey(), prefix + "preview.webp")
-                    || photo.analyzeSizeBytes() == null || photo.analyzeSizeBytes() < 1
-                    || photo.previewSizeBytes() == null || photo.previewSizeBytes() < 1
-                    || (heic && (!Objects.equals(photo.displayKey(), prefix + "display.jpg")
-                        || photo.displaySizeBytes() == null || photo.displaySizeBytes() < 1))
-                    || (!heic && photo.displayKey() != null)) {
-                throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_OUTPUT_KEY_OR_SIZE_INVALID.message());
-            }
+        requireCurrentClaim(claim);
+        var item = requireItem(claim, itemId);
+        validatePhoto(claim.executionId(), item, photo, item.getConversionAttempts());
+        persistPhoto(claim.tripId(), claim.userId(), claim.executionId(), item, photo);
+    }
+
+    private void validatePhoto(String executionId, InitialAttachmentUploadItem item, DerivedPhotoKeys photo, int attemptNo) {
+        if (!item.getObjectKey().equals(photo.originalKey()) || photo.originalSizeBytes() == null
+                || !item.getSizeBytes().equals(photo.originalSizeBytes())) {
+            throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_SOURCE_ATTACHMENT_MISMATCH.message());
+        }
+        String prefix = attemptPrefix(executionId, item.getId(), attemptNo);
+        boolean heic = "image/heic".equals(item.getContentType());
+        if (!Objects.equals(photo.analyzeKey(), prefix + "analyze.jpg")
+                || !Objects.equals(photo.previewKey(), prefix + "preview.webp")
+                || photo.analyzeSizeBytes() == null || photo.analyzeSizeBytes() < 1
+                || photo.previewSizeBytes() == null || photo.previewSizeBytes() < 1
+                || heic && (!Objects.equals(photo.displayKey(), prefix + "display.jpg")
+                    || photo.displaySizeBytes() == null || photo.displaySizeBytes() < 1)
+                || !heic && photo.displayKey() != null) {
+            throw new IllegalStateException(TripInternalErrorMessage.CONVERSION_OUTPUT_KEY_OR_SIZE_INVALID.message());
+        }
+    }
+
+    private void persistPhoto(Long tripId, Long userId, String executionId, InitialAttachmentUploadItem item, DerivedPhotoKeys photo) {
+        try (var scope = WorkflowMdcScope.job("trip_creation", tripId, executionId);
+             var timing = startAttachmentPersistenceLogging(item.getId())) {
             if (item.getDerivedJson() == null) {
-                saveAttachment(claim.tripId(), claim.userId(), item, photo);
+                saveAttachment(tripId, userId, item, photo);
                 item.conversionCompleted(objectMapper.writeValueAsString(photo));
             }
-
             logAttachmentPersisted(timing);
         }
     }
@@ -598,16 +885,20 @@ public class InitialAttachmentUploadTransactionService {
         if (all.stream().anyMatch(item -> item.getDerivedJson() == null)) {
             throw new IllegalStateException(TripInternalErrorMessage.ATTACHMENT_CONVERSION_INCOMPLETE.message());
         }
+        completeBatch(batch, all);
+    }
+
+    private void completeBatch(InitialAttachmentUploadBatch batch, List<InitialAttachmentUploadItem> all) {
         List<TripAttachment> saved = loadConvertedAttachments(all);
         var refs = saved.stream().map(photo -> Map.of(
                 "trip_attachment_id", photo.getId(), "analyze_storage_key", photo.getAnalyzeStorageKey())).toList();
         var event = new TripCreateRequestEvent(
-                "photos_ready", claim.tripId(), claim.executionId(), claim.batchNo(), null, null, null, null,
+                "photos_ready", batch.getTripId(), batch.getExecutionId(), batch.getBatchNo(), null, null, null, null,
                 objectMapper.valueToTree(refs));
         batch.ready(objectMapper.writeValueAsString(event));
-        logPhotoDerivativesPersisted(claim.tripId(), claim.executionId());
-        saveCdcOutbox(batch.getOutboxId(), claim.executionId(), "photos_ready",
-                claim.batchNo(), claim.tripId(), batch.getOutboxPayload());
+        logPhotoDerivativesPersisted(batch.getTripId(), batch.getExecutionId());
+        saveCdcOutbox(batch.getOutboxId(), batch.getExecutionId(), "photos_ready",
+                batch.getBatchNo(), batch.getTripId(), batch.getOutboxPayload());
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

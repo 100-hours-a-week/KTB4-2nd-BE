@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot.Photo;
 import com.yeodam.yeodambe.trip.service.response.PreparedPhotoDerivative;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -34,7 +35,9 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
 @Slf4j
@@ -54,6 +57,7 @@ public class InitialAttachmentStoragePipeline {
     private final CompletableFuture<Void> drained = new CompletableFuture<>();
     private volatile long stagedBytes;
     private boolean storing;
+    private final AtomicInteger conversionPhotos = new AtomicInteger();
 
     public InitialAttachmentStoragePipeline(
             TripAttachmentStorageClient storage,
@@ -97,6 +101,87 @@ public class InitialAttachmentStoragePipeline {
         }
         if (!accepted) {
             transactions.releaseSaturatedBatch(claim);
+        }
+    }
+
+    public CompletableFuture<DerivedPhotoKeys> storePhoto(
+            String executionId,
+            AttachmentConversionClaim.Photo photo,
+            List<String> plannedKeys,
+            BiFunction<AttachmentConversionClaim.Photo, List<String>, PreparedPhotoDerivative> prepare,
+            BooleanSupplier active
+    ) {
+        var result = new CompletableFuture<DerivedPhotoKeys>();
+        Map<String, String> context = MDC.getCopyOfContextMap();
+        BooleanSupplier current = () -> !stopping.get() && !result.isCancelled() && active.getAsBoolean();
+        synchronized (this) {
+            if (stopping.get()) {
+                return CompletableFuture.failedFuture(new CancellationException(TripInternalErrorMessage.STORAGE_TERMINATED.message()));
+            }
+            conversionPhotos.incrementAndGet();
+            control.execute(() -> {
+                try {
+                    scheduler.submitPrepared(executionId, photo.contentType(), () -> {
+                        try (var scope = WorkflowMdcScope.open(context)) {
+                            requireActive(current);
+                            return prepare.apply(photo, plannedKeys);
+                        }
+                    }, current).whenComplete((prepared, failure) -> control.execute(() -> {
+                        try (var scope = WorkflowMdcScope.open(context)) {
+                            if (failure != null) {
+                                finishPhoto(result, null, failure);
+                            } else {
+                                storePhoto(result, prepared, context, current);
+                            }
+                        }
+                    }));
+                } catch (RuntimeException failure) {
+                    finishPhoto(result, null, failure);
+                }
+            });
+        }
+        return result;
+    }
+
+    private void storePhoto(
+            CompletableFuture<DerivedPhotoKeys> result,
+            PreparedPhotoDerivative prepared,
+            Map<String, String> context,
+            BooleanSupplier active
+    ) {
+        storePrepared(prepared, context, () -> requireActive(active))
+                .whenComplete((ignored, failure) -> control.execute(() -> {
+                    try (var scope = WorkflowMdcScope.open(context)) {
+                        Throwable outcome = failure;
+                        if (outcome == null) {
+                            try {
+                                requireActive(active);
+                                retain(prepared);
+                            } catch (RuntimeException retainFailure) {
+                                outcome = retainFailure;
+                            }
+                        }
+                        finishPhoto(result, prepared, outcome);
+                    }
+                }));
+    }
+
+    private void finishPhoto(CompletableFuture<DerivedPhotoKeys> result, PreparedPhotoDerivative prepared, Throwable failure) {
+        if (prepared != null) {
+            prepared.close();
+        }
+        conversionPhotos.decrementAndGet();
+        if (failure == null) {
+            result.complete(prepared.photo());
+        } else {
+            result.completeExceptionally(failure);
+        }
+        pump();
+    }
+
+    private void requireActive(BooleanSupplier active) {
+        if (!active.getAsBoolean()) {
+            throw new CancellationException(TripInternalErrorMessage.STORAGE_CLAIM_LOST.message());
         }
     }
 
@@ -213,7 +298,7 @@ public class InitialAttachmentStoragePipeline {
                 submit(batch);
             }
         }
-        if (stopping.get() && batches.isEmpty()) {
+        if (stopping.get() && batches.isEmpty() && conversionPhotos.get() == 0) {
             drained.complete(null);
             control.shutdown();
         }
@@ -223,19 +308,12 @@ public class InitialAttachmentStoragePipeline {
         try (var scope = WorkflowMdcScope.open(pending.batch.context)) {
             storing = true;
             Timer.Sample storingTime = Timer.start(meters);
-            CompletableFuture<Void> upload = CompletableFuture.completedFuture(null);
-            for (PreparedPhotoDerivative.Output output : pending.prepared.outputs()) {
-                upload = upload.thenComposeAsync(ignored -> {
-                    try (var uploadScope = WorkflowMdcScope.open(pending.batch.context)) {
-                        requireActive(pending.batch);
-                        if (pending.uploadTiming == null) {
-                            pending.uploadTiming = startDerivativeUploadLogging(pending);
-                        }
-                        return storage.storeDerivedToAsync(output.objectKey(), output.file(), output.mimeType())
-                                .thenApply(key -> null);
-                    }
-                }, control);
-            }
+            CompletableFuture<Void> upload = storePrepared(pending.prepared, pending.batch.context, () -> {
+                requireActive(pending.batch);
+                if (pending.uploadTiming == null) {
+                    pending.uploadTiming = startDerivativeUploadLogging(pending);
+                }
+            });
             upload.whenComplete((ignored, failure) -> control.execute(() -> {
                 try (var callbackScope = WorkflowMdcScope.open(pending.batch.context)) {
                     logDerivativeUploadCompleted(pending, failure);
@@ -245,10 +323,7 @@ public class InitialAttachmentStoragePipeline {
                             throw new CompletionException(failure);
                         }
                         requireActive(pending.batch);
-                        List<String> retained = new ArrayList<>(pending.prepared.outputs().stream()
-                                .map(PreparedPhotoDerivative.Output::objectKey).toList());
-                        retained.add(pending.photo.objectKey());
-                        storage.retain(retained);
+                        retain(pending.prepared);
                         WorkflowLog.collect(pending.batch.timings, () -> {
                             transactions.savePhotoSuccess(pending.batch.claim, pending.photo.itemId(), pending.prepared.photo());
                             return null;
@@ -266,6 +341,25 @@ public class InitialAttachmentStoragePipeline {
                 }
             }));
         }
+    }
+
+    private CompletableFuture<Void> storePrepared(PreparedPhotoDerivative prepared, Map<String, String> context, Runnable beforeUpload) {
+        CompletableFuture<Void> upload = CompletableFuture.completedFuture(null);
+        for (PreparedPhotoDerivative.Output output : prepared.outputs()) {
+            upload = upload.thenComposeAsync(ignored -> {
+                try (var scope = WorkflowMdcScope.open(context)) {
+                    beforeUpload.run();
+                    return storage.storeDerivedToAsync(output.objectKey(), output.file(), output.mimeType()).thenApply(key -> null);
+                }
+            }, control);
+        }
+        return upload;
+    }
+
+    private void retain(PreparedPhotoDerivative prepared) {
+        var retained = new ArrayList<>(prepared.outputs().stream().map(PreparedPhotoDerivative.Output::objectKey).toList());
+        retained.add(prepared.photo().originalKey());
+        storage.retain(retained);
     }
 
     private void record(Timer.Sample sample, String stage, boolean success) {

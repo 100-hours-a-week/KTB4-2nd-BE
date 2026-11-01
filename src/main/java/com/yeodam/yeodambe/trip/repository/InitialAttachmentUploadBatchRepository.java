@@ -48,6 +48,7 @@ public interface InitialAttachmentUploadBatchRepository
     @Query("""
             select batch from InitialAttachmentUploadBatch batch, TripCreationExecution execution
             where batch.executionId = execution.executionId and execution.endedAt is null
+              and batch.conversionRoute = 'DB'
               and batch.status in ('ACCEPTED', 'CONVERTING')
               and (batch.leaseUntil is null or batch.leaseUntil <= :now)
               and (batch.nextAttemptAt is null or batch.nextAttemptAt <= :now)

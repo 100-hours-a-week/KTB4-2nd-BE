@@ -1,6 +1,10 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
+import com.yeodam.yeodambe.trip.service.request.AttachmentConversionSeed;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
@@ -67,8 +71,10 @@ public class AdditionalAttachmentUploadTransactionService {
     private final AdditionalAttachmentUploadOutboxService outboxService;
     private final StoryGenerationJobRepository storyGenerationJobRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final AttachmentConversionProperties conversionProperties;
+    private final AttachmentConversionEnqueueService conversionEnqueue;
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void markVerified(Long tripId, Long userId, String uploadId) {
         Trip trip = tripRepository.findOwnedActiveForUpdate(tripId, userId)
                 .orElseThrow(TripNotFoundException::new);
@@ -85,19 +91,36 @@ public class AdditionalAttachmentUploadTransactionService {
         )) {
             throw new TripAttachmentAddNotAllowedException();
         }
+        String additionId = uploadBatchRepository.findAdditionId(uploadId, tripId, userId)
+                .orElseThrow(InvalidAttachmentUploadException::new);
+        var execution = executionRepository.findForUpdate(additionId).orElse(null);
+        if (execution != null) {
+            entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
+        }
         var batch = uploadBatchRepository.findForUpdate(uploadId, tripId, userId)
                 .orElseThrow(InvalidAttachmentUploadException::new);
-        var execution = executionRepository.findForUpdate(batch.getAdditionId()).orElse(null);
-        if (execution != null && execution.isTerminal()) {
+        entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
+        if (!additionId.equals(batch.getAdditionId())) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+        if (execution == null) {
+            if (conversionProperties.mode() != AttachmentConversionRoute.DB
+                    || batch.getConversionRoute() != AttachmentConversionRoute.DB) {
+                throw new TripAttachmentAddNotAllowedException();
+            }
+        } else if (!execution.getTripId().equals(tripId)
+                || !execution.getUserId().equals(userId)
+                || execution.isTerminal()) {
             throw new TripAttachmentAddNotAllowedException();
         }
         boolean firstAcceptance = batch.getStatus() == AdditionalAttachmentUploadStatus.PENDING;
-        batch.markVerified();
-        if (firstAcceptance) {
-            logUploadBatchAccepted(tripId, batch.getAdditionId(), batch.getBatchNo());
-        }
         String requestId = org.slf4j.MDC.get("request_id");
         batch.recordRequestId(requestId == null ? batch.getAdditionId() : requestId);
+        batch.markVerified(conversionProperties.mode());
+        if (firstAcceptance) {
+            enqueueConversion(batch);
+            logUploadBatchAccepted(tripId, batch.getAdditionId(), batch.getBatchNo());
+        }
         if (execution != null) {
             execution.recordUploadActivity(databaseTime());
             if (batch.getLastBatch()) {
@@ -108,6 +131,18 @@ public class AdditionalAttachmentUploadTransactionService {
                 }
             }
         }
+    }
+
+    private void enqueueConversion(AdditionalAttachmentUploadBatch batch) {
+        if (batch.getConversionRoute() != AttachmentConversionRoute.KAFKA) {
+            return;
+        }
+        var photos = uploadItemRepository.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()).stream()
+                .map(item -> new AttachmentConversionSeed.Photo(
+                        item.getId(), item.getContentType(), item.getSizeBytes()))
+                .toList();
+        conversionEnqueue.enqueue(new AttachmentConversionSeed(
+                Kind.ADDITIONAL, batch.getId(), batch.getTripId(), batch.getRequestId(), photos));
     }
 
     @Transactional
@@ -305,7 +340,8 @@ public class AdditionalAttachmentUploadTransactionService {
                 batch.getAdditionId(),
                 batch.getStatus(),
                 List.copyOf(items),
-                batch.getLastBatch()
+                batch.getLastBatch(),
+                batch.getConversionRoute()
         );
     }
 
@@ -332,7 +368,8 @@ public class AdditionalAttachmentUploadTransactionService {
             }
             entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
             LocalDateTime now = databaseTime();
-            if (execution.isTerminal()
+            if (batch.getConversionRoute() != AttachmentConversionRoute.DB
+                    || execution.isTerminal()
                     || !execution.getTripId().equals(batch.getTripId())
                     || !execution.getUserId().equals(batch.getUserId())
                     || (batch.getStatus() != AdditionalAttachmentUploadStatus.VERIFIED
@@ -622,7 +659,8 @@ public class AdditionalAttachmentUploadTransactionService {
     @Transactional
     public ConversionBatch claimConversion(Long tripId, Long userId, String uploadId) {
         VerificationBatch verified = loadForVerification(tripId, userId, uploadId);
-        if (verified.status() != AdditionalAttachmentUploadStatus.VERIFIED) {
+        if (verified.conversionRoute() != AttachmentConversionRoute.DB
+                || verified.status() != AdditionalAttachmentUploadStatus.VERIFIED) {
             throw new TripAttachmentAddNotAllowedException();
         }
         List<DerivedPhotoKeys> saved = savedDerived(tripId, verified.items());
@@ -721,7 +759,8 @@ public class AdditionalAttachmentUploadTransactionService {
             String additionId,
             AdditionalAttachmentUploadStatus status,
             List<AdditionalAttachmentUploadItem> items,
-            boolean lastBatch
+            boolean lastBatch,
+            AttachmentConversionRoute conversionRoute
     ) {
     }
 

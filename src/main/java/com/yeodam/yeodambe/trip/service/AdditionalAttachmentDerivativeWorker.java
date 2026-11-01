@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
+
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
@@ -25,11 +28,15 @@ public class AdditionalAttachmentDerivativeWorker {
     private final TripAttachmentDerivativeService derivatives;
     private final TripDerivativeScheduler scheduler;
     private final TripAttachmentStorageClient storage;
+    private final AttachmentConversionProperties conversionProperties;
     private final ScheduledThreadPoolExecutor leases = new ScheduledThreadPoolExecutor(1,
             Thread.ofPlatform().name("additional-photo-lease").daemon(true).factory());
 
     @Scheduled(initialDelayString = "${app.trip.worker-initial-delay-ms:0}", fixedDelayString = "${app.trip.worker-delay-ms:5000}")
     public void processPendingBatches() {
+        if (conversionProperties.mode() != AttachmentConversionRoute.DB) {
+            return;
+        }
         transactions.claimBatch().ifPresent(claim -> convertNext(claim, 0, new WorkflowLog.BatchTimings()));
     }
 

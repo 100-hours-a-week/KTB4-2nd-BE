@@ -110,6 +110,10 @@ public class AdditionalAttachmentUploadBatch {
     }
 
     public void markVerified() {
+        markVerified(AttachmentConversionRoute.DB);
+    }
+
+    public void markVerified(AttachmentConversionRoute route) {
         if (status == AdditionalAttachmentUploadStatus.VERIFIED) {
             return;
         }
@@ -119,6 +123,7 @@ public class AdditionalAttachmentUploadBatch {
         }
 
         status = AdditionalAttachmentUploadStatus.VERIFIED;
+        conversionRoute = route;
     }
 
     public void claimConversion(String token) {

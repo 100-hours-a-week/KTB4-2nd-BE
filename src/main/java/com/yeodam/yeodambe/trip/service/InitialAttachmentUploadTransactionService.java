@@ -1,6 +1,10 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
+import com.yeodam.yeodambe.trip.service.request.AttachmentConversionSeed;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
@@ -80,6 +84,8 @@ public class InitialAttachmentUploadTransactionService {
     private final TripCreationOutboxRepository outboxes;
     private final ApplicationEventPublisher eventPublisher;
     private final AttachmentConversionAdmissionService conversionAdmission;
+    private final AttachmentConversionProperties conversionProperties;
+    private final AttachmentConversionEnqueueService conversionEnqueue;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public InitialAttachmentUploadBatchSnapshot prepareBatch(
@@ -379,7 +385,8 @@ public class InitialAttachmentUploadTransactionService {
             throw new TripInitialAttachmentUploadNotAllowedException();
         }
 
-        candidate.accept(now());
+        candidate.accept(now(), conversionProperties.mode());
+        enqueueConversion(candidate);
         logUploadBatchAccepted(tripId, execution.getExecutionId(), candidate.getBatchNo());
         execution.recordUploadActivity(now());
         if (candidate.getLastBatch()) {
@@ -396,6 +403,20 @@ public class InitialAttachmentUploadTransactionService {
             enqueueProcessIfReady(execution);
         }
         return acceptanceStatus(trip, execution);
+    }
+
+    private void enqueueConversion(InitialAttachmentUploadBatch batch) {
+        if (batch.getConversionRoute() != AttachmentConversionRoute.KAFKA) {
+            return;
+        }
+        String requestId = org.slf4j.MDC.get("request_id");
+        var photos = items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()).stream()
+                .map(item -> new AttachmentConversionSeed.Photo(
+                        item.getId(), item.getContentType(), item.getSizeBytes()))
+                .toList();
+        conversionEnqueue.enqueue(new AttachmentConversionSeed(
+                Kind.INITIAL, batch.getId(), batch.getTripId(),
+                requestId == null ? batch.getExecutionId() : requestId, photos));
     }
 
     public TripProcessingStatusResponse acceptanceStatus(
@@ -460,7 +481,8 @@ public class InitialAttachmentUploadTransactionService {
                 candidate.getUploadId(), candidate.getTripId(), candidate.getUserId()).orElseThrow();
         entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
         LocalDateTime currentTime = now();
-        if (execution.isTerminal() || trip.getProcessingStatus() != ProcessingStatus.PROCESSING
+        if (batch.getConversionRoute() != AttachmentConversionRoute.DB
+                || execution.isTerminal() || trip.getProcessingStatus() != ProcessingStatus.PROCESSING
                 || (batch.getStatus() != InitialAttachmentUploadStatus.ACCEPTED
                     && batch.getStatus() != InitialAttachmentUploadStatus.CONVERTING)
                 || (batch.getLeaseUntil() != null && batch.getLeaseUntil().isAfter(currentTime))

@@ -1,7 +1,16 @@
 package com.yeodam.yeodambe.trip.service;
 
-import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
+import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
+import java.time.Duration;
+
+import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
+
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
@@ -10,9 +19,7 @@ import javax.imageio.ImageIO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.ValueSource;
+
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 import org.slf4j.MDC;
@@ -28,7 +35,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
+
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -78,7 +85,26 @@ class TripAttachmentDerivativeServiceTest {
         pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meterRegistry, 134217728L);
         exifTool = new ExifToolProcess();
         service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler,
-                transactions, pipeline, exifTool);
+                transactions, pipeline, exifTool, new AttachmentConversionProperties(null, null, null, null));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"HOLD", "KAFKA"})
+    void heldOrKafkaModeDoesNotStartLegacySubmission(String mode) {
+        var route = AttachmentConversionRoute.valueOf(mode);
+        var admission = new AttachmentConversionProperties.Admission(
+                Map.of(Lane.LIGHT, 100L,
+                        Lane.HEIC, 100L),
+                Map.of(Lane.LIGHT, 100000L,
+                        Lane.HEIC, 100000L),
+                Duration.ofHours(1), Duration.ofSeconds(30), Duration.ofSeconds(10), 0.5);
+        ReflectionTestUtils.setField(service, "conversionProperties",
+                new AttachmentConversionProperties(route, admission, null, null));
+
+        service.processPendingBatches();
+        service.processAcceptedBatch(7L, 1L, "upload");
+
+        verifyNoInteractions(transactions, storage);
     }
 
     @AfterEach
@@ -174,7 +200,7 @@ class TripAttachmentDerivativeServiceTest {
         var saturatedPipeline = new InitialAttachmentStoragePipeline(
                 storage, transactions, saturatedScheduler, meterRegistry, 134217728L);
         var immediate = new TripAttachmentDerivativeService(
-                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline, exifTool);
+                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline, exifTool, new AttachmentConversionProperties(null, null, null, null));
         when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
         when(saturatedScheduler.submitPrepared(eq("execution"), any(), any(), any()))
                 .thenThrow(new RejectedExecutionException("queue full"));

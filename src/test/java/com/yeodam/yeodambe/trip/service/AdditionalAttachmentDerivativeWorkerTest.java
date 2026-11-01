@@ -42,7 +42,8 @@ class AdditionalAttachmentDerivativeWorkerTest {
         var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives,
                 mock(TripDerivativeScheduler.class), storage,
                 new AttachmentConversionProperties(
-                        AttachmentConversionRoute.valueOf(mode), admission, null, null));
+                        AttachmentConversionRoute.valueOf(mode), admission, null, null,
+                        new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10)));
         try {
             worker.processPendingBatches();
             verifyNoInteractions(transactions, derivatives, storage);
@@ -68,7 +69,7 @@ class AdditionalAttachmentDerivativeWorkerTest {
         doAnswer(call -> { completed.countDown(); return null; }).when(transactions).completeBatch(claim);
         var scheduler = new TripDerivativeScheduler(1, 1, 1, 1, new SimpleMeterRegistry());
         var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives, scheduler, storage,
-                new AttachmentConversionProperties(null, null, null, null));
+                new AttachmentConversionProperties(null, null, null, null, null));
         try {
             worker.processPendingBatches();
             assertThat(completed.await(5, TimeUnit.SECONDS)).isTrue();
@@ -100,7 +101,7 @@ class AdditionalAttachmentDerivativeWorkerTest {
         var meters = new SimpleMeterRegistry();
         var scheduler = new TripDerivativeScheduler(1, 1, 1, 1, meters);
         var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives, scheduler, storage,
-                new AttachmentConversionProperties(null, null, null, null));
+                new AttachmentConversionProperties(null, null, null, null, null));
         MDC.put("request_id", "caller");
         try {
             worker.processPendingBatches();
@@ -133,7 +134,7 @@ class AdditionalAttachmentDerivativeWorkerTest {
         var scheduler = mock(TripDerivativeScheduler.class);
         when(scheduler.submit(anyString(), anyList(), any())).thenThrow(new RejectedExecutionException());
         var worker = new AdditionalAttachmentDerivativeWorker(transactions, derivatives, scheduler, storage,
-                new AttachmentConversionProperties(null, null, null, null));
+                new AttachmentConversionProperties(null, null, null, null, null));
         try {
             worker.processPendingBatches();
             verify(transactions).releaseSaturatedBatch(claim);

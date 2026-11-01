@@ -50,7 +50,11 @@ import static org.assertj.core.api.Assertions.*;
         "app.attachment-conversion.admission.max-unfinished-age=1h",
         "app.attachment-conversion.admission.snapshot-max-age=30s",
         "app.attachment-conversion.admission.sample-interval=10s",
-        "app.attachment-conversion.admission.reopen-ratio=0.5"
+        "app.attachment-conversion.admission.reopen-ratio=0.5",
+        "app.attachment-conversion.recovery.interval=5m",
+        "app.attachment-conversion.recovery.page-size=10",
+        "app.attachment-conversion.recovery.max-pages-per-run=2",
+        "app.attachment-conversion.recovery.max-reissues-per-run=10"
 })
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
@@ -255,7 +259,8 @@ class AttachmentConversionAcceptanceTest {
                 new AttachmentConversionProperties.Admission(Map.of(Lane.LIGHT, 100L, Lane.HEIC, 100L),
                         Map.of(Lane.LIGHT, 100000L, Lane.HEIC, 100000L), Duration.ofHours(1),
                         Duration.ofSeconds(30), Duration.ofSeconds(10), 0.5),
-                new AttachmentConversionProperties.Operations(false), null);
+                new AttachmentConversionProperties.Operations(false), null,
+                new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10));
         ReflectionTestUtils.setField(initial, "conversionProperties", configured);
         ReflectionTestUtils.setField(additional, "conversionProperties", configured);
     }

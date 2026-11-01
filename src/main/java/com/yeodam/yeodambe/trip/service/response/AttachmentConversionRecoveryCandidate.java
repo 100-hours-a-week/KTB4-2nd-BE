@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 public record AttachmentConversionRecoveryCandidate(
         String taskId,
+        LocalDateTime createdAt,
         long latestDeliveryNo,
         long publicationVersion,
         AttachmentConversionPublication publication
@@ -12,11 +13,5 @@ public record AttachmentConversionRecoveryCandidate(
             LocalDateTime createdAt,
             String taskId
     ) {
-    }
-
-    public enum Presence {
-        PRESENT,
-        LOST,
-        UNKNOWN
     }
 }

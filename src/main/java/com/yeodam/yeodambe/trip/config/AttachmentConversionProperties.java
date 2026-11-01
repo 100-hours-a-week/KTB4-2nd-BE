@@ -14,7 +14,8 @@ public record AttachmentConversionProperties(
         AttachmentConversionRoute mode,
         Admission admission,
         Operations operations,
-        Topics topics
+        Topics topics,
+        Recovery recovery
 ) {
     public AttachmentConversionProperties {
         topics = topics == null ? new Topics(null, null, null, null) : topics;
@@ -23,6 +24,8 @@ public record AttachmentConversionProperties(
         if (mode == AttachmentConversionRoute.KAFKA) {
             Assert.notNull(admission, "KAFKA 모드에는 admission 설정이 필요합니다.");
             admission.validate();
+            Assert.notNull(recovery, "KAFKA 모드에는 recovery 설정이 필요합니다.");
+            recovery.validate();
         }
     }
 
@@ -65,6 +68,19 @@ public record AttachmentConversionProperties(
 
         private static void requirePositive(Duration value) {
             Assert.isTrue(value != null && value.isPositive(), "admission 시간 설정은 양수여야 합니다.");
+        }
+    }
+
+    public record Recovery(
+            Duration interval,
+            int pageSize,
+            int maxPagesPerRun,
+            int maxReissuesPerRun
+    ) {
+        private void validate() {
+            Assert.isTrue(interval != null && interval.isPositive(), "재알림 간격은 양수여야 합니다.");
+            Assert.isTrue(pageSize > 0 && maxPagesPerRun > 0 && maxReissuesPerRun > 0,
+                    "재알림 실행 예산은 양수여야 합니다.");
         }
     }
 

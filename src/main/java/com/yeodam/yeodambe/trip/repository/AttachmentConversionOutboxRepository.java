@@ -10,6 +10,8 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 public interface AttachmentConversionOutboxRepository extends JpaRepository<AttachmentConversionOutbox, String> {
+    Optional<AttachmentConversionOutbox> findByTaskIdAndDeliveryNo(String taskId, long deliveryNo);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select outbox from AttachmentConversionOutbox outbox where outbox.id = :outboxId")
     Optional<AttachmentConversionOutbox> findByIdForUpdate(@Param("outboxId") String outboxId);

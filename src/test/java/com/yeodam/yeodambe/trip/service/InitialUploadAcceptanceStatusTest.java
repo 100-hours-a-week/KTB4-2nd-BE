@@ -37,7 +37,7 @@ class InitialUploadAcceptanceStatusTest {
                     mock(TripCreationOutboxRepository.class), mock(ApplicationEventPublisher.class),
                     mock(AttachmentConversionAdmissionService.class),
                     new com.yeodam.yeodambe.trip.config.AttachmentConversionProperties(null, null, null, null),
-                    mock(AttachmentConversionEnqueueService.class));
+                    mock(AttachmentConversionEnqueueService.class), mock(AttachmentConversionTaskRepository.class));
 
     @Test
     void returnsTheStoredDisplayStateStepAndVersion() {

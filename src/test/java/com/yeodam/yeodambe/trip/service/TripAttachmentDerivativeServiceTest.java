@@ -181,7 +181,7 @@ class TripAttachmentDerivativeServiceTest {
             assertTimeoutPreemptively(Duration.ofSeconds(5),
                     () -> service.processAcceptedBatch(7L, 1L, "upload"));
             assertTrue(started.await(5, TimeUnit.SECONDS));
-            verify(transactions, never()).savePhotoSuccess(any(), any(), any());
+            verify(transactions, never()).savePhotoSuccess(any(InitialAttachmentUploadBatchSnapshot.class), any(), any());
         } finally {
             release.countDown();
         }
@@ -209,7 +209,7 @@ class TripAttachmentDerivativeServiceTest {
             immediate.processAcceptedBatch(7L, 1L, "upload");
 
             verify(transactions, Mockito.timeout(5000)).releaseSaturatedBatch(claim);
-            verify(transactions, never()).startPhotoAttempt(any(), any());
+            verify(transactions, never()).startPhotoAttempt(any(InitialAttachmentUploadBatchSnapshot.class), any());
             verifyNoInteractions(storage);
         } finally {
             saturatedPipeline.close();

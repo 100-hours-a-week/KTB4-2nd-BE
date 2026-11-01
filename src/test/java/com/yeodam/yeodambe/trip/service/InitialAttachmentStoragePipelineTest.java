@@ -53,7 +53,7 @@ class InitialAttachmentStoragePipelineTest {
         scheduler = new TripDerivativeScheduler(1, 1, 10, 20, meters);
         pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meters, 128 * 1024 * 1024L);
         when(transactions.renewLease(any())).thenReturn(true);
-        when(transactions.startPhotoAttempt(any(), any())).thenAnswer(call -> {
+        when(transactions.startPhotoAttempt(any(InitialAttachmentUploadBatchSnapshot.class), any())).thenAnswer(call -> {
             Long id = call.getArgument(1);
             return List.of(id + "/analyze", id + "/preview");
         });
@@ -129,7 +129,7 @@ class InitialAttachmentStoragePipelineTest {
         assertThat(second.await(5, TimeUnit.SECONDS)).isTrue();
         assertThat(firstFile.get()).exists();
         assertThat(third).isFalse();
-        verify(transactions, never()).savePhotoSuccess(any(), any(), any());
+        verify(transactions, never()).savePhotoSuccess(any(InitialAttachmentUploadBatchSnapshot.class), any(), any());
         verify(transactions, never()).completeBatch(any());
         upload.complete("1/analyze");
         verify(transactions, timeout(5000)).completeBatch(claim);
@@ -167,7 +167,7 @@ class InitialAttachmentStoragePipelineTest {
         verify(transactions, after(100).never()).retryBatch(any(), any(), anyBoolean());
         release.countDown();
         verify(transactions, timeout(5000).times(1)).retryBatch(claim, 1L, false);
-        verify(transactions, never()).savePhotoSuccess(any(), any(), any());
+        verify(transactions, never()).savePhotoSuccess(any(InitialAttachmentUploadBatchSnapshot.class), any(), any());
         verify(transactions, never()).completeBatch(any());
         verify(storage, never()).storeDerivedToAsync(eq("2/analyze"), any(), any());
     }
@@ -191,7 +191,7 @@ class InitialAttachmentStoragePipelineTest {
         upload.complete("1/analyze");
         verify(transactions, timeout(5000)).retryBatch(eq(claim), eq(1L), eq(false));
         assertThat(file.get()).doesNotExist();
-        verify(transactions, never()).savePhotoSuccess(any(), any(), any());
+        verify(transactions, never()).savePhotoSuccess(any(InitialAttachmentUploadBatchSnapshot.class), any(), any());
     }
 
     @Test
@@ -199,7 +199,7 @@ class InitialAttachmentStoragePipelineTest {
         InitialAttachmentUploadBatchSnapshot claim = claim(1L);
         AtomicReference<Path> file = new AtomicReference<>();
         doThrow(new TransientDataAccessResourceException("DB"))
-                .when(transactions).savePhotoSuccess(any(), any(), any());
+                .when(transactions).savePhotoSuccess(any(InitialAttachmentUploadBatchSnapshot.class), any(), any());
         pipeline.start(claim, (photo, keys) -> {
             PreparedPhotoDerivative prepared = prepare(photo.itemId(), keys);
             file.set(prepared.outputs().getFirst().file());
@@ -229,7 +229,7 @@ class InitialAttachmentStoragePipelineTest {
         upload.complete("1/analyze");
 
         verify(transactions, timeout(5000)).retryBatch(claim, 1L, false);
-        verify(transactions, never()).savePhotoSuccess(any(), any(), any());
+        verify(transactions, never()).savePhotoSuccess(any(InitialAttachmentUploadBatchSnapshot.class), any(), any());
         verify(storage, never()).storeDerivedToAsync(eq("1/preview"), any(), any());
     }
 
@@ -378,7 +378,7 @@ class InitialAttachmentStoragePipelineTest {
             assertThat(closing.isAlive()).isFalse();
             assertThat(file.get()).doesNotExist();
             verify(transactions).retryBatch(claim, 1L, false);
-            verify(transactions, never()).savePhotoSuccess(any(), any(), any());
+            verify(transactions, never()).savePhotoSuccess(any(InitialAttachmentUploadBatchSnapshot.class), any(), any());
             verify(storage, never()).storeDerivedToAsync(eq("1/preview"), any(), any());
             pipeline.start(claim, (photo, keys) -> prepare(photo.itemId(), keys), error -> true);
             verify(transactions).releaseSaturatedBatch(claim);

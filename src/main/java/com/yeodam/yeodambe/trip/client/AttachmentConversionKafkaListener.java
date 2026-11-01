@@ -38,6 +38,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.stream.Collectors;
 
 @Slf4j
+@Component
 @ConditionalOnProperty(name = "app.attachment-conversion.mode", havingValue = "KAFKA")
 @ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
 public class AttachmentConversionKafkaListener {
@@ -73,18 +74,34 @@ public class AttachmentConversionKafkaListener {
         Assert.isTrue(!topics.containsKey(deadLetterTopic), "변환 DLT는 작업 토픽과 달라야 합니다.");
     }
 
+    @KafkaListener(id = "attachment-conversion-initial-light",
+            topics = "${app.attachment-conversion.topics.initial-light:yeodam-image-initial-light}",
+            groupId = "${app.attachment-conversion.group-prefix:yeodam-image-conversion}-initial-light",
+            containerFactory = "attachmentConversionKafkaListenerContainerFactory")
     public CompletableFuture<Void> initialLight(ConsumerRecord<String, String> record) {
         return handle(record, Kind.INITIAL, Lane.LIGHT);
     }
 
+    @KafkaListener(id = "attachment-conversion-initial-heic",
+            topics = "${app.attachment-conversion.topics.initial-heic:yeodam-image-initial-heic}",
+            groupId = "${app.attachment-conversion.group-prefix:yeodam-image-conversion}-initial-heic",
+            containerFactory = "attachmentConversionKafkaListenerContainerFactory")
     public CompletableFuture<Void> initialHeic(ConsumerRecord<String, String> record) {
         return handle(record, Kind.INITIAL, Lane.HEIC);
     }
 
+    @KafkaListener(id = "attachment-conversion-additional-light",
+            topics = "${app.attachment-conversion.topics.additional-light:yeodam-image-additional-light}",
+            groupId = "${app.attachment-conversion.group-prefix:yeodam-image-conversion}-additional-light",
+            containerFactory = "attachmentConversionKafkaListenerContainerFactory")
     public CompletableFuture<Void> additionalLight(ConsumerRecord<String, String> record) {
         return handle(record, Kind.ADDITIONAL, Lane.LIGHT);
     }
 
+    @KafkaListener(id = "attachment-conversion-additional-heic",
+            topics = "${app.attachment-conversion.topics.additional-heic:yeodam-image-additional-heic}",
+            groupId = "${app.attachment-conversion.group-prefix:yeodam-image-conversion}-additional-heic",
+            containerFactory = "attachmentConversionKafkaListenerContainerFactory")
     public CompletableFuture<Void> additionalHeic(ConsumerRecord<String, String> record) {
         return handle(record, Kind.ADDITIONAL, Lane.HEIC);
     }

@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.time.LocalDateTime;
 
@@ -43,6 +44,11 @@ public class AdditionalAttachmentUploadBatch {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private AdditionalAttachmentUploadStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @ColumnDefault("'DB'")
+    @Column(name = "conversion_route", nullable = false, length = 20, columnDefinition = "VARCHAR(20)")
+    private AttachmentConversionRoute conversionRoute = AttachmentConversionRoute.DB;
 
     @Column(name = "worker_token", length = 36)
     private String workerToken;

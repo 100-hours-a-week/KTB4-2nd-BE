@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 @Entity
 @Table(name = "attachment_conversion_tasks")
@@ -118,6 +119,29 @@ public class AttachmentConversionTask {
         leaseUntil = until;
     }
 
+    public boolean hasCurrentAttempt(Long itemId, String token) {
+        return currentItemId != null && Objects.equals(currentItemId, itemId)
+                && currentAttemptToken != null && Objects.equals(currentAttemptToken, token);
+    }
+
+    public void startPhotoAttempt(Long itemId, int attemptNo, String token) {
+        currentItemId = itemId;
+        currentAttemptNo = attemptNo;
+        currentAttemptToken = token;
+        nextAttemptAt = null;
+    }
+
+    public void clearPhotoAttempt() {
+        currentItemId = null;
+        currentAttemptNo = null;
+        currentAttemptToken = null;
+    }
+
+    public void retryPhoto(LocalDateTime next) {
+        clearPhotoAttempt();
+        nextAttemptAt = next;
+    }
+
     public void recordRemaining(long photos, long bytes) {
         remainingPhotos = photos;
         remainingBytes = bytes;
@@ -131,9 +155,7 @@ public class AttachmentConversionTask {
         claimToken = null;
         leaseUntil = null;
         nextAttemptAt = null;
-        currentItemId = null;
-        currentAttemptNo = null;
-        currentAttemptToken = null;
+        clearPhotoAttempt();
         if (terminal == Status.SUCCEEDED) {
             recordRemaining(0, 0);
         }

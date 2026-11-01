@@ -119,6 +119,19 @@ public class AttachmentConversionTask {
         leaseUntil = until;
     }
 
+    public boolean releaseClaim(String token) {
+        if (token == null || !token.equals(claimToken)) {
+            return false;
+        }
+        if (status == Status.RUNNING) {
+            status = Status.WAITING;
+        }
+        claimToken = null;
+        leaseUntil = null;
+        clearPhotoAttempt();
+        return true;
+    }
+
     public boolean hasCurrentAttempt(Long itemId, String token) {
         return currentItemId != null && Objects.equals(currentItemId, itemId)
                 && currentAttemptToken != null && Objects.equals(currentAttemptToken, token);

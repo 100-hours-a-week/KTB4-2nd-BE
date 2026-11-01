@@ -82,6 +82,7 @@ class AttachmentConversionMigrationIntegrationTest {
     @Autowired private EntityManager entityManager;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private AttachmentConversionAdmissionService admission;
+    @Autowired private AttachmentConversionOperationsRunner operations;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private ApplicationContext context;
     @Autowired private ObjectMapper json;
@@ -244,6 +245,48 @@ class AttachmentConversionMigrationIntegrationTest {
         assertThat(tasks.count()).isEqualTo(1);
     }
 
+    @Test
+    void commandValidatesEvidenceBeforeMutationAndExpiresBetweenPages() throws Exception {
+        var batch = fixture(Kind.INITIAL, List.of("image/jpeg"));
+        accept(batch);
+        entityManager.flush();
+        Path evidence = temporary.resolve("drain.json");
+        String valid = """
+                {"target":"local-rehearsal","deploymentSha":"test-sha","action":"TRANSFER","kind":"INITIAL",
+                 "afterBatchId":0,"limit":10,"batchId":null,"operator":"local-operator","observedAt":"%s",
+                 "observation":"two local API logs and active I/O counters checked",
+                 "instances":[{"id":"api-a","sha":"test-sha","mode":"HOLD","newStartsStopped":true,
+                 "claimsStopped":true,"consumersStopped":true,"ioDrained":true}]}
+                """.formatted(Instant.now());
+        var args = new DefaultApplicationArguments(
+                "--app.attachment-conversion.operations.action=TRANSFER",
+                "--app.attachment-conversion.operations.kind=INITIAL",
+                "--app.attachment-conversion.operations.after-batch-id=0",
+                "--app.attachment-conversion.operations.limit=10",
+                "--app.attachment-conversion.operations.target=local-rehearsal",
+                "--app.attachment-conversion.operations.deployment-sha=test-sha",
+                "--app.attachment-conversion.operations.instances=api-a",
+                "--app.attachment-conversion.operations.drain-max-age=PT5M",
+                "--app.attachment-conversion.operations.drain-evidence=" + evidence);
+        for (String invalid : List.of(valid.replace("\"ioDrained\":true", "\"ioDrained\":false"),
+                valid.replace("test-sha", "wrong-sha"), valid.replace("api-a", "api-b"),
+                valid.replace("TRANSFER", "RETURN"), valid.replace("local-rehearsal", "other-target"),
+                valid.replace("INITIAL", "ADDITIONAL"), valid.replace("\"afterBatchId\":0", "\"afterBatchId\":1"),
+                valid.replace("\"limit\":10", "\"limit\":11"))) {
+            Files.writeString(evidence, invalid);
+            assertThat(operations.execute(args)).isNotZero();
+            assertThat(tasks.count()).isZero();
+            assertThat(route(batch)).isEqualTo("HOLD");
+        }
+        Files.writeString(evidence, valid);
+        assertThat(operations.execute(args)).isZero();
+        assertThat(tasks.count()).isEqualTo(1);
+        assertThat(route(batch)).isEqualTo("KAFKA");
+        assertThatThrownBy(() -> migration.returnBatchToDb(Kind.INITIAL, batch.id(), Instant.now().minusSeconds(1)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(route(batch)).isEqualTo("KAFKA");
+    }
+
     @ParameterizedTest
     @EnumSource(Kind.class)
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -302,6 +345,198 @@ class AttachmentConversionMigrationIntegrationTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThat(jdbc.queryForObject("SELECT record_offset FROM attachment_conversion_outbox WHERE trip_id = ?",
                 Long.class, first.tripId())).isEqualTo(17);
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "OPERATIONS_REHEARSAL_JAR", matches = ".+")
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+    void actualJarCommandsAndTwoApiInstancesPreserveSourceAndAiOrder() throws Exception {
+        var tx = new TransactionTemplate(transactionManager);
+        var batch = tx.execute(status -> {
+            var created = fixture(Kind.INITIAL, List.of("image/jpeg", "image/heic"));
+            accept(created);
+            var items = entityManager.createQuery("select i from InitialAttachmentUploadItem i where i.batch.id = :id",
+                    InitialAttachmentUploadItem.class).setParameter("id", created.id()).getResultList();
+            for (var item : items) {
+                var file = StoredFile.uploaded(created.userId(), "photo", item.getObjectKey(), item.getContentType());
+                file.storageSize(item.getSizeBytes());
+                entityManager.persist(file);
+                var photo = TripAttachment.initial(created.tripId(), file.getId(), "saved/analyze/" + item.getId(), "saved/preview/" + item.getId());
+                photo.storageSizes(20, 10, null);
+                entityManager.persist(photo);
+                item.linkAttachment(photo.getId());
+                item.conversionCompleted(json.writeValueAsString(new DerivedPhotoKeys(item.getObjectKey(),
+                        photo.getAnalyzeStorageKey(), photo.getPreviewStorageKey())));
+            }
+            return created;
+        });
+        Path logs = Path.of(System.getenv().getOrDefault("OPERATIONS_REHEARSAL_EVIDENCE", temporary.toString()));
+        Files.createDirectories(logs);
+        try (var admin = AdminClient.create(Map.of("bootstrap.servers",
+                SharedTestKafka.bootstrapServers()))) {
+            var topicNames = Stream.concat(
+                    Stream.of("yeodam-image-initial-light", "yeodam-image-initial-heic",
+                            "yeodam-image-additional-light", "yeodam-image-additional-heic", "yeodam-image-conversion-dlt"),
+                    Stream.of("trip-create-request", "trip-create-result", "trip-update-request", "trip-update-result", "story-create-request", "story-create-result")
+                            .map(name -> "rehearsal-" + name)).toList();
+            for (String topic : topicNames) {
+                try {
+                    admin.createTopics(List.of(new NewTopic(topic, 2, (short) 1)
+                            .configs(Map.of("message.timestamp.type", "LogAppendTime")))).all().get(10, TimeUnit.SECONDS);
+                } catch (ExecutionException exists) {
+                    assertThat(exists.getCause()).isInstanceOf(TopicExistsException.class);
+                }
+            }
+            var check = startJar(logs, "check", "HOLD", true, "CHECK");
+            assertThat(check.waitFor(60, TimeUnit.SECONDS)).isTrue();
+            assertThat(check.exitValue()).isZero();
+            var rejected = startJar(logs, "missing-evidence", "HOLD", true, "TRANSFER");
+            assertThat(rejected.waitFor(60, TimeUnit.SECONDS)).isTrue();
+            assertThat(rejected.exitValue()).isNotZero();
+            assertThat(route(batch)).isEqualTo("HOLD");
+            Path evidence = logs.resolve("process-drain.json");
+            Files.writeString(evidence, """
+                    {"target":"local-rehearsal","deploymentSha":"local-jar","action":"TRANSFER","kind":"INITIAL",
+                     "afterBatchId":0,"limit":10,"operator":"local-test","observedAt":"%s",
+                     "observation":"Before launching the two API processes; no conversion process is running in this isolated database",
+                     "instances":[{"id":"api-a","sha":"local-jar","mode":"HOLD","newStartsStopped":true,
+                     "claimsStopped":true,"consumersStopped":true,"ioDrained":true},
+                     {"id":"api-b","sha":"local-jar","mode":"HOLD","newStartsStopped":true,
+                     "claimsStopped":true,"consumersStopped":true,"ioDrained":true}]}
+                    """.formatted(Instant.now()));
+            var transfer = startJar(logs, "transfer", "HOLD", true, "TRANSFER",
+                    "--app.attachment-conversion.operations.target=local-rehearsal",
+                    "--app.attachment-conversion.operations.deployment-sha=local-jar",
+                    "--app.attachment-conversion.operations.instances=api-a,api-b",
+                    "--app.attachment-conversion.operations.drain-max-age=PT5M",
+                    "--app.attachment-conversion.operations.drain-evidence=" + evidence);
+            assertThat(transfer.waitFor(60, TimeUnit.SECONDS)).isTrue();
+            assertThat(transfer.exitValue()).isZero();
+            assertThat(route(batch)).isEqualTo("KAFKA");
+            String transferEvidence = Files.readString(evidence);
+            Files.writeString(evidence, transferEvidence.replace("\"action\":\"TRANSFER\"", "\"action\":\"RETURN\"")
+                    .replace("\"limit\":10", "\"limit\":1,\"batchId\":" + batch.id()));
+            var returned = startJar(logs, "return", "HOLD", true, "RETURN",
+                    "--app.attachment-conversion.operations.batch-id=" + batch.id(),
+                    "--app.attachment-conversion.operations.target=local-rehearsal",
+                    "--app.attachment-conversion.operations.deployment-sha=local-jar",
+                    "--app.attachment-conversion.operations.instances=api-a,api-b",
+                    "--app.attachment-conversion.operations.drain-max-age=PT5M",
+                    "--app.attachment-conversion.operations.drain-evidence=" + evidence);
+            assertThat(returned.waitFor(60, TimeUnit.SECONDS)).isTrue();
+            assertThat(returned.exitValue()).isZero();
+            assertThat(route(batch)).isEqualTo("DB");
+            assertThat(migration.transferPendingBatches(Kind.INITIAL, 0, 10)).isEqualTo(1);
+            assertThat(outboxes.count()).isEqualTo(2);
+            Process first = startJar(logs, "api-a", "KAFKA", false, "CHECK");
+            Process second = startJar(logs, "api-b", "KAFKA", false, "CHECK");
+            try {
+                var groups = List.of("initial-light", "initial-heic", "additional-light", "additional-heic").stream()
+                        .map(suffix -> "rehearsal-image-" + suffix).toList();
+                Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+                    assertThat(first.isAlive() && second.isAlive()).isTrue();
+                    var descriptions = admin.describeConsumerGroups(groups).all().get(5, TimeUnit.SECONDS);
+                    assertThat(descriptions.values()).allSatisfy(group -> {
+                        assertThat(group.members()).hasSize(2);
+                        assertThat(group.members().stream().flatMap(member -> member.assignment().topicPartitions().stream()).toList()).hasSize(2);
+                    });
+                });
+                Files.writeString(logs.resolve("group-assignment.txt"), admin.describeConsumerGroups(groups).all().get().toString());
+                var producerConfig = new HashMap<String, Object>();
+                producerConfig.put("bootstrap.servers", SharedTestKafka.bootstrapServers());
+                producerConfig.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+                producerConfig.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+                try (var producer = new KafkaProducer<String, String>(producerConfig)) {
+                    for (var outbox : outboxes.findAll()) {
+                        for (int partition = 0; partition < 2; partition++) {
+                            producer.send(new ProducerRecord<>(outbox.getTopic(), partition,
+                                    batch.tripId().toString(), outbox.getPayload())).get(10, TimeUnit.SECONDS);
+                        }
+                    }
+                    Awaitility.await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                            assertThat(tasks.findAll()).hasSize(2).allSatisfy(task ->
+                                    assertThat(task.getStatus()).isEqualTo(AttachmentConversionTask.Status.SUCCEEDED)));
+                    assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trip_creation_outbox WHERE trip_id = ? AND message_type = 'photos_ready'",
+                            Integer.class, batch.tripId())).isEqualTo(1);
+                    assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trip_creation_outbox WHERE trip_id = ? AND message_type = 'process'",
+                            Integer.class, batch.tripId())).isZero();
+                    var row = jdbc.queryForMap("SELECT outbox_id, payload FROM trip_creation_outbox WHERE trip_id = ? AND message_type = 'photos_ready'", batch.tripId());
+                    var ready = new ProducerRecord<String, String>("rehearsal-trip-create-request", batch.tripId().toString(), row.get("payload").toString());
+                    ready.headers().add("id", row.get("outbox_id").toString().getBytes(StandardCharsets.UTF_8));
+                    ready.headers().add("outbox-source", "trip_creation_outbox".getBytes(StandardCharsets.UTF_8));
+                    producer.send(ready).get(10, TimeUnit.SECONDS);
+                    Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trip_creation_outbox WHERE trip_id = ? AND message_type = 'process'",
+                                    Integer.class, batch.tripId())).isEqualTo(1));
+                    Files.writeString(logs.resolve("source-ai-result.txt"), jdbc.queryForList(
+                            "SELECT message_type, created_at FROM trip_creation_outbox WHERE trip_id = ? ORDER BY created_at", batch.tripId()).toString());
+                    Files.writeString(evidence, transferEvidence.replace("TRANSFER", "FINAL_SWEEP").replace("HOLD", "KAFKA")
+                            .replace("\"claimsStopped\":true", "\"claimsStopped\":false")
+                            .replace("\"consumersStopped\":true", "\"consumersStopped\":false"));
+                    var sweep = startJar(logs, "final-sweep", "KAFKA", true, "FINAL_SWEEP",
+                            "--app.attachment-conversion.operations.target=local-rehearsal",
+                            "--app.attachment-conversion.operations.deployment-sha=local-jar",
+                            "--app.attachment-conversion.operations.instances=api-a,api-b",
+                            "--app.attachment-conversion.operations.drain-max-age=PT5M",
+                            "--app.attachment-conversion.operations.drain-evidence=" + evidence);
+                    assertThat(sweep.waitFor(60, TimeUnit.SECONDS)).isTrue();
+                    assertThat(sweep.exitValue()).isZero();
+                    assertThat(outboxes.count()).isEqualTo(2);
+                }
+            } finally {
+                for (Process process : List.of(first, second)) {
+                    process.destroy();
+                    if (!process.waitFor(15, TimeUnit.SECONDS)) {
+                        process.destroyForcibly().waitFor(10, TimeUnit.SECONDS);
+                    }
+                }
+            }
+        }
+    }
+
+    private Process startJar(Path logs, String name, String mode, boolean operationsEnabled, String action, String... extra) throws Exception {
+        var command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-Xmx256m", "--enable-native-access=ALL-UNNAMED", "-jar", System.getenv("OPERATIONS_REHEARSAL_JAR"),
+                "--spring.profiles.active=test", "--spring.config.import=", "--server.address=127.0.0.1", "--server.port=0",
+                "--spring.datasource.hikari.maximum-pool-size=3", "--spring.jpa.hibernate.ddl-auto=validate",
+                "--app.attachment-conversion.mode=" + mode,
+                "--app.attachment-conversion.operations.enabled=" + operationsEnabled,
+                "--app.attachment-conversion.operations.action=" + action,
+                "--app.attachment-conversion.operations.kind=INITIAL", "--app.attachment-conversion.operations.after-batch-id=0",
+                "--app.attachment-conversion.operations.limit=10", "--app.trip.worker-initial-delay-ms=0",
+                "--app.trip.result-listener-enabled=true", "--app.story.result-listener-enabled=true",
+                "--app.outbox.receipt-listener-enabled=true", "--app.outbox.receipt-consumer-group=rehearsal-receipts",
+                "--app.attachment-conversion.group-prefix=rehearsal-image",
+                "--app.attachment-conversion.retry.technical-backoff=100ms",
+                "--app.attachment-conversion.kafka.fetch-max-bytes=1048576",
+                "--app.attachment-conversion.kafka.partition-fetch-max-bytes=524288",
+                "--app.attachment-conversion.kafka.max-message-bytes=262144",
+                "--app.attachment-conversion.admission.max-unfinished-photos.LIGHT=100",
+                "--app.attachment-conversion.admission.max-unfinished-photos.HEIC=100",
+                "--app.attachment-conversion.admission.max-unfinished-bytes.LIGHT=100000",
+                "--app.attachment-conversion.admission.max-unfinished-bytes.HEIC=100000",
+                "--app.attachment-conversion.admission.max-unfinished-age=1h",
+                "--app.attachment-conversion.admission.snapshot-max-age=30s",
+                "--app.attachment-conversion.admission.sample-interval=10s",
+                "--app.attachment-conversion.admission.reopen-ratio=0.5",
+                "--app.attachment-conversion.recovery.interval=5m", "--app.attachment-conversion.recovery.page-size=10",
+                "--app.attachment-conversion.recovery.max-pages-per-run=2", "--app.attachment-conversion.recovery.max-reissues-per-run=10"));
+        for (String topic : List.of("trip-create-request", "trip-create-result", "trip-update-request", "trip-update-result", "story-create-request", "story-create-result")) {
+            command.add("--app.kafka.topics." + topic + "=rehearsal-" + topic);
+        }
+        command.addAll(List.of(extra));
+        var process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(logs.resolve(name + ".log").toFile());
+        var database = context.getBean(JdbcConnectionDetails.class);
+        process.environment().put("SPRING_DATASOURCE_URL", database.getJdbcUrl());
+        process.environment().put("SPRING_DATASOURCE_USERNAME", database.getUsername());
+        process.environment().put("SPRING_DATASOURCE_PASSWORD", database.getPassword());
+        var redis = context.getBean(DataRedisConnectionDetails.class).getStandalone();
+        process.environment().put("SPRING_DATA_REDIS_HOST", redis.getHost());
+        process.environment().put("SPRING_DATA_REDIS_PORT", Integer.toString(redis.getPort()));
+        process.environment().put("SPRING_DATA_REDIS_DATABASE", Integer.toString(redis.getDatabase()));
+        process.environment().put("SPRING_KAFKA_BOOTSTRAP_SERVERS", SharedTestKafka.bootstrapServers());
+        return process.start();
     }
 
     @Test

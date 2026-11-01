@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.integration.config;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.kafka.autoconfigure.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -9,6 +10,7 @@ import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.CommonContainerStoppingErrorHandler;
 
 @Configuration(proxyBeanMethods = false)
+@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
 public class OutboxReceiptKafkaConfiguration {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<Object, Object> outboxReceiptKafkaListenerContainerFactory(

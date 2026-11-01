@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.event.handler;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import com.yeodam.yeodambe.common.event.EventHandler;
 import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventType;
@@ -13,6 +14,7 @@ import org.springframework.util.Assert;
 
 @Component
 @RequiredArgsConstructor
+@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
 public class TripUpdateResultEventHandler implements EventHandler<TripUpdateResultEvent> {
     private final AdditionalAttachmentKafkaResultService additionalResults;
     private final ObjectMapper json;

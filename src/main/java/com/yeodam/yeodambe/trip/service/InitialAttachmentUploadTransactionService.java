@@ -715,6 +715,9 @@ public class InitialAttachmentUploadTransactionService {
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Optional<InitialAttachmentUploadBatchSnapshot> claimBatch() {
+        if (conversionProperties.mode() != AttachmentConversionRoute.DB || conversionProperties.operations().enabled()) {
+            return Optional.empty();
+        }
         for (InitialAttachmentUploadBatch candidate : batches.findPendingConversion(
                 now(), PageRequest.of(0, 20))) {
             Optional<InitialAttachmentUploadBatchSnapshot> claim = claimCandidate(candidate);
@@ -731,6 +734,9 @@ public class InitialAttachmentUploadTransactionService {
             Long userId,
             String uploadId
     ) {
+        if (conversionProperties.mode() != AttachmentConversionRoute.DB || conversionProperties.operations().enabled()) {
+            return Optional.empty();
+        }
         return batches.findByUploadIdAndTripIdAndUserId(uploadId, tripId, userId)
                 .flatMap(this::claimCandidate);
     }

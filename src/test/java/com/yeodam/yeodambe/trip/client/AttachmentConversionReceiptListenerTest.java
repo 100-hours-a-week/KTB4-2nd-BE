@@ -1,0 +1,76 @@
+package com.yeodam.yeodambe.trip.client;
+
+import com.yeodam.yeodambe.trip.service.AttachmentConversionTransactionService;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionPublication;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.internals.RecordHeaders;
+import org.apache.kafka.common.record.TimestampType;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.dao.TransientDataAccessResourceException;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(OutputCaptureExtension.class)
+class AttachmentConversionReceiptListenerTest {
+    private final AttachmentConversionTransactionService transactions = mock(AttachmentConversionTransactionService.class);
+    private final AttachmentConversionReceiptListener listener = new AttachmentConversionReceiptListener(transactions);
+
+    @Test
+    void preservesRecordPositionWithoutInferringTopicIdentity() {
+        var record = record("attachment_conversion_outbox", "id", TimestampType.LOG_APPEND_TIME, 0, 12);
+        listener.consume(record);
+        verify(transactions).recordPublished(new AttachmentConversionPublication("id", record.topic(), "7", "DO_NOT_LOG",
+                null, 0, 12, java.time.Instant.ofEpochMilli(1000), 0));
+    }
+
+    @Test
+    void invalidHeadersAndPositionDoNotBlockControlGroup(CapturedOutput output) {
+        for (var record : java.util.List.of(
+                record(null, "id", TimestampType.LOG_APPEND_TIME, 0, 12),
+                record("story_generation_outbox", "id", TimestampType.LOG_APPEND_TIME, 0, 12),
+                record("attachment_conversion_outbox", null, TimestampType.LOG_APPEND_TIME, 0, 12),
+                record("attachment_conversion_outbox", " ", TimestampType.LOG_APPEND_TIME, 0, 12),
+                record("attachment_conversion_outbox", "id", TimestampType.CREATE_TIME, 0, 12),
+                record("attachment_conversion_outbox", "id", TimestampType.LOG_APPEND_TIME, -1, 12),
+                record("attachment_conversion_outbox", "id", TimestampType.LOG_APPEND_TIME, 0, -1))) {
+            assertThatCode(() -> listener.consume(record)).doesNotThrowAnyException();
+        }
+        verifyNoInteractions(transactions);
+        assertThat(output.getAll()).doesNotContain("DO_NOT_LOG");
+    }
+
+    @Test
+    void permanentMismatchIsSkippedWithoutLoggingPayloadOrException(CapturedOutput output) {
+        doThrow(new IllegalArgumentException("DO_NOT_LOG")).when(transactions).recordPublished(any());
+        assertThatCode(() -> listener.consume(record("attachment_conversion_outbox", "id", TimestampType.LOG_APPEND_TIME, 0, 12)))
+                .doesNotThrowAnyException();
+        assertThat(output.getAll()).contains("INVALID_RECEIPT").doesNotContain("DO_NOT_LOG");
+    }
+
+    @Test
+    void databaseFailurePropagatesForUnlimitedFactoryRetry() {
+        var failure = new TransientDataAccessResourceException("DO_NOT_LOG");
+        doThrow(failure).when(transactions).recordPublished(any());
+        assertThatThrownBy(() -> listener.consume(record("attachment_conversion_outbox", "id", TimestampType.LOG_APPEND_TIME, 0, 12)))
+                .isSameAs(failure);
+    }
+
+    private ConsumerRecord<String, String> record(String source, String id, TimestampType timestampType, int partition, long offset) {
+        var headers = new RecordHeaders();
+        if (source != null) {
+            headers.add("outbox-source", source.getBytes(StandardCharsets.UTF_8));
+        }
+        if (id != null) {
+            headers.add("id", id.getBytes(StandardCharsets.UTF_8));
+        }
+        return new ConsumerRecord<>("yeodam-image-initial-light", partition, offset, 1000,
+                timestampType, 0, 0, "7", "DO_NOT_LOG", headers, Optional.of(0));
+    }
+}

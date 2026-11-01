@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionPublication;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -7,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 @Entity
 @Table(name = "attachment_conversion_outbox")
@@ -89,6 +91,26 @@ public class AttachmentConversionOutbox {
         this.topic = topic;
         this.payload = payload;
         this.requestId = requestId;
+    }
+
+    public void recordPublished(AttachmentConversionPublication publication, LocalDateTime now) {
+        boolean samePartition = Objects.equals(topicId, publication.topicId())
+                && Objects.equals(recordPartition, publication.partition());
+        boolean samePosition = samePartition && Objects.equals(recordOffset, publication.offset())
+                && Objects.equals(brokerTimestamp, publication.brokerTimestamp())
+                && Objects.equals(leaderEpoch, publication.leaderEpoch());
+        if (status == Status.PUBLISHED && (samePosition
+                || topicId != null && samePartition && recordOffset > publication.offset())) {
+            return;
+        }
+        status = Status.PUBLISHED;
+        topicId = publication.topicId();
+        recordPartition = publication.partition();
+        recordOffset = publication.offset();
+        brokerTimestamp = publication.brokerTimestamp();
+        leaderEpoch = publication.leaderEpoch();
+        publishedAt = now;
+        publicationVersion++;
     }
 
     public enum Status {

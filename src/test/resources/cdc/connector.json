@@ -8,14 +8,14 @@
   "database.server.id": "184054",
   "topic.prefix": "outbox-cdc",
   "database.include.list": "yeodam",
-  "table.include.list": "yeodam.trip_creation_outbox,yeodam.additional_attachment_upload_outbox,yeodam.story_generation_outbox",
+  "table.include.list": "yeodam.trip_creation_outbox,yeodam.additional_attachment_upload_outbox,yeodam.story_generation_outbox,yeodam.attachment_conversion_outbox",
   "schema.history.internal.kafka.bootstrap.servers": "kafka:19092",
   "schema.history.internal.kafka.topic": "outbox-cdc-schema-history",
   "include.schema.changes": "false",
   "tombstones.on.delete": "false",
   "skipped.operations": "u,d,t",
   "snapshot.mode": "initial",
-  "snapshot.select.statement.overrides": "yeodam.trip_creation_outbox,yeodam.additional_attachment_upload_outbox,yeodam.story_generation_outbox",
+  "snapshot.select.statement.overrides": "yeodam.trip_creation_outbox,yeodam.additional_attachment_upload_outbox,yeodam.story_generation_outbox,yeodam.attachment_conversion_outbox",
   "transforms": "owned,outbox,key",
   "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
   "transforms.outbox.table.field.event.id": "outbox_id",
@@ -40,5 +40,6 @@
   "errors.tolerance": "none",
   "producer.override.delivery.timeout.ms": "10000",
   "producer.override.request.timeout.ms": "5000",
-  "producer.override.max.block.ms": "10000"
+  "producer.override.max.block.ms": "10000",
+  "snapshot.select.statement.overrides.yeodam.attachment_conversion_outbox": "SELECT * FROM yeodam.attachment_conversion_outbox WHERE cdc_managed = TRUE AND status = 'PENDING'"
 }

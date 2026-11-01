@@ -14,6 +14,8 @@ import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaimResult;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionAttemptResult;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionStepResult;
+import com.yeodam.yeodambe.trip.service.request.AttachmentConversionMessage;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionPublication;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.Assert;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.cfg.DateTimeFeature;
 
@@ -42,6 +46,35 @@ public class AttachmentConversionTransactionService {
     private final ObjectMapper json;
     private final InitialAttachmentUploadTransactionService initialSource;
     private final AdditionalAttachmentUploadTransactionService additionalSource;
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void recordPublished(AttachmentConversionPublication publication) {
+        Assert.notNull(publication, "변환 발행 관측이 필요합니다.");
+        Assert.isTrue(publication.partition() >= 0 && publication.offset() >= 0
+                && publication.brokerTimestamp() != null, "변환 발행 위치가 유효하지 않습니다.");
+        var hint = outboxes.findById(publication.outboxId()).orElseThrow(IllegalArgumentException::new);
+        var task = lockTask(hint.getTaskId());
+        var outbox = outboxes.findByIdForUpdate(publication.outboxId()).orElseThrow(IllegalArgumentException::new);
+        entityManager.refresh(outbox, LockModeType.PESSIMISTIC_WRITE);
+        Assert.isTrue(outbox.isCdcManaged() && outbox.getTaskId().equals(task.getId())
+                && outbox.getTripId().equals(task.getTripId())
+                && outbox.getDeliveryNo() <= task.getLatestDeliveryNo()
+                && outbox.getTopic().equals(publication.topic())
+                && outbox.getTripId().toString().equals(publication.key())
+                && outbox.getPayload().equals(publication.payload()), "변환 발행 관측이 Outbox와 일치하지 않습니다.");
+        requirePublicationTask(publication.payload(), task.getId());
+        outbox.recordPublished(publication, databaseTime());
+    }
+
+    private void requirePublicationTask(String payload, String taskId) {
+        try {
+            var message = json.readValue(payload, AttachmentConversionMessage.class);
+            Assert.isTrue(message != null && message.schemaVersion() == 1 && taskId.equals(message.taskId()),
+                    "변환 발행 관측의 작업이 일치하지 않습니다.");
+        } catch (JacksonException invalid) {
+            throw new InvalidAttachmentConversionMessageException();
+        }
+    }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public AttachmentConversionAttemptResult beginPhoto(AttachmentConversionClaim claim, Long itemId) {

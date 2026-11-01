@@ -38,6 +38,7 @@ import static org.assertj.core.api.Assertions.*;
 @SpringBootTest(properties = {
         "spring.application.name=conversion-acceptance-test",
         "app.attachment-conversion.mode=KAFKA",
+        "app.attachment-conversion.retry.technical-backoff=100ms",
         "app.attachment-conversion.admission.max-unfinished-photos.LIGHT=100",
         "app.attachment-conversion.admission.max-unfinished-photos.HEIC=100",
         "app.attachment-conversion.admission.max-unfinished-bytes.LIGHT=100000",

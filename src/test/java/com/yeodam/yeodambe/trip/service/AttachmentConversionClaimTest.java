@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.trip.client.InvalidAttachmentConversionMessageException;
+import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
@@ -29,16 +30,25 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicReference;
+import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties.Topics;
+import tools.jackson.core.type.TypeReference;
 
 import static com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaimResult.Status.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
 @SpringBootTest(properties = "spring.application.name=conversion-claim-test")
 @ActiveProfiles("test")
@@ -97,6 +107,101 @@ class AttachmentConversionClaimTest {
             assertThat(claim.requestId()).isEqualTo("request-before-worker");
             assertAttemptsUnchanged(fixture);
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"INITIAL,false", "ADDITIONAL,false", "INITIAL,true", "ADDITIONAL,true"})
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void lostTokenOnlyJournalsItsAbandonedAttemptWithoutClearingNewOwner(Kind kind, boolean nextBegan) {
+        var fixture = new TransactionTemplate(transactionManager).execute(status -> fixture(kind));
+        var old = claimed(fixture);
+        var first = transactions.beginPhoto(old, fixture.lightItemId()).attempt();
+        jdbc.update("UPDATE attachment_conversion_tasks SET lease_until = ? WHERE task_id = ?", NOW, fixture.taskId());
+        var current = claimed(fixture);
+        AttachmentConversionClaim.Attempt second = nextBegan ? transactions.beginPhoto(current, fixture.lightItemId()).attempt() : null;
+        doReturn(NOW.plusMinutes(1)).when(jdbc).queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+        assertThat(transactions.releaseClaim(old)).isFalse();
+        assertThat(jdbc.queryForObject("SELECT claim_token FROM attachment_conversion_tasks WHERE task_id = ?",
+                String.class, fixture.taskId())).isEqualTo(current.claimToken());
+        assertThat(jdbc.queryForObject("SELECT lease_until FROM attachment_conversion_tasks WHERE task_id = ?",
+                LocalDateTime.class, fixture.taskId())).isEqualTo(NOW.plusMinutes(10));
+        List<CleanupProbe> journal = json.readValue(jdbc.queryForObject("SELECT cleanup_json FROM " + itemTable(kind)
+                + " WHERE upload_item_id = ?", String.class, fixture.lightItemId()), new TypeReference<List<CleanupProbe>>() {});
+        var oldKeys = List.of(first.plannedKeys().analyzeKey(), first.plannedKeys().previewKey());
+        assertThat(journal).filteredOn(object -> oldKeys.contains(object.key())).hasSize(2)
+                .allSatisfy(object -> assertThat(object.startedAt()).isEqualTo(nextBegan ? NOW : NOW.plusMinutes(1)));
+        if (second != null) {
+            var activeKeys = List.of(second.plannedKeys().analyzeKey(), second.plannedKeys().previewKey());
+            assertThat(journal).filteredOn(object -> activeKeys.contains(object.key())).hasSize(2)
+                    .allSatisfy(object -> assertThat(object.startedAt()).isNull());
+        }
+        assertThat(transactions.renewLease(current)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT conversion_attempts FROM " + itemTable(kind) + " WHERE upload_item_id = ?",
+                Integer.class, fixture.lightItemId())).isEqualTo(nextBegan ? 2 : 1);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void releaseDoesNotScheduleActiveSavedDerivativeKeys(Kind kind) {
+        var fixture = fixture(kind);
+        var claim = claimed(fixture);
+        var attempt = transactions.beginPhoto(claim, fixture.lightItemId()).attempt();
+        var planned = attempt.plannedKeys();
+        var file = StoredFile.uploaded(fixture.userId(), "active.jpg", planned.originalKey(), "image/jpeg");
+        entityManager.persist(file);
+        var attachment = TripAttachment.initial(fixture.tripId(), file.getId(), planned.analyzeKey(), planned.previewKey(), null);
+        entityManager.persist(attachment);
+        entityManager.flush();
+        jdbc.update("UPDATE " + itemTable(kind) + " SET trip_attachment_id = ?, derived_json = ? WHERE upload_item_id = ?",
+                attachment.getId(), json.writeValueAsString(planned), fixture.lightItemId());
+        entityManager.clear();
+        assertThat(transactions.releaseClaim(claim)).isTrue();
+        List<CleanupProbe> journal = json.readValue(jdbc.queryForObject("SELECT cleanup_json FROM " + itemTable(kind)
+                + " WHERE upload_item_id = ?", String.class, fixture.lightItemId()), new TypeReference<List<CleanupProbe>>() {});
+        assertThat(journal).hasSize(3).allSatisfy(object -> assertThat(object.startedAt()).isNull());
+    }
+
+    private record CleanupProbe(
+            String key,
+            LocalDateTime startedAt,
+            String reason,
+            boolean deleted
+    ) {
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void currentOwnerCanReleaseTerminalClaimBeforeOldLeaseDeadline(Kind kind) {
+        var fixture = fixture(kind);
+        var claim = claimed(fixture);
+        entityManager.flush();
+        jdbc.update("UPDATE attachment_conversion_tasks SET status = 'SUCCEEDED' WHERE task_id = ?", claim.taskId());
+        entityManager.clear();
+        assertThat(transactions.releaseClaim(claim)).isTrue();
+        assertThat(transactions.claim(claim.taskId(), kind, Lane.LIGHT).status()).isEqualTo(ACK_TERMINAL);
+        assertAttemptsUnchanged(fixture);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void releaseOnlyCurrentTokenPreservesAttemptAndAllowsImmediateReclaim(Kind kind) {
+        var fixture = fixture(kind);
+        var first = claimed(fixture);
+        var attempt = transactions.beginPhoto(first, fixture.lightItemId()).attempt();
+        assertThat(attempt.attemptNo()).isEqualTo(1);
+        assertThat(transactions.releaseClaim(first)).isTrue();
+        var second = claimed(fixture);
+        assertThat(second.claimToken()).isNotEqualTo(first.claimToken());
+        assertThat(transactions.releaseClaim(first)).isFalse();
+        assertThat(transactions.renewLease(second)).isTrue();
+        assertThat(second.photos().getFirst().attempts()).isEqualTo(1);
+        assertThat(second.photos().getFirst().derived()).isNull();
+        assertThat(transactions.releaseClaim(second)).isTrue();
+        entityManager.flush();
+        var task = tasks.findById(first.taskId()).orElseThrow();
+        assertThat(task.getClaimToken()).isNull();
+        assertThat(task.getLeaseUntil()).isNull();
+        assertThat(task.getStatus()).isEqualTo(AttachmentConversionTask.Status.WAITING);
     }
 
     @ParameterizedTest
@@ -274,6 +379,7 @@ class AttachmentConversionClaimTest {
                 claim.batchId(), claim.uploadId(), claim.executionId(), claim.tripId(), claim.userId() + 1,
                 claim.requestId(), claim.photos());
         assertThat(transactions.renewLease(forged)).isFalse();
+        assertThat(transactions.releaseClaim(forged)).isFalse();
         assertThat(transactions.renewLease(claim)).isTrue();
     }
 

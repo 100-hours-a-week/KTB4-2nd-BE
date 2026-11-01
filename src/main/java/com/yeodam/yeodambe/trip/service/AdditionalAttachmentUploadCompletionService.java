@@ -146,9 +146,14 @@ public class AdditionalAttachmentUploadCompletionService {
             logUploadPreparationFailure(tripId, request.uploadId(), stage, failure);
             if (!persisted) {
                 boolean cleaned = !hasCleanupFailure(failure);
-                for (String key : keys(derived, false)) {
-                    try { tripAttachmentStorageClient.delete(key); }
-                    catch (RuntimeException cleanupFailure) { failure.addSuppressed(cleanupFailure); cleaned = false; }
+                for (DerivedPhotoKeys photo : derived) {
+                    try {
+                        uploadTransactionService.scheduleCleanupKeys(photo.originalKey(),
+                                List.copyOf(keys(List.of(photo), false)), "CONVERSION_COMPENSATION");
+                    } catch (RuntimeException cleanupFailure) {
+                        failure.addSuppressed(cleanupFailure);
+                        cleaned = false;
+                    }
                 }
                 if (cleaned) {
                     try { uploadTransactionService.releaseConversion(tripId, userId, request.uploadId(), claim.token()); }

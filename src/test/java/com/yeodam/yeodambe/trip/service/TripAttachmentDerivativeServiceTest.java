@@ -71,6 +71,7 @@ class TripAttachmentDerivativeServiceTest {
     private TripAttachmentStorageClient storage;
     private TripAttachmentDerivativeService service;
     private InitialAttachmentUploadTransactionService transactions;
+    private final AdditionalAttachmentUploadTransactionService additionalTransactions = mock(AdditionalAttachmentUploadTransactionService.class);
     private SimpleMeterRegistry meterRegistry;
     private TripDerivativeScheduler scheduler;
     private InitialAttachmentStoragePipeline pipeline;
@@ -85,7 +86,7 @@ class TripAttachmentDerivativeServiceTest {
         pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meterRegistry, 134217728L);
         exifTool = new ExifToolProcess();
         service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler,
-                transactions, pipeline, exifTool, new AttachmentConversionProperties(null, null, null, null));
+                transactions, pipeline, exifTool, new AttachmentConversionProperties(null, null, null, null), additionalTransactions);
     }
 
     @ParameterizedTest
@@ -200,7 +201,7 @@ class TripAttachmentDerivativeServiceTest {
         var saturatedPipeline = new InitialAttachmentStoragePipeline(
                 storage, transactions, saturatedScheduler, meterRegistry, 134217728L);
         var immediate = new TripAttachmentDerivativeService(
-                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline, exifTool, new AttachmentConversionProperties(null, null, null, null));
+                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline, exifTool, new AttachmentConversionProperties(null, null, null, null), additionalTransactions);
         when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
         when(saturatedScheduler.submitPrepared(eq("execution"), any(), any(), any()))
                 .thenThrow(new RejectedExecutionException("queue full"));
@@ -558,6 +559,8 @@ class TripAttachmentDerivativeServiceTest {
         verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
                 ArgumentMatchers.argThat(keys -> keys.contains("derived/preview.webp")), eq("CONVERSION_COMPENSATION"));
         verify(transactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
+                ArgumentMatchers.argThat(keys -> keys.contains("derived/display-failed.jpg")), eq("CONVERSION_COMPENSATION"));
+        verify(additionalTransactions).scheduleCleanupKeys(ArgumentMatchers.anyString(),
                 ArgumentMatchers.argThat(keys -> keys.contains("derived/display-failed.jpg")), eq("CONVERSION_COMPENSATION"));
         assertEquals(1, meterRegistry.find("yeodam.trip.stage")
                 .tags("stage", "image_derivative", "outcome", "failure")

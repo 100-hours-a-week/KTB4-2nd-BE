@@ -81,6 +81,11 @@ auth:
 app:
   attachment-conversion:
     mode: ${ATTACHMENT_CONVERSION_MODE:DB}
+    topics:
+      initial-light: ${ATTACHMENT_CONVERSION_INITIAL_LIGHT_TOPIC:yeodam-image-initial-light}
+      initial-heic: ${ATTACHMENT_CONVERSION_INITIAL_HEIC_TOPIC:yeodam-image-initial-heic}
+      additional-light: ${ATTACHMENT_CONVERSION_ADDITIONAL_LIGHT_TOPIC:yeodam-image-additional-light}
+      additional-heic: ${ATTACHMENT_CONVERSION_ADDITIONAL_HEIC_TOPIC:yeodam-image-additional-heic}
   outbox:
     receipt-consumer-group: ${KAFKA_OUTBOX_RECEIPT_CONSUMER_GROUP:yeodam-outbox-receipts}
   public-api-prefix: /api

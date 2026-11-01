@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse;
@@ -107,7 +109,10 @@ public class AdditionalAttachmentUploadCompletionService {
             throw new InvalidAttachmentUploadException();
         }
         var batch = uploadTransactionService.loadForVerification(tripId, userId, request.uploadId());
-        if (batch.status() == AdditionalAttachmentUploadStatus.COMPLETED) return Optional.empty();
+        requireLegacyRoute(batch);
+        if (batch.status() == AdditionalAttachmentUploadStatus.COMPLETED) {
+            return Optional.empty();
+        }
         if (batch.status() != AdditionalAttachmentUploadStatus.PREPARED) {
             prepareBatchPhotos(tripId, userId, request);
         }
@@ -120,6 +125,7 @@ public class AdditionalAttachmentUploadCompletionService {
             Long tripId, Long userId, AdditionalAttachmentUploadCompleteRequest request
     ) {
         verifyBatch(tripId, userId, request);
+        requireLegacyRoute(uploadTransactionService.loadForVerification(tripId, userId, request.uploadId()));
         var claim = uploadTransactionService.claimConversion(tripId, userId, request.uploadId());
         if (!claim.saved().isEmpty()) {
             retainFiles(claim.saved());
@@ -166,6 +172,7 @@ public class AdditionalAttachmentUploadCompletionService {
                 request.uploadId()
         );
 
+        requireLegacyRoute(batch);
         String executionId = batch.additionId();
 
         PhotosReadyMessage ready = analysisPreparationService.photosReady(
@@ -185,6 +192,12 @@ public class AdditionalAttachmentUploadCompletionService {
             PhotosReadyMessage photosReady,
             Optional<PhotoProcessMessage> process
     ) {
+    }
+
+    private void requireLegacyRoute(AdditionalAttachmentUploadTransactionService.VerificationBatch batch) {
+        if (batch.conversionRoute() != AttachmentConversionRoute.DB) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
     }
 
     private boolean hasCleanupFailure(Throwable failure) {

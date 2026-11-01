@@ -1,10 +1,16 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
+import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
+
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadBatch;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadItem;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus;
@@ -20,7 +26,7 @@ class AdditionalAttachmentUploadCompletionServiceTest {
         var preparation = mock(AttachmentDerivativePreparationService.class);
         var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
         var validator = mock(AttachmentUploadedFileValidator.class);
-        var service = new AdditionalAttachmentUploadCompletionService(transactions, validator, preparation, mock(com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient.class), mock(AdditionalAttachmentAnalysisPreparationService.class));
+        var service = new AdditionalAttachmentUploadCompletionService(transactions, validator, preparation, mock(TripAttachmentStorageClient.class), mock(AdditionalAttachmentAnalysisPreparationService.class));
         var batch = new AdditionalAttachmentUploadBatch("upload-id", "addition-id", 7L, 2L, 1, 2, true);
         var items = List.of(
                 new AdditionalAttachmentUploadItem(batch, 1, "one.jpg", "image/jpeg", 1024L, "new-one"),
@@ -36,19 +42,43 @@ class AdditionalAttachmentUploadCompletionServiceTest {
         verifyNoInteractions(transactions, validator);
     }
     @ParameterizedTest
+    @CsvSource({
+            "HOLD,VERIFIED", "KAFKA,VERIFIED", "HOLD,PREPARED", "KAFKA,PREPARED", "HOLD,COMPLETED", "KAFKA,COMPLETED"
+    })
+    void nonDbRouteCannotUseLegacyPreparation(String route, String status) {
+        var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
+        var preparation = mock(AttachmentDerivativePreparationService.class);
+        var analysis = mock(AdditionalAttachmentAnalysisPreparationService.class);
+        var service = new AdditionalAttachmentUploadCompletionService(transactions,
+                mock(AttachmentUploadedFileValidator.class), preparation,
+                mock(TripAttachmentStorageClient.class), analysis);
+        when(transactions.loadForVerification(7L, 2L, "upload-id"))
+                .thenReturn(new AdditionalAttachmentUploadTransactionService.VerificationBatch(
+                        "addition-id", AdditionalAttachmentUploadStatus.valueOf(status), List.of(), false,
+                        AttachmentConversionRoute.valueOf(route)));
+        var request = new AdditionalAttachmentUploadCompleteRequest("upload-id");
+
+        assertThatThrownBy(() -> service.prepareBatchPhotos(7L, 2L, request))
+                .isInstanceOf(TripAttachmentAddNotAllowedException.class);
+        assertThatThrownBy(() -> service.prepareQueueBatch(7L, 2L, request))
+                .isInstanceOf(TripAttachmentAddNotAllowedException.class);
+        verifyNoInteractions(preparation, analysis);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"size", "type", "unsupported"})
     void endsOnlyExecutionWhoseFileValidationFailedAndRethrowsOriginalError(String stage) {
         var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
         var validator = mock(AttachmentUploadedFileValidator.class);
         var service = new AdditionalAttachmentUploadCompletionService(transactions, validator,
                 mock(AttachmentDerivativePreparationService.class),
-                mock(com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient.class),
+                mock(TripAttachmentStorageClient.class),
                 mock(AdditionalAttachmentAnalysisPreparationService.class));
         var batch = new AdditionalAttachmentUploadBatch("upload-id", "addition-id", 7L, 2L, 1, 1, true);
         var item = new AdditionalAttachmentUploadItem(batch, 1, "photo.jpg", "image/jpeg", 33L, "new-photo");
         when(transactions.loadForVerification(7L, 2L, "upload-id"))
                 .thenReturn(new AdditionalAttachmentUploadTransactionService.VerificationBatch(
-                        "addition-id", AdditionalAttachmentUploadStatus.PENDING, List.of(item), true));
+                        "addition-id", AdditionalAttachmentUploadStatus.PENDING, List.of(item), true, AttachmentConversionRoute.DB));
         RuntimeException failure = stage.equals("unsupported")
                 ? new UnsupportedAttachmentFormatException() : new InvalidAttachmentUploadException();
         if (stage.equals("size")) doThrow(failure).when(validator).verifySize("new-photo", 33L);
@@ -67,7 +97,7 @@ class AdditionalAttachmentUploadCompletionServiceTest {
         var validator = mock(AttachmentUploadedFileValidator.class);
         var service = new AdditionalAttachmentUploadCompletionService(transactions, validator,
                 mock(AttachmentDerivativePreparationService.class),
-                mock(com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient.class),
+                mock(TripAttachmentStorageClient.class),
                 mock(AdditionalAttachmentAnalysisPreparationService.class));
         var failure = new InvalidAttachmentUploadException();
         when(transactions.loadForVerification(7L, 2L, "foreign-upload" )).thenThrow(failure);

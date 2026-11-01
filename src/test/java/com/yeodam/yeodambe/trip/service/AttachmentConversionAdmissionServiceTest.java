@@ -182,7 +182,7 @@ class AttachmentConversionAdmissionServiceTest {
                 new Admission(Map.of(Lane.LIGHT, 100L, Lane.HEIC, 100L),
                         Map.of(Lane.LIGHT, 1000L, Lane.HEIC, 1000L),
                         Duration.ofSeconds(100), Duration.ofSeconds(10), Duration.ofSeconds(1), 0.5),
-                new Operations(false)), jdbc, transactionManager, nanos::get);
+                new Operations(false), null), jdbc, transactionManager, nanos::get);
     }
 
     private void observeEmptyBacklog() throws Exception {

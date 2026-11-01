@@ -169,8 +169,13 @@ public class InitialAttachmentUploadBatch {
         status = InitialAttachmentUploadStatus.FAILED;
     }
     public void accept(LocalDateTime now) {
+        accept(now, AttachmentConversionRoute.DB);
+    }
+
+    public void accept(LocalDateTime now, AttachmentConversionRoute route) {
         status = InitialAttachmentUploadStatus.ACCEPTED;
         acceptedAt = now;
+        conversionRoute = route;
     }
 
     public void claim(

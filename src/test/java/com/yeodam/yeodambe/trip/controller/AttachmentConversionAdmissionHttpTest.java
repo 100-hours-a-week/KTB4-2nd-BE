@@ -235,7 +235,7 @@ class AttachmentConversionAdmissionHttpTest {
                 new Admission(Map.of(Lane.LIGHT, 10L, Lane.HEIC, 10L),
                         Map.of(Lane.LIGHT, 100000L, Lane.HEIC, 100000L),
                         Duration.ofSeconds(100), Duration.ofSeconds(10), Duration.ofSeconds(1), 0.5),
-                new Operations(false)));
+                new Operations(false), null));
     }
 
     private void prepareTrip(boolean initial) {

@@ -18,11 +18,6 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.Network;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.kafka.KafkaContainer;
-import org.testcontainers.mysql.MySQLContainer;
-import org.testcontainers.utility.MountableFile;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
@@ -31,36 +26,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 @EnabledIfEnvironmentVariable(named = "CDC_INTEGRATION_ENABLED", matches = "true")
 class DebeziumOutboxIntegrationTest {
     private static final List<String> TABLES = List.of(
-            "trip_creation_outbox", "additional_attachment_upload_outbox", "story_generation_outbox");
+            "trip_creation_outbox", "additional_attachment_upload_outbox", "story_generation_outbox",
+            "attachment_conversion_outbox");
     private static final String PAYLOAD = "{\"type\":\"story\",\"nullable\":null,\"attachments\":[]}";
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http = HttpClient.newHttpClient();
 
     @Test
     void actualConnectorPreservesWireAndSkipsUpdatesRollbacksAndPollingSnapshots() throws Exception {
-        try (var network = Network.newNetwork();
-             var mysql = new MySQLContainer("mysql:9.7.2")
-                     .withDatabaseName("yeodam").withUsername("test").withPassword("test")
-                     .withEnv("MYSQL_ROOT_HOST", "%").withNetwork(network).withNetworkAliases("mysql")
-                     .withCommand("--server-id=223344", "--log-bin=mysql-bin", "--binlog-format=ROW",
-                             "--binlog-row-image=FULL", "--innodb-buffer-pool-size=64M");
-             var kafka = new KafkaContainer("apache/kafka:3.9.1")
-                     .withNetwork(network).withNetworkAliases("kafka").withListener("kafka:19092")
-                     .withEnv("KAFKA_HEAP_OPTS", "-Xms64m -Xmx256m");
-             var connect = new GenericContainer<>("quay.io/debezium/connect:3.0.0.Final")
-                     .withNetwork(network).withExposedPorts(8083)
-                     .withEnv("BOOTSTRAP_SERVERS", "kafka:19092").withEnv("GROUP_ID", "cdc-test").withEnv("ENABLE_DEBEZIUM_SCRIPTING", "true")
-                     .withEnv("CONFIG_STORAGE_TOPIC", "connect-configs")
-                     .withEnv("OFFSET_STORAGE_TOPIC", "connect-offsets")
-                     .withEnv("STATUS_STORAGE_TOPIC", "connect-status")
-                     .withEnv("CONFIG_STORAGE_REPLICATION_FACTOR", "1")
-                     .withEnv("OFFSET_STORAGE_REPLICATION_FACTOR", "1")
-                     .withEnv("STATUS_STORAGE_REPLICATION_FACTOR", "1")
-                     .withEnv("HEAP_OPTS", "-Xms64m -Xmx256m")
-                     .waitingFor(Wait.forHttp("/connectors").forPort(8083))
-                     .withStartupTimeout(Duration.ofMinutes(2))) {
-            mysql.start();
-            kafka.start();
+        try (var environment = new CdcTestEnvironment()) {
+            var mysql = environment.mysql();
+            var kafka = environment.kafka();
+            var connect = environment.connect();
             try (var db = DriverManager.getConnection(mysql.getJdbcUrl(), "root", mysql.getPassword());
                  var sql = db.createStatement();
                  var admin = AdminClient.create(Map.of("bootstrap.servers", kafka.getBootstrapServers()));
@@ -69,7 +46,8 @@ class DebeziumOutboxIntegrationTest {
                         .configs(Map.of("message.timestamp.type", "LogAppendTime"))).toList())
                         .all().get(30, TimeUnit.SECONDS);
                 for (String table : TABLES) {
-                    String idType = table.equals("trip_creation_outbox") ? "VARCHAR(36)" : "BIGINT";
+                    String idType = (table.equals("trip_creation_outbox") || table.equals("attachment_conversion_outbox"))
+                            ? "VARCHAR(36)" : "BIGINT";
                     sql.execute("CREATE TABLE " + table + " (outbox_id " + idType + " PRIMARY KEY, "
                             + "trip_id BIGINT NOT NULL, topic VARCHAR(255), payload LONGTEXT, "
                             + "event_source VARCHAR(64), request_id VARCHAR(128), "
@@ -79,14 +57,7 @@ class DebeziumOutboxIntegrationTest {
                     insert(db, table, 3, true, "PENDING");
                 }
                 consumer.subscribe(TABLES);
-                for (String engineClass : List.of("groovy.lang.GroovyObject",
-                        "org.codehaus.groovy.jsr223.GroovyScriptEngineFactory")) {
-                    var jar = java.nio.file.Path.of(Class.forName(engineClass).getProtectionDomain()
-                            .getCodeSource().getLocation().toURI());
-                    connect.withCopyFileToContainer(MountableFile.forHostPath(jar),
-                            "/kafka/connect/debezium-connector-mysql/" + jar.getFileName());
-                }
-                connect.start();
+                environment.startConnect();
                 String endpoint = "http://" + connect.getHost() + ":" + connect.getMappedPort(8083);
                 Map<String, String> config;
                 try (var input = getClass().getResourceAsStream("/cdc/connector.json")) {
@@ -95,9 +66,9 @@ class DebeziumOutboxIntegrationTest {
                 request(endpoint + "/connectors", "POST", json.writeValueAsString(
                         Map.of("name", "outbox", "config", config)));
                 awaitRunning(endpoint, connect);
-                var snapshots = receive(consumer, 3);
+                var snapshots = receive(consumer, TABLES.size());
                 assertThat(snapshots).withFailMessage("%s%n%s",
-                        request(endpoint + "/connectors/outbox/status", "GET", null), connect.getLogs()).hasSize(3);
+                        request(endpoint + "/connectors/outbox/status", "GET", null), connect.getLogs()).hasSize(TABLES.size());
                 for (var record : snapshots) {
                     assertRecord(record, "3");
                 }
@@ -110,8 +81,8 @@ class DebeziumOutboxIntegrationTest {
                     db.rollback();
                     db.setAutoCommit(true);
                 }
-                var live = receive(consumer, 3);
-                assertThat(live).hasSize(3);
+                var live = receive(consumer, TABLES.size());
+                assertThat(live).hasSize(TABLES.size());
                 for (var record : live) {
                     assertRecord(record, "4");
                 }
@@ -219,12 +190,18 @@ class DebeziumOutboxIntegrationTest {
 
     private void awaitRunning(String endpoint, GenericContainer<?> connect) throws Exception {
         for (int attempt = 0; attempt < 300; attempt++) {
-            var tasks = json.readTree(request(endpoint + "/connectors/outbox/status", "GET", null)).path("tasks");
-            if (!tasks.isEmpty()) {
-                String state = tasks.get(0).path("state").asString();
-                assertThat(state).withFailMessage(connect.getLogs()).isNotEqualTo("FAILED");
-                if ("RUNNING".equals(state)) {
-                    return;
+            var response = http.send(HttpRequest.newBuilder(URI.create(endpoint + "/connectors/outbox/status"))
+                    .timeout(Duration.ofSeconds(10)).GET().build(), HttpResponse.BodyHandlers.ofString());
+            // Accepted connector creation can precede its first status publication.
+            if (response.statusCode() != 404) {
+                assertThat(response.statusCode()).withFailMessage(response.body()).isEqualTo(200);
+                var tasks = json.readTree(response.body()).path("tasks");
+                if (!tasks.isEmpty()) {
+                    String state = tasks.get(0).path("state").asString();
+                    assertThat(state).withFailMessage(connect.getLogs()).isNotEqualTo("FAILED");
+                    if ("RUNNING".equals(state)) {
+                        return;
+                    }
                 }
             }
             Thread.sleep(100);

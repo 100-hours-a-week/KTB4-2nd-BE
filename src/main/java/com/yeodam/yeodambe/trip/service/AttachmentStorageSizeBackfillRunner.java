@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
 import jakarta.annotation.PreDestroy;
@@ -18,6 +19,7 @@ import java.util.concurrent.Executors;
 @Component
 @Profile("!test")
 @RequiredArgsConstructor
+@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
 public class AttachmentStorageSizeBackfillRunner
         implements ApplicationRunner {
 

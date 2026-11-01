@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.integration.config;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import com.yeodam.yeodambe.integration.service.KafkaDltLogService;
 import lombok.RequiredArgsConstructor;
 import org.apache.kafka.common.TopicPartition;
@@ -18,6 +19,7 @@ import tools.jackson.core.JacksonException;
 
 @RequiredArgsConstructor
 @Configuration(proxyBeanMethods = false)
+@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
 public class TripCreationKafkaConfiguration {
 
     private final KafkaDltLogService dltLogs;

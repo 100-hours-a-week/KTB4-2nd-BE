@@ -10,6 +10,8 @@ import java.util.Collection;
 
 public interface AdditionalAttachmentUploadItemRepository
         extends JpaRepository<AdditionalAttachmentUploadItem, Long> {
+    List<AdditionalAttachmentUploadItem> findByObjectKey(String objectKey);
+
     List<AdditionalAttachmentUploadItem> findAllByTripAttachmentIdIn(Collection<Long> attachmentIds);
 
     List<AdditionalAttachmentUploadItem>

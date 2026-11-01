@@ -49,6 +49,7 @@ public class TripAttachmentDerivativeService {
     private final InitialAttachmentStoragePipeline pipeline;
     private final ExifToolProcess exifTool;
     private final AttachmentConversionProperties conversionProperties;
+    private final AdditionalAttachmentUploadTransactionService additionalTransactions;
 
     public CompletableFuture<List<DerivedPhotoKeys>> createAll(
             String executionId, List<String> originalKeys, List<String> mimeTypes
@@ -97,6 +98,7 @@ public class TripAttachmentDerivativeService {
                     for (int i = 0; i < uploadedByPhoto.size(); i++) {
                         try {
                             transactions.scheduleCleanupKeys(originalKeys.get(i), uploadedByPhoto.get(i), "CONVERSION_COMPENSATION");
+                            additionalTransactions.scheduleCleanupKeys(originalKeys.get(i), uploadedByPhoto.get(i), "CONVERSION_COMPENSATION");
                         } catch (RuntimeException cleanupFailure) {
                             cause.addSuppressed(cleanupFailure);
                         }

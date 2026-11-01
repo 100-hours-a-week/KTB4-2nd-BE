@@ -16,18 +16,22 @@ import com.yeodam.yeodambe.trip.service.response.AttachmentConversionAttemptResu
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionStepResult;
 import com.yeodam.yeodambe.trip.service.request.AttachmentConversionMessage;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionPublication;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionRecoveryCandidate;
+import com.yeodam.yeodambe.trip.service.response.AttachmentConversionRecoveryCandidate.Cursor;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.Assert;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.cfg.DateTimeFeature;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -46,6 +50,70 @@ public class AttachmentConversionTransactionService {
     private final ObjectMapper json;
     private final InitialAttachmentUploadTransactionService initialSource;
     private final AdditionalAttachmentUploadTransactionService additionalSource;
+
+    @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
+    public List<AttachmentConversionRecoveryCandidate> findRecoveryCandidates(
+            Cursor cursor,
+            int limit,
+            Duration minInterval
+    ) {
+        requireRecoveryInterval(minInterval);
+        Assert.isTrue(limit > 0, "재알림 페이지 크기는 양수여야 합니다.");
+        LocalDateTime now = databaseTime();
+        return tasks.findRecoveryCandidates(cursor == null ? null : cursor.createdAt(),
+                        cursor == null ? null : cursor.taskId(), now, now.minus(minInterval), limit).stream()
+                .map(task -> {
+                    var box = outboxes.findByTaskIdAndDeliveryNo(task.getId(), task.getLatestDeliveryNo()).orElseThrow();
+                    return new AttachmentConversionRecoveryCandidate(task.getId(), task.getCreatedAt(),
+                            task.getLatestDeliveryNo(), box.getPublicationVersion(), publication(box));
+                }).toList();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
+    public boolean renotifyIfEligible(AttachmentConversionRecoveryCandidate expected, Duration minInterval) {
+        requireRecoveryInterval(minInterval);
+        Assert.notNull(expected, "재알림 후보가 필요합니다.");
+        var hint = tasks.findById(expected.taskId()).orElse(null);
+        if (hint == null) {
+            return false;
+        }
+        var source = lockSource(hint);
+        var task = lockTask(expected.taskId());
+        LocalDateTime now = databaseTime();
+        if (source == null || !matchesSource(task, source) || source.route() != AttachmentConversionRoute.KAFKA
+                || !source.processable() || source.terminalStatus() != null || task.isTerminal()
+                || task.getLeaseUntil() != null && task.getLeaseUntil().isAfter(now)
+                || task.getLatestDeliveryNo() != expected.latestDeliveryNo()
+                || !Objects.equals(task.getCreatedAt(), expected.createdAt()) || expected.publication() == null) {
+            return false;
+        }
+        var box = outboxes.findByIdForUpdate(expected.publication().outboxId()).orElse(null);
+        if (box == null) {
+            return false;
+        }
+        entityManager.refresh(box, LockModeType.PESSIMISTIC_WRITE);
+        if (!box.isCdcManaged() || !box.getTaskId().equals(task.getId())
+                || box.getDeliveryNo() != task.getLatestDeliveryNo() || !box.getTripId().equals(task.getTripId())
+                || box.getStatus() != AttachmentConversionOutbox.Status.PUBLISHED
+                || box.getPublicationVersion() != expected.publicationVersion()
+                || box.getRecordPartition() == null || box.getRecordOffset() == null
+                || !publication(box).equals(expected.publication())
+                || box.getPublishedAt() == null || box.getPublishedAt().isAfter(now.minus(minInterval))) {
+            return false;
+        }
+        outboxes.save(new AttachmentConversionOutbox(UUID.randomUUID().toString(), task.getId(), task.nextDelivery(),
+                task.getTripId(), box.getTopic(), box.getPayload(), box.getRequestId()));
+        return true;
+    }
+
+    private AttachmentConversionPublication publication(AttachmentConversionOutbox box) {
+        return new AttachmentConversionPublication(box.getId(), box.getTopic(), box.getTripId().toString(), box.getPayload(),
+                box.getTopicId(), box.getRecordPartition(), box.getRecordOffset(), box.getBrokerTimestamp(), box.getLeaderEpoch());
+    }
+
+    private void requireRecoveryInterval(Duration minInterval) {
+        Assert.isTrue(minInterval != null && minInterval.isPositive(), "재알림 간격은 양수여야 합니다.");
+    }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void recordPublished(AttachmentConversionPublication publication) {

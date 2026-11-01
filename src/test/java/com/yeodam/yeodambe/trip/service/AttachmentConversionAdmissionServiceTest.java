@@ -164,6 +164,16 @@ class AttachmentConversionAdmissionServiceTest {
                 .run(result -> assertThat(result).hasFailed());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "interval=0s", "interval=-1s", "interval=", "page-size=0",
+            "max-pages-per-run=0", "max-reissues-per-run=-1"
+    })
+    void rejectsMissingOrInvalidRecoverySettings(String setting) {
+        kafkaContext().withPropertyValues("app.attachment-conversion.recovery." + setting)
+                .run(result -> assertThat(result).hasFailed());
+    }
+
     private ApplicationContextRunner kafkaContext() {
         return new ApplicationContextRunner().withUserConfiguration(PropertiesConfig.class).withPropertyValues(
                 "app.attachment-conversion.mode=KAFKA",
@@ -174,7 +184,11 @@ class AttachmentConversionAdmissionServiceTest {
                 "app.attachment-conversion.admission.max-unfinished-age=100s",
                 "app.attachment-conversion.admission.snapshot-max-age=10s",
                 "app.attachment-conversion.admission.sample-interval=1s",
-                "app.attachment-conversion.admission.reopen-ratio=0.5");
+                "app.attachment-conversion.admission.reopen-ratio=0.5",
+                "app.attachment-conversion.recovery.interval=5m",
+                "app.attachment-conversion.recovery.page-size=10",
+                "app.attachment-conversion.recovery.max-pages-per-run=2",
+                "app.attachment-conversion.recovery.max-reissues-per-run=10");
     }
 
     private AttachmentConversionAdmissionService service(AttachmentConversionRoute mode) {
@@ -182,7 +196,8 @@ class AttachmentConversionAdmissionServiceTest {
                 new Admission(Map.of(Lane.LIGHT, 100L, Lane.HEIC, 100L),
                         Map.of(Lane.LIGHT, 1000L, Lane.HEIC, 1000L),
                         Duration.ofSeconds(100), Duration.ofSeconds(10), Duration.ofSeconds(1), 0.5),
-                new Operations(false), null), jdbc, transactionManager, nanos::get);
+                new Operations(false), null,
+                new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10)), jdbc, transactionManager, nanos::get);
     }
 
     private void observeEmptyBacklog() throws Exception {

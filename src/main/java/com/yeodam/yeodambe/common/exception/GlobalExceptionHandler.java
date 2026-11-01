@@ -153,6 +153,12 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.AI_STATUS_UNAVAILABLE, null);
     }
 
+    @ExceptionHandler(AttachmentConversionUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handleAttachmentConversionUnavailable(AttachmentConversionUnavailableException exception) {
+        return new ApiResponse<>(ErrorMessage.ATTACHMENT_CONVERSION_UNAVAILABLE, null);
+    }
+
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     ResponseEntity<ApiResponse<Void>> handleUnsupportedContentType(
             HttpMediaTypeNotSupportedException e, HttpServletRequest request) {

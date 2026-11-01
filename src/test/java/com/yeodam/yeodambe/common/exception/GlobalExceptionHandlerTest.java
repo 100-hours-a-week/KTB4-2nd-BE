@@ -101,6 +101,7 @@ class GlobalExceptionHandlerTest {
             "story-generation-in-progress, 409, STORY_GENERATION_IN_PROGRESS",
             "story-generation-not-allowed, 409, STORY_GENERATION_NOT_ALLOWED",
             "story-generation-not-found, 404, STORY_GENERATION_NOT_FOUND",
+            "story-block-not-found, 404, STORY_BLOCK_NOT_FOUND",
             "story-generation-cannot-be-canceled, 409, STORY_GENERATION_CANNOT_BE_CANCELED",
             "invalid-story-request, 400, INVALID_STORY_REQUEST",
             "invalid-story-update, 400, INVALID_STORY_UPDATE",
@@ -339,6 +340,11 @@ class GlobalExceptionHandlerTest {
 
     @RestController
     static class TestController {
+        @GetMapping("/test/story-block-not-found")
+        void storyBlockNotFound() {
+            throw new StoryBlockNotFoundException();
+        }
+
         @GetMapping("/test/invalid-story-update")
         void invalidStoryUpdate() {
             throw new InvalidStoryUpdateException();

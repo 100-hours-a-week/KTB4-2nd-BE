@@ -15,6 +15,8 @@ import jakarta.persistence.EntityManager;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -250,6 +252,89 @@ class StoryRepositoryTest {
         select(owned, story(other, Story.Status.COMPLETED));
 
         assertThat(stories.countCurrentCompletedByUserId(owned.getUserId())).isZero();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "normal,true", "other-user,false", "other-story,false", "missing-block,false",
+            "history,false", "processing,false", "failed,false", "canceled,false",
+            "deleted-story,false", "deleted-trip,false", "deleted-block,false",
+            "deleted-attachment,false", "deleted-file,false", "unclassified,false",
+            "deleted-place,false", "attachment-other-trip,false", "place-other-trip,false"
+    })
+    void 유사조회_기준블록은_소유권과_현재스토리와_정상_자료를_검증한다(
+            String scenario, boolean expected
+    ) {
+        Trip trip = trip();
+        Story story = story(trip, Story.Status.COMPLETED);
+        select(trip, story);
+        TripDetailPlace place = TripDetailPlace.fromAnalysis(trip.getId(), 1, "장소", BigDecimal.ZERO,
+                BigDecimal.ZERO, LocalDateTime.of(2026, 10, 30, 12, 0),
+                LocalDateTime.of(2026, 10, 30, 13, 0), null);
+        em.persist(place);
+        StoryBlock block = block(story, trip, place, 1);
+        TripAttachment attachment = em.find(TripAttachment.class, block.getTripAttachmentId());
+        StoredFile file = em.find(StoredFile.class, attachment.getFileId());
+        Long userId = trip.getUserId();
+        Long storyId = story.getId();
+        Long blockId = block.getId();
+        LocalDateTime deletedAt = LocalDateTime.now();
+
+        switch (scenario) {
+            case "other-user" -> userId = -1L;
+            case "other-story" -> storyId = -1L;
+            case "missing-block" -> blockId = -1L;
+            case "history" -> select(trip, story(trip, Story.Status.COMPLETED));
+            case "processing" -> ReflectionTestUtils.setField(story, "processingStatus", Story.Status.PROCESSING);
+            case "failed" -> ReflectionTestUtils.setField(story, "processingStatus", Story.Status.FAILED);
+            case "canceled" -> ReflectionTestUtils.setField(story, "processingStatus", Story.Status.CANCELED);
+            case "deleted-story" -> story.softDelete(deletedAt);
+            case "deleted-trip" -> trip.softDelete(deletedAt);
+            case "deleted-block" -> block.softDelete(deletedAt);
+            case "deleted-attachment" -> attachment.softDelete(deletedAt);
+            case "deleted-file" -> file.softDelete(deletedAt);
+            case "unclassified" -> ReflectionTestUtils.setField(attachment, "classificationStatus", ClassificationStatus.UNCLASSIFIED);
+            case "deleted-place" -> ReflectionTestUtils.setField(place, "deletedAt", deletedAt);
+            case "attachment-other-trip" -> ReflectionTestUtils.setField(attachment, "tripId", trip().getId());
+            case "place-other-trip" -> ReflectionTestUtils.setField(place, "tripId", trip().getId());
+        }
+        em.flush();
+        em.clear();
+
+        var actual = blocks.findOwnedCurrentCompletedBlock(storyId, blockId, userId);
+
+        assertThat(actual.isPresent()).isEqualTo(expected);
+        if (expected) {
+            assertThat(org.hibernate.Hibernate.isInitialized(actual.orElseThrow().getAttachment())).isTrue();
+            em.clear();
+            assertThat(actual.orElseThrow().getAttachment().getTripPlaceId()).isEqualTo(place.getId());
+        }
+    }
+
+    @Test
+    void 유사조회는_생성당시_장소와_달라도_사진의_현재_폴더를_사용한다() {
+        Trip trip = trip();
+        Story story = story(trip, Story.Status.COMPLETED);
+        select(trip, story);
+        TripDetailPlace original = TripDetailPlace.fromAnalysis(trip.getId(), 1, "이전 장소", BigDecimal.ZERO,
+                BigDecimal.ZERO, LocalDateTime.of(2026, 10, 30, 12, 0),
+                LocalDateTime.of(2026, 10, 30, 13, 0), null);
+        em.persist(original);
+        StoryBlock block = block(story, trip, original, 1);
+        TripDetailPlace current = TripDetailPlace.fromAnalysis(trip.getId(), 2, "현재 장소", BigDecimal.ZERO,
+                BigDecimal.ZERO, original.getStartedAt(), original.getStartedAt(), null);
+        em.persist(current);
+        TripAttachment attachment = em.find(TripAttachment.class, block.getTripAttachmentId());
+        attachment.classify(current.getId(), RegionOrigin.EXIF, current.getStartedAt(), BigDecimal.ZERO,
+                BigDecimal.ZERO, 1);
+        em.flush();
+        em.clear();
+
+        StoryBlock actual = blocks.findOwnedCurrentCompletedBlock(story.getId(), block.getId(), trip.getUserId())
+                .orElseThrow();
+
+        assertThat(actual.getSourceTripPlaceId()).isEqualTo(original.getId());
+        assertThat(actual.getAttachment().getTripPlaceId()).isEqualTo(current.getId());
     }
 
     private Trip trip() {

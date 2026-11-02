@@ -1,4 +1,4 @@
-package com.yeodam.yeodambe.trip.service.request;
+package com.yeodam.yeodambe.trip.service.request.cursor;
 
 import com.yeodam.yeodambe.common.exception.InvalidPlaceFolderCursorException;
 import org.junit.jupiter.api.Test;
@@ -101,5 +101,11 @@ class PlaceFolderCursorTest {
     private String encodedJson(String json) {
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void 기존에_발급한_커서_문자열을_해석한다() {
+        assertThat(PlaceFolderCursor.decode("eyJ0cmlwSWQiOjcsInBsYWNlTmFtZSI6IuygnOyjvCIsInRyaXBQbGFjZUlkIjoxMX0", 7L, objectMapper))
+                .isEqualTo(new PlaceFolderCursor(7L, "제주", 11L));
     }
 }

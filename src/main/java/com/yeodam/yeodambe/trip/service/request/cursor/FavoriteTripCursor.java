@@ -1,4 +1,4 @@
-package com.yeodam.yeodambe.trip.service.request;
+package com.yeodam.yeodambe.trip.service.request.cursor;
 
 import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;

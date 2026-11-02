@@ -12,7 +12,7 @@ import com.yeodam.yeodambe.trip.entity.TripRegion;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.service.request.AttachmentCursor;
+import com.yeodam.yeodambe.trip.service.request.cursor.AttachmentCursor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

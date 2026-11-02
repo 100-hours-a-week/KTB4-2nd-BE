@@ -1,5 +1,6 @@
-package com.yeodam.yeodambe.trip.service.request;
+package com.yeodam.yeodambe.trip.service.request.cursor;
 
+import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.util.CursorCodec;

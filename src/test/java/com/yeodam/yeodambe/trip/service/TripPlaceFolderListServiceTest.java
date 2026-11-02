@@ -6,7 +6,7 @@ import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
-import com.yeodam.yeodambe.trip.service.request.PlaceFolderCursor;
+import com.yeodam.yeodambe.trip.service.request.cursor.PlaceFolderCursor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import com.yeodam.yeodambe.trip.entity.Trip;

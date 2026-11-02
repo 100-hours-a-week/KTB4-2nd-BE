@@ -6,7 +6,7 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
-import com.yeodam.yeodambe.trip.service.request.PlaceFolderCursor;
+import com.yeodam.yeodambe.trip.service.request.cursor.PlaceFolderCursor;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;

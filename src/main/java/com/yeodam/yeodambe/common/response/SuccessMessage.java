@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.common.response;
 public enum SuccessMessage {
     TRIP_PRESENCE_ACCESS_FOUND,
     TRIP_SHARE_CREATE_SUCCESS,
+    TRIP_SHARE_LIST_FOUND,
     ATTACHMENT_DOWNLOAD_URL_ISSUED,
     ATTACHMENT_FOUND,
     ATTACHMENT_RESTORE_SUCCESS,

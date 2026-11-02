@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentDownloadResponse;
 import org.junit.jupiter.api.Test;
@@ -44,7 +45,7 @@ class TripAttachmentDownloadServiceTest {
     @Mock
     private TripAttachmentStorageClient tripAttachmentStorageClient;
     @Mock
-    private TripAccessService access;
+    private TripEditAuthorizationService access;
     @InjectMocks
     private TripAttachmentDownloadService service;
 
@@ -65,12 +66,13 @@ class TripAttachmentDownloadServiceTest {
     @Test
     void 접근_가능한_첨부의_다운로드_URL을_반환한다() {
         TripAttachment attachment = mock(TripAttachment.class);
+        Trip trip = mock(Trip.class);
         StoredFile file = mock(StoredFile.class);
 
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L)))
                 .thenReturn(List.of(attachment));
         when(attachment.getId()).thenReturn(501L);
-        when(attachment.getTripId()).thenReturn(7L);
+        when(attachment.getTrip()).thenReturn(trip);
         when(attachment.getDisplayStorageKey()).thenReturn("trip-displays/display-501.jpg");
         when(attachment.getFile()).thenReturn(file);
         when(file.getObjectKey()).thenReturn("trip-uploads/original-501");
@@ -81,7 +83,7 @@ class TripAttachmentDownloadServiceTest {
         )).thenReturn("https://example.com/download-501");
 
         TripAttachmentDownloadResponse response = service.issueDownloadUrl(2L, 501L);
-        verify(access).requireReadableTrip(7L, 2L);
+        verify(access).requireReadPermission(trip, 2L);
 
         assertThat(logs.list).anySatisfy(event -> {
             assertThat(event.getKeyValuePairs())
@@ -103,7 +105,7 @@ class TripAttachmentDownloadServiceTest {
 
     @Test
     void 접근할_수_없는_첨부는_찾을_수_없음으로_처리한다() {
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L)))
                 .thenReturn(List.of());
 
         assertThatThrownBy(() -> service.issueDownloadUrl(2L, 501L))
@@ -115,10 +117,11 @@ class TripAttachmentDownloadServiceTest {
     @Test
     void 공유_읽기_권한이_없으면_URL을_발급하지_않는다() {
         TripAttachment attachment = mock(TripAttachment.class);
-        when(attachment.getTripId()).thenReturn(7L);
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+        Trip trip = mock(Trip.class);
+        when(attachment.getTrip()).thenReturn(trip);
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L)))
                 .thenReturn(List.of(attachment));
-        doThrow(new TripNotFoundException()).when(access).requireReadableTrip(7L, 2L);
+        doThrow(new TripNotFoundException()).when(access).requireReadPermission(trip, 2L);
 
         assertThatThrownBy(() -> service.issueDownloadUrl(2L, 501L))
                 .isInstanceOf(AttachmentNotFoundException.class);
@@ -128,11 +131,12 @@ class TripAttachmentDownloadServiceTest {
     @Test
     void 권한_DB_장애는_404로_숨기지_않는다() {
         TripAttachment attachment = mock(TripAttachment.class);
-        when(attachment.getTripId()).thenReturn(7L);
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+        Trip trip = mock(Trip.class);
+        when(attachment.getTrip()).thenReturn(trip);
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L)))
                 .thenReturn(List.of(attachment));
         doThrow(new DataAccessResourceFailureException("DB 실패"))
-                .when(access).requireReadableTrip(7L, 2L);
+                .when(access).requireReadPermission(trip, 2L);
 
         assertThatThrownBy(() -> service.issueDownloadUrl(2L, 501L))
                 .isInstanceOf(DataAccessResourceFailureException.class);

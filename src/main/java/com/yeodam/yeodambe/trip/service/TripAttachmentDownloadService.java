@@ -20,7 +20,7 @@ public class TripAttachmentDownloadService {
 
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
-    private final TripAccessService tripAccessService;
+    private final TripEditAuthorizationService authorizationService;
 
     public TripAttachmentDownloadResponse issueDownloadUrl(
             Long userId,
@@ -28,11 +28,11 @@ public class TripAttachmentDownloadService {
     ) {
         try (WorkflowLog.Stage timing = startDownloadUrlLogging()) {
             TripAttachment attachment = tripAttachmentRepository
-                    .findAllActiveWithTripAndFileByIds(List.of(tripAttachmentId)).stream()
+                    .findAllActiveForDownloadByIds(List.of(tripAttachmentId)).stream()
                     .findFirst()
                     .orElseThrow(AttachmentNotFoundException::new);
             try {
-                tripAccessService.requireReadableTrip(attachment.getTripId(), userId);
+                authorizationService.requireReadPermission(attachment.getTrip(), userId);
             } catch (TripNotFoundException e) {
                 throw new AttachmentNotFoundException();
             }

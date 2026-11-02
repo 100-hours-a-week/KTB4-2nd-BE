@@ -57,7 +57,7 @@ class BulkAttachmentDownloadServiceTest {
     @Mock
     private TripAttachmentStorageClient tripAttachmentStorageClient;
     @Mock
-    private TripAccessService access;
+    private TripEditAuthorizationService access;
     @InjectMocks
     private BulkAttachmentDownloadService service;
     private final Logger logger =
@@ -83,7 +83,7 @@ class BulkAttachmentDownloadServiceTest {
         AtomicReference<byte[]> archiveBytes = new AtomicReference<>();
         AtomicReference<Path> archivePath = new AtomicReference<>();
 
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L, 502L)))
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L, 502L)))
                 .thenReturn(List.of(first, second));
         when(tripAttachmentStorageClient.open("first-key"))
                 .thenReturn(new ByteArrayInputStream("first".getBytes()));
@@ -138,7 +138,7 @@ class BulkAttachmentDownloadServiceTest {
         startLogAppender();
         TripAttachment attachment = attachment(501L, 1L, "first-key", "photo.jpg");
 
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L)))
                 .thenReturn(List.of(attachment));
         when(tripAttachmentStorageClient.open("first-key"))
                 .thenReturn(new ByteArrayInputStream("first".getBytes()));
@@ -161,10 +161,11 @@ class BulkAttachmentDownloadServiceTest {
     void 공유_읽기_권한이_없으면_찾을_수_없음으로_처리한다() {
         TripAttachment attachment = attachment(501L, 2L, "other-user-key", "photo.jpg");
 
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L)))
                 .thenReturn(List.of(attachment));
 
-        doThrow(new TripNotFoundException()).when(access).requireReadableTrip(7L, 1L);
+        Trip trip = attachment.getTrip();
+        doThrow(new TripNotFoundException()).when(access).requireReadPermission(trip, 1L);
 
         assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L)))
                 .isInstanceOf(AttachmentNotFoundException.class);
@@ -192,7 +193,7 @@ class BulkAttachmentDownloadServiceTest {
     void 원본_스트림을_읽다가_실패하면_다운로드_성공을_기록하지_않는다() {
         startLogAppender();
         TripAttachment first = attachment(501L, 1L, "first-key", "photo.jpg");
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L)))
                 .thenReturn(List.of(first));
         when(tripAttachmentStorageClient.open("first-key")).thenReturn(new java.io.InputStream() {
             @Override
@@ -219,7 +220,7 @@ class BulkAttachmentDownloadServiceTest {
         List<TripAttachment> photos = ids.stream()
                 .map(id -> attachment(id, 1L, "key-" + id, "photo-" + id + ".jpg"))
                 .toList();
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(ids)).thenReturn(photos);
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(ids)).thenReturn(photos);
         when(tripAttachmentStorageClient.open(any(String.class)))
                 .thenAnswer(call -> new ByteArrayInputStream(new byte[]{1}));
         when(tripAttachmentStorageClient.storeDownloadArchive(any(Path.class))).thenReturn("archive");
@@ -228,7 +229,7 @@ class BulkAttachmentDownloadServiceTest {
 
         assertThat(service.issueDownloadUrl(2L, ids).downloadUrl())
                 .isEqualTo("https://example.com/shared-archive");
-        verify(access, times(1)).requireReadableTrip(7L, 2L);
+        verify(access, times(1)).requireReadPermission(photos.getFirst().getTrip(), 2L);
         verifyNoMoreInteractions(access);
     }
 
@@ -237,7 +238,7 @@ class BulkAttachmentDownloadServiceTest {
         TripAttachment first = attachment(501L, 1L, "first", "first.jpg");
         TripAttachment second = attachment(502L, 1L, "second", "second.jpg");
         when(second.getTripId()).thenReturn(8L);
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L, 502L)))
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L, 502L)))
                 .thenReturn(List.of(first, second));
 
         assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L, 502L)))
@@ -248,7 +249,7 @@ class BulkAttachmentDownloadServiceTest {
     @Test
     void 조회된_사진이_부족하면_권한_검사_전에_거절한다() {
         TripAttachment first = attachment(501L, 1L, "first", "first.jpg");
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L, 502L)))
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L, 502L)))
                 .thenReturn(List.of(first));
 
         assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L, 502L)))
@@ -259,10 +260,11 @@ class BulkAttachmentDownloadServiceTest {
     @Test
     void 권한_DB_장애는_404로_숨기지_않는다() {
         TripAttachment first = attachment(501L, 1L, "first", "first.jpg");
-        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L)))
                 .thenReturn(List.of(first));
+        Trip trip = first.getTrip();
         doThrow(new DataAccessResourceFailureException("DB 실패"))
-                .when(access).requireReadableTrip(7L, 1L);
+                .when(access).requireReadPermission(trip, 1L);
 
         assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L)))
                 .isInstanceOf(DataAccessResourceFailureException.class);

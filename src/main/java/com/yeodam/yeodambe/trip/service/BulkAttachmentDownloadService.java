@@ -35,7 +35,7 @@ public class BulkAttachmentDownloadService {
 
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
-    private final TripAccessService tripAccessService;
+    private final TripEditAuthorizationService authorizationService;
 
     public BulkAttachmentDownloadResponse issueDownloadUrl(
             Long userId,
@@ -44,7 +44,7 @@ public class BulkAttachmentDownloadService {
         validateIds(tripAttachmentIds);
 
         List<TripAttachment> attachments = tripAttachmentRepository
-                .findAllActiveWithTripAndFileByIds(tripAttachmentIds);
+                .findAllActiveForDownloadByIds(tripAttachmentIds);
 
         if (attachments.size() != tripAttachmentIds.size()) {
             throw new AttachmentNotFoundException();
@@ -55,7 +55,7 @@ public class BulkAttachmentDownloadService {
             throw new InvalidAttachmentIdsException();
         }
         try {
-            tripAccessService.requireReadableTrip(tripId, userId);
+            authorizationService.requireReadPermission(attachments.getFirst().getTrip(), userId);
         } catch (TripNotFoundException e) {
             throw new AttachmentNotFoundException();
         }

@@ -13,6 +13,7 @@ import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadBatch;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadItem;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.entity.RegionOrigin;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
@@ -20,6 +21,8 @@ import com.yeodam.yeodambe.trip.entity.TripSharePermission;
 import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.EntityManager;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -42,6 +45,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,7 +61,8 @@ import static org.mockito.Mockito.when;
         "spring.datasource.url=jdbc:h2:mem:${random.uuid};MODE=MySQL",
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop",
-        "spring.jpa.show-sql=false"
+        "spring.jpa.show-sql=false",
+        "spring.jpa.properties.hibernate.generate_statistics=true"
 }, showSql = false)
 @Import({TripAccessService.class, TripEditAuthorizationService.class,
         StoryReadService.class, StoryValidator.class, TripAttachmentDownloadService.class,
@@ -191,6 +196,59 @@ class SharedTripReadAccessPersistenceTest {
                 List.of(fixture.first().getId(), otherPhoto.getId())))
                 .isInstanceOf(InvalidAttachmentIdsException.class);
         verifyNoInteractions(storage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"OWNER", "READ", "WRITE"})
+    void 단건_다운로드는_여행과_장소를_추가_조회하지_않는다(String permission) throws Exception {
+        Fixture fixture = fixture();
+        Long actorId = actor(fixture, permission);
+        attachPlace(fixture.trip(), fixture.first(), 1);
+        flushAndClear();
+        stubStorage();
+        Statistics statistics = resetStatistics();
+
+        assertThat(downloads.issueDownloadUrl(actorId, fixture.first().getId()).downloadUrl())
+                .isEqualTo("https://download.test");
+
+        assertThat(statistics.getPrepareStatementCount()).isEqualTo(permission.equals("OWNER") ? 1 : 2);
+        assertThat(statistics.getEntityStatistics(TripDetailPlace.class.getName()).getLoadCount()).isZero();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"OWNER,1", "OWNER,10", "OWNER,200", "READ,1", "READ,10", "READ,200",
+            "WRITE,1", "WRITE,10", "WRITE,200"})
+    void 일괄_다운로드는_사진_수와_무관하게_권한만_추가_조회한다(String permission, int count) throws Exception {
+        Fixture fixture = fixture();
+        Long actorId = actor(fixture, permission);
+        List<Long> ids = new ArrayList<>();
+        for (int index = 1; index <= count; index++) {
+            TripAttachment photo = index == 1 ? fixture.first() : photo(fixture.trip(), "bulk-" + index);
+            attachPlace(fixture.trip(), photo, index);
+            ids.add(photo.getId());
+        }
+        flushAndClear();
+        stubStorage();
+        Statistics statistics = resetStatistics();
+
+        assertThat(bulkDownloads.issueDownloadUrl(actorId, ids).downloadUrl()).isEqualTo("https://download.test");
+
+        assertThat(statistics.getPrepareStatementCount()).isEqualTo(permission.equals("OWNER") ? 1 : 2);
+        assertThat(statistics.getEntityStatistics(TripDetailPlace.class.getName()).getLoadCount()).isZero();
+    }
+
+    private void attachPlace(Trip trip, TripAttachment photo, int order) {
+        TripDetailPlace place = TripDetailPlace.fromAnalysis(trip.getId(), order, "장소" + order,
+                BigDecimal.ZERO, BigDecimal.ZERO, NOW, NOW, "preview");
+        em.persist(place);
+        photo.classify(place.getId(), RegionOrigin.EXIF,
+                NOW, BigDecimal.ZERO, BigDecimal.ZERO, 1);
+    }
+
+    private Statistics resetStatistics() {
+        Statistics statistics = em.getEntityManagerFactory().unwrap(SessionFactory.class).getStatistics();
+        statistics.clear();
+        return statistics;
     }
 
     private void assertDenied(Fixture fixture, Long actorId) {

@@ -52,4 +52,25 @@ public interface TripShareUserRepository extends JpaRepository<TripShareUser, Lo
             @Param("granteeUserId") Long granteeUserId,
             @Param("checkedAt") LocalDateTime checkedAt
     );
+
+    @Query("""
+            select share
+            from TripShareUser share
+            join fetch share.grantee grantee
+            where share.tripId = :tripId
+              and share.userId = :ownerId
+              and share.granteeUserId <> :ownerId
+              and share.deletedAt is null
+              and share.expiresAt > :now
+              and grantee.deletedAt is null
+              and (:lastTripShareId is null or share.id > :lastTripShareId)
+            order by share.id asc
+            """)
+    List<TripShareUser> findActiveSharesWithGrantee(
+            @Param("tripId") Long tripId,
+            @Param("ownerId") Long ownerId,
+            @Param("now") LocalDateTime now,
+            @Param("lastTripShareId") Long lastTripShareId,
+            Pageable pageable
+    );
 }

@@ -12,11 +12,14 @@ import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaimResult
 import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,6 +30,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
+
+import javax.sql.DataSource;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -44,7 +49,6 @@ import tools.jackson.core.type.TypeReference;
 
 import static com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaimResult.Status.*;
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -52,7 +56,7 @@ import static org.mockito.ArgumentMatchers.any;
 
 @SpringBootTest(properties = "spring.application.name=conversion-claim-test")
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, AttachmentConversionClaimTest.DatabaseTimeConfig.class})
 @Transactional
 class AttachmentConversionClaimTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2000, 1, 1, 12, 0);
@@ -60,12 +64,53 @@ class AttachmentConversionClaimTest {
     @Autowired private EntityManager entityManager;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private ObjectMapper json;
-    @MockitoSpyBean private JdbcTemplate jdbc;
+    @Autowired private TestJdbcTemplate jdbc;
     @MockitoSpyBean private AttachmentConversionTaskRepository tasks;
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class DatabaseTimeConfig {
+        @Bean
+        TestJdbcTemplate jdbcTemplate(DataSource dataSource) {
+            return new TestJdbcTemplate(dataSource);
+        }
+    }
+
+    static class TestJdbcTemplate extends JdbcTemplate {
+        private final AtomicReference<LocalDateTime> databaseTime = new AtomicReference<>(NOW);
+
+        TestJdbcTemplate(DataSource dataSource) {
+            super(dataSource);
+        }
+
+        void setDatabaseTime(LocalDateTime value) {
+            databaseTime.set(value);
+        }
+
+        @Override
+        public <T> T queryForObject(String sql, Class<T> requiredType) {
+            if ("SELECT CURRENT_TIMESTAMP(6)".equals(sql) && requiredType == LocalDateTime.class) {
+                return requiredType.cast(databaseTime.get());
+            }
+            return super.queryForObject(sql, requiredType);
+        }
+    }
 
     @BeforeEach
     void fixedDatabaseTime() {
-        doReturn(NOW).when(jdbc).queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+        jdbc.setDatabaseTime(NOW);
+    }
+
+    @Test
+    void databaseTimeChangeDoesNotReplaceOtherQueryResults() throws Exception {
+        jdbc.setDatabaseTime(NOW.plusMinutes(1));
+        Integer first = CompletableFuture.supplyAsync(() -> jdbc.queryForObject("SELECT 1", Integer.class))
+                .get(5, TimeUnit.SECONDS);
+        Integer second = CompletableFuture.supplyAsync(() -> jdbc.queryForObject("SELECT 1", Integer.class))
+                .get(5, TimeUnit.SECONDS);
+        assertThat(first).isEqualTo(1);
+        assertThat(second).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class))
+                .isEqualTo(NOW.plusMinutes(1));
     }
 
     @ParameterizedTest
@@ -119,7 +164,7 @@ class AttachmentConversionClaimTest {
         jdbc.update("UPDATE attachment_conversion_tasks SET lease_until = ? WHERE task_id = ?", NOW, fixture.taskId());
         var current = claimed(fixture);
         AttachmentConversionClaim.Attempt second = nextBegan ? transactions.beginPhoto(current, fixture.lightItemId()).attempt() : null;
-        doReturn(NOW.plusMinutes(1)).when(jdbc).queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+        jdbc.setDatabaseTime(NOW.plusMinutes(1));
         assertThat(transactions.releaseClaim(old)).isFalse();
         assertThat(jdbc.queryForObject("SELECT claim_token FROM attachment_conversion_tasks WHERE task_id = ?",
                 String.class, fixture.taskId())).isEqualTo(current.claimToken());
@@ -200,7 +245,7 @@ class AttachmentConversionClaimTest {
             });
             assertThat(journal).filteredOn(object -> !keys.contains(object.key())).singleElement()
                     .satisfies(object -> assertThat(object.startedAt()).isNull());
-            doReturn(NOW.plusDays(2)).when(jdbc).queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+            jdbc.setDatabaseTime(NOW.plusDays(2));
             assertThat(transactions.releaseClaim(observed.get())).isFalse();
             assertThat(jdbc.queryForObject(query, String.class, fixture.lightItemId())).isEqualTo(firstJournal);
             assertThat(jdbc.queryForObject("SELECT conversion_attempts FROM " + itemTable(kind) + " WHERE upload_item_id = ?",
@@ -267,7 +312,7 @@ class AttachmentConversionClaimTest {
         assertThat(transactions.renewLease(first)).isFalse();
         var second = claimed(fixture);
         assertThat(second.claimToken()).isNotEqualTo(first.claimToken());
-        doReturn(NOW.plusMinutes(1)).when(jdbc).queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+        jdbc.setDatabaseTime(NOW.plusMinutes(1));
         assertThat(transactions.renewLease(first)).isFalse();
         entityManager.flush();
         assertThat(jdbc.queryForObject("SELECT lease_until FROM attachment_conversion_tasks WHERE task_id = ?",

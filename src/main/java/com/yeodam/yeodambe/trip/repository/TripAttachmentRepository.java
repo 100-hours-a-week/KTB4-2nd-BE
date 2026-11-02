@@ -474,6 +474,26 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     @Query("""
         select attachment
         from TripAttachment attachment
+        join fetch attachment.file file
+        join fetch attachment.trip trip
+        where attachment.id in :tripAttachmentIds
+          and attachment.deletedAt is null
+          and trip.deletedAt is null
+          and file.deletedAt is null
+          and not exists (
+              select item.id from AdditionalAttachmentUploadItem item
+              join item.batch batch
+              where item.tripAttachmentId = attachment.id
+                and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+          )
+        """)
+    List<TripAttachment> findAllActiveForDownloadByIds(
+            @Param("tripAttachmentIds") Collection<Long> tripAttachmentIds
+    );
+
+    @Query("""
+        select attachment
+        from TripAttachment attachment
         join attachment.file file
         where attachment.tripPlaceId = :tripPlaceId
           and attachment.classificationStatus = :classificationStatus

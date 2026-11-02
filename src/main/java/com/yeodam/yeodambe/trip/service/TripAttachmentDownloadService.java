@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
@@ -10,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -17,6 +20,7 @@ public class TripAttachmentDownloadService {
 
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
+    private final TripEditAuthorizationService authorizationService;
 
     public TripAttachmentDownloadResponse issueDownloadUrl(
             Long userId,
@@ -24,8 +28,14 @@ public class TripAttachmentDownloadService {
     ) {
         try (WorkflowLog.Stage timing = startDownloadUrlLogging()) {
             TripAttachment attachment = tripAttachmentRepository
-                    .findAccessibleById(tripAttachmentId, userId)
+                    .findAllActiveForDownloadByIds(List.of(tripAttachmentId)).stream()
+                    .findFirst()
                     .orElseThrow(AttachmentNotFoundException::new);
+            try {
+                authorizationService.requireReadPermission(attachment.getTrip(), userId);
+            } catch (TripNotFoundException e) {
+                throw new AttachmentNotFoundException();
+            }
 
             recordDownloadObject(timing, attachment.getFile().getObjectKey());
             String downloadUrl = tripAttachmentStorageClient.createDownloadUrl(

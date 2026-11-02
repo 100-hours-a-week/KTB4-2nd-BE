@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
@@ -34,6 +35,7 @@ public class BulkAttachmentDownloadService {
 
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
+    private final TripEditAuthorizationService authorizationService;
 
     public BulkAttachmentDownloadResponse issueDownloadUrl(
             Long userId,
@@ -42,12 +44,24 @@ public class BulkAttachmentDownloadService {
         validateIds(tripAttachmentIds);
 
         List<TripAttachment> attachments = tripAttachmentRepository
-                .findAllActiveWithTripAndFileByIds(tripAttachmentIds);
+                .findAllActiveForDownloadByIds(tripAttachmentIds);
 
-        if (attachments.size() != tripAttachmentIds.size()
-                || attachments.stream()
-                .anyMatch(attachment -> !userId.equals(attachment.getTrip().getUserId()))) {
+        if (attachments.size() != tripAttachmentIds.size()) {
             throw new AttachmentNotFoundException();
+        }
+
+        Set<Long> tripIds = new HashSet<>();
+        try {
+            for (TripAttachment attachment : attachments) {
+                if (tripIds.add(attachment.getTripId())) {
+                    authorizationService.requireReadPermission(attachment.getTrip(), userId);
+                }
+            }
+        } catch (TripNotFoundException e) {
+            throw new AttachmentNotFoundException();
+        }
+        if (tripIds.size() > 1) {
+            throw new InvalidAttachmentIdsException();
         }
 
         int expectedCount = attachments.size();

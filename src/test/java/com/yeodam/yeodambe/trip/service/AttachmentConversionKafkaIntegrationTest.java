@@ -343,6 +343,30 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
+    void partitionLossInjectionWaitsForTheOwningConsumer() throws Exception {
+        try (var h = new Harness(mockWorker(), kafka)) {
+            var target = new TopicPartition(h.topics.initialLight(), 0);
+            var other = new TopicPartition(h.topics.initialHeic(), 0);
+            Consumer<Object, Object> owner = mock(Consumer.class);
+            Consumer<Object, Object> unrelated = mock(Consumer.class);
+            when(owner.assignment()).thenReturn(Set.of(target));
+            when(unrelated.assignment()).thenReturn(Set.of(other));
+            var ownerRebalance = mock(ConsumerRebalanceListener.class);
+            var unrelatedRebalance = mock(ConsumerRebalanceListener.class);
+            var ownerProxy = h.failCommitOrLoseAssignment(owner);
+            var unrelatedProxy = h.failCommitOrLoseAssignment(unrelated);
+            ownerProxy.subscribe(Set.of(target.topic()), ownerRebalance);
+            unrelatedProxy.subscribe(Set.of(other.topic()), unrelatedRebalance);
+
+            h.partitionToLose.set(target);
+            unrelatedProxy.poll(Duration.ZERO);
+            verify(unrelatedRebalance, never()).onPartitionsLost(anyCollection());
+            ownerProxy.poll(Duration.ZERO);
+            verify(ownerRebalance).onPartitionsLost(Set.of(target));
+        }
+    }
+
+    @Test
     void partitionLostNeverAcknowledgesUnfinishedTask() throws Exception {
         var worker = mockWorker();
         var unfinished = new CompletableFuture<Void>();
@@ -355,7 +379,7 @@ class AttachmentConversionKafkaIntegrationTest {
             h.start();
             var record = h.send(h.topics.initialLight(), message(UUID.randomUUID().toString()));
             assertThat(started.await(15, TimeUnit.SECONDS)).isTrue();
-            h.losePartitions.set(true);
+            h.partitionToLose.set(new TopicPartition(record.topic(), record.partition()));
             await().atMost(Duration.ofSeconds(5)).until(() -> h.lostPartitions.get());
             unfinished.complete(null);
             h.uncommitted(record);
@@ -635,7 +659,7 @@ class AttachmentConversionKafkaIntegrationTest {
         private final AtomicBoolean commitFailure = new AtomicBoolean();
         private final AtomicInteger failedCommits = new AtomicInteger();
         private final AtomicInteger consumerThreadViolations = new AtomicInteger();
-        private final AtomicBoolean losePartitions = new AtomicBoolean();
+        private final AtomicReference<TopicPartition> partitionToLose = new AtomicReference<>();
         private final AtomicBoolean lostPartitions = new AtomicBoolean();
         private final AtomicBoolean synchronousFailure = new AtomicBoolean();
         private final AtomicInteger synchronousAttempts = new AtomicInteger();
@@ -726,8 +750,11 @@ class AttachmentConversionKafkaIntegrationTest {
                         if (method.getName().equals("subscribe") && args.length == 2) {
                             rebalance.set((ConsumerRebalanceListener) args[1]);
                         }
-                        if (method.getName().equals("poll") && losePartitions.compareAndSet(true, false)) {
-                            rebalance.get().onPartitionsLost(consumer.assignment());
+                        var requestedLoss = partitionToLose.get();
+                        if (method.getName().equals("poll") && requestedLoss != null
+                                && consumer.assignment().contains(requestedLoss)
+                                && partitionToLose.compareAndSet(requestedLoss, null)) {
+                            rebalance.get().onPartitionsLost(Set.of(requestedLoss));
                             lostPartitions.set(true);
                         }
                         if (method.getName().equals("commitSync") && commitFailure.get()

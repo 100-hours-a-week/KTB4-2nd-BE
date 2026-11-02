@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse.Block;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse.Day;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.service.TripAccessService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,7 +32,7 @@ public class StoryReadService {
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
 
     public StoryDetailResponse findStory(Long userId, Long tripId) {
-        requireAccess(tripId, userId);
+        Trip trip = requireAccess(tripId, userId);
 
         Story story = storyRepository.findCurrentCompletedByTripId(tripId)
                 .orElseThrow(StoryNotFoundException::new);
@@ -48,16 +49,16 @@ public class StoryReadService {
         return new StoryDetailResponse(
                 story.getId(),
                 tripId,
-                true,
+                trip.getUserId().equals(userId),
                 story.getMood(),
                 story.getStorySummary(),
                 buildDays(visibleBlocks)
         );
     }
 
-    private void requireAccess(Long tripId, Long userId) {
+    private Trip requireAccess(Long tripId, Long userId) {
         try {
-            tripAccessService.requireOwnedTrip(tripId, userId);
+            return tripAccessService.requireReadableTrip(tripId, userId);
         } catch (TripNotFoundException e) {
             throw new StoryNotFoundException();
         }

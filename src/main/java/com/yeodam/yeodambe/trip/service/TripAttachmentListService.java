@@ -17,7 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.yeodam.yeodambe.trip.service.request.AttachmentCursor;
+import com.yeodam.yeodambe.trip.service.request.cursor.AttachmentCursor;
 
 import java.util.List;
 

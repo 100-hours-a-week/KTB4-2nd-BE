@@ -1,10 +1,12 @@
-package com.yeodam.yeodambe.trip.service.request;
+package com.yeodam.yeodambe.trip.service.request.cursor;
 
+import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -53,7 +55,7 @@ class TripListCursorTest {
     @ParameterizedTest
     @ValueSource(strings = {"sort", "favorite", "favoriteGroup", "startDate", "tripId"})
     void 필수필드_누락과_null을_거절한다(String field) {
-        var node = objectMapper.createObjectNode()
+        ObjectNode node = objectMapper.createObjectNode()
                 .put("sort", "LATEST")
                 .put("favorite", false)
                 .put("favoriteGroup", true)
@@ -97,5 +99,11 @@ class TripListCursorTest {
                 .encodeToString(json.getBytes(StandardCharsets.UTF_8));
         assertThatThrownBy(() -> TripListCursor.decode(encoded, objectMapper))
                 .isInstanceOf(InvalidTripListFilterException.class);
+    }
+
+    @Test
+    void 기존에_발급한_커서_문자열을_해석한다() {
+        assertThat(TripListCursor.decode("eyJzb3J0IjoiTEFURVNUIiwiZmF2b3JpdGUiOmZhbHNlLCJmYXZvcml0ZUdyb3VwIjpmYWxzZSwic3RhcnREYXRlIjoiMjAyNi0wOS0yMiIsInRyaXBJZCI6MTd9", objectMapper))
+                .isEqualTo(new TripListCursor(TripSort.LATEST, false, false, LocalDate.of(2026, 9, 22), 17L));
     }
 }

@@ -1,4 +1,4 @@
-package com.yeodam.yeodambe.trip.service.request;
+package com.yeodam.yeodambe.trip.service.request.cursor;
 
 import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import org.junit.jupiter.api.Test;
@@ -17,7 +17,7 @@ class FavoriteTripCursorTest {
 
     @Test
     void 날짜와_ID를_문자열로_왕복하고_첫_페이지는_null을_허용한다() {
-        var cursor = new FavoriteTripCursor(LocalDate.of(2026, 10, 30), 42L);
+        FavoriteTripCursor cursor = new FavoriteTripCursor(LocalDate.of(2026, 10, 30), 42L);
         assertThat(FavoriteTripCursor.decode(cursor.encode(objectMapper), objectMapper)).isEqualTo(cursor);
         assertThat(FavoriteTripCursor.decode(null, objectMapper)).isNull();
     }
@@ -46,5 +46,11 @@ class FavoriteTripCursorTest {
                 .encodeToString(json.getBytes(StandardCharsets.UTF_8));
         assertThatThrownBy(() -> FavoriteTripCursor.decode(encoded, objectMapper))
                 .isInstanceOf(InvalidCursorException.class);
+    }
+
+    @Test
+    void 기존에_발급한_커서_문자열을_해석한다() {
+        assertThat(FavoriteTripCursor.decode("eyJzdGFydERhdGUiOiIyMDI2LTEwLTMwIiwidHJpcElkIjo0Mn0", objectMapper))
+                .isEqualTo(new FavoriteTripCursor(LocalDate.of(2026, 10, 30), 42L));
     }
 }

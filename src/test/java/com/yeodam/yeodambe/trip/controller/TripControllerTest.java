@@ -11,7 +11,7 @@ import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.ShareTripService;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
-import com.yeodam.yeodambe.trip.service.request.TripListCursor;
+import com.yeodam.yeodambe.trip.service.request.cursor.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;

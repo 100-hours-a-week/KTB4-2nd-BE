@@ -51,6 +51,7 @@ public enum TripInternalErrorMessage {
     EDIT_COMMAND_HASH_INVALID("SHA-256 본문 식별값이 필요합니다."),
     EDIT_COMMAND_TIME_MISSING("명령 결과의 기준 시각이 필요합니다."),
     TRIP_LIST_CURSOR_ENCODE_FAILED("여행 목록 커서를 생성할 수 없습니다."),
+    TRIP_SHARE_CURSOR_ENCODE_FAILED("공유 대상자 목록 커서를 생성할 수 없습니다."),
     ATTACHMENT_CURSOR_ENCODE_FAILED("첨부 목록 커서를 생성할 수 없습니다."),
     PLACE_FOLDER_CURSOR_ENCODE_FAILED("장소 폴더 목록 커서를 생성할 수 없습니다."),
     UNSUPPORTED_DERIVATIVE_FILE_FORMAT("지원하지 않는 파생 파일 형식입니다."),

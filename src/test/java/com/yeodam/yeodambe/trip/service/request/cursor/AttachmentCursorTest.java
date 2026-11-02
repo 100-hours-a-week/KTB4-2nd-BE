@@ -1,4 +1,4 @@
-package com.yeodam.yeodambe.trip.service.request;
+package com.yeodam.yeodambe.trip.service.request.cursor;
 
 import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
@@ -192,5 +192,11 @@ class AttachmentCursorTest {
     private String encodedJson(String json) {
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void 기존에_발급한_커서_문자열을_해석한다() {
+        assertThat(AttachmentCursor.decode("eyJjcmVhdGVkQXQiOiIyMDI2LTEwLTA5VDEyOjAwOjAwIiwidHJpcEF0dGFjaG1lbnRJZCI6MTgsInRyaXBJZCI6NywidHJpcFBsYWNlSWQiOm51bGwsImlzc3VlIjpudWxsfQ", 7L, null, null, objectMapper))
+                .isEqualTo(new AttachmentCursor(LocalDateTime.of(2026, 10, 9, 12, 0), 18L, 7L, null, null));
     }
 }

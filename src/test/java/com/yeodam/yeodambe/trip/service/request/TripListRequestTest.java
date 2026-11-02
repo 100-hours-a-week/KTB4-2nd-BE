@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service.request;
 
+import com.yeodam.yeodambe.trip.service.request.cursor.TripListCursor;
 import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;

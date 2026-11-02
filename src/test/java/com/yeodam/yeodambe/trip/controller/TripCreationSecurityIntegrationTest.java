@@ -6,9 +6,14 @@ import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripSharePermission;
+import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
+import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
+import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
+import com.yeodam.yeodambe.trip.service.InvitedTripListService;
 import com.yeodam.yeodambe.trip.service.TripAccessService;
 import com.yeodam.yeodambe.trip.service.TripDeletionService;
 import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
@@ -51,6 +56,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -60,6 +66,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -89,7 +96,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         ApiAuthenticationEntryPoint.class,
         CsrfAccessDeniedHandler.class,
         RedisCsrfTokenRepository.class,
-        TripPlaceFolderListService.class
+        TripPlaceFolderListService.class,
+        InvitedTripListService.class
 })
 class TripCreationSecurityIntegrationTest {
 
@@ -104,6 +112,12 @@ class TripCreationSecurityIntegrationTest {
 
     @MockitoBean
     private ShareTripService shareTripService;
+
+    @MockitoBean
+    private TripShareUserRepository tripShareUserRepository;
+
+    @MockitoBean
+    private TripRegionRepository tripRegionRepository;
 
     @MockitoBean
     private TripService tripService;
@@ -142,6 +156,59 @@ class TripCreationSecurityIntegrationTest {
     void allowSessionValidation() {
         given(activeLoginSessionValidator.validate(any(Jwt.class)))
                 .willReturn(OAuth2TokenValidatorResult.success());
+    }
+
+    @Test
+    void 공유_목록은_인증_사용자의_여행_목록과_권한을_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        LocalDate startDate = LocalDate.of(2026, 11, 20);
+        Trip trip = new Trip(1L, "공유여행", startDate, startDate.plusDays(7));
+        ReflectionTestUtils.setField(trip, "id", 7L);
+        TripShareUser share = new TripShareUser(7L, 1L, 42L, TripSharePermission.READ,
+                LocalDateTime.of(2026, 11, 3, 12, 0), LocalDateTime.of(2026, 11, 2, 12, 0));
+        ReflectionTestUtils.setField(share, "trip", trip);
+        given(tripShareUserRepository.countInvitedTrips(eq(42L), any(LocalDateTime.class))).willReturn(12L);
+        given(tripShareUserRepository.findInvitedPage(
+                eq(42L), any(LocalDateTime.class), isNull(), isNull(), any(Pageable.class)))
+                .willReturn(List.of(share));
+
+        mockMvc.perform(get("/trips/shares").param("userId", "999")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("INVITED_TRIP_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.totalCount").value(12))
+                .andExpect(jsonPath("$.data.items[0].tripId").value(7))
+                .andExpect(jsonPath("$.data.items[0].tripName").value("공유여행"))
+                .andExpect(jsonPath("$.data.items[0].startDate").value("2026-11-20"))
+                .andExpect(jsonPath("$.data.items[0].endDate").value("2026-11-27"))
+                .andExpect(jsonPath("$.data.items[0].permission").value("READ"))
+                .andExpect(jsonPath("$.data.items[0].placeSummary").value(""))
+                .andExpect(jsonPath("$.data.items[0].attachmentCount").value(0))
+                .andExpect(jsonPath("$.data.items[0].thumbnailUrl").isEmpty())
+                .andExpect(jsonPath("$.data.items[0].isFavorite").doesNotExist())
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").isEmpty());
+        verifyNoInteractions(tripService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "invalid!", "bnVsbA"})
+    void 초대_목록의_잘못된_커서는_DB_조회_전에_400이다(String cursor) throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+
+        mockMvc.perform(get("/trips/shares").param("cursor", cursor)
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_CURSOR"));
+        verifyNoInteractions(tripShareUserRepository, tripRegionRepository, tripAttachmentRepository);
+    }
+
+    @Test
+    void 미인증_초대_목록은_DB_조회_전에_401이다() throws Exception {
+        mockMvc.perform(get("/trips/shares"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+        verifyNoInteractions(tripShareUserRepository);
     }
 
     @Test

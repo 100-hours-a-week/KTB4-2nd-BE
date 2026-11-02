@@ -50,14 +50,18 @@ public class BulkAttachmentDownloadService {
             throw new AttachmentNotFoundException();
         }
 
-        Long tripId = attachments.getFirst().getTripId();
-        if (attachments.stream().anyMatch(attachment -> !tripId.equals(attachment.getTripId()))) {
-            throw new InvalidAttachmentIdsException();
-        }
+        Set<Long> tripIds = new HashSet<>();
         try {
-            authorizationService.requireReadPermission(attachments.getFirst().getTrip(), userId);
+            for (TripAttachment attachment : attachments) {
+                if (tripIds.add(attachment.getTripId())) {
+                    authorizationService.requireReadPermission(attachment.getTrip(), userId);
+                }
+            }
         } catch (TripNotFoundException e) {
             throw new AttachmentNotFoundException();
+        }
+        if (tripIds.size() > 1) {
+            throw new InvalidAttachmentIdsException();
         }
 
         int expectedCount = attachments.size();

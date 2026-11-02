@@ -234,7 +234,7 @@ class BulkAttachmentDownloadServiceTest {
     }
 
     @Test
-    void 다른_여행의_사진이_섞이면_권한_검사_전에_거절한다() {
+    void 접근_가능한_다른_여행의_사진이_섞이면_입력_오류로_거절한다() {
         TripAttachment first = attachment(501L, 1L, "first", "first.jpg");
         TripAttachment second = attachment(502L, 1L, "second", "second.jpg");
         when(second.getTripId()).thenReturn(8L);
@@ -243,7 +243,24 @@ class BulkAttachmentDownloadServiceTest {
 
         assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L, 502L)))
                 .isInstanceOf(InvalidAttachmentIdsException.class);
-        verifyNoInteractions(access, tripAttachmentStorageClient);
+        verifyNoInteractions(tripAttachmentStorageClient);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void 다른_여행의_사진이_섞여도_접근_불가능한_사진은_찾을_수_없음으로_처리한다(int deniedIndex) {
+        TripAttachment first = attachment(501L, 1L, "first", "first.jpg");
+        TripAttachment second = attachment(502L, 2L, "second", "second.jpg");
+        when(second.getTripId()).thenReturn(8L);
+        List<TripAttachment> attachments = List.of(first, second);
+        when(tripAttachmentRepository.findAllActiveForDownloadByIds(List.of(501L, 502L)))
+                .thenReturn(attachments);
+        Trip deniedTrip = attachments.get(deniedIndex).getTrip();
+        doThrow(new TripNotFoundException()).when(access).requireReadPermission(deniedTrip, 3L);
+
+        assertThatThrownBy(() -> service.issueDownloadUrl(3L, List.of(501L, 502L)))
+                .isInstanceOf(AttachmentNotFoundException.class);
+        verifyNoInteractions(tripAttachmentStorageClient);
     }
 
     @Test

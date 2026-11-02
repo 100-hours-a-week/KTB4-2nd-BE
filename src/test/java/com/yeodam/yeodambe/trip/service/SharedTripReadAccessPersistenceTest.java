@@ -200,6 +200,22 @@ class SharedTripReadAccessPersistenceTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"OWNER", "READ", "WRITE"})
+    void 접근할_수_없는_다른_여행의_사진이_섞이면_존재를_숨긴다(String permission) {
+        Fixture fixture = fixture();
+        Long actorId = actor(fixture, permission);
+        User otherOwner = new User("other-owner@shared.test", "다른 소유자");
+        em.persist(otherOwner);
+        TripAttachment otherPhoto = photo(trip(otherOwner), "other");
+        flushAndClear();
+
+        assertThatThrownBy(() -> bulkDownloads.issueDownloadUrl(actorId,
+                List.of(fixture.first().getId(), otherPhoto.getId())))
+                .isInstanceOf(AttachmentNotFoundException.class);
+        verifyNoInteractions(storage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"OWNER", "READ", "WRITE"})
     void 단건_다운로드는_여행과_장소를_추가_조회하지_않는다(String permission) throws Exception {
         Fixture fixture = fixture();
         Long actorId = actor(fixture, permission);

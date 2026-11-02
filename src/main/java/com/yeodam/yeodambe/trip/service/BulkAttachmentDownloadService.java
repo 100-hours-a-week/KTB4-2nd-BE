@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
@@ -34,6 +35,7 @@ public class BulkAttachmentDownloadService {
 
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
+    private final TripAccessService tripAccessService;
 
     public BulkAttachmentDownloadResponse issueDownloadUrl(
             Long userId,
@@ -44,9 +46,17 @@ public class BulkAttachmentDownloadService {
         List<TripAttachment> attachments = tripAttachmentRepository
                 .findAllActiveWithTripAndFileByIds(tripAttachmentIds);
 
-        if (attachments.size() != tripAttachmentIds.size()
-                || attachments.stream()
-                .anyMatch(attachment -> !userId.equals(attachment.getTrip().getUserId()))) {
+        if (attachments.size() != tripAttachmentIds.size()) {
+            throw new AttachmentNotFoundException();
+        }
+
+        Long tripId = attachments.getFirst().getTripId();
+        if (attachments.stream().anyMatch(attachment -> !tripId.equals(attachment.getTripId()))) {
+            throw new InvalidAttachmentIdsException();
+        }
+        try {
+            tripAccessService.requireReadableTrip(tripId, userId);
+        } catch (TripNotFoundException e) {
             throw new AttachmentNotFoundException();
         }
 

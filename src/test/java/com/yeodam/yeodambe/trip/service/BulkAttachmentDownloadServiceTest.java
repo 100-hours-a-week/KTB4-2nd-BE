@@ -12,7 +12,17 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.dao.DataAccessResourceFailureException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
@@ -23,6 +33,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.IntStream;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipInputStream;
 
@@ -33,18 +44,22 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class BulkAttachmentDownloadServiceTest {
 
-    private final TripAttachmentRepository tripAttachmentRepository =
-            mock(TripAttachmentRepository.class);
-    private final TripAttachmentStorageClient tripAttachmentStorageClient =
-            mock(TripAttachmentStorageClient.class);
-    private final BulkAttachmentDownloadService service =
-            new BulkAttachmentDownloadService(
-                    tripAttachmentRepository,
-                    tripAttachmentStorageClient
-            );
+    @Mock
+    private TripAttachmentRepository tripAttachmentRepository;
+    @Mock
+    private TripAttachmentStorageClient tripAttachmentStorageClient;
+    @Mock
+    private TripAccessService access;
+    @InjectMocks
+    private BulkAttachmentDownloadService service;
     private final Logger logger =
             (Logger) LoggerFactory.getLogger(BulkAttachmentDownloadService.class);
     private ListAppender<ILoggingEvent> logAppender;
@@ -143,11 +158,13 @@ class BulkAttachmentDownloadServiceTest {
     }
 
     @Test
-    void 다른_회원의_첨부가_하나라도_있으면_찾을_수_없음으로_처리한다() {
+    void 공유_읽기_권한이_없으면_찾을_수_없음으로_처리한다() {
         TripAttachment attachment = attachment(501L, 2L, "other-user-key", "photo.jpg");
 
         when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
                 .thenReturn(List.of(attachment));
+
+        doThrow(new TripNotFoundException()).when(access).requireReadableTrip(7L, 1L);
 
         assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L)))
                 .isInstanceOf(AttachmentNotFoundException.class);
@@ -195,6 +212,73 @@ class BulkAttachmentDownloadServiceTest {
         assertThat(keyValue(downloads.getFirst(), "object_key")).isEqualTo("first-key");
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 200})
+    void 사진_수와_무관하게_여행_권한을_한번만_검증한다(int count) throws IOException {
+        List<Long> ids = IntStream.rangeClosed(1, count).mapToObj(index -> (long) index).toList();
+        List<TripAttachment> photos = ids.stream()
+                .map(id -> attachment(id, 1L, "key-" + id, "photo-" + id + ".jpg"))
+                .toList();
+        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(ids)).thenReturn(photos);
+        when(tripAttachmentStorageClient.open(any(String.class)))
+                .thenAnswer(call -> new ByteArrayInputStream(new byte[]{1}));
+        when(tripAttachmentStorageClient.storeDownloadArchive(any(Path.class))).thenReturn("archive");
+        when(tripAttachmentStorageClient.createDownloadUrl("archive", "yeodam-attachments.zip"))
+                .thenReturn("https://example.com/shared-archive");
+
+        assertThat(service.issueDownloadUrl(2L, ids).downloadUrl())
+                .isEqualTo("https://example.com/shared-archive");
+        verify(access, times(1)).requireReadableTrip(7L, 2L);
+        verifyNoMoreInteractions(access);
+    }
+
+    @Test
+    void 다른_여행의_사진이_섞이면_권한_검사_전에_거절한다() {
+        TripAttachment first = attachment(501L, 1L, "first", "first.jpg");
+        TripAttachment second = attachment(502L, 1L, "second", "second.jpg");
+        when(second.getTripId()).thenReturn(8L);
+        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L, 502L)))
+                .thenReturn(List.of(first, second));
+
+        assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L, 502L)))
+                .isInstanceOf(InvalidAttachmentIdsException.class);
+        verifyNoInteractions(access, tripAttachmentStorageClient);
+    }
+
+    @Test
+    void 조회된_사진이_부족하면_권한_검사_전에_거절한다() {
+        TripAttachment first = attachment(501L, 1L, "first", "first.jpg");
+        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L, 502L)))
+                .thenReturn(List.of(first));
+
+        assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L, 502L)))
+                .isInstanceOf(AttachmentNotFoundException.class);
+        verifyNoInteractions(access, tripAttachmentStorageClient);
+    }
+
+    @Test
+    void 권한_DB_장애는_404로_숨기지_않는다() {
+        TripAttachment first = attachment(501L, 1L, "first", "first.jpg");
+        when(tripAttachmentRepository.findAllActiveWithTripAndFileByIds(List.of(501L)))
+                .thenReturn(List.of(first));
+        doThrow(new DataAccessResourceFailureException("DB 실패"))
+                .when(access).requireReadableTrip(7L, 1L);
+
+        assertThatThrownBy(() -> service.issueDownloadUrl(1L, List.of(501L)))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+        verifyNoInteractions(tripAttachmentStorageClient);
+    }
+
+    @Test
+    void 비어있거나_잘못된_ID는_조회_전에_거절한다() {
+        for (List<Long> ids : java.util.Arrays.asList(null, List.<Long>of(),
+                java.util.Arrays.asList(501L, null), List.of(0L), List.of(-1L))) {
+            assertThatThrownBy(() -> service.issueDownloadUrl(1L, ids))
+                    .isInstanceOf(InvalidAttachmentIdsException.class);
+        }
+        verifyNoInteractions(tripAttachmentRepository, access, tripAttachmentStorageClient);
+    }
+
     private TripAttachment attachment(
             Long attachmentId,
             Long userId,
@@ -206,6 +290,7 @@ class BulkAttachmentDownloadServiceTest {
         StoredFile file = mock(StoredFile.class);
 
         when(attachment.getId()).thenReturn(attachmentId);
+        when(attachment.getTripId()).thenReturn(7L);
         when(attachment.getTrip()).thenReturn(trip);
         when(trip.getUserId()).thenReturn(userId);
         when(attachment.getFile()).thenReturn(file);

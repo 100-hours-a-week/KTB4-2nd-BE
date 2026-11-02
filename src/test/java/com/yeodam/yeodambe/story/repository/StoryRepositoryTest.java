@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.story.entity.*;
 import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.story.service.StoryReadService;
 import com.yeodam.yeodambe.story.service.StoryValidator;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
@@ -78,6 +79,8 @@ class StoryRepositoryTest {
         assertThat(response.days().getFirst().blocks()).extracting(b -> b.memo()).containsOnly("편집 메모");
         assertThat(em.find(StoryBlock.class, earlier.getId()).getMemo()).isEqualTo("편집 메모");
         verify(storage, times(2)).createReadUrl("미리보기");
+        doThrow(new TripNotFoundException()).when(authorizationService)
+                .requireReadPermission(any(Trip.class), eq(-1L));
         assertThatThrownBy(() -> service.findStory(-1L, trip.getId())).isInstanceOf(StoryNotFoundException.class);
         Trip loaded = em.find(Trip.class, trip.getId());
         loaded.softDelete(LocalDateTime.now());

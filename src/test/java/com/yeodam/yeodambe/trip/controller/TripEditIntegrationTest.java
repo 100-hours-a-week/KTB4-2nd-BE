@@ -154,9 +154,12 @@ class TripEditIntegrationTest {
                         .cookie(new Cookie("accessToken", accessToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.originalUrl").value("https://test.example/" + files.findById(attachment.getFileId()).orElseThrow().getObjectKey()));
+        when(storage.createDownloadUrl(anyString(), anyString())).thenReturn("https://test.example/download");
         mvc.perform(get("/api/attachments/" + attachment.getId() + "/download").contextPath("/api")
                         .cookie(new Cookie("accessToken", accessToken)))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tripAttachmentId").value(attachment.getId()))
+                .andExpect(jsonPath("$.data.downloadUrl").value("https://test.example/download"));
         mvc.perform(get("/api/trips/" + tripId + "/story/source-folders").contextPath("/api")
                         .cookie(new Cookie("accessToken", accessToken)))
                 .andExpect(status().isNotFound());

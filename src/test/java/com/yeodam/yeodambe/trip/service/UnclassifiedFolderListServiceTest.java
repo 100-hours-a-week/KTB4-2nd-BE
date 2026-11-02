@@ -8,7 +8,7 @@ import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
-import com.yeodam.yeodambe.trip.service.request.AttachmentCursor;
+import com.yeodam.yeodambe.trip.service.request.cursor.AttachmentCursor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

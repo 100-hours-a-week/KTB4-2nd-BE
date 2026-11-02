@@ -12,11 +12,15 @@ import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
 import com.yeodam.yeodambe.trip.service.request.TripShareCreateRequest;
+import com.yeodam.yeodambe.trip.service.request.cursor.TripShareCursor;
 import com.yeodam.yeodambe.trip.service.response.TripShareCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripShareListResponse;
 import com.yeodam.yeodambe.user.service.ShareUserSearchService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -24,15 +28,42 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class ShareTripService {
+    private static final int PAGE_SIZE = 5;
     private static final ZoneId SHARE_ZONE = ZoneId.of("Asia/Seoul");
     private final TripRepository tripRepository;
     private final TripShareUserRepository shareRepository;
     private final ShareUserSearchService userSearchService;
     private final Clock clock;
+    private final TripAccessService tripAccessService;
+    private final ObjectMapper objectMapper;
+
+    @Transactional(readOnly = true)
+    public TripShareListResponse findShares(Long tripId, Long requesterId, String cursor) {
+        Trip trip = tripAccessService.requireOwnedTrip(tripId, requesterId);
+        TripShareCursor decoded = TripShareCursor.decode(cursor, tripId, objectMapper);
+        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), SHARE_ZONE);
+        List<TripShareUser> fetched = shareRepository.findActiveSharesWithGrantee(
+                trip.getId(), trip.getUserId(), now,
+                decoded == null ? null : decoded.lastTripShareId(), PageRequest.of(0, PAGE_SIZE + 1));
+        boolean hasNext = fetched.size() > PAGE_SIZE;
+        List<TripShareUser> page = hasNext ? fetched.subList(0, PAGE_SIZE) : fetched;
+        List<TripShareListResponse.Item> items = page.stream().map(this::toShareItem).toList();
+        String nextCursor = hasNext
+                ? new TripShareCursor(tripId, page.getLast().getId()).encode(objectMapper)
+                : null;
+        return new TripShareListResponse(items, hasNext, nextCursor);
+    }
+
+    private TripShareListResponse.Item toShareItem(TripShareUser share) {
+        return new TripShareListResponse.Item(
+                share.getId(), share.getGranteeUserId(), share.getGrantee().getEmail(), share.getPermission(),
+                share.getExpiresAt().atZone(SHARE_ZONE).toOffsetDateTime());
+    }
 
     @Transactional
     public TripShareCreateResponse register(Long tripId, Long ownerId, TripShareCreateRequest request) {

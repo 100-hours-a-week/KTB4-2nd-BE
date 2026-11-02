@@ -8,7 +8,7 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.service.response.UnclassifiedFolderListResponse;
 import com.yeodam.yeodambe.trip.service.response.UnclassifiedAttachmentListResponse;
-import com.yeodam.yeodambe.trip.service.request.AttachmentCursor;
+import com.yeodam.yeodambe.trip.service.request.cursor.AttachmentCursor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;

@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.ShareTripService;
 import com.yeodam.yeodambe.trip.service.request.TripShareCreateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripShareCreateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripShareListResponse;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
@@ -53,6 +54,17 @@ public class TripController {
     private final TripDeletionService tripDeletionService;
     private final ObjectMapper objectMapper;
     private final ShareTripService shareTripService;
+
+    @GetMapping("/trips/{tripId}/shares")
+    public ResponseEntity<ApiResponse<TripShareListResponse>> findShares(
+            @Positive @PathVariable Long tripId,
+            @RequestParam(required = false) String cursor,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long requesterId = Long.valueOf(jwt.getSubject());
+        TripShareListResponse data = shareTripService.findShares(tripId, requesterId, cursor);
+        return ResponseEntity.ok(new ApiResponse<>(SuccessMessage.TRIP_SHARE_LIST_FOUND, data));
+    }
 
     @PostMapping("/trips/{tripId}/shares")
     public ResponseEntity<ApiResponse<TripShareCreateResponse>> registerShare(

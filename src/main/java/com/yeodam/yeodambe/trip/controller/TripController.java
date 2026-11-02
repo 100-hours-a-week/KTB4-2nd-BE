@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.ShareTripService;
+import com.yeodam.yeodambe.trip.service.InvitedTripListService;
 import com.yeodam.yeodambe.trip.service.request.TripShareCreateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripShareCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripShareListResponse;
@@ -22,6 +23,7 @@ import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.FavoriteTripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
+import com.yeodam.yeodambe.trip.service.response.InvitedTripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
@@ -54,6 +56,7 @@ public class TripController {
     private final TripDeletionService tripDeletionService;
     private final ObjectMapper objectMapper;
     private final ShareTripService shareTripService;
+    private final InvitedTripListService invitedTripListService;
 
     @GetMapping("/trips/{tripId}/shares")
     public ResponseEntity<ApiResponse<TripShareListResponse>> findShares(
@@ -223,6 +226,16 @@ public class TripController {
                 SuccessMessage.TRIP_LIST_FOUND,
                 tripService.findTrips(Long.valueOf(jwt.getSubject()), request)
         ));
+    }
+
+    @GetMapping("/trips/shares")
+    public ResponseEntity<ApiResponse<InvitedTripListResponse>> findInvitedTrips(
+            @RequestParam(required = false) String cursor,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        Long userId = Long.valueOf(jwt.getSubject());
+        InvitedTripListResponse data = invitedTripListService.findInvitedTrips(userId, cursor);
+        return ResponseEntity.ok(new ApiResponse<>(SuccessMessage.INVITED_TRIP_LIST_FOUND, data));
     }
 
     @GetMapping("/trips/favorites")

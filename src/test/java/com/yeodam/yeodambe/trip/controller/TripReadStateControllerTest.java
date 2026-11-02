@@ -67,7 +67,7 @@ class TripReadStateControllerTest {
         TripController controller = new TripController(
                 service, mock(TripProcessingStatusService.class),
                 mock(TripProcessingCancellationService.class), folders,
-                mock(TripDeletionService.class), mapper, mock(ShareTripService.class)
+                mock(TripDeletionService.class), mapper, mock(ShareTripService.class), mock(InvitedTripListService.class)
         );
         TripAttachmentController attachmentController = new TripAttachmentController(
                 new TripAttachmentListService(places, attachments, storage, mapper, access),

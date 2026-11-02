@@ -41,6 +41,26 @@ class CookieJwtAuthenticationIntegrationTest {
     @Autowired
     private AccessTokenIssuer accessTokenIssuer;
 
+    @Test
+    void 초대_목록은_실제_로그인_세션을_검증한다() throws Exception {
+        User user = userRegistrationService.register(
+                "invited-" + UUID.randomUUID() + "@yeodam.test", "초대회원",
+                OAuthProvider.KAKAO, "kakao-invited-" + UUID.randomUUID());
+        IssuedLoginSession session = loginSessionIssuer.issue(user.getUserId());
+        String accessToken = accessTokenIssuer.issue(user.getUserId(), session.sid());
+
+        mockMvc.perform(get("/trips/shares").cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("INVITED_TRIP_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.totalCount").value(0))
+                .andExpect(jsonPath("$.data.items").isEmpty());
+
+        String invalidSessionToken = accessTokenIssuer.issue(user.getUserId(), "missing-session");
+        mockMvc.perform(get("/trips/shares").cookie(new Cookie("accessToken", invalidSessionToken)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
+    }
+
     @RestController
     static class ProbeController {
         @GetMapping("/test/auth-probe")

@@ -44,7 +44,13 @@ public class SecurityConfig {
                 && managementPort != serverPort
                 && request.getLocalPort() == managementPort);
         http.authorizeHttpRequests(authorize -> authorize
-                .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/prometheus").permitAll()
+                .requestMatchers(
+                        HttpMethod.GET,
+                        "/actuator/health",
+                        "/actuator/health/liveness",
+                        "/actuator/health/readiness",
+                        "/actuator/prometheus"
+                ).permitAll()
                 .anyRequest().denyAll()
         );
         http.exceptionHandling(exceptions -> exceptions

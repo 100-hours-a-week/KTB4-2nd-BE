@@ -511,6 +511,14 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.STORY_TONE_PREVIEW_TAKEN_AT_MISSING, null);
     }
 
+    @ExceptionHandler(StoryTonePreviewFailedException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    ApiResponse<Void> handleStoryTonePreviewFailed(
+            StoryTonePreviewFailedException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.STORY_TONE_PREVIEW_FAILED, null);
+    }
+
     @ExceptionHandler(StoryOrAttachmentNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     ApiResponse<Void> handleStoryOrAttachmentNotFound(

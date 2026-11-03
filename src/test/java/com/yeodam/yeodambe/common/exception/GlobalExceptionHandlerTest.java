@@ -351,8 +351,20 @@ class GlobalExceptionHandlerTest {
                 .andExpect(content().json("{\"message\":\"" + message + "\",\"data\":null}"));
     }
 
+    @Test
+    void AI_미리보기_실패는_502와_전용_오류코드를_반환한다() throws Exception {
+        mockMvc.perform(get("/test/story-tone-preview-failed"))
+                .andExpect(status().isBadGateway())
+                .andExpect(content().json("{\"message\":\"STORY_TONE_PREVIEW_FAILED\",\"data\":null}"));
+    }
+
     @RestController
     static class TestController {
+        @GetMapping("/test/story-tone-preview-failed")
+        void storyTonePreviewFailed() {
+            throw new StoryTonePreviewFailedException();
+        }
+
         @GetMapping("/test/invalid-story-tone-preview")
         void invalidStoryTonePreview() {
             throw new InvalidStoryTonePreviewException();

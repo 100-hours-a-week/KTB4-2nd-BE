@@ -33,7 +33,7 @@ public class StoryTonePreviewAiClient {
             @Value("${ai.server.api-key}") String apiKey,
             @Value("${ai.server.story-connection-timeout}")
             Duration connectionTimeout,
-            @Value("${ai.server.story-preview-read-timeout:90s}")
+            @Value("${ai.server.story-preview-read-timeout:320s}")
             Duration readTimeout
     ) {
         HttpClient httpClient = HttpClient.newBuilder()

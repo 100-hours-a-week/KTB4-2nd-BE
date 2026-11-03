@@ -24,12 +24,21 @@ class StoryGenerationRequestTest {
 
     @Test
     void acceptsEachCurrentMoodAndOneToTenFolders() {
-        for (Story.Mood mood : Story.Mood.values()) {
+        for (Story.Mood mood : List.of(Story.Mood.PLAIN, Story.Mood.HUMOROUS, Story.Mood.LITERARY)) {
             assertThat(validator.validate(new StoryGenerationRequest(mood, List.of(101L))))
                     .isEmpty();
             assertThat(validator.validate(new StoryGenerationRequest(
                     mood, LongStream.rangeClosed(1, 10).boxed().toList())))
                     .isEmpty();
+        }
+    }
+
+    @Test
+    void rejectsRetiredMoodsForNewGeneration() {
+        for (Story.Mood mood : List.of(Story.Mood.EMOTIONAL, Story.Mood.CALM)) {
+            assertThat(validator.validate(new StoryGenerationRequest(mood, List.of(101L))))
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .contains("moodSupported");
         }
     }
 

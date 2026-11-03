@@ -147,7 +147,7 @@ class StoryGenerationKafkaLocalIntegrationTest {
                                     new Cookie("CSRF_CONTEXT", "kafka-test-browser"))
                             .header("X-CSRF-TOKEN", "csrf-test").header("X-Request-ID", requestId)
                             .contentType("application/json")
-                            .content("{\"mood\":\"EMOTIONAL\",\"tripPlaceIds\":[" + folder.getId() + "]}"))
+                            .content("{\"mood\":\"PLAIN\",\"tripPlaceIds\":[" + folder.getId() + "]}"))
                     .andExpect(request().asyncNotStarted()).andExpect(status().isAccepted())
                     .andExpect(jsonPath("$.message").value("STORY_GENERATION_ACCEPTED"))
                     .andExpect(jsonPath("$.data.status").value("QUEUED")).andReturn();

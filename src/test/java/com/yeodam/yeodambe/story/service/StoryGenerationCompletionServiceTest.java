@@ -94,7 +94,7 @@ class StoryGenerationCompletionServiceTest {
         attachment.classify(folder.getId(), RegionOrigin.EXIF, takenAt, BigDecimal.ZERO, BigDecimal.ZERO, 80);
         photo = attachments.saveAndFlush(attachment);
         job = acceptance.accept(owner.getUserId(), trip.getId(),
-                new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(folder.getId())), "completion-test");
+                new StoryGenerationRequest(Story.Mood.PLAIN, List.of(folder.getId())), "completion-test");
         clearInvocations(publisher);
     }
 
@@ -153,7 +153,7 @@ class StoryGenerationCompletionServiceTest {
         assertThat(data.path("eventType").asString()).isEqualTo("STORY_GENERATION_COMPLETED");
         assertThat(data.path("statusVersion").asLong()).isEqualTo(2);
         assertThat(data.path("listItem").path("sequence").asLong()).isEqualTo(1);
-        assertThat(data.path("listItem").path("mood").asString()).isEqualTo("EMOTIONAL");
+        assertThat(data.path("listItem").path("mood").asString()).isEqualTo("PLAIN");
         assertThat(data.path("listItem").path("storySummary").asString()).isEqualTo("여행 이야기");
 
         assertCompletedOnce();
@@ -161,7 +161,7 @@ class StoryGenerationCompletionServiceTest {
         assertThat(jdbc.queryForObject("SELECT processing_status FROM stories WHERE story_id = ?",
                 String.class, storyId)).isEqualTo("COMPLETED");
         assertThat(jdbc.queryForObject("SELECT mood FROM stories WHERE story_id = ?", String.class, storyId))
-                .isEqualTo("EMOTIONAL");
+                .isEqualTo("PLAIN");
         assertThat(jdbc.queryForObject("SELECT trip_attachment_id FROM story_blocks WHERE story_id = ?",
                 Long.class, storyId)).isEqualTo(photo.getId());
         assertThat(jdbc.queryForObject("SELECT trip_place_id FROM story_selected_places WHERE story_id = ?",

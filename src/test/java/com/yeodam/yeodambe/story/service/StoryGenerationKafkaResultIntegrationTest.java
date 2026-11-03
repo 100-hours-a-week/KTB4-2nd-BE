@@ -147,7 +147,7 @@ class StoryGenerationKafkaResultIntegrationTest {
         attachment.classify(folder.getId(), RegionOrigin.EXIF, takenAt, BigDecimal.ZERO, BigDecimal.ZERO, 80);
         photo = attachments.saveAndFlush(attachment);
         job = acceptance.accept(owner.getUserId(), trip.getId(),
-                new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(folder.getId())), "completion-test");
+                new StoryGenerationRequest(Story.Mood.PLAIN, List.of(folder.getId())), "completion-test");
     }
 
     @AfterEach
@@ -204,7 +204,7 @@ class StoryGenerationKafkaResultIntegrationTest {
                 .isEqualTo(StoryGenerationJob.Status.CANCELED);
         assertThat(count("stories")).isZero();
         var next = acceptance.accept(owner.getUserId(), trip.getId(),
-                new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(folder.getId())), "regeneration-test");
+                new StoryGenerationRequest(Story.Mood.PLAIN, List.of(folder.getId())), "regeneration-test");
         assertThat(next.getId()).isNotEqualTo(job.getId());
         assertThat(next.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
     }

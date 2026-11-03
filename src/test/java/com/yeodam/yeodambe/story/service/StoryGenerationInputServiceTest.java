@@ -41,7 +41,7 @@ class StoryGenerationInputServiceTest {
             new StoryGenerationRequestValidator(factory.getValidator()), tripRepository,
             tripDetailPlaceRepository, tripAttachmentRepository, additionalExecutions);
     private final StoryGenerationRequest request =
-            new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(101L));
+            new StoryGenerationRequest(Story.Mood.PLAIN, List.of(101L));
 
     @AfterAll
     static void closeValidator() {

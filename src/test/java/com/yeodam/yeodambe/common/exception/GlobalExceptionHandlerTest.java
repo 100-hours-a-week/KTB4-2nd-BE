@@ -358,8 +358,37 @@ class GlobalExceptionHandlerTest {
                 .andExpect(content().json("{\"message\":\"STORY_TONE_PREVIEW_FAILED\",\"data\":null}"));
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "in-progress,409,STORY_TONE_PREVIEW_IN_PROGRESS",
+            "unavailable,503,STORY_TONE_PREVIEW_UNAVAILABLE",
+            "timeout,504,STORY_TONE_PREVIEW_TIMEOUT"
+    })
+    void 미리보기_중복과_이용불가와_시간초과를_구분한다(
+            String failure, int expectedStatus, String message
+    ) throws Exception {
+        mockMvc.perform(get("/test/story-tone-preview-" + failure))
+                .andExpect(status().is(expectedStatus))
+                .andExpect(content().json("{\"message\":\"" + message + "\",\"data\":null}"));
+    }
+
     @RestController
     static class TestController {
+        @GetMapping("/test/story-tone-preview-in-progress")
+        void storyTonePreviewInProgress() {
+            throw new StoryTonePreviewInProgressException();
+        }
+
+        @GetMapping("/test/story-tone-preview-unavailable")
+        void storyTonePreviewUnavailable() {
+            throw new StoryTonePreviewUnavailableException();
+        }
+
+        @GetMapping("/test/story-tone-preview-timeout")
+        void storyTonePreviewTimeout() {
+            throw new StoryTonePreviewTimeoutException();
+        }
+
         @GetMapping("/test/story-tone-preview-failed")
         void storyTonePreviewFailed() {
             throw new StoryTonePreviewFailedException();

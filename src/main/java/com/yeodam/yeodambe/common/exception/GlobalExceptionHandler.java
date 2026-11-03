@@ -519,6 +519,30 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.STORY_TONE_PREVIEW_FAILED, null);
     }
 
+    @ExceptionHandler(StoryTonePreviewInProgressException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ApiResponse<Void> handleStoryTonePreviewInProgress(
+            StoryTonePreviewInProgressException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.STORY_TONE_PREVIEW_IN_PROGRESS, null);
+    }
+
+    @ExceptionHandler(StoryTonePreviewUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handleStoryTonePreviewUnavailable(
+            StoryTonePreviewUnavailableException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.STORY_TONE_PREVIEW_UNAVAILABLE, null);
+    }
+
+    @ExceptionHandler(StoryTonePreviewTimeoutException.class)
+    @ResponseStatus(HttpStatus.GATEWAY_TIMEOUT)
+    ApiResponse<Void> handleStoryTonePreviewTimeout(
+            StoryTonePreviewTimeoutException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.STORY_TONE_PREVIEW_TIMEOUT, null);
+    }
+
     @ExceptionHandler(StoryOrAttachmentNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     ApiResponse<Void> handleStoryOrAttachmentNotFound(

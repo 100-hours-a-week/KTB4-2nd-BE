@@ -4,6 +4,8 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.data.redis.autoconfigure.DataRedisConnectionDetails;
 import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
+import org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails;
+import com.mongodb.ConnectionString;
 import org.springframework.context.annotation.Bean;
 
 import java.sql.SQLException;
@@ -11,6 +13,11 @@ import java.util.List;
 
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
+
+    @Bean
+    MongoConnectionDetails sharedMongoConnectionDetails() {
+        return () -> new ConnectionString(SharedTestMongo.connectionString("application_test"));
+    }
 
     @Bean
     JdbcConnectionDetails sharedMysqlConnectionDetails() throws SQLException {

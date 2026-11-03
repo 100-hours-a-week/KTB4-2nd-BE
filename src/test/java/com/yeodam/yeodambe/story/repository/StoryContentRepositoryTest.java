@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.story.repository;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.yeodam.yeodambe.SharedTestMongo;
 import com.yeodam.yeodambe.story.config.StoryMongoConfiguration;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.story.document.StoryContentDocument;
@@ -22,9 +23,6 @@ import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
 import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
 import org.springframework.data.mongodb.repository.support.MongoRepositoryFactory;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
 import java.time.Instant;
@@ -36,13 +34,8 @@ import java.util.TimeZone;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@Testcontainers
 @ResourceLock("java.util.TimeZone")
 class StoryContentRepositoryTest {
-    @Container
-    static final GenericContainer<?> mongo = new GenericContainer<>("mongo:8.0")
-            .withExposedPorts(27017);
-
     static MongoClient client;
     static MongoTemplate template;
     static StoryContentRepository repository;
@@ -50,8 +43,7 @@ class StoryContentRepositoryTest {
 
     @BeforeAll
     static void connect() {
-        client = MongoClients.create("mongodb://" + mongo.getHost()
-                + ":" + mongo.getMappedPort(27017));
+        client = MongoClients.create(SharedTestMongo.connectionString("story_repository_test"));
         try (AnnotationConfigApplicationContext context =
                      new AnnotationConfigApplicationContext(StoryMongoConfiguration.class)) {
             conversions = context.getBean(MongoCustomConversions.class);

@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.story.repository;
 
 import com.yeodam.yeodambe.SharedTestMysql;
+import com.yeodam.yeodambe.SharedTestMongo;
 import com.yeodam.yeodambe.story.config.StoryMongoConfiguration;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.story.document.StoryContentDocument;
@@ -18,12 +19,9 @@ import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.SQLException;
 import java.time.Instant;
@@ -32,13 +30,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Testcontainers
 class StoryRepositoryAutoConfigurationTest {
-    @Container
-    static final GenericContainer<?> mongo = new GenericContainer<>("mongo:8.0")
-            .withExposedPorts(27017);
-
-    @Configuration(proxyBeanMethods = false)
+    @TestConfiguration(proxyBeanMethods = false)
     @AutoConfigurationPackage(basePackages = "com.yeodam.yeodambe")
     static class RepositoryConfiguration {
         @Bean
@@ -60,8 +53,7 @@ class StoryRepositoryAutoConfigurationTest {
                         DataMongoRepositoriesAutoConfiguration.class))
                 .withUserConfiguration(RepositoryConfiguration.class, StoryMongoConfiguration.class)
                 .withPropertyValues(
-                        "spring.mongodb.uri=mongodb://" + mongo.getHost() + ":"
-                                + mongo.getMappedPort(27017) + "/story_auto_configuration_test",
+                        "spring.mongodb.uri=" + SharedTestMongo.connectionString("story_auto_configuration_test"),
                         "spring.jpa.hibernate.ddl-auto=validate")
                 .run(context -> {
                     assertThat(context).hasNotFailed();

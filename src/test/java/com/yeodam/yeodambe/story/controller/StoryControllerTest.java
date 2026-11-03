@@ -10,6 +10,9 @@ import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentAiRequestExcept
 import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentInternalErrorMessage;
 
 import com.yeodam.yeodambe.story.service.StoryUpdateService;
+import com.yeodam.yeodambe.story.service.StoryTonePreviewService;
+import com.yeodam.yeodambe.story.service.request.StoryTonePreviewRequest;
+import com.yeodam.yeodambe.story.service.response.StoryTonePreviewResponse;
 import com.yeodam.yeodambe.story.service.response.StoryUpdateResponse;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.user.entity.User;
@@ -40,6 +43,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(StoryController.class)
@@ -68,6 +72,9 @@ class StoryControllerTest {
     StoryUpdateService updateService;
 
     @MockitoBean
+    StoryTonePreviewService previewService;
+
+    @MockitoBean
     LoginSessionStore sessions;
 
     @MockitoBean
@@ -78,6 +85,77 @@ class StoryControllerTest {
 
     @MockitoBean
     CsrfTokenGenerator csrfGenerator;
+
+    @Test
+    void 분위기미리보기는_인증사용자와_편집내용을_전달하고_nullID메모를_유지한다() throws Exception {
+        when(previewService.preview(eq(42L), eq(71L), any())).thenReturn(
+                new StoryTonePreviewResponse(71L, Story.Mood.HUMOROUS, "새 요약", List.of(
+                        new StoryDetailResponse.Day(LocalDate.of(2026, 10, 1), "첫째 날", List.of(
+                                new StoryDetailResponse.Block(null, 1, 5L, 101L,
+                                        "https://image.test/101", "새 캡션", null))))));
+        previewRequest("71", previewBody(), "csrf-token")
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"message":"STORY_TONE_PREVIEW_SUCCESS","data":{"storyId":71,"tone":"HUMOROUS",
+                        "storySummary":"새 요약","days":[{"date":"2026-10-01","dayLabel":"첫째 날",
+                        "blocks":[{"storyBlockId":null,"orderNumber":1,"tripPlaceId":5,
+                        "tripAttachmentId":101,"thumbnailUrl":"https://image.test/101",
+                        "detailSummary":"새 캡션","memo":null}]}]}}
+                        """));
+        verify(previewService).preview(42L, 71L, new StoryTonePreviewRequest(Story.Mood.HUMOROUS,
+                List.of(new StoryTonePreviewRequest.Block(null, 101L, 1, null, "편집 캡션", null))));
+    }
+
+    @Test
+    void 분위기미리보기_무인증은_401이고_서비스를_호출하지않는다() throws Exception {
+        when(csrfTokens.find("preview-browser")).thenReturn("csrf-token");
+        mvc.perform(post("/stories/71/tone-preview")
+                        .cookie(new Cookie("CSRF_CONTEXT", "preview-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token")
+                        .contentType("application/json").content(previewBody()))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(previewService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "wrong"})
+    void 분위기미리보기_CSRF오류는_403이고_서비스를_호출하지않는다(String csrf) throws Exception {
+        previewRequest("71", previewBody(), csrf).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+        verifyNoInteractions(previewService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"abc", "9223372036854775808", "0", "-1"})
+    void 분위기미리보기_잘못된경로는_전용입력오류다(String id) throws Exception {
+        previewRequest(id, previewBody(), "csrf-token").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_STORY_TONE_PREVIEW"));
+        verifyNoInteractions(previewService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"{broken", "", "{\"tone\":\"UNKNOWN\",\"blocks\":[]}"})
+    void 분위기미리보기_읽을수없는본문은_전용입력오류다(String body) throws Exception {
+        previewRequest("71", body, "csrf-token").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_STORY_TONE_PREVIEW"));
+        verifyNoInteractions(previewService);
+    }
+
+    private String previewBody() {
+        return """
+                {"tone":"HUMOROUS","blocks":[{"tripAttachmentId":101,"orderNumber":1,
+                "detailSummary":"편집 캡션"}]}
+                """;
+    }
+
+    private org.springframework.test.web.servlet.ResultActions previewRequest(
+            String id, String body, String csrf
+    ) throws Exception {
+        when(csrfTokens.find("preview-browser")).thenReturn("csrf-token");
+        return mvc.perform(post("/stories/" + id + "/tone-preview")
+                .cookie(authenticated(), new Cookie("CSRF_CONTEXT", "preview-browser"))
+                .header("X-CSRF-TOKEN", csrf).contentType("application/json").content(body));
+    }
 
     @Test
     void 유사사진_성공응답은_명세의_사진_ID와_점수를_반환한다() throws Exception {

@@ -12,6 +12,7 @@ import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteR
 import com.yeodam.yeodambe.user.service.request.UserSearchRequest;
 import com.yeodam.yeodambe.trip.service.request.TripShareCreateRequest;
 import com.yeodam.yeodambe.trip.controller.TripController;
+import com.yeodam.yeodambe.story.controller.StoryController;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import io.sentry.Sentry;
@@ -205,6 +206,9 @@ public class GlobalExceptionHandler {
             HttpMessageNotReadableException e,
             HttpServletRequest request
     ) {
+        if (isStoryTonePreview(request)) {
+            return new ApiResponse<>(ErrorMessage.INVALID_STORY_TONE_PREVIEW, null);
+        }
         Object matchedPath = request.getAttribute(
                 HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         if (isShareRegistration(request)) {
@@ -249,6 +253,9 @@ public class GlobalExceptionHandler {
             MethodArgumentTypeMismatchException e,
             HttpServletRequest request
     ) {
+        if (isStoryTonePreview(request)) {
+            return new ApiResponse<>(ErrorMessage.INVALID_STORY_TONE_PREVIEW, null);
+        }
         if (isShareRegistration(request)) {
             return new ApiResponse<>(ErrorMessage.INVALID_TRIP_SHARE_REQUEST, null);
         }
@@ -461,6 +468,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HandlerMethodValidationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleMethodValidation(HandlerMethodValidationException e) {
+        if (e.getMethod().getDeclaringClass() == StoryController.class
+                && "previewTone".equals(e.getMethod().getName())) {
+            return new ApiResponse<>(ErrorMessage.INVALID_STORY_TONE_PREVIEW, null);
+        }
         if (e.getMethod().getDeclaringClass() == TripController.class
                 && "registerShare".equals(e.getMethod().getName())) {
             return new ApiResponse<>(ErrorMessage.INVALID_TRIP_SHARE_REQUEST, null);
@@ -473,6 +484,14 @@ public class GlobalExceptionHandler {
                 .findFirst()
                 .orElse(ErrorMessage.INVALID_REQUEST);
         return new ApiResponse<>(error, null);
+    }
+
+    private boolean isStoryTonePreview(HttpServletRequest request) {
+        Object matchedPath = request.getAttribute(
+                HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE
+        );
+        return "POST".equals(request.getMethod())
+                && "/stories/{storyId}/tone-preview".equals(matchedPath);
     }
 
     @ExceptionHandler(StoryAlreadyExistsException.class)

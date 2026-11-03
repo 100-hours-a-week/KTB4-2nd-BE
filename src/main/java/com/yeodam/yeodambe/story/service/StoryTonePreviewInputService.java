@@ -11,7 +11,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.story.entity.StoryBlock;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.Map;
@@ -85,7 +89,33 @@ public class StoryTonePreviewInputService {
                 blocks
         );
 
-        return new PreparedRequest(story.getTripId(), aiRequest);
+        List<BlockSource> sources = new ArrayList<>();
+
+        for (StoryTonePreviewAiRequest.Block block : blocks) {
+            StoryTonePreviewRequest.Block requested = null;
+
+            for (StoryTonePreviewRequest.Block candidate : request.blocks()) {
+                if (candidate.tripAttachmentId().equals(block.tripAttachmentId())) {
+                    requested = candidate;
+                    break;
+                }
+            }
+
+            TripAttachment attachment =
+                    attachmentsById.get(block.tripAttachmentId());
+
+            StoryBlock existing = findExistingBlock(
+                    requested, existingBlocks
+            );
+
+            sources.add(assembleSource(requested, attachment, existing));
+        }
+
+        return new PreparedRequest(
+                story.getTripId(),
+                aiRequest,
+                List.copyOf(sources)
+        );
     }
 
     private StoryTonePreviewAiRequest.Block assembleBlock(
@@ -117,9 +147,71 @@ public class StoryTonePreviewInputService {
         );
     }
 
+    private StoryBlock findExistingBlock(
+            StoryTonePreviewRequest.Block requested,
+            List<StoryBlock> existingBlocks
+    ) {
+        for (StoryBlock existing : existingBlocks) {
+            if (requested.storyBlockId() != null) {
+                if (requested.storyBlockId().equals(existing.getId())) {
+                    return existing;
+                }
+            } else if (requested.tripAttachmentId()
+                    .equals(existing.getTripAttachmentId())) {
+                return existing;
+            }
+        }
+
+        return null;
+    }
+
+    private BlockSource assembleSource(
+            StoryTonePreviewRequest.Block requested,
+            TripAttachment attachment,
+            StoryBlock existing
+    ) {
+        boolean samePhoto = existing != null
+                && existing.getTripAttachmentId().equals(attachment.getId());
+
+        Long placeId;
+        LocalDate date;
+
+        if (samePhoto) {
+            placeId = existing.getSourceTripPlaceId();
+            date = existing.getSourceDate();
+        } else {
+            if (attachment.getTripPlace().getStartedAt() == null) {
+                throw new StoryOrAttachmentNotFoundException();
+            }
+
+            placeId = attachment.getTripPlace().getId();
+            date = attachment.getTripPlace().getStartedAt().toLocalDate();
+        }
+
+        return new BlockSource(
+                existing == null ? null : existing.getId(),
+                requested.orderNumber(),
+                attachment.getId(),
+                placeId,
+                date,
+                attachment.getPreviewStorageKey()
+        );
+    }
+
     public record PreparedRequest(
             Long tripId,
-            StoryTonePreviewAiRequest request
+            StoryTonePreviewAiRequest request,
+            List<BlockSource> sources
+    ) {
+    }
+
+    public record BlockSource(
+            Long storyBlockId,
+            Integer orderNumber,
+            Long tripAttachmentId,
+            Long tripPlaceId,
+            LocalDate date,
+            String previewStorageKey
     ) {
     }
 }

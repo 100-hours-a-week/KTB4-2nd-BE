@@ -19,20 +19,10 @@ public final class SharedTestMongo {
         private static final GenericContainer<?> MONGO = startMongo();
 
         private static GenericContainer<?> startMongo() {
-            StringBuffer startupLogs = new StringBuffer();
-            GenericContainer<?> mongo = new GenericContainer<>("mongo:8.0")
+            GenericContainer<?> mongo = new MongoTestContainer()
                     .withExposedPorts(27017)
-                    .withLogConsumer(frame -> startupLogs.append(frame.getUtf8String()))
                     .waitingFor(Wait.forLogMessage(".*Waiting for connections.*\\n", 1));
-            try {
-                mongo.start();
-            } catch (RuntimeException exception) {
-                throw new IllegalStateException(
-                        "Test MongoDB container failed to start. Container output:\n"
-                                + startupLogs,
-                        exception
-                );
-            }
+            mongo.start();
             String uri = "mongodb://" + mongo.getHost() + ":" + mongo.getMappedPort(27017)
                     + "/admin?serverSelectionTimeoutMS=10000";
             try (var client = MongoClients.create(uri)) {
@@ -43,6 +33,33 @@ public final class SharedTestMongo {
                 throw exception;
             }
             return mongo;
+        }
+    }
+
+    static final class MongoTestContainer extends GenericContainer<MongoTestContainer> {
+        MongoTestContainer() {
+            super("mongo:8.0");
+        }
+
+        @Override
+        protected void waitUntilContainerStarted() {
+            try {
+                super.waitUntilContainerStarted();
+            } catch (RuntimeException exception) {
+                StringBuilder diagnostics = new StringBuilder("Test MongoDB startup failure.");
+                try {
+                    var info = dockerClient.inspectContainerCmd(getContainerId()).exec();
+                    var state = info.getState();
+                    diagnostics.append("\nExit code: ").append(state.getExitCodeLong())
+                            .append("\nOOM killed: ").append(state.getOOMKilled())
+                            .append("\nDocker error: ").append(state.getError())
+                            .append("\nContainer output:\n").append(getLogs());
+                } catch (RuntimeException diagnosticFailure) {
+                    exception.addSuppressed(diagnosticFailure);
+                    diagnostics.append("\nCould not inspect failed MongoDB container.");
+                }
+                throw new IllegalStateException(diagnostics.toString(), exception);
+            }
         }
     }
 }

@@ -5,7 +5,10 @@ import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
 import com.yeodam.yeodambe.common.exception.InvalidStoryUpdateException;
 import com.yeodam.yeodambe.common.exception.AttachmentCannotBeReusedException;
+import com.yeodam.yeodambe.common.exception.StoryOrAttachmentNotFoundException;
+import com.yeodam.yeodambe.common.exception.StoryTonePreviewTakenAtMissingException;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
+import com.yeodam.yeodambe.story.service.request.StoryTonePreviewRequest;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
 import com.yeodam.yeodambe.trip.entity.*;
 import org.junit.jupiter.api.Test;
@@ -132,6 +135,68 @@ class StoryValidatorTest {
                     new StoryUpdateRequest.Block(null, 11L, "첫째 날", "설명", null, second))))
                     .isInstanceOf(InvalidStoryUpdateException.class);
         }
+    }
+
+    @Test
+    void 미리보기는_같은_여행의_촬영시각이_있는_ACTIVE사진을_허용한다() {
+        var attachment = row(1, 7, "날", null).attachment();
+        assertThatCode(() -> validator.validatePreviewAttachments(7L, 1, List.of(attachment)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void 미리보기의_조회누락과_다른여행과_비활성사진은_404예외다() {
+        assertThatThrownBy(() -> validator.validatePreviewAttachments(7L, 1, List.of()))
+                .isInstanceOf(StoryOrAttachmentNotFoundException.class);
+        var attachment = row(1, 7, "날", null).attachment();
+        assertThatThrownBy(() -> validator.validatePreviewAttachments(8L, 1, List.of(attachment)))
+                .isInstanceOf(StoryOrAttachmentNotFoundException.class);
+        for (var status : ClassificationStatus.values()) {
+            if (status == ClassificationStatus.ACTIVE) {
+                continue;
+            }
+            ReflectionTestUtils.setField(attachment, "classificationStatus", status);
+            assertThatThrownBy(() -> validator.validatePreviewAttachments(7L, 1, List.of(attachment)))
+                    .isInstanceOf(StoryOrAttachmentNotFoundException.class);
+        }
+    }
+
+    @Test
+    void 미리보기는_한장이라도_촬영시각이_없으면_전체를_거절한다() {
+        var valid = row(1, 7, "날", null).attachment();
+        var missing = row(2, 7, "날", null).attachment();
+        ReflectionTestUtils.setField(missing, "takenAt", null);
+        assertThatThrownBy(() -> validator.validatePreviewAttachments(7L, 2, List.of(valid, missing)))
+                .isInstanceOf(StoryTonePreviewTakenAtMissingException.class);
+    }
+
+    @Test
+    void 미리보기는_촬영시각보다_사진_접근조건을_먼저_검사한다() {
+        var attachment = row(1, 7, "날", null).attachment();
+        ReflectionTestUtils.setField(attachment, "takenAt", null);
+        assertThatThrownBy(() -> validator.validatePreviewAttachments(8L, 1, List.of(attachment)))
+                .isInstanceOf(StoryOrAttachmentNotFoundException.class);
+    }
+
+    @Test
+    void 미리보기는_기존블록과_ID없는_추가블록과_사진교체를_허용한다() {
+        var existing = row(1, 7, "날", null).block();
+        var requested = List.of(
+                new StoryTonePreviewRequest.Block(existing.getId(), 99L, 1, null, null, null),
+                new StoryTonePreviewRequest.Block(null, 100L, 2, null, null, null));
+        assertThatCode(() -> validator.validatePreviewBlockIds(requested, List.of(existing)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void 미리보기는_대상스토리_조회목록에_없는_블록ID를_거절한다() {
+        var existing = row(1, 7, "날", null).block();
+        var requested = List.of(
+                new StoryTonePreviewRequest.Block(999L, 99L, 1, null, null, null));
+        assertThatThrownBy(() -> validator.validatePreviewBlockIds(requested, List.of(existing)))
+                .isInstanceOf(StoryOrAttachmentNotFoundException.class);
+        assertThatThrownBy(() -> validator.validatePreviewBlockIds(requested, List.of()))
+                .isInstanceOf(StoryOrAttachmentNotFoundException.class);
     }
 
     private void invalidRelation(Row row) {

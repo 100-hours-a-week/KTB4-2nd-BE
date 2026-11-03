@@ -44,6 +44,7 @@ gradle.projectsEvaluated {
             }
         }
         tasks.named('test', Test).configure { testTask ->
+            testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
             testTask.dependsOn planTask
             testTask.inputs.property('ciTestShard', shard)
             testTask.inputs.file(planFile)

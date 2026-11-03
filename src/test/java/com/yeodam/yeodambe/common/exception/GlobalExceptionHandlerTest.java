@@ -338,8 +338,31 @@ class GlobalExceptionHandlerTest {
                 .andExpect(content().json("{\"message\":\"" + message + "\",\"data\":null}"));
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "/test/invalid-story-tone-preview,INVALID_STORY_TONE_PREVIEW",
+            "/test/story-tone-preview-taken-at-missing,STORY_TONE_PREVIEW_TAKEN_AT_MISSING"
+    })
+    void 미리보기_입력_오류와_촬영시각_누락은_서로_다른_400_코드를_반환한다(
+            String path, String message
+    ) throws Exception {
+        mockMvc.perform(get(path))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().json("{\"message\":\"" + message + "\",\"data\":null}"));
+    }
+
     @RestController
     static class TestController {
+        @GetMapping("/test/invalid-story-tone-preview")
+        void invalidStoryTonePreview() {
+            throw new InvalidStoryTonePreviewException();
+        }
+
+        @GetMapping("/test/story-tone-preview-taken-at-missing")
+        void storyTonePreviewTakenAtMissing() {
+            throw new StoryTonePreviewTakenAtMissingException();
+        }
+
         @GetMapping("/test/story-block-not-found")
         void storyBlockNotFound() {
             throw new StoryBlockNotFoundException();

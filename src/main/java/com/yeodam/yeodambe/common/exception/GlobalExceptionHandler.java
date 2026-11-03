@@ -495,6 +495,22 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.INVALID_STORY_UPDATE, null);
     }
 
+    @ExceptionHandler(InvalidStoryTonePreviewException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleInvalidStoryTonePreview(
+            InvalidStoryTonePreviewException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.INVALID_STORY_TONE_PREVIEW, null);
+    }
+
+    @ExceptionHandler(StoryTonePreviewTakenAtMissingException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiResponse<Void> handleStoryTonePreviewTakenAtMissing(
+            StoryTonePreviewTakenAtMissingException exception
+    ) {
+        return new ApiResponse<>(ErrorMessage.STORY_TONE_PREVIEW_TAKEN_AT_MISSING, null);
+    }
+
     @ExceptionHandler(StoryOrAttachmentNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     ApiResponse<Void> handleStoryOrAttachmentNotFound(

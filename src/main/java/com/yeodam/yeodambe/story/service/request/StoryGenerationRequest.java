@@ -22,4 +22,11 @@ public record StoryGenerationRequest(
                 return tripPlaceIds == null
                         || new HashSet<>(tripPlaceIds).size() == tripPlaceIds.size();
         }
+        @AssertTrue
+        public boolean isMoodSupported() {
+                return mood == null
+                        || mood == Story.Mood.PLAIN
+                        || mood == Story.Mood.HUMOROUS
+                        || mood == Story.Mood.LITERARY;
+        }
 }

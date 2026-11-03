@@ -178,7 +178,7 @@ class StoryGenerationAcceptanceServiceTest {
         var payload = objectMapper.readTree(outbox.getPayload());
         assertThat(payload.path("execution_id").asString()).isEqualTo(savedJob.getExecutionId());
         assertThat(payload.path("trip_id").asLong()).isEqualTo(trip.getId());
-        assertThat(payload.path("mood").asString()).isEqualTo("EMOTIONAL");
+        assertThat(payload.path("mood").asString()).isEqualTo("PLAIN");
         var sentPhoto = payload.path("places").get(0).path("attachments").get(0);
         assertThat(sentPhoto.path("trip_attachment_id").asLong()).isEqualTo(photo.getId());
         assertThat(sentPhoto.path("analyze_storage_key").asString()).isEqualTo("analysis/photo.jpg");
@@ -356,7 +356,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     private StoryGenerationRequest request() {
-        return new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(folder.getId()));
+        return new StoryGenerationRequest(Story.Mood.PLAIN, List.of(folder.getId()));
     }
 
     private TripAttachment photo(LocalDateTime time) {

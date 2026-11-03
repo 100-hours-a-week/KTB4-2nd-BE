@@ -35,6 +35,23 @@ public interface StoryRepository extends JpaRepository<Story, Long> {
     );
 
     @Query("""
+        select story
+        from Story story
+        join Trip trip on trip.currentStoryId = story.id
+        where story.id = :storyId
+          and story.tripId = trip.id
+          and trip.userId = :userId
+          and trip.deletedAt is null
+          and trip.processingStatus = 'COMPLETED'
+          and story.deletedAt is null
+          and story.processingStatus = 'COMPLETED'
+        """)
+    Optional<Story> findOwnedCurrentCompletedForPreviewById(
+            Long storyId,
+            Long userId
+    );
+
+    @Query("""
             select story.tripId
             from Story story
             where story.id = :storyId

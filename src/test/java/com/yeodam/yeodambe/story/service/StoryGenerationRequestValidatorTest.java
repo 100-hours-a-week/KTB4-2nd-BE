@@ -26,7 +26,7 @@ class StoryGenerationRequestValidatorTest {
     @Test
     void acceptsValidRequest() {
         assertThatCode(() -> validator.validate(
-                new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(101L, 102L))))
+                new StoryGenerationRequest(Story.Mood.PLAIN, List.of(101L, 102L))))
                 .doesNotThrowAnyException();
     }
 
@@ -40,6 +40,8 @@ class StoryGenerationRequestValidatorTest {
     void convertsConstraintViolationsToStoryInputException() {
         for (StoryGenerationRequest request : List.of(
                 new StoryGenerationRequest(null, List.of(101L)),
+                new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(101L)),
+                new StoryGenerationRequest(Story.Mood.CALM, List.of(101L)),
                 new StoryGenerationRequest(Story.Mood.PLAIN, List.of()),
                 new StoryGenerationRequest(Story.Mood.PLAIN, List.of(101L, 101L)))) {
             assertThatThrownBy(() -> validator.validate(request))

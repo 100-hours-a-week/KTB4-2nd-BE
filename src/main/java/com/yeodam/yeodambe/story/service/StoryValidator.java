@@ -7,7 +7,14 @@ import com.yeodam.yeodambe.common.exception.InvalidStoryUpdateException;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import org.springframework.stereotype.Component;
+import com.yeodam.yeodambe.common.exception.StoryOrAttachmentNotFoundException;
+import com.yeodam.yeodambe.common.exception.StoryTonePreviewTakenAtMissingException;
+import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
+import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.story.entity.StoryBlock;
+import com.yeodam.yeodambe.story.service.request.StoryTonePreviewRequest;
 
+import java.util.stream.Collectors;
 import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
@@ -53,6 +60,48 @@ public class StoryValidator {
                     || orderNumber > blocks.size()
                     || !orderNumbers.add(orderNumber)) {
                 throw new InvalidStoryUpdateException();
+            }
+        }
+    }
+
+    public void validatePreviewAttachments(
+            Long tripId,
+            int requestedCount,
+            List<TripAttachment> attachments
+    ) {
+        boolean invalidAttachments =
+                attachments.size() != requestedCount
+                        || attachments.stream().anyMatch(attachment ->
+                        !tripId.equals(attachment.getTripId())
+                                || attachment.getClassificationStatus()
+                                != ClassificationStatus.ACTIVE
+                );
+
+        if (invalidAttachments) {
+            throw new StoryOrAttachmentNotFoundException();
+        }
+
+        boolean missingTakenAt = attachments.stream()
+                .anyMatch(attachment -> attachment.getTakenAt() == null);
+
+        if (missingTakenAt) {
+            throw new StoryTonePreviewTakenAtMissingException();
+        }
+    }
+
+    public void validatePreviewBlockIds(
+            List<StoryTonePreviewRequest.Block> requestedBlocks,
+            List<StoryBlock> existingBlocks
+    ) {
+        Set<Long> existingBlockIds = existingBlocks.stream()
+                .map(StoryBlock::getId)
+                .collect(Collectors.toSet());
+
+        for (StoryTonePreviewRequest.Block requested : requestedBlocks) {
+            Long blockId = requested.storyBlockId();
+
+            if (blockId != null && !existingBlockIds.contains(blockId)) {
+                throw new StoryOrAttachmentNotFoundException();
             }
         }
     }

@@ -54,6 +54,7 @@ class StoryGenerationControllerTest {
     @Autowired private AccessTokenIssuer issuer;
     @MockitoBean private StoryGenerationAcceptanceService acceptance;
     @MockitoBean private StoryGenerationJobRepository jobs;
+    @MockitoBean private com.yeodam.yeodambe.story.service.StoryGenerationDiscardService discardService;
     @MockitoBean private StoryGenerationAiClient ai;
     @MockitoBean private ActiveLoginSessionValidator sessionValidator;
     @MockitoBean private CsrfTokenStore csrfStore;

@@ -19,7 +19,7 @@ class StoryGenerationResultRecoveryServiceTest {
     private final StoryGenerationJobRepository jobs = mock(StoryGenerationJobRepository.class);
     private final org.springframework.context.ApplicationEventPublisher publisher = mock(org.springframework.context.ApplicationEventPublisher.class);
     private final StoryGenerationResultRecoveryService service =
-            new StoryGenerationResultRecoveryService(jobs, new ObjectMapper(), publisher, mock(jakarta.persistence.EntityManager.class));
+            new StoryGenerationResultRecoveryService(jobs, new ObjectMapper(), publisher, mock(jakarta.persistence.EntityManager.class), mock(StoryGenerationDiscardService.class));
     private final String message = "{\"type\":\"story_result\",\"trip_id\":7,\"execution_id\":\"exec-1\"}";
 
     private StoryGenerationJob prepare() {

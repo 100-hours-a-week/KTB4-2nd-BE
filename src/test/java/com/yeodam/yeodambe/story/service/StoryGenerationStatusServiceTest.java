@@ -21,6 +21,7 @@ class StoryGenerationStatusServiceTest {
         var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
         ReflectionTestUtils.setField(job, "id", 10L);
         job.updateProcessing(30);
+        job.prepareStory(100L);
         when(repository.findById(10L)).thenReturn(Optional.of(job));
 
         var first = service.getStatus(2L, 10L);
@@ -29,6 +30,8 @@ class StoryGenerationStatusServiceTest {
         assertThat(first.generationId()).isEqualTo(10L);
         assertThat(first.status()).isEqualTo(StoryGenerationJob.Status.PROCESSING);
         assertThat(first.statusVersion()).isEqualTo(2);
+        assertThat(first.storyId()).isNull();
+        assertThat(job.getStoryId()).isEqualTo(100L);
         assertThat(second).isEqualTo(first);
         assertThat(job.getStatusVersion()).isEqualTo(2);
 

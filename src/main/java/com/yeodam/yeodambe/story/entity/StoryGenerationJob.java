@@ -100,20 +100,35 @@ public class StoryGenerationJob {
         this.progress = Math.max(this.progress, progress);
     }
 
-    public void complete(Long storyId) {
+    public void prepareStory(Long storyId) {
         if (isFinished()) {
             return;
         }
 
         if (storyId == null || storyId <= 0) {
             throw new IllegalArgumentException(
-                    StoryGenerationInternalErrorMessage.JOB_STORY_ID_REQUIRED.message()
+                    StoryGenerationInternalErrorMessage.PREPARED_STORY_ID_INVALID.message()
             );
         }
 
+        if (this.storyId != null && !this.storyId.equals(storyId)) {
+            throw new IllegalStateException(
+                    StoryGenerationInternalErrorMessage.PREPARED_STORY_ID_MISMATCH.message()
+            );
+        }
+
+        this.storyId = storyId;
+    }
+
+    public void complete(Long storyId) {
+        if (isFinished()) {
+            return;
+        }
+
+        prepareStory(storyId);
+
         changeStatus(Status.COMPLETED);
         this.progress = 100;
-        this.storyId = storyId;
         this.errorCode = null;
     }
 

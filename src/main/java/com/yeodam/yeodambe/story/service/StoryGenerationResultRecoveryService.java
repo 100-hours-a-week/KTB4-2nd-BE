@@ -24,6 +24,7 @@ public class StoryGenerationResultRecoveryService {
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final EntityManager entityManager;
+    private final StoryGenerationDiscardService discardService;
 
     @Transactional
     public void failIdentifiedJob(String message) {
@@ -51,6 +52,8 @@ public class StoryGenerationResultRecoveryService {
         entityManager.refresh(job, LockModeType.PESSIMISTIC_WRITE);
         if (job.getTripId().equals(tripId) && !job.isFinished()) {
             job.fail(ErrorMessage.STORY_RESULT_PROCESSING_FAILED.name());
+            discardService.discardPreparedStory(job);
+
             var error = new StoryGenerationStatusResponse.Failure(
                     ErrorMessage.STORY_GENERATION_FAILED.name(),
                     StoryGenerationInternalErrorMessage.GENERATION_FAILED.message());

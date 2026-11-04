@@ -37,169 +37,60 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 @RequiredArgsConstructor
 public class StoryGenerationCompletionService {
+    private final StoryGenerationPreparationService preparationService;
+    private final StoryContentStorageService contentStorageService;
+    private final StoryGenerationFinalizationService finalizationService;
     private final StoryGenerationJobRepository jobRepository;
     private final StoryGenerationOutboxRepository outboxRepository;
-    private final TripRepository tripRepository;
-    private final StoryRepository storyRepository;
-    private final StoryBlockRepository blockRepository;
-    private final StorySelectedPlaceRepository selectedPlaceRepository;
-    private final StoryGenerationResultValidator resultValidator;
-    private final ObjectMapper objectMapper;
-    private final TripDetailPlaceRepository tripDetailPlaceRepository;
-    private final JdbcTemplate jdbc;
-    private final ApplicationEventPublisher eventPublisher;
 
-    @Transactional
     public void complete(
             Long generationId,
             StoryGenerationAiResponse response
     ) {
-        if (response == null
-                || response.status() != StoryGenerationAiResponse.Status.COMPLETED) {
-            throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID
-            );
+        var preparedStoryId = preparationService.prepare(generationId, response);
+
+        if (preparedStoryId.isEmpty()) {
+            return;
         }
 
-        var job = jobRepository.findByIdForUpdate(generationId)
+        Long storyId = preparedStoryId.orElseThrow();
+
+        var job = jobRepository.findById(generationId)
                 .orElseThrow(() -> new IllegalStateException(
                         StoryGenerationInternalErrorMessage.JOB_NOT_FOUND.message()
                 ));
 
-        if (!job.getTripId().equals(response.tripId())
-                || !job.getExecutionId().equals(response.executionId())) {
-            throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH
-            );
-        }
-
-        if (job.isFinished()) {
-            return;
-        }
         var outbox = outboxRepository.findByGenerationId(generationId)
                 .orElseThrow(() -> new IllegalStateException(
                         StoryGenerationInternalErrorMessage.OUTBOX_NOT_FOUND.message()
                 ));
-        var now = outbox.isCdcManaged()
-                ? jdbc.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class)
-                : LocalDateTime.now();
-        if (job.failIfTimedOut(outbox.getPublishedAt(), now)) {
-            var error = new StoryGenerationStatusResponse.Failure(
-                    ErrorMessage.STORY_GENERATION_FAILED.name(),
-                    StoryGenerationInternalErrorMessage.GENERATION_FAILED.message()
-            );
-            var snapshot = new StoryGenerationStatusResponse(
-                    job.getId(), job.getStatus(), job.getStatusVersion(), job.getStoryId(), error
-            );
-            eventPublisher.publishEvent(new StoryGenerationStatusChangedEvent(
-                    job.getUserId(), job.getTripId(), snapshot
-            ));
-            logWorkflowFailed(job);
-            return;
-        }
 
-        try (var scope = WorkflowMdcScope.job("story_generation", job.getTripId(), job.getExecutionId(), outbox.getRequestId());
-             var timing = startResultApplicationLogging(generationId)) {
+        try (var scope = WorkflowMdcScope.job(
+                "story_generation",
+                job.getTripId(),
+                job.getExecutionId(),
+                outbox.getRequestId()
+        )) {
             logAiResultReceived(generationId);
-            var trip = tripRepository.findOwnedActiveForUpdate(
-                    job.getTripId(), job.getUserId()
-            ).orElseThrow(TripNotFoundException::new);
 
-            if (storyRepository.findCurrentCompletedByTripId(trip.getId()).isPresent()) {
-                throw new StoryAlreadyExistsException();
-            }
-
-            var request = objectMapper.readValue(
-                    outbox.getPayload(), StoryGenerationMessage.class
+            var preparedContent = preparationService.readPreparedContent(
+                    generationId,
+                    storyId,
+                    java.time.ZoneOffset.UTC
             );
 
-            if (!job.getTripId().equals(request.tripId())
-                    || !job.getExecutionId().equals(request.executionId())) {
-                throw new IllegalArgumentException(
-                        StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH.message()
-                );
+            if (preparedContent.isEmpty()) {
+                return;
             }
 
-            resultValidator.validate(response.result(), request);
-
-            var story = new Story(
-                    trip.getId(),
-                    job.getMood(),
-                    response.result().storySummary()
-            );
-            story.complete();
-            storyRepository.saveAndFlush(story);
-
-            var selectedPlaces = request.places().stream()
-                    .map(place -> new StorySelectedPlace(
-                            story.getId(), place.tripPlaceId()
-                    ))
-                    .toList();
-            selectedPlaceRepository.saveAll(selectedPlaces);
-
-            var sourcePlaces = new HashMap<Long, TripDetailPlace>();
-            tripDetailPlaceRepository.findAllById(
-                    request.places().stream()
-                            .map(StoryGenerationMessage.Place::tripPlaceId)
-                            .toList()
-            ).forEach(place -> sourcePlaces.put(place.getId(), place));
-
-            var blocks = response.result().blocks().stream()
-                    .map(block -> {
-                        var sourcePlace = sourcePlaces.get(block.tripPlaceId());
-                        if (sourcePlace == null
-                                || !trip.getId().equals(sourcePlace.getTripId())
-                                || sourcePlace.getStartedAt() == null) {
-                            throw new StoryDataIntegrityException(
-                                    StoryGenerationInternalErrorMessage.RESULT_SOURCE_INVALID
-                            );
-                        }
-                        return new StoryBlock(
-                                story.getId(), block.tripAttachmentId(),
-                                sourcePlace.getId(), sourcePlace.getStartedAt().toLocalDate(),
-                                block.orderNumber(), block.dayLabel(),
-                                block.detailSummary(), block.memo()
-                        );
-                    })
-                    .toList();
-            blockRepository.saveAll(blocks);
-
-            trip.changeCurrentStory(story.getId());
-            job.complete(story.getId());
-            tripRepository.advanceSequence(trip.getId());
-            var sequence = jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?", Long.class, trip.getId());
-            var listItem = new com.yeodam.yeodambe.story.service.response.StoryCompletionListItem(
-                    story.getId(), trip.getId(), sequence, story.getMood(), story.getStorySummary());
-            var snapshot = new StoryGenerationStatusResponse(
-                    job.getId(), job.getStatus(), job.getStatusVersion(), job.getStoryId(), null);
-            eventPublisher.publishEvent(new StoryGenerationStatusChangedEvent(
-                    job.getUserId(), job.getTripId(), snapshot, listItem));
-            logResultApplied(timing);
-            logWorkflowCompleted(job);
+            contentStorageService.insertIfAbsent(preparedContent.orElseThrow());
+            finalizationService.finish(generationId, storyId);
         }
-    }
-
-    private WorkflowLog.Stage startResultApplicationLogging(Long generationId) {
-        return WorkflowLog.stage("result_application").field("generation_id", generationId);
     }
 
     private void logAiResultReceived(Long generationId) {
         WorkflowLog.stage("ai_result_received")
                 .field("generation_id", generationId)
                 .committed("ai_result_received");
-    }
-
-    private void logWorkflowFailed(StoryGenerationJob job) {
-        WorkflowLog.finished("story_generation", job.getTripId(), job.getExecutionId(),
-                job.getCreatedAt(), "failure", job.getErrorCode());
-    }
-
-    private void logWorkflowCompleted(StoryGenerationJob job) {
-        WorkflowLog.finished("story_generation", job.getTripId(), job.getExecutionId(),
-                job.getCreatedAt(), "success", null);
-    }
-
-    private void logResultApplied(WorkflowLog.Stage timing) {
-        timing.committed("result_application");
     }
 }

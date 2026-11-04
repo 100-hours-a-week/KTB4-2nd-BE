@@ -26,6 +26,7 @@ public class StoryGenerationTimeoutService {
     private final StoryGenerationOutboxRepository outboxRepository;
     private final JdbcTemplate jdbc;
     private final ApplicationEventPublisher eventPublisher;
+    private final StoryGenerationDiscardService discardService;
 
     @Transactional
     public boolean expire(Long generationId) {
@@ -45,6 +46,9 @@ public class StoryGenerationTimeoutService {
         if (!job.failIfTimedOut(outbox.getPublishedAt(), comparisonTime)) {
             return false;
         }
+
+        discardService.discardPreparedStory(job);
+
         var error = new StoryGenerationStatusResponse.Failure(
                 ErrorMessage.STORY_GENERATION_FAILED.name(),
                 StoryGenerationInternalErrorMessage.GENERATION_FAILED.message()

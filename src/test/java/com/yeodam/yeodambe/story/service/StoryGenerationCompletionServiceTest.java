@@ -23,6 +23,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
@@ -42,6 +44,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -56,8 +59,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import(TestcontainersConfiguration.class)
 class StoryGenerationCompletionServiceTest {
     @Autowired private StoryGenerationCompletionService service;
+    @Autowired private StoryGenerationPreparationService preparation;
+    @MockitoSpyBean private StoryGenerationFinalizationService finalization;
+    @MockitoSpyBean private StoryContentStorageService contentStorage;
+    @Autowired private StoryContentRepository contents;
     @Autowired private StoryGenerationAcceptanceService acceptance;
     @Autowired private StoryGenerationTerminalService terminal;
+    @Autowired private StoryGenerationResultRecoveryService recovery;
+    @Autowired private StoryGenerationDiscardService discard;
     @Autowired private StoryGenerationPublicationStateService publicationState;
     @Autowired private StoryGenerationTimeoutService timeout;
     @Autowired private StoryGenerationProgressService progress;
@@ -76,6 +85,7 @@ class StoryGenerationCompletionServiceTest {
     private Trip trip;
     private TripDetailPlace folder;
     private StoredFile file;
+    private StoredFile extraFile;
     private TripAttachment photo;
     private StoryGenerationJob job;
 
@@ -104,6 +114,8 @@ class StoryGenerationCompletionServiceTest {
             return;
         }
         jdbc.update("UPDATE trips SET current_story_id = NULL WHERE trip_id = ?", trip.getId());
+        contents.deleteAllById(jdbc.queryForList(
+                "SELECT story_id FROM stories WHERE trip_id = ?", Long.class, trip.getId()));
         jdbc.update("DELETE FROM story_generation_outbox WHERE generation_id IN "
                 + "(SELECT generation_id FROM story_generation_jobs WHERE trip_id = ?)", trip.getId());
         jdbc.update("DELETE FROM story_generation_places WHERE generation_id IN "
@@ -117,6 +129,9 @@ class StoryGenerationCompletionServiceTest {
         jdbc.update("DELETE FROM trips WHERE trip_id = ?", trip.getId());
         if (file != null) {
             files.deleteById(file.getId());
+        }
+        if (extraFile != null) {
+            files.deleteById(extraFile.getId());
         }
         users.deleteById(owner.getUserId());
     }
@@ -354,6 +369,172 @@ class StoryGenerationCompletionServiceTest {
         assertCompletedOnce();
     }
 
+    @Test
+    void preparesContentOnceWithoutCompletingOrPublishing() {
+        var response = completed(job.getExecutionId(), photo.getId());
+
+        Long storyId = preparation.prepare(job.getId(), response).orElseThrow();
+        Long retriedStoryId = preparation.prepare(job.getId(), response).orElseThrow();
+
+        assertThat(retriedStoryId).isEqualTo(storyId);
+        assertThat(count("stories")).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM stories WHERE story_id = ?", String.class, storyId))
+                .isEqualTo("PROCESSING");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM story_blocks WHERE story_id = ?", Integer.class, storyId))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM story_selected_places WHERE story_id = ?", Integer.class, storyId))
+                .isEqualTo(1);
+        var saved = jobs.findById(job.getId()).orElseThrow();
+        assertThat(saved.getStoryId()).isEqualTo(storyId);
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(saved.getStatusVersion()).isEqualTo(1);
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
+        assertThat(status.getStatus(owner.getUserId(), job.getId()).storyId()).isNull();
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void rollsBackPreparedStoryAndChildrenTogether() {
+        var response = completed(job.getExecutionId(), photo.getId());
+        Long storyId = new TransactionTemplate(transactionManager).execute(transaction -> {
+            Long preparedId = preparation.prepare(job.getId(), response).orElseThrow();
+            transaction.setRollbackOnly();
+            return preparedId;
+        });
+
+        assertNoResultSaved();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM story_blocks WHERE story_id = ?", Integer.class, storyId))
+                .isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM story_selected_places WHERE story_id = ?", Integer.class, storyId))
+                .isZero();
+        assertThat(preparation.prepare(job.getId(), response)).isPresent();
+        assertThat(count("stories")).isEqualTo(1);
+    }
+
+    @Test
+    void doesNotPrepareCanceledJob() {
+        terminal.confirmCancellation(owner.getUserId(), job.getId());
+        clearInvocations(publisher);
+
+        assertThat(preparation.prepare(job.getId(), completed(job.getExecutionId(), photo.getId())))
+                .isEmpty();
+
+        assertThat(count("stories")).isZero();
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void expiresLateResultWithoutPreparingStory() {
+        jdbc.update("""
+                UPDATE story_generation_outbox
+                SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
+                WHERE generation_id = ?
+                """, job.getId());
+
+        assertThat(preparation.prepare(job.getId(), completed(job.getExecutionId(), photo.getId())))
+                .isEmpty();
+
+        var saved = jobs.findById(job.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(saved.getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+        assertThat(saved.getStoryId()).isNull();
+        assertThat(count("stories")).isZero();
+    }
+
+    @Test
+    void readsPreparedDocumentWithUtcTimestampsWithoutPublishing() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        jdbc.update("""
+                UPDATE story_blocks SET created_at = ?, updated_at = ? WHERE story_id = ?
+                """, LocalDateTime.of(2026, 11, 4, 10, 0),
+                LocalDateTime.of(2026, 11, 4, 11, 0), storyId);
+
+        var document = preparation.readPreparedContent(job.getId(), storyId, ZoneOffset.UTC)
+                .orElseThrow();
+
+        assertThat(document.getId()).isEqualTo(storyId);
+        assertThat(document.getSelectedPlaceIds()).containsExactly(folder.getId());
+        assertThat(document.getBlocks()).hasSize(1);
+        var block = document.getBlocks().getFirst();
+        assertThat(block.tripAttachmentId()).isEqualTo(photo.getId());
+        assertThat(block.sourceTripPlaceId()).isEqualTo(folder.getId());
+        assertThat(block.sourceDate()).isEqualTo(LocalDate.of(2026, 10, 11));
+        assertThat(block.createdAt()).isEqualTo(Instant.parse("2026-11-04T10:00:00Z"));
+        assertThat(block.updatedAt()).isEqualTo(Instant.parse("2026-11-04T11:00:00Z"));
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void readsBlocksInDisplayOrderIncludingDeletedIds() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        Long originalBlockId = jdbc.queryForObject(
+                "SELECT story_block_id FROM story_blocks WHERE story_id = ?", Long.class, storyId);
+        extraFile = files.save(StoredFile.uploaded(owner.getUserId(), "extra.jpg",
+                "original/" + UUID.randomUUID(), "image/jpeg"));
+        var extraPhoto = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), extraFile.getId(), "analysis/extra.jpg", "preview/extra.jpg"));
+        jdbc.update("""
+                INSERT INTO story_blocks
+                    (story_id, trip_attachment_id, source_trip_place_id, source_date,
+                     order_number, day_label, detail_summary, memo)
+                VALUES (?, ?, ?, ?, 1, 'first', 'detail', 'memo')
+                """, storyId, extraPhoto.getId(), folder.getId(), LocalDate.of(2026, 10, 11));
+        Long extraBlockId = jdbc.queryForObject(
+                "SELECT story_block_id FROM story_blocks WHERE story_id = ? AND trip_attachment_id = ?",
+                Long.class, storyId, extraPhoto.getId());
+
+        var tied = preparation.readPreparedContent(job.getId(), storyId, ZoneOffset.UTC).orElseThrow();
+        assertThat(tied.getBlocks()).extracting(com.yeodam.yeodambe.story.document.StoryContentBlock::id)
+                .containsExactly(originalBlockId, extraBlockId);
+
+        jdbc.update("UPDATE story_blocks SET order_number = 2 WHERE story_block_id = ?", originalBlockId);
+        jdbc.update("UPDATE story_blocks SET deleted_at = ? WHERE story_block_id = ?",
+                LocalDateTime.of(2026, 11, 4, 12, 0), extraBlockId);
+        var reordered = preparation.readPreparedContent(job.getId(), storyId, ZoneOffset.UTC).orElseThrow();
+        assertThat(reordered.getBlocks()).extracting(com.yeodam.yeodambe.story.document.StoryContentBlock::id)
+                .containsExactly(extraBlockId, originalBlockId);
+        assertThat(reordered.getBlocks().getFirst().deletedAt())
+                .isEqualTo(Instant.parse("2026-11-04T12:00:00Z"));
+        assertThat(reordered.getNextBlockId()).isEqualTo(extraBlockId + 1);
+    }
+
+    @Test
+    void rejectsPreparedDocumentForDifferentStoryId() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+
+        assertThatThrownBy(() -> preparation.readPreparedContent(job.getId(), storyId + 1, ZoneOffset.UTC))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void skipsPreparedDocumentAfterCancellation() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        terminal.confirmCancellation(owner.getUserId(), job.getId());
+
+        assertThat(preparation.readPreparedContent(job.getId(), storyId, ZoneOffset.UTC)).isEmpty();
+    }
+
+    @Test
+    void rejectsDeletedPreparedStory() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        jdbc.update("UPDATE stories SET deleted_at = CURRENT_TIMESTAMP(6) WHERE story_id = ?", storyId);
+
+        assertThatThrownBy(() -> preparation.readPreparedContent(job.getId(), storyId, ZoneOffset.UTC))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
     private void completeAfterStart(CountDownLatch ready, CountDownLatch start,
                                     StoryGenerationAiResponse response) {
         ready.countDown();
@@ -366,6 +547,270 @@ class StoryGenerationCompletionServiceTest {
             throw new AssertionError(interrupted);
         }
         service.complete(job.getId(), response);
+    }
+
+    @Test
+    void finalizesPreparedStoryOnceAndPublishesCommittedResult() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+
+        finalization.finish(job.getId(), storyId);
+        finalization.finish(job.getId(), storyId);
+
+        assertCompletedOnce();
+        assertThat(jdbc.queryForObject("SELECT processing_status FROM stories WHERE story_id = ?",
+                String.class, storyId)).isEqualTo("COMPLETED");
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(publisher).publish(captor.capture());
+        verifyNoMoreInteractions(publisher);
+        var data = new tools.jackson.databind.ObjectMapper()
+                .valueToTree(captor.getValue().payload()).path("data");
+        assertThat(data.path("eventType").asString()).isEqualTo("STORY_GENERATION_COMPLETED");
+        assertThat(data.path("statusVersion").asLong()).isEqualTo(2);
+        assertThat(data.path("listItem").path("sequence").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void rollsBackFinalizationWithoutPublishingAndCanRetry() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            finalization.finish(job.getId(), storyId);
+            verifyNoInteractions(publisher);
+            transaction.setRollbackOnly();
+        });
+
+        assertPreparedStoryUnpublished(storyId);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verifyNoInteractions(publisher);
+        finalization.finish(job.getId(), storyId);
+        assertCompletedOnce();
+    }
+
+    @Test
+    void doesNotFinalizeCanceledPreparedStory() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        terminal.confirmCancellation(owner.getUserId(), job.getId());
+        clearInvocations(publisher);
+
+        finalization.finish(job.getId(), storyId);
+
+        assertPreparedStoryUnpublished(storyId);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.CANCELED);
+        assertDiscarded(storyId);
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void expiresPreparedStoryInsteadOfFinalizing() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        jdbc.update("""
+                UPDATE story_generation_outbox
+                SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
+                WHERE generation_id = ?
+                """, job.getId());
+
+        finalization.finish(job.getId(), storyId);
+
+        assertPreparedStoryUnpublished(storyId);
+        var saved = jobs.findById(job.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(saved.getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+        assertDiscarded(storyId);
+    }
+
+    @Test
+    void rejectsFinalizationForDifferentPreparedStory() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+
+        assertThatThrownBy(() -> finalization.finish(job.getId(), storyId + 1))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertPreparedStoryUnpublished(storyId);
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void rejectsFinalizationForDeletedPreparedStory() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        jdbc.update("UPDATE stories SET deleted_at = CURRENT_TIMESTAMP(6) WHERE story_id = ?", storyId);
+
+        assertThatThrownBy(() -> finalization.finish(job.getId(), storyId))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertPreparedStoryUnpublished(storyId);
+        verifyNoInteractions(publisher);
+    }
+
+    private void assertPreparedStoryUnpublished(Long storyId) {
+        assertThat(jdbc.queryForObject("SELECT processing_status FROM stories WHERE story_id = ?",
+                String.class, storyId)).isEqualTo("PROCESSING");
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
+        assertThat(jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?",
+                Long.class, trip.getId())).isZero();
+    }
+
+    @Test
+    void savesMongoContentBeforePublishingCompletion() {
+        doAnswer(invocation -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
+                    .isActualTransactionActive()).isFalse();
+            return invocation.callRealMethod();
+        }).when(contentStorage).insertIfAbsent(any());
+
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+
+        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        var document = contents.findById(storyId).orElseThrow();
+        assertThat(document.getStorySummary()).isEqualTo("여행 이야기");
+        assertThat(document.getBlocks()).hasSize(1);
+        assertThat(document.getBlocks().getFirst().tripAttachmentId()).isEqualTo(photo.getId());
+        assertCompletedOnce();
+        verify(publisher).publish(any());
+    }
+
+    @Test
+    void retriesMongoFailureUsingSamePreparedStory() {
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("Mongo unavailable"))
+                .doCallRealMethod().when(contentStorage).insertIfAbsent(any());
+
+        assertThatThrownBy(() -> service.complete(job.getId(),
+                completed(job.getExecutionId(), photo.getId())))
+                .isInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
+
+        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        assertPreparedStoryUnpublished(storyId);
+        assertThat(contents.existsById(storyId)).isFalse();
+        assertThat(deletedAt(storyId)).isNull();
+        verifyNoInteractions(publisher);
+
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+
+        assertCompletedOnce();
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStoryId()).isEqualTo(storyId);
+        assertThat(contents.existsById(storyId)).isTrue();
+    }
+
+    @Test
+    void cancellationAfterMongoSavePreventsCompletion() {
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            terminal.confirmCancellation(owner.getUserId(), job.getId());
+            clearInvocations(publisher);
+            return null;
+        }).when(contentStorage).insertIfAbsent(any());
+
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+
+        var saved = jobs.findById(job.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.CANCELED);
+        assertThat(contents.existsById(saved.getStoryId())).isTrue();
+        assertPreparedStoryUnpublished(saved.getStoryId());
+        assertDiscarded(saved.getStoryId());
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void retriesFinalizationFailureWithoutOverwritingMongoContent() {
+        doThrow(new org.springframework.dao.TransientDataAccessResourceException("MySQL completion unavailable"))
+                .doCallRealMethod().when(finalization).finish(anyLong(), anyLong());
+
+        assertThatThrownBy(() -> service.complete(job.getId(),
+                completed(job.getExecutionId(), photo.getId())))
+                .isInstanceOf(org.springframework.dao.TransientDataAccessResourceException.class);
+
+        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        var firstDocument = contents.findById(storyId).orElseThrow();
+        assertPreparedStoryUnpublished(storyId);
+        assertThat(deletedAt(storyId)).isNull();
+        verifyNoInteractions(publisher);
+
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+
+        assertCompletedOnce();
+        var retriedDocument = contents.findById(storyId).orElseThrow();
+        assertThat(retriedDocument.getVersion()).isEqualTo(firstDocument.getVersion());
+        assertThat(retriedDocument.getBlocks()).isEqualTo(firstDocument.getBlocks());
+        verify(publisher).publish(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = StoryGenerationAiResponse.Status.class, names = {"FAILED", "CANCELED"})
+    void terminalAiResultDiscardsPreparedStory(StoryGenerationAiResponse.Status state) {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        var error = state == StoryGenerationAiResponse.Status.FAILED
+                ? new StoryGenerationAiResponse.Failure("AI_FAILURE", "failure", null) : null;
+        var response = new StoryGenerationAiResponse(trip.getId(), job.getExecutionId(),
+                state, null, null, null, error);
+
+        terminal.apply(job.getId(), response);
+        var firstDeletedAt = deletedAt(storyId);
+        terminal.apply(job.getId(), response);
+
+        assertDiscarded(storyId);
+        assertThat(deletedAt(storyId)).isEqualTo(firstDeletedAt);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus().name())
+                .isEqualTo(state.name());
+    }
+
+    @Test
+    void finalResultRecoveryDiscardsPreparedStory() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        String message = """
+                {"type":"story_result","trip_id":%d,"execution_id":"%s"}
+                """.formatted(trip.getId(), job.getExecutionId());
+
+        recovery.failIdentifiedJob(message);
+
+        assertDiscarded(storyId);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode())
+                .isEqualTo("STORY_RESULT_PROCESSING_FAILED");
+    }
+
+    @Test
+    void cancellationRollbackAlsoRollsBackDiscardMarker() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            terminal.confirmCancellation(owner.getUserId(), job.getId());
+            transaction.setRollbackOnly();
+        });
+
+        assertThat(deletedAt(storyId)).isNull();
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void discardDoesNotTouchCompletedStory() {
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+        var saved = jobs.findById(job.getId()).orElseThrow();
+
+        discard.discardPreparedStory(saved);
+
+        assertThat(deletedAt(saved.getStoryId())).isNull();
+        assertCompletedOnce();
+    }
+
+    private LocalDateTime deletedAt(Long storyId) {
+        return jdbc.queryForObject("SELECT deleted_at FROM stories WHERE story_id = ?",
+                LocalDateTime.class, storyId);
+    }
+
+    private void assertDiscarded(Long storyId) {
+        assertThat(deletedAt(storyId)).isNotNull();
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
     }
 
     private void assertCompletedOnce() {

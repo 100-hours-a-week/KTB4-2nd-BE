@@ -55,6 +55,8 @@ public interface StoryBlockRepository extends JpaRepository<StoryBlock, Long> {
 
     List<StoryBlock> findAllByStoryId(Long storyId);
 
+    List<StoryBlock> findAllByStoryIdOrderByOrderNumberAscIdAsc(Long storyId);
+
     interface BlockDetail {
         StoryBlock getBlock();
 

@@ -66,6 +66,25 @@ class StoryContentRepositoryTest {
     }
 
     @Test
+    void storageServicePreservesExistingContentOnRepeatedInsertion() {
+        var storage = new com.yeodam.yeodambe.story.service.StoryContentStorageService(repository);
+        storage.insertIfAbsent(new StoryContentDocument(
+                101L, Story.Mood.PLAIN, "최초 요약", List.of(7L), List.of(), 1L));
+        var saved = repository.findById(101L).orElseThrow();
+
+        storage.insertIfAbsent(new StoryContentDocument(
+                101L, Story.Mood.HUMOROUS, "다른 요약", List.of(8L), List.of(), 100L));
+
+        var found = repository.findById(101L).orElseThrow();
+        assertThat(repository.count()).isEqualTo(1);
+        assertThat(found.getStorySummary()).isEqualTo("최초 요약");
+        assertThat(found.getMood()).isEqualTo(Story.Mood.PLAIN);
+        assertThat(found.getSelectedPlaceIds()).containsExactly(7L);
+        assertThat(found.getNextBlockId()).isEqualTo(1L);
+        assertThat(found.getVersion()).isEqualTo(saved.getVersion());
+    }
+
+    @Test
     void preservesNumericIdBlockOrderDatesAndDeletionHistory() {
         Instant timestamp = Instant.parse("2026-11-03T03:30:00.123Z");
         StoryContentBlock deleted = block(30L, timestamp, timestamp);

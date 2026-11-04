@@ -48,10 +48,15 @@ jobs:
           GRADLE_CACHE_HIT: ${{ steps.java.outputs.cache-hit }}
         run: |
           docker run --rm --network host --pid host \
+            --user "$(id -u):$(id -g)" \
+            --group-add "$(stat -c '%g' /var/run/docker.sock)" \
             --volume /var/run/docker.sock:/var/run/docker.sock \
             --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
-            --volume "$HOME/.gradle:/root/.gradle" \
+            --volume "$HOME/.gradle:$HOME/.gradle" \
             --workdir "$GITHUB_WORKSPACE" \
+            --env HOME="$HOME" \
+            --env GRADLE_USER_HOME="$HOME/.gradle" \
+            --env JAVA_TOOL_OPTIONS="-Duser.home=$HOME" \
             --env BE_TEST_MAX_FORKS --env BE_TEST_RUNNERS --env BE_TEST_SHARD \
             --env PR_HEAD_SHA --env GRADLE_CACHE_HIT \
             --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \

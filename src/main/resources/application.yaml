@@ -106,6 +106,7 @@ app:
     receipt-consumer-group: ${KAFKA_OUTBOX_RECEIPT_CONSUMER_GROUP:yeodam-outbox-receipts}
   public-api-prefix: /api
   trip:
+    result-worker-enabled: ${TRIP_RESULT_WORKER_ENABLED:true}
     status-polling-enabled: ${TRIP_STATUS_POLLING_ENABLED:true}
   story:
     status-polling-enabled: ${STORY_STATUS_POLLING_ENABLED:true}

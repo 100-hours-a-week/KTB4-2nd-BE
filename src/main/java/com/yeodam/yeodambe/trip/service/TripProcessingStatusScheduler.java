@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
+import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,18 +28,18 @@ public class TripProcessingStatusScheduler {
             fixedDelay = 2_000
     )
     public void synchronizePendingExecutions() {
-        for (var execution : creationExecutions.findAwaitingAiStatus()) {
+        for (TripCreationExecution execution : creationExecutions.findAwaitingAiStatus()) {
             synchronize(execution.getTripId(), execution.getUserId(), execution.getExecutionId());
         }
 
-        for (var execution : additionalExecutions.findAwaitingAiStatus()) {
+        for (AdditionalAttachmentExecution execution : additionalExecutions.findAwaitingAiStatus()) {
             synchronize(execution.getTripId(), execution.getUserId(), execution.getExecutionId());
         }
     }
 
     private void synchronize(Long tripId, Long userId, String executionId) {
         try {
-            statusService.findStatus(tripId, userId);
+            statusService.synchronizeStatus(tripId, userId);
         } catch (RuntimeException failure) {
             log.atWarn()
                     .addKeyValue("event", "trip_status_sync")

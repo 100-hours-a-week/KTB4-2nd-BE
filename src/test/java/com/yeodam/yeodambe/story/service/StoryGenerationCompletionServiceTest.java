@@ -58,6 +58,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class StoryGenerationCompletionServiceTest {
     @Autowired private StoryGenerationCompletionService service;
     @Autowired private StoryGenerationPreparationService preparation;
+    @Autowired private StoryGenerationFinalizationService finalization;
     @Autowired private StoryGenerationAcceptanceService acceptance;
     @Autowired private StoryGenerationTerminalService terminal;
     @Autowired private StoryGenerationPublicationStateService publicationState;
@@ -538,6 +539,112 @@ class StoryGenerationCompletionServiceTest {
             throw new AssertionError(interrupted);
         }
         service.complete(job.getId(), response);
+    }
+
+    @Test
+    void finalizesPreparedStoryOnceAndPublishesCommittedResult() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+
+        finalization.finish(job.getId(), storyId);
+        finalization.finish(job.getId(), storyId);
+
+        assertCompletedOnce();
+        assertThat(jdbc.queryForObject("SELECT processing_status FROM stories WHERE story_id = ?",
+                String.class, storyId)).isEqualTo("COMPLETED");
+        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(publisher).publish(captor.capture());
+        verifyNoMoreInteractions(publisher);
+        var data = new tools.jackson.databind.ObjectMapper()
+                .valueToTree(captor.getValue().payload()).path("data");
+        assertThat(data.path("eventType").asString()).isEqualTo("STORY_GENERATION_COMPLETED");
+        assertThat(data.path("statusVersion").asLong()).isEqualTo(2);
+        assertThat(data.path("listItem").path("sequence").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void rollsBackFinalizationWithoutPublishingAndCanRetry() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            finalization.finish(job.getId(), storyId);
+            verifyNoInteractions(publisher);
+            transaction.setRollbackOnly();
+        });
+
+        assertPreparedStoryUnpublished(storyId);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verifyNoInteractions(publisher);
+        finalization.finish(job.getId(), storyId);
+        assertCompletedOnce();
+    }
+
+    @Test
+    void doesNotFinalizeCanceledPreparedStory() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        terminal.confirmCancellation(owner.getUserId(), job.getId());
+        clearInvocations(publisher);
+
+        finalization.finish(job.getId(), storyId);
+
+        assertPreparedStoryUnpublished(storyId);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.CANCELED);
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void expiresPreparedStoryInsteadOfFinalizing() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        jdbc.update("""
+                UPDATE story_generation_outbox
+                SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
+                WHERE generation_id = ?
+                """, job.getId());
+
+        finalization.finish(job.getId(), storyId);
+
+        assertPreparedStoryUnpublished(storyId);
+        var saved = jobs.findById(job.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(saved.getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+    }
+
+    @Test
+    void rejectsFinalizationForDifferentPreparedStory() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+
+        assertThatThrownBy(() -> finalization.finish(job.getId(), storyId + 1))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertPreparedStoryUnpublished(storyId);
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void rejectsFinalizationForDeletedPreparedStory() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        jdbc.update("UPDATE stories SET deleted_at = CURRENT_TIMESTAMP(6) WHERE story_id = ?", storyId);
+
+        assertThatThrownBy(() -> finalization.finish(job.getId(), storyId))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertPreparedStoryUnpublished(storyId);
+        verifyNoInteractions(publisher);
+    }
+
+    private void assertPreparedStoryUnpublished(Long storyId) {
+        assertThat(jdbc.queryForObject("SELECT processing_status FROM stories WHERE story_id = ?",
+                String.class, storyId)).isEqualTo("PROCESSING");
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
+        assertThat(jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?",
+                Long.class, trip.getId())).isZero();
     }
 
     private void assertCompletedOnce() {

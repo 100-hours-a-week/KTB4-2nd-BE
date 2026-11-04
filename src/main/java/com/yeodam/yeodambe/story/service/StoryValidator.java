@@ -13,6 +13,7 @@ import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.service.request.StoryTonePreviewRequest;
+import com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail;
 
 import java.util.stream.Collectors;
 import java.util.List;
@@ -22,7 +23,7 @@ import java.util.Set;
 @Component
 public class StoryValidator {
 
-    public void validateBlockCount(List<BlockDetail> blocks) {
+    public void validateBlockCount(List<?> blocks) {
         if (blocks.size() > 30) {
             throw new StoryDataIntegrityException(
                     StoryGenerationInternalErrorMessage.BLOCK_COUNT_EXCEEDED
@@ -36,6 +37,58 @@ public class StoryValidator {
 
     public void validateDisplayBlocks(Long tripId, List<BlockDetail> blocks) {
         blocks.forEach(block -> validateDisplayBlock(tripId, block));
+    }
+
+    public void validateContentBlockRelations(
+            Long tripId,
+            List<StoryContentBlockDetail> blocks
+    ) {
+        for (StoryContentBlockDetail detail : blocks) {
+            if (detail.attachment() == null) {
+                throw new StoryDataIntegrityException(
+                        StoryGenerationInternalErrorMessage.BLOCK_ATTACHMENT_MISSING
+                );
+            }
+            if (!tripId.equals(detail.attachment().getTripId())) {
+                throw new StoryDataIntegrityException(
+                        StoryGenerationInternalErrorMessage.BLOCK_ATTACHMENT_TRIP_MISMATCH
+                );
+            }
+            if (detail.file() == null) {
+                throw new StoryDataIntegrityException(
+                        StoryGenerationInternalErrorMessage.BLOCK_FILE_MISSING
+                );
+            }
+        }
+    }
+
+    public void validateContentDisplayBlocks(
+            Long tripId,
+            List<StoryContentBlockDetail> blocks
+    ) {
+        for (StoryContentBlockDetail detail : blocks) {
+            if (detail.place() == null) {
+                throw new StoryDataIntegrityException(
+                        StoryGenerationInternalErrorMessage.DISPLAY_PLACE_MISSING
+                );
+            }
+            if (!tripId.equals(detail.place().getTripId())) {
+                throw new StoryDataIntegrityException(
+                        StoryGenerationInternalErrorMessage.DISPLAY_PLACE_TRIP_MISMATCH
+                );
+            }
+            if (detail.block().sourceDate() == null) {
+                throw new StoryDataIntegrityException(
+                        StoryGenerationInternalErrorMessage.DISPLAY_DATE_MISSING
+                );
+            }
+            String key = detail.attachment().getPreviewStorageKey();
+            if (key == null || key.isBlank()) {
+                throw new StoryDataIntegrityException(
+                        StoryGenerationInternalErrorMessage.DISPLAY_PREVIEW_KEY_MISSING
+                );
+            }
+        }
     }
 
     public void validateUpdateBlocks(

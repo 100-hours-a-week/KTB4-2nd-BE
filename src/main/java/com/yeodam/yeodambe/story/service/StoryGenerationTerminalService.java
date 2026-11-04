@@ -22,6 +22,7 @@ import com.yeodam.yeodambe.common.exception.StoryGenerationNotFoundException;
 public class StoryGenerationTerminalService {
     private final StoryGenerationJobRepository jobRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final StoryGenerationDiscardService discardService;
 
     @Transactional
     public void apply(
@@ -54,6 +55,7 @@ public class StoryGenerationTerminalService {
 
         if (response.status() == StoryGenerationAiResponse.Status.CANCELED) {
             job.cancel();
+            discardService.discardPreparedStory(job);
             publishStatusChanged(job);
             logWorkflowFinished(job, "canceled", null);
             return;
@@ -71,6 +73,7 @@ public class StoryGenerationTerminalService {
         }
 
         job.fail(error.code());
+        discardService.discardPreparedStory(job);
         publishStatusChanged(job);
         logWorkflowFinished(job, "failure", job.getErrorCode());
     }
@@ -90,6 +93,7 @@ public class StoryGenerationTerminalService {
         }
 
         job.cancel();
+        discardService.discardPreparedStory(job);
         publishStatusChanged(job);
 
         WorkflowLog.finished(

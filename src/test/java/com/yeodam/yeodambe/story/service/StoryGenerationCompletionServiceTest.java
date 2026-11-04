@@ -65,6 +65,8 @@ class StoryGenerationCompletionServiceTest {
     @Autowired private StoryContentRepository contents;
     @Autowired private StoryGenerationAcceptanceService acceptance;
     @Autowired private StoryGenerationTerminalService terminal;
+    @Autowired private StoryGenerationResultRecoveryService recovery;
+    @Autowired private StoryGenerationDiscardService discard;
     @Autowired private StoryGenerationPublicationStateService publicationState;
     @Autowired private StoryGenerationTimeoutService timeout;
     @Autowired private StoryGenerationProgressService progress;
@@ -599,6 +601,7 @@ class StoryGenerationCompletionServiceTest {
         assertPreparedStoryUnpublished(storyId);
         assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
                 .isEqualTo(StoryGenerationJob.Status.CANCELED);
+        assertDiscarded(storyId);
         verifyNoInteractions(publisher);
     }
 
@@ -618,6 +621,7 @@ class StoryGenerationCompletionServiceTest {
         var saved = jobs.findById(job.getId()).orElseThrow();
         assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
         assertThat(saved.getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+        assertDiscarded(storyId);
     }
 
     @Test
@@ -684,6 +688,7 @@ class StoryGenerationCompletionServiceTest {
         Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
         assertPreparedStoryUnpublished(storyId);
         assertThat(contents.existsById(storyId)).isFalse();
+        assertThat(deletedAt(storyId)).isNull();
         verifyNoInteractions(publisher);
 
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
@@ -708,6 +713,7 @@ class StoryGenerationCompletionServiceTest {
         assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.CANCELED);
         assertThat(contents.existsById(saved.getStoryId())).isTrue();
         assertPreparedStoryUnpublished(saved.getStoryId());
+        assertDiscarded(saved.getStoryId());
         verifyNoInteractions(publisher);
     }
 
@@ -723,6 +729,7 @@ class StoryGenerationCompletionServiceTest {
         Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
         var firstDocument = contents.findById(storyId).orElseThrow();
         assertPreparedStoryUnpublished(storyId);
+        assertThat(deletedAt(storyId)).isNull();
         verifyNoInteractions(publisher);
 
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
@@ -732,6 +739,78 @@ class StoryGenerationCompletionServiceTest {
         assertThat(retriedDocument.getVersion()).isEqualTo(firstDocument.getVersion());
         assertThat(retriedDocument.getBlocks()).isEqualTo(firstDocument.getBlocks());
         verify(publisher).publish(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = StoryGenerationAiResponse.Status.class, names = {"FAILED", "CANCELED"})
+    void terminalAiResultDiscardsPreparedStory(StoryGenerationAiResponse.Status state) {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        var error = state == StoryGenerationAiResponse.Status.FAILED
+                ? new StoryGenerationAiResponse.Failure("AI_FAILURE", "failure", null) : null;
+        var response = new StoryGenerationAiResponse(trip.getId(), job.getExecutionId(),
+                state, null, null, null, error);
+
+        terminal.apply(job.getId(), response);
+        var firstDeletedAt = deletedAt(storyId);
+        terminal.apply(job.getId(), response);
+
+        assertDiscarded(storyId);
+        assertThat(deletedAt(storyId)).isEqualTo(firstDeletedAt);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus().name())
+                .isEqualTo(state.name());
+    }
+
+    @Test
+    void finalResultRecoveryDiscardsPreparedStory() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        String message = """
+                {"type":"story_result","trip_id":%d,"execution_id":"%s"}
+                """.formatted(trip.getId(), job.getExecutionId());
+
+        recovery.failIdentifiedJob(message);
+
+        assertDiscarded(storyId);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getErrorCode())
+                .isEqualTo("STORY_RESULT_PROCESSING_FAILED");
+    }
+
+    @Test
+    void cancellationRollbackAlsoRollsBackDiscardMarker() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            terminal.confirmCancellation(owner.getUserId(), job.getId());
+            transaction.setRollbackOnly();
+        });
+
+        assertThat(deletedAt(storyId)).isNull();
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void discardDoesNotTouchCompletedStory() {
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+        var saved = jobs.findById(job.getId()).orElseThrow();
+
+        discard.discardPreparedStory(saved);
+
+        assertThat(deletedAt(saved.getStoryId())).isNull();
+        assertCompletedOnce();
+    }
+
+    private LocalDateTime deletedAt(Long storyId) {
+        return jdbc.queryForObject("SELECT deleted_at FROM stories WHERE story_id = ?",
+                LocalDateTime.class, storyId);
+    }
+
+    private void assertDiscarded(Long storyId) {
+        assertThat(deletedAt(storyId)).isNotNull();
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
     }
 
     private void assertCompletedOnce() {

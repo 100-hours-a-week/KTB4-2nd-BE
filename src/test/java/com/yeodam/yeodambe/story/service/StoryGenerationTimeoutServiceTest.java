@@ -23,7 +23,7 @@ class StoryGenerationTimeoutServiceTest {
             mock(StoryGenerationOutboxRepository.class);
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
-    private final StoryGenerationTimeoutService service = new StoryGenerationTimeoutService(jobs, outboxes, jdbc, eventPublisher);
+    private final StoryGenerationTimeoutService service = new StoryGenerationTimeoutService(jobs, outboxes, jdbc, eventPublisher, mock(StoryGenerationDiscardService.class));
     private final LocalDateTime created = LocalDateTime.of(2026, 10, 12, 12, 0);
 
     private StoryGenerationJob prepare() {

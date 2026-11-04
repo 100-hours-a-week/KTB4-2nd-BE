@@ -27,7 +27,7 @@ import static org.mockito.Mockito.when;
 class StoryGenerationTerminalServiceTest {
     private final StoryGenerationJobRepository repository = mock(StoryGenerationJobRepository.class);
     private final org.springframework.context.ApplicationEventPublisher eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
-    private final StoryGenerationTerminalService service = new StoryGenerationTerminalService(repository, eventPublisher);
+    private final StoryGenerationTerminalService service = new StoryGenerationTerminalService(repository, eventPublisher, mock(StoryGenerationDiscardService.class));
     private final StoryGenerationJob job = new StoryGenerationJob("execution-1", 241L, 2L, Story.Mood.PLAIN);
 
     @Test

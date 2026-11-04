@@ -42,6 +42,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -77,6 +78,7 @@ class StoryGenerationCompletionServiceTest {
     private Trip trip;
     private TripDetailPlace folder;
     private StoredFile file;
+    private StoredFile extraFile;
     private TripAttachment photo;
     private StoryGenerationJob job;
 
@@ -118,6 +120,9 @@ class StoryGenerationCompletionServiceTest {
         jdbc.update("DELETE FROM trips WHERE trip_id = ?", trip.getId());
         if (file != null) {
             files.deleteById(file.getId());
+        }
+        if (extraFile != null) {
+            files.deleteById(extraFile.getId());
         }
         users.deleteById(owner.getUserId());
     }
@@ -430,6 +435,95 @@ class StoryGenerationCompletionServiceTest {
         assertThat(saved.getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
         assertThat(saved.getStoryId()).isNull();
         assertThat(count("stories")).isZero();
+    }
+
+    @Test
+    void readsPreparedDocumentWithUtcTimestampsWithoutPublishing() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        jdbc.update("""
+                UPDATE story_blocks SET created_at = ?, updated_at = ? WHERE story_id = ?
+                """, LocalDateTime.of(2026, 11, 4, 10, 0),
+                LocalDateTime.of(2026, 11, 4, 11, 0), storyId);
+
+        var document = preparation.readPreparedContent(job.getId(), storyId, ZoneOffset.UTC)
+                .orElseThrow();
+
+        assertThat(document.getId()).isEqualTo(storyId);
+        assertThat(document.getSelectedPlaceIds()).containsExactly(folder.getId());
+        assertThat(document.getBlocks()).hasSize(1);
+        var block = document.getBlocks().getFirst();
+        assertThat(block.tripAttachmentId()).isEqualTo(photo.getId());
+        assertThat(block.sourceTripPlaceId()).isEqualTo(folder.getId());
+        assertThat(block.sourceDate()).isEqualTo(LocalDate.of(2026, 10, 11));
+        assertThat(block.createdAt()).isEqualTo(Instant.parse("2026-11-04T10:00:00Z"));
+        assertThat(block.updatedAt()).isEqualTo(Instant.parse("2026-11-04T11:00:00Z"));
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
+                .isEqualTo(StoryGenerationJob.Status.QUEUED);
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void readsBlocksInDisplayOrderIncludingDeletedIds() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        Long originalBlockId = jdbc.queryForObject(
+                "SELECT story_block_id FROM story_blocks WHERE story_id = ?", Long.class, storyId);
+        extraFile = files.save(StoredFile.uploaded(owner.getUserId(), "extra.jpg",
+                "original/" + UUID.randomUUID(), "image/jpeg"));
+        var extraPhoto = attachments.saveAndFlush(TripAttachment.initial(
+                trip.getId(), extraFile.getId(), "analysis/extra.jpg", "preview/extra.jpg"));
+        jdbc.update("""
+                INSERT INTO story_blocks
+                    (story_id, trip_attachment_id, source_trip_place_id, source_date,
+                     order_number, day_label, detail_summary, memo)
+                VALUES (?, ?, ?, ?, 1, 'first', 'detail', 'memo')
+                """, storyId, extraPhoto.getId(), folder.getId(), LocalDate.of(2026, 10, 11));
+        Long extraBlockId = jdbc.queryForObject(
+                "SELECT story_block_id FROM story_blocks WHERE story_id = ? AND trip_attachment_id = ?",
+                Long.class, storyId, extraPhoto.getId());
+
+        var tied = preparation.readPreparedContent(job.getId(), storyId, ZoneOffset.UTC).orElseThrow();
+        assertThat(tied.getBlocks()).extracting(com.yeodam.yeodambe.story.document.StoryContentBlock::id)
+                .containsExactly(originalBlockId, extraBlockId);
+
+        jdbc.update("UPDATE story_blocks SET order_number = 2 WHERE story_block_id = ?", originalBlockId);
+        jdbc.update("UPDATE story_blocks SET deleted_at = ? WHERE story_block_id = ?",
+                LocalDateTime.of(2026, 11, 4, 12, 0), extraBlockId);
+        var reordered = preparation.readPreparedContent(job.getId(), storyId, ZoneOffset.UTC).orElseThrow();
+        assertThat(reordered.getBlocks()).extracting(com.yeodam.yeodambe.story.document.StoryContentBlock::id)
+                .containsExactly(extraBlockId, originalBlockId);
+        assertThat(reordered.getBlocks().getFirst().deletedAt())
+                .isEqualTo(Instant.parse("2026-11-04T12:00:00Z"));
+        assertThat(reordered.getNextBlockId()).isEqualTo(extraBlockId + 1);
+    }
+
+    @Test
+    void rejectsPreparedDocumentForDifferentStoryId() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+
+        assertThatThrownBy(() -> preparation.readPreparedContent(job.getId(), storyId + 1, ZoneOffset.UTC))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void skipsPreparedDocumentAfterCancellation() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        terminal.confirmCancellation(owner.getUserId(), job.getId());
+
+        assertThat(preparation.readPreparedContent(job.getId(), storyId, ZoneOffset.UTC)).isEmpty();
+    }
+
+    @Test
+    void rejectsDeletedPreparedStory() {
+        Long storyId = preparation.prepare(job.getId(),
+                completed(job.getExecutionId(), photo.getId())).orElseThrow();
+        jdbc.update("UPDATE stories SET deleted_at = CURRENT_TIMESTAMP(6) WHERE story_id = ?", storyId);
+
+        assertThatThrownBy(() -> preparation.readPreparedContent(job.getId(), storyId, ZoneOffset.UTC))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private void completeAfterStart(CountDownLatch ready, CountDownLatch start,

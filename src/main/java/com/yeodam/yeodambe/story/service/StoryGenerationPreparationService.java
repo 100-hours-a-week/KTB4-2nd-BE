@@ -23,11 +23,13 @@ import com.yeodam.yeodambe.story.repository.StoryBlockRepository;
 import com.yeodam.yeodambe.story.repository.StorySelectedPlaceRepository;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
-
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
+import java.time.ZoneOffset;
 
 @Service
 @RequiredArgsConstructor
@@ -43,6 +45,7 @@ public class StoryGenerationPreparationService {
     private final StoryBlockRepository blockRepository;
     private final StorySelectedPlaceRepository selectedPlaceRepository;
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
+    private final StoryContentDocumentFactory documentFactory;
 
     @Transactional
     public Optional<Long> prepare(
@@ -94,6 +97,59 @@ public class StoryGenerationPreparationService {
         }
 
         return Optional.of(story.getId());
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<StoryContentDocument> readPreparedContent(
+            Long generationId,
+            Long storyId,
+            ZoneId sourceZone
+    ) {
+        var job = jobRepository.findById(generationId)
+                .orElseThrow(() -> new IllegalStateException(
+                        StoryGenerationInternalErrorMessage.JOB_NOT_FOUND.message()
+                ));
+
+        if (job.isFinished()) {
+            return Optional.empty();
+        }
+
+        if (!storyId.equals(job.getStoryId())) {
+            throw new IllegalStateException(
+                    StoryGenerationInternalErrorMessage
+                            .PREPARED_STORY_ID_MISMATCH.message()
+            );
+        }
+
+        Story story = storyRepository.findById(storyId)
+                .orElseThrow(() -> new IllegalStateException(
+                        StoryGenerationInternalErrorMessage
+                                .PREPARED_STORY_INVALID.message()
+                ));
+
+        if (!story.getTripId().equals(job.getTripId())
+                || story.getDeletedAt() != null
+                || story.getProcessingStatus() != Story.Status.PROCESSING) {
+            throw new IllegalStateException(
+                    StoryGenerationInternalErrorMessage
+                            .PREPARED_STORY_INVALID.message()
+            );
+        }
+
+        var selectedPlaces =
+                selectedPlaceRepository.findAllByStoryIdOrderByIdAsc(storyId);
+
+        var blocks =
+                blockRepository.findAllByStoryIdOrderByOrderNumberAscIdAsc(storyId);
+
+        var document = documentFactory.create(
+                story,
+                selectedPlaces,
+                blocks,
+                sourceZone
+        );
+
+        return Optional.of(document);
     }
 
     private StoryGenerationMessage readAndValidateRequest(

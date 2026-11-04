@@ -49,7 +49,8 @@ import static org.mockito.Mockito.*;
         "spring.jpa.show-sql=false"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({StoryGenerationResultRecoveryService.class, StoryGenerationTimeoutService.class, StoryGenerationTerminalService.class, StoryGenerationProgressService.class, StoryGenerationStatusEventHandler.class,
+@Import({com.yeodam.yeodambe.story.service.StoryGenerationDiscardService.class,
+        StoryGenerationResultRecoveryService.class, StoryGenerationTimeoutService.class, StoryGenerationTerminalService.class, StoryGenerationProgressService.class, StoryGenerationStatusEventHandler.class,
         StoryGenerationStatusEventHandlerMysqlTest.MysqlConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class StoryGenerationStatusEventHandlerMysqlTest {

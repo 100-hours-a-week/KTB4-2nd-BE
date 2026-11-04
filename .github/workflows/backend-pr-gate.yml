@@ -33,10 +33,8 @@ jobs:
           java-version: '25'
           cache: gradle
 
-      - name: Install image processing tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends imagemagick libvips42 libheif1 libde265-0 libimage-exiftool-perl
+      - name: Build test runtime
+        run: docker build -f .github/ci/Dockerfile.tests -t yeodam-ci-tests .
 
       - name: Check measurement parser
         run: python3 -m unittest discover -s .github/ci -p 'test_*.py'
@@ -48,7 +46,17 @@ jobs:
           BE_TEST_SHARD: ${{ matrix.shard }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GRADLE_CACHE_HIT: ${{ steps.java.outputs.cache-hit }}
-        run: python3 .github/ci/test_timing.py run
+        run: |
+          docker run --rm --network host --pid host \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            --volume "$HOME/.gradle:/root/.gradle" \
+            --workdir "$GITHUB_WORKSPACE" \
+            --env BE_TEST_MAX_FORKS --env BE_TEST_RUNNERS --env BE_TEST_SHARD \
+            --env PR_HEAD_SHA --env GRADLE_CACHE_HIT \
+            --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+            --env RUNNER_OS --env RUNNER_ARCH --env ImageOS --env ImageVersion \
+            yeodam-ci-tests python3 .github/ci/test_timing.py run
 
       - name: Summarize test measurement
         if: always()

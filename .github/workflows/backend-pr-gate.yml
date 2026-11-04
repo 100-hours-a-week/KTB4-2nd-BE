@@ -47,6 +47,7 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GRADLE_CACHE_HIT: ${{ steps.java.outputs.cache-hit }}
         run: |
+          mkdir -p "$HOME/.gradle"
           docker run --rm --network host --pid host \
             --user "$(id -u):$(id -g)" \
             --group-add "$(stat -c '%g' /var/run/docker.sock)" \

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 
@@ -60,7 +61,7 @@ public class AdditionalAttachmentResultWorker {
                 .addKeyValue("attempts", attempts)
                 .addKeyValue("failure_stage", validated ? "result_persist" : "result_validate")
                 .addKeyValue("failure", failure.getClass().getSimpleName())
-                .log("사진 정리 결과 반영을 완료하지 못했습니다.");
+                .log(TripInternalErrorMessage.RESULT_APPLICATION_FAILED.message());
     }
 
     private WorkflowLog.Stage startResultApplicationLogging(int attempts) {

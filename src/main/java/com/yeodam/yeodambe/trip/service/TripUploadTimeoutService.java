@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
 import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +34,7 @@ public class TripUploadTimeoutService {
                 analysis.cancel(execution.getTripId());
                 uploadTransactions.recordCancellationDelivered(execution.getExecutionId());
             } catch (RuntimeException failure) {
-                log.warn("AI 취소 전달 재시도: executionId={}, cause={}", execution.getExecutionId(),
+                log.warn(TripInternalErrorMessage.AI_CANCELLATION_DELIVERY_RETRY.message(), execution.getExecutionId(),
                         failure.getClass().getSimpleName());
             }
         }

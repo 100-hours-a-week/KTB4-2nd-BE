@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.config;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.client.AttachmentConversionKafkaListener;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -57,7 +58,8 @@ public class AttachmentConversionKafkaConfiguration {
             @Value("${app.attachment-conversion.kafka.fetch-max-bytes:0}") int fetchBytes,
             @Value("${app.attachment-conversion.kafka.partition-fetch-max-bytes:0}") int partitionBytes,
             @Value("${app.attachment-conversion.kafka.max-message-bytes:0}") int messageBytes) {
-        Assert.isTrue(backoff != null && backoff.isPositive(), "변환 기술 재시도 간격은 양수여야 합니다.");
+        Assert.isTrue(backoff != null && backoff.isPositive(),
+                TripInternalErrorMessage.CONVERSION_TECHNICAL_BACKOFF_INVALID.message());
         this.backoff = backoff;
         this.fetchBytes = fetchBytes;
         this.partitionBytes = partitionBytes;
@@ -82,7 +84,7 @@ public class AttachmentConversionKafkaConfiguration {
             @Lazy AttachmentConversionKafkaListener listener,
             @Qualifier("attachmentConversionKafkaScheduler") TaskScheduler scheduler, KafkaListenerEndpointRegistry registry) {
         Assert.isTrue(fetchBytes > 0 && partitionBytes > 0 && messageBytes > 0,
-                "KAFKA 모드의 fetch 및 메시지 크기 설정은 양수여야 합니다.");
+                TripInternalErrorMessage.CONVERSION_KAFKA_FETCH_OR_MESSAGE_SIZE_INVALID.message());
         DefaultKafkaConsumerFactory<Object, Object> isolated = isolatedConsumers(consumers);
         isolated.updateConfigs(Map.of(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1,
                 ConsumerConfig.FETCH_MAX_BYTES_CONFIG, fetchBytes, ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, partitionBytes));
@@ -155,7 +157,7 @@ public class AttachmentConversionKafkaConfiguration {
             @Override
             public void handleOtherException(Exception failure, Consumer<?, ?> consumer,
                     MessageListenerContainer container, boolean batchListener) {
-                log.warn("이미지 변환 Kafka 기술 재시도: failure=TECHNICAL");
+                log.warn(TripInternalErrorMessage.CONVERSION_KAFKA_TECHNICAL_RETRY.message());
                 pauses.pause(container, backoff);
             }
         };
@@ -266,7 +268,7 @@ public class AttachmentConversionKafkaConfiguration {
             } catch (RuntimeException failure) {
                 retryAt = System.nanoTime() + backoffNanos;
                 consumer.pause(consumer.assignment());
-                log.warn("이미지 변환 Kafka commit 재확인: failure=COMMIT");
+                log.warn(TripInternalErrorMessage.CONVERSION_KAFKA_COMMIT_RETRY.message());
             }
         }
     }

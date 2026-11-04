@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
@@ -47,7 +48,7 @@ public class TripProcessingStatusScheduler {
                     .addKeyValue("trip_id", tripId)
                     .addKeyValue("job_id", executionId)
                     .addKeyValue("failure", failure.getClass().getName())
-                    .log("여행 처리 상태 수집에 실패했습니다.");
+                    .log(TripInternalErrorMessage.PROCESSING_STATUS_SYNC_FAILED.message());
         }
     }
 }

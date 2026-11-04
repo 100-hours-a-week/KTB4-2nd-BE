@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.client;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.service.AttachmentConversionTransactionService;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionPublication;
 import lombok.RequiredArgsConstructor;
@@ -39,25 +40,27 @@ public class AttachmentConversionReceiptListener {
     public void consume(ConsumerRecord<String, String> record) {
         try {
             Assert.isTrue("attachment_conversion_outbox".equals(header(record, "outbox-source")),
-                    "변환 Outbox 출처가 일치하지 않습니다.");
+                    TripInternalErrorMessage.CONVERSION_OUTBOX_SOURCE_MISMATCH.message());
             String id = header(record, "id");
-            Assert.hasText(record.key(), "변환 receipt key가 필요합니다.");
-            Assert.hasText(record.value(), "변환 receipt payload가 필요합니다.");
+            Assert.hasText(record.key(), TripInternalErrorMessage.CONVERSION_RECEIPT_KEY_MISSING.message());
+            Assert.hasText(record.value(), TripInternalErrorMessage.CONVERSION_RECEIPT_PAYLOAD_MISSING.message());
             Assert.isTrue(record.partition() >= 0 && record.offset() >= 0 && record.timestamp() >= 0
-                    && record.timestampType() == TimestampType.LOG_APPEND_TIME, "변환 receipt 위치가 유효하지 않습니다.");
+                    && record.timestampType() == TimestampType.LOG_APPEND_TIME,
+                    TripInternalErrorMessage.CONVERSION_RECEIPT_POSITION_INVALID.message());
             // ConsumerRecord has no topic identity; current Admin metadata cannot identify a buffered observation.
             transactions.recordPublished(new AttachmentConversionPublication(id, record.topic(), record.key(), record.value(),
                     null, record.partition(), record.offset(), Instant.ofEpochMilli(record.timestamp()), record.leaderEpoch().orElse(null)));
         } catch (IllegalArgumentException | InvalidAttachmentConversionMessageException invalid) {
-            log.warn("이미지 변환 발행 관측 무시: failure=INVALID_RECEIPT");
+            log.warn(TripInternalErrorMessage.CONVERSION_RECEIPT_IGNORED.message());
         }
     }
 
     private String header(ConsumerRecord<String, String> record, String name) {
         Header header = record.headers().lastHeader(name);
-        Assert.isTrue(header != null && header.value() != null, "변환 receipt header가 필요합니다.");
+        Assert.isTrue(header != null && header.value() != null,
+                TripInternalErrorMessage.CONVERSION_RECEIPT_HEADER_MISSING.message());
         String value = new String(header.value(), StandardCharsets.UTF_8);
-        Assert.hasText(value, "변환 receipt header가 비어 있습니다.");
+        Assert.hasText(value, TripInternalErrorMessage.CONVERSION_RECEIPT_HEADER_EMPTY.message());
         return value;
     }
 }

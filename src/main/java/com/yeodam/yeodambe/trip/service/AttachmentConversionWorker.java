@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.client.InvalidAttachmentConversionMessageException;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties.Topics;
@@ -65,7 +66,8 @@ public class AttachmentConversionWorker {
 
     AttachmentConversionWorker(AttachmentConversionTransactionService db, TripAttachmentDerivativeService photos,
             Topics topics, Duration backoff) {
-        Assert.isTrue(backoff != null && backoff.isPositive(), "변환 기술 재시도 간격은 양수여야 합니다.");
+        Assert.isTrue(backoff != null && backoff.isPositive(),
+                TripInternalErrorMessage.CONVERSION_TECHNICAL_BACKOFF_INVALID.message());
         this.db = db;
         this.photos = photos;
         this.topics = topics;
@@ -78,7 +80,7 @@ public class AttachmentConversionWorker {
             throw new InvalidAttachmentConversionMessageException();
         }
         if (stopping) {
-            throw new RejectedExecutionException("이미지 변환 작업의 접수를 중지했습니다.");
+            throw new RejectedExecutionException(TripInternalErrorMessage.CONVERSION_WORKER_STOPPING.message());
         }
         int slot = slot(kind, lane);
         var existing = registered.get(slot);
@@ -86,7 +88,7 @@ public class AttachmentConversionWorker {
             if (existing.id.equals(taskId) && existing.partition == partition) {
                 return existing.completion;
             }
-            throw new RejectedExecutionException("해당 토픽의 변환 작업을 이미 관리하고 있습니다.");
+            throw new RejectedExecutionException(TripInternalErrorMessage.CONVERSION_TOPIC_TASK_ALREADY_REGISTERED.message());
         }
         var job = new Job(taskId, kind, lane, topic, partition, sequence++);
         registered.set(slot, job);
@@ -199,7 +201,8 @@ public class AttachmentConversionWorker {
             }
         } catch (RuntimeException failure) {
             log.atWarn().addKeyValue("event", "attachment_conversion_retry")
-                    .addKeyValue("failure", failure.getClass().getSimpleName()).log("이미지 변환 제어 단계를 재확인합니다.");
+                    .addKeyValue("failure", failure.getClass().getSimpleName())
+                    .log(TripInternalErrorMessage.CONVERSION_CONTROL_RETRY.message());
             if (job.stage == Stage.BEGIN) {
                 releaseLane(job);
             }
@@ -263,7 +266,8 @@ public class AttachmentConversionWorker {
             return db.renewLease(claim);
         } catch (RuntimeException failure) {
             log.atWarn().addKeyValue("event", "attachment_conversion_guard_retry")
-                    .addKeyValue("failure", failure.getClass().getSimpleName()).log("이미지 변환 claim을 재확인합니다.");
+                    .addKeyValue("failure", failure.getClass().getSimpleName())
+                    .log(TripInternalErrorMessage.CONVERSION_CLAIM_RETRY.message());
             return false;
         }
     }
@@ -324,7 +328,8 @@ public class AttachmentConversionWorker {
         } catch (RuntimeException failure) {
             job.fenced = true;
             log.atWarn().addKeyValue("event", "attachment_conversion_lease_retry")
-                    .addKeyValue("failure", failure.getClass().getSimpleName()).log("이미지 변환 lease를 재확인합니다.");
+                    .addKeyValue("failure", failure.getClass().getSimpleName())
+                    .log(TripInternalErrorMessage.CONVERSION_LEASE_RETRY.message());
         }
         if (job.fenced && job.stage == Stage.BEGIN && !job.busy) {
             job.stage = Stage.FINISH;
@@ -427,7 +432,8 @@ public class AttachmentConversionWorker {
         } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
         } catch (ExecutionException | TimeoutException failure) {
-            log.warn("이미지 변환 종료 대기 실패: cause={}", failure.getClass().getSimpleName());
+            log.warn(TripInternalErrorMessage.CONVERSION_SHUTDOWN_WAIT_FAILED.message(),
+                    failure.getClass().getSimpleName());
         }
     }
 

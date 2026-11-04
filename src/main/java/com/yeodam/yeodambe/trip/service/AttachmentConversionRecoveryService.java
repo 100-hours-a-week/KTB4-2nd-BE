@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionRecoveryCandidate.Cursor;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,8 @@ public class AttachmentConversionRecoveryService implements SchedulingConfigurer
         try {
             reconcile();
         } catch (DataAccessException failure) {
-            log.warn("이미지 변환 재알림 점검 실패 stage=reconcile_pending cause={}", failure.getClass().getSimpleName());
+            log.warn(TripInternalErrorMessage.CONVERSION_RECOVERY_RECONCILIATION_FAILED.message(),
+                    failure.getClass().getSimpleName());
         } finally {
             running.set(false);
         }

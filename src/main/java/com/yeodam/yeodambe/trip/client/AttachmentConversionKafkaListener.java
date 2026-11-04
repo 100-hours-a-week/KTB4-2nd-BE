@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.client;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
@@ -58,8 +59,9 @@ public class AttachmentConversionKafkaListener {
             @Value("${app.attachment-conversion.topics.dead-letter:yeodam-image-conversion-dlt}") String deadLetterTopic,
             @Value("${app.attachment-conversion.retry.technical-backoff}") Duration backoff,
             @Qualifier("attachmentConversionKafkaScheduler") TaskScheduler scheduler, KafkaListenerEndpointRegistry registry) {
-        Assert.hasText(deadLetterTopic, "변환 DLT 토픽이 필요합니다.");
-        Assert.isTrue(backoff != null && backoff.isPositive(), "변환 기술 재시도 간격은 양수여야 합니다.");
+        Assert.hasText(deadLetterTopic, TripInternalErrorMessage.CONVERSION_DLT_TOPIC_MISSING.message());
+        Assert.isTrue(backoff != null && backoff.isPositive(),
+                TripInternalErrorMessage.CONVERSION_TECHNICAL_BACKOFF_INVALID.message());
         this.worker = worker;
         this.mapper = mapper;
         this.kafka = kafka;
@@ -72,7 +74,8 @@ public class AttachmentConversionKafkaListener {
         topics.put(configured.initialHeic(), new TopicState());
         topics.put(configured.additionalLight(), new TopicState());
         topics.put(configured.additionalHeic(), new TopicState());
-        Assert.isTrue(!topics.containsKey(deadLetterTopic), "변환 DLT는 작업 토픽과 달라야 합니다.");
+        Assert.isTrue(!topics.containsKey(deadLetterTopic),
+                TripInternalErrorMessage.CONVERSION_DLT_TOPIC_CONFLICT.message());
     }
 
     @KafkaListener(id = "attachment-conversion-initial-light",
@@ -109,10 +112,11 @@ public class AttachmentConversionKafkaListener {
 
     private synchronized CompletableFuture<Void> handle(ConsumerRecord<String, String> record, Kind kind, Lane lane) {
         var state = topics.get(record.topic());
-        Assert.state(state != null, "변환 토픽이 유효하지 않습니다.");
+        Assert.state(state != null, TripInternalErrorMessage.CONVERSION_TOPIC_INVALID.message());
         if (state.current != null && !state.current.completion.isDone() && state.current.valid) {
             Assert.state(state.current.record.partition() == record.partition()
-                    && state.current.record.offset() == record.offset(), "변환 토픽의 이전 작업이 대기 중입니다.");
+                    && state.current.record.offset() == record.offset(),
+                    TripInternalErrorMessage.CONVERSION_PREVIOUS_TASK_PENDING.message());
             return state.current.completion;
         }
         var ticket = new Ticket(record, kind, lane);
@@ -181,7 +185,7 @@ public class AttachmentConversionKafkaListener {
         log.atWarn().addKeyValue("event", "attachment_conversion_listener_retry")
                 .addKeyValue("topic", ticket.record.topic()).addKeyValue("partition", ticket.record.partition())
                 .addKeyValue("offset", ticket.record.offset()).addKeyValue("failure", ticket.malformed ? "FORMAT" : "TECHNICAL")
-                .log("이미지 변환 메시지를 재확인합니다.");
+                .log(TripInternalErrorMessage.CONVERSION_MESSAGE_RETRY.message());
         ticket.retry = scheduler.schedule(() -> attempt(ticket), Instant.now().plus(backoff));
     }
 
@@ -249,7 +253,8 @@ public class AttachmentConversionKafkaListener {
             state.assigned = true;
             var container = container(topic, consumer.groupMetadata().groupId());
             if (!state.cleanup.isDone()) {
-                Assert.state(container != null, "변환 listener container가 필요합니다.");
+                Assert.state(container != null,
+                        TripInternalErrorMessage.CONVERSION_LISTENER_CONTAINER_MISSING.message());
                 container.pause();
                 consumer.pause(partitions.stream().filter(partition -> partition.topic().equals(topic)).toList());
                 state.paused = true;

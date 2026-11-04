@@ -56,6 +56,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import(TestcontainersConfiguration.class)
 class StoryGenerationCompletionServiceTest {
     @Autowired private StoryGenerationCompletionService service;
+    @Autowired private StoryGenerationPreparationService preparation;
     @Autowired private StoryGenerationAcceptanceService acceptance;
     @Autowired private StoryGenerationTerminalService terminal;
     @Autowired private StoryGenerationPublicationStateService publicationState;
@@ -352,6 +353,83 @@ class StoryGenerationCompletionServiceTest {
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
         assertThat(timeout.expire(job.getId(), LocalDateTime.now().plusHours(2))).isTrue();
         assertCompletedOnce();
+    }
+
+    @Test
+    void preparesContentOnceWithoutCompletingOrPublishing() {
+        var response = completed(job.getExecutionId(), photo.getId());
+
+        Long storyId = preparation.prepare(job.getId(), response).orElseThrow();
+        Long retriedStoryId = preparation.prepare(job.getId(), response).orElseThrow();
+
+        assertThat(retriedStoryId).isEqualTo(storyId);
+        assertThat(count("stories")).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM stories WHERE story_id = ?", String.class, storyId))
+                .isEqualTo("PROCESSING");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM story_blocks WHERE story_id = ?", Integer.class, storyId))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM story_selected_places WHERE story_id = ?", Integer.class, storyId))
+                .isEqualTo(1);
+        var saved = jobs.findById(job.getId()).orElseThrow();
+        assertThat(saved.getStoryId()).isEqualTo(storyId);
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(saved.getStatusVersion()).isEqualTo(1);
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
+        assertThat(status.getStatus(owner.getUserId(), job.getId()).storyId()).isNull();
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void rollsBackPreparedStoryAndChildrenTogether() {
+        var response = completed(job.getExecutionId(), photo.getId());
+        Long storyId = new TransactionTemplate(transactionManager).execute(transaction -> {
+            Long preparedId = preparation.prepare(job.getId(), response).orElseThrow();
+            transaction.setRollbackOnly();
+            return preparedId;
+        });
+
+        assertNoResultSaved();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM story_blocks WHERE story_id = ?", Integer.class, storyId))
+                .isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM story_selected_places WHERE story_id = ?", Integer.class, storyId))
+                .isZero();
+        assertThat(preparation.prepare(job.getId(), response)).isPresent();
+        assertThat(count("stories")).isEqualTo(1);
+    }
+
+    @Test
+    void doesNotPrepareCanceledJob() {
+        terminal.confirmCancellation(owner.getUserId(), job.getId());
+        clearInvocations(publisher);
+
+        assertThat(preparation.prepare(job.getId(), completed(job.getExecutionId(), photo.getId())))
+                .isEmpty();
+
+        assertThat(count("stories")).isZero();
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void expiresLateResultWithoutPreparingStory() {
+        jdbc.update("""
+                UPDATE story_generation_outbox
+                SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
+                WHERE generation_id = ?
+                """, job.getId());
+
+        assertThat(preparation.prepare(job.getId(), completed(job.getExecutionId(), photo.getId())))
+                .isEmpty();
+
+        var saved = jobs.findById(job.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(saved.getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+        assertThat(saved.getStoryId()).isNull();
+        assertThat(count("stories")).isZero();
     }
 
     private void completeAfterStart(CountDownLatch ready, CountDownLatch start,

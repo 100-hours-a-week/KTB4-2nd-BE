@@ -15,6 +15,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+
 
 @Service
 @RequiredArgsConstructor
@@ -68,6 +70,8 @@ public class StoryGenerationFinalizationService {
             );
         }
 
+        try (var timing = WorkflowLog.stage("story_finalization")
+                .field("generation_id", generationId)) {
         story.complete();
         trip.changeCurrentStory(storyId);
         job.complete(storyId);
@@ -102,5 +106,16 @@ public class StoryGenerationFinalizationService {
                 snapshot,
                 listItem
         ));
+            timing.committed("story_finalization");
+
+            WorkflowLog.finished(
+                    "story_generation",
+                    job.getTripId(),
+                    job.getExecutionId(),
+                    job.getCreatedAt(),
+                    "success",
+                    null
+            );
+        }
     }
 }

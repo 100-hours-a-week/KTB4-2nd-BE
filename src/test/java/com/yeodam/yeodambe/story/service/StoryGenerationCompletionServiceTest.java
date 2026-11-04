@@ -23,6 +23,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
@@ -58,7 +60,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class StoryGenerationCompletionServiceTest {
     @Autowired private StoryGenerationCompletionService service;
     @Autowired private StoryGenerationPreparationService preparation;
-    @Autowired private StoryGenerationFinalizationService finalization;
+    @MockitoSpyBean private StoryGenerationFinalizationService finalization;
+    @MockitoSpyBean private StoryContentStorageService contentStorage;
+    @Autowired private StoryContentRepository contents;
     @Autowired private StoryGenerationAcceptanceService acceptance;
     @Autowired private StoryGenerationTerminalService terminal;
     @Autowired private StoryGenerationPublicationStateService publicationState;
@@ -108,6 +112,8 @@ class StoryGenerationCompletionServiceTest {
             return;
         }
         jdbc.update("UPDATE trips SET current_story_id = NULL WHERE trip_id = ?", trip.getId());
+        contents.deleteAllById(jdbc.queryForList(
+                "SELECT story_id FROM stories WHERE trip_id = ?", Long.class, trip.getId()));
         jdbc.update("DELETE FROM story_generation_outbox WHERE generation_id IN "
                 + "(SELECT generation_id FROM story_generation_jobs WHERE trip_id = ?)", trip.getId());
         jdbc.update("DELETE FROM story_generation_places WHERE generation_id IN "
@@ -645,6 +651,87 @@ class StoryGenerationCompletionServiceTest {
         assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
         assertThat(jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?",
                 Long.class, trip.getId())).isZero();
+    }
+
+    @Test
+    void savesMongoContentBeforePublishingCompletion() {
+        doAnswer(invocation -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
+                    .isActualTransactionActive()).isFalse();
+            return invocation.callRealMethod();
+        }).when(contentStorage).insertIfAbsent(any());
+
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+
+        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        var document = contents.findById(storyId).orElseThrow();
+        assertThat(document.getStorySummary()).isEqualTo("여행 이야기");
+        assertThat(document.getBlocks()).hasSize(1);
+        assertThat(document.getBlocks().getFirst().tripAttachmentId()).isEqualTo(photo.getId());
+        assertCompletedOnce();
+        verify(publisher).publish(any());
+    }
+
+    @Test
+    void retriesMongoFailureUsingSamePreparedStory() {
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("Mongo unavailable"))
+                .doCallRealMethod().when(contentStorage).insertIfAbsent(any());
+
+        assertThatThrownBy(() -> service.complete(job.getId(),
+                completed(job.getExecutionId(), photo.getId())))
+                .isInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
+
+        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        assertPreparedStoryUnpublished(storyId);
+        assertThat(contents.existsById(storyId)).isFalse();
+        verifyNoInteractions(publisher);
+
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+
+        assertCompletedOnce();
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStoryId()).isEqualTo(storyId);
+        assertThat(contents.existsById(storyId)).isTrue();
+    }
+
+    @Test
+    void cancellationAfterMongoSavePreventsCompletion() {
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            terminal.confirmCancellation(owner.getUserId(), job.getId());
+            clearInvocations(publisher);
+            return null;
+        }).when(contentStorage).insertIfAbsent(any());
+
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+
+        var saved = jobs.findById(job.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.CANCELED);
+        assertThat(contents.existsById(saved.getStoryId())).isTrue();
+        assertPreparedStoryUnpublished(saved.getStoryId());
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void retriesFinalizationFailureWithoutOverwritingMongoContent() {
+        doThrow(new org.springframework.dao.TransientDataAccessResourceException("MySQL completion unavailable"))
+                .doCallRealMethod().when(finalization).finish(anyLong(), anyLong());
+
+        assertThatThrownBy(() -> service.complete(job.getId(),
+                completed(job.getExecutionId(), photo.getId())))
+                .isInstanceOf(org.springframework.dao.TransientDataAccessResourceException.class);
+
+        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        var firstDocument = contents.findById(storyId).orElseThrow();
+        assertPreparedStoryUnpublished(storyId);
+        verifyNoInteractions(publisher);
+
+        service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
+
+        assertCompletedOnce();
+        var retriedDocument = contents.findById(storyId).orElseThrow();
+        assertThat(retriedDocument.getVersion()).isEqualTo(firstDocument.getVersion());
+        assertThat(retriedDocument.getBlocks()).isEqualTo(firstDocument.getBlocks());
+        verify(publisher).publish(any());
     }
 
     private void assertCompletedOnce() {

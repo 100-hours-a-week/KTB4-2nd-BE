@@ -12,6 +12,46 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class StoryGenerationJobPreparationTest {
     @Test
+    void completesUsingPreparedId() {
+        var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
+        job.prepareStory(10L);
+        long version = job.getStatusVersion();
+
+        job.complete(10L);
+
+        assertThat(job.getStoryId()).isEqualTo(10L);
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.COMPLETED);
+        assertThat(job.getProgress()).isEqualTo(100);
+        assertThat(job.getStatusVersion()).isEqualTo(version + 1);
+    }
+
+    @Test
+    void rejectsCompletionWithAnotherIdWithoutChangingState() {
+        var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
+        job.updateProcessing(30);
+        job.prepareStory(10L);
+        long version = job.getStatusVersion();
+
+        assertThatThrownBy(() -> job.complete(20L))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(job.getStoryId()).isEqualTo(10L);
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.PROCESSING);
+        assertThat(job.getProgress()).isEqualTo(30);
+        assertThat(job.getStatusVersion()).isEqualTo(version);
+    }
+
+    @Test
+    void completesWithoutSeparatePreparation() {
+        var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
+
+        job.complete(10L);
+
+        assertThat(job.getStoryId()).isEqualTo(10L);
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.COMPLETED);
+    }
+
+    @Test
     void retainsPreparedIdWithoutCompletingOrAdvancingVersion() {
         var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
         job.updateProcessing(30);

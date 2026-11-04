@@ -125,15 +125,10 @@ public class StoryGenerationJob {
             return;
         }
 
-        if (storyId == null || storyId <= 0) {
-            throw new IllegalArgumentException(
-                    StoryGenerationInternalErrorMessage.JOB_STORY_ID_REQUIRED.message()
-            );
-        }
+        prepareStory(storyId);
 
         changeStatus(Status.COMPLETED);
         this.progress = 100;
-        this.storyId = storyId;
         this.errorCode = null;
     }
 

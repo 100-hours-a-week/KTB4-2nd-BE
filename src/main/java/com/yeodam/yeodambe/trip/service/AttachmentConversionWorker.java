@@ -37,7 +37,8 @@ import java.util.stream.IntStream;
 @Slf4j
 @Service
 @ConditionalOnProperty(name = "app.attachment-conversion.mode", havingValue = "KAFKA")
-@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
+@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}"
+        + " && ${app.attachment-conversion.consumer-enabled:true}")
 public class AttachmentConversionWorker {
     private final AttachmentConversionTransactionService db;
     private final TripAttachmentDerivativeService photos;

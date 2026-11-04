@@ -267,9 +267,16 @@ class AttachmentConversionRecoveryTest {
     void dbHoldAndOperationsDoNotScheduleOrRunRecovery() {
         for (var route : AttachmentConversionRoute.values()) {
             var configured = properties(10, 2, 10);
-            var properties = new AttachmentConversionProperties(route, configured.admission(),
+            AttachmentConversionProperties properties = new AttachmentConversionProperties(
+                    route,
+                    configured.admission(),
                     new AttachmentConversionProperties.Operations(route == AttachmentConversionRoute.KAFKA),
-                    configured.topics(), configured.recovery());
+                    configured.topics(),
+                    configured.recovery(),
+                    true,
+                    true,
+                    true
+            );
             var recovery = new AttachmentConversionRecoveryService(properties, transactions);
             var registrar = new org.springframework.scheduling.config.ScheduledTaskRegistrar();
             recovery.configureTasks(registrar);
@@ -365,8 +372,16 @@ class AttachmentConversionRecoveryTest {
     private AttachmentConversionProperties properties(int pageSize, int pages, int reissues) {
         var admission = new AttachmentConversionProperties.Admission(Map.of(Lane.LIGHT, 100L, Lane.HEIC, 100L),
                 Map.of(Lane.LIGHT, 1000L, Lane.HEIC, 1000L), Duration.ofDays(1), Duration.ofSeconds(10), Duration.ofSeconds(1), 0.5);
-        return new AttachmentConversionProperties(AttachmentConversionRoute.KAFKA, admission, null, null,
-                new AttachmentConversionProperties.Recovery(INTERVAL, pageSize, pages, reissues));
+        return new AttachmentConversionProperties(
+                AttachmentConversionRoute.KAFKA,
+                admission,
+                null,
+                null,
+                new AttachmentConversionProperties.Recovery(INTERVAL, pageSize, pages, reissues),
+                true,
+                true,
+                true
+        );
     }
 
     private AttachmentConversionRecoveryCandidate candidate(Fixture fixture) {

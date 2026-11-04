@@ -231,12 +231,18 @@ class AttachmentConversionAdmissionHttpTest {
     }
 
     private void setMode(AttachmentConversionRoute mode) {
-        ReflectionTestUtils.setField(admission, "properties", new AttachmentConversionProperties(mode,
+        ReflectionTestUtils.setField(admission, "properties", new AttachmentConversionProperties(
+                mode,
                 new Admission(Map.of(Lane.LIGHT, 10L, Lane.HEIC, 10L),
                         Map.of(Lane.LIGHT, 100000L, Lane.HEIC, 100000L),
                         Duration.ofSeconds(100), Duration.ofSeconds(10), Duration.ofSeconds(1), 0.5),
-                new Operations(false), null,
-                new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10)));
+                new Operations(false),
+                null,
+                new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10),
+                true,
+                true,
+                true
+        ));
     }
 
     private void prepareTrip(boolean initial) {

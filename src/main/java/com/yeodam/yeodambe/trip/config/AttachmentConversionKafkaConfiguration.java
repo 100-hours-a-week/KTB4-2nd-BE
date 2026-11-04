@@ -42,8 +42,10 @@ import java.util.Set;
 
 @Slf4j
 @Configuration(proxyBeanMethods = false)
-@ConditionalOnExpression("('${app.attachment-conversion.mode:DB}' == 'KAFKA' || '${app.attachment-conversion.mode:DB}' == 'HOLD')"
-        + " && !${app.attachment-conversion.operations.enabled:false}")
+@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false} && ("
+        + "('${app.attachment-conversion.mode:DB}' == 'KAFKA' && ${app.attachment-conversion.consumer-enabled:true})"
+        + " || (('${app.attachment-conversion.mode:DB}' == 'KAFKA' || '${app.attachment-conversion.mode:DB}' == 'HOLD')"
+        + " && ${app.attachment-conversion.receipt-listener-enabled:true}))")
 public class AttachmentConversionKafkaConfiguration {
     private final Duration backoff;
     private final int fetchBytes;
@@ -64,7 +66,7 @@ public class AttachmentConversionKafkaConfiguration {
 
     @Bean
     public ThreadPoolTaskScheduler attachmentConversionKafkaScheduler() {
-        var scheduler = new ThreadPoolTaskScheduler();
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
         scheduler.setThreadNamePrefix("attachment-conversion-kafka-");
         // A synchronous DLT metadata/buffer wait must not hold another topic's retry callback.
         scheduler.setPoolSize(4);
@@ -74,17 +76,18 @@ public class AttachmentConversionKafkaConfiguration {
 
     @Bean
     @ConditionalOnProperty(name = "app.attachment-conversion.mode", havingValue = "KAFKA")
+    @ConditionalOnExpression("${app.attachment-conversion.consumer-enabled:true}")
     public ConcurrentKafkaListenerContainerFactory<Object, Object> attachmentConversionKafkaListenerContainerFactory(
             ConcurrentKafkaListenerContainerFactoryConfigurer configurer, ConsumerFactory<Object, Object> consumers,
             @Lazy AttachmentConversionKafkaListener listener,
             @Qualifier("attachmentConversionKafkaScheduler") TaskScheduler scheduler, KafkaListenerEndpointRegistry registry) {
         Assert.isTrue(fetchBytes > 0 && partitionBytes > 0 && messageBytes > 0,
                 "KAFKA 모드의 fetch 및 메시지 크기 설정은 양수여야 합니다.");
-        var isolated = isolatedConsumers(consumers);
+        DefaultKafkaConsumerFactory<Object, Object> isolated = isolatedConsumers(consumers);
         isolated.updateConfigs(Map.of(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1,
                 ConsumerConfig.FETCH_MAX_BYTES_CONFIG, fetchBytes, ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, partitionBytes));
         isolated.addPostProcessor(consumer -> CommitGate.wrap(consumer, backoff));
-        var factory = new ConcurrentKafkaListenerContainerFactory<Object, Object>();
+        ConcurrentKafkaListenerContainerFactory<Object, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
         configurer.configure(factory, isolated);
         factory.setConcurrency(1);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
@@ -113,10 +116,11 @@ public class AttachmentConversionKafkaConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "app.attachment-conversion.receipt-listener-enabled", havingValue = "true", matchIfMissing = true)
     public ConcurrentKafkaListenerContainerFactory<Object, Object> attachmentConversionReceiptKafkaListenerContainerFactory(
             ConcurrentKafkaListenerContainerFactoryConfigurer configurer, ConsumerFactory<Object, Object> consumers,
             @Qualifier("attachmentConversionKafkaScheduler") TaskScheduler scheduler, KafkaListenerEndpointRegistry registry) {
-        var factory = new ConcurrentKafkaListenerContainerFactory<Object, Object>();
+        ConcurrentKafkaListenerContainerFactory<Object, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
         configurer.configure(factory, isolatedConsumers(consumers));
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
         factory.setCommonErrorHandler(errors(scheduler, registry));

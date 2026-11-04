@@ -21,7 +21,7 @@ public class AttachmentConversionRecoveryService implements SchedulingConfigurer
     private Cursor cursor;
 
     public void reconcilePendingRequests() {
-        if (!properties.kafkaEnabled() || !running.compareAndSet(false, true)) {
+        if (!properties.recoveryExecutionEnabled() || !running.compareAndSet(false, true)) {
             return;
         }
         try {
@@ -60,7 +60,7 @@ public class AttachmentConversionRecoveryService implements SchedulingConfigurer
 
     @Override
     public void configureTasks(ScheduledTaskRegistrar registrar) {
-        if (properties.kafkaEnabled()) {
+        if (properties.recoveryExecutionEnabled()) {
             registrar.addFixedDelayTask(this::reconcilePendingRequests, properties.recovery().interval());
         }
     }

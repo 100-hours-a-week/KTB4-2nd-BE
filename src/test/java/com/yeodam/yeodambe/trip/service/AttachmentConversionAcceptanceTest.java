@@ -38,6 +38,9 @@ import static org.assertj.core.api.Assertions.*;
 @SpringBootTest(properties = {
         "spring.application.name=conversion-acceptance-test",
         "app.attachment-conversion.mode=KAFKA",
+        "app.attachment-conversion.consumer-enabled=false",
+        "app.attachment-conversion.receipt-listener-enabled=false",
+        "app.attachment-conversion.recovery-enabled=false",
         "app.attachment-conversion.retry.technical-backoff=100ms",
         "app.attachment-conversion.kafka.fetch-max-bytes=1048576",
         "app.attachment-conversion.kafka.partition-fetch-max-bytes=524288",
@@ -69,6 +72,27 @@ class AttachmentConversionAcceptanceTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private ObjectMapper json;
+
+    @ParameterizedTest
+    @EnumSource(Kind.class)
+    void consumerOffKeepsKafkaAdmissionAndEnqueue(Kind kind) {
+        setMode(AttachmentConversionRoute.KAFKA, false);
+        Batch batch = fixture(kind, List.of("image/jpeg", "image/heic"));
+
+        accept(batch);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(route(batch)).isEqualTo("KAFKA");
+        assertThat(tasks.findAll()).hasSize(2).allSatisfy(task -> {
+            assertThat(task.getKind()).isEqualTo(kind);
+            assertThat(task.getRemainingPhotos()).isEqualTo(1);
+        });
+        assertThat(outboxes.findAll()).hasSize(2).allSatisfy(outbox -> {
+            assertThat(outbox.isCdcManaged()).isTrue();
+            assertThat(outbox.getStatus()).isEqualTo(AttachmentConversionOutbox.Status.PENDING);
+        });
+    }
 
     @ParameterizedTest
     @EnumSource(Kind.class)
@@ -255,12 +279,22 @@ class AttachmentConversionAcceptanceTest {
     }
 
     private void setMode(AttachmentConversionRoute mode) {
-        var configured = new AttachmentConversionProperties(mode,
+        setMode(mode, true);
+    }
+
+    private void setMode(AttachmentConversionRoute mode, boolean consumerEnabled) {
+        AttachmentConversionProperties configured = new AttachmentConversionProperties(
+                mode,
                 new AttachmentConversionProperties.Admission(Map.of(Lane.LIGHT, 100L, Lane.HEIC, 100L),
                         Map.of(Lane.LIGHT, 100000L, Lane.HEIC, 100000L), Duration.ofHours(1),
                         Duration.ofSeconds(30), Duration.ofSeconds(10), 0.5),
-                new AttachmentConversionProperties.Operations(false), null,
-                new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10));
+                new AttachmentConversionProperties.Operations(false),
+                null,
+                new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10),
+                consumerEnabled,
+                true,
+                true
+        );
         ReflectionTestUtils.setField(initial, "conversionProperties", configured);
         ReflectionTestUtils.setField(additional, "conversionProperties", configured);
     }

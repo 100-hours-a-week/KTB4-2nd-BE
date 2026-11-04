@@ -38,7 +38,16 @@ class AttachmentConversionKafkaListenerTest {
     private final AttachmentConversionWorker worker = mock(AttachmentConversionWorker.class);
     private final KafkaTemplate<String, String> kafka = mock(KafkaTemplate.class);
     private final KafkaListenerEndpointRegistry registry = mock(KafkaListenerEndpointRegistry.class);
-    private final AttachmentConversionProperties properties = new AttachmentConversionProperties(null, null, null, null, null);
+    private final AttachmentConversionProperties properties = new AttachmentConversionProperties(
+            null,
+            null,
+            null,
+            null,
+            null,
+            true,
+            true,
+            true
+    );
     private final ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
     private final AttachmentConversionKafkaListener listener;
 

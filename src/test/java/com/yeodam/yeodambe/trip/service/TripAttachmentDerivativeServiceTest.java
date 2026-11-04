@@ -86,7 +86,16 @@ class TripAttachmentDerivativeServiceTest {
         pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meterRegistry, 134217728L);
         exifTool = new ExifToolProcess();
         service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler,
-                transactions, pipeline, exifTool, new AttachmentConversionProperties(null, null, null, null, null), additionalTransactions);
+                transactions, pipeline, exifTool, new AttachmentConversionProperties(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        true,
+                        true,
+                        true
+                ), additionalTransactions);
     }
 
     @ParameterizedTest
@@ -100,8 +109,16 @@ class TripAttachmentDerivativeServiceTest {
                         Lane.HEIC, 100000L),
                 Duration.ofHours(1), Duration.ofSeconds(30), Duration.ofSeconds(10), 0.5);
         ReflectionTestUtils.setField(service, "conversionProperties",
-                new AttachmentConversionProperties(route, admission, null, null,
-                        new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10)));
+                new AttachmentConversionProperties(
+                        route,
+                        admission,
+                        null,
+                        null,
+                        new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10),
+                        true,
+                        true,
+                        true
+                ));
 
         service.processPendingBatches();
         service.processAcceptedBatch(7L, 1L, "upload");
@@ -202,7 +219,16 @@ class TripAttachmentDerivativeServiceTest {
         var saturatedPipeline = new InitialAttachmentStoragePipeline(
                 storage, transactions, saturatedScheduler, meterRegistry, 134217728L);
         var immediate = new TripAttachmentDerivativeService(
-                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline, exifTool, new AttachmentConversionProperties(null, null, null, null, null), additionalTransactions);
+                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline, exifTool, new AttachmentConversionProperties(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        true,
+                        true,
+                        true
+                ), additionalTransactions);
         when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
         when(saturatedScheduler.submitPrepared(eq("execution"), any(), any(), any()))
                 .thenThrow(new RejectedExecutionException("queue full"));

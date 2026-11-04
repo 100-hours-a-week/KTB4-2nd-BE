@@ -9,6 +9,12 @@ public record StoryGenerationStatusResponse(
         Long storyId,
         Failure error
 ) {
+    public StoryGenerationStatusResponse {
+        if (status != StoryGenerationJob.Status.COMPLETED) {
+            storyId = null;
+        }
+    }
+
     public record Failure(
             String code,
             String message

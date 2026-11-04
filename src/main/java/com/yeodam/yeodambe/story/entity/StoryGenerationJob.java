@@ -100,6 +100,26 @@ public class StoryGenerationJob {
         this.progress = Math.max(this.progress, progress);
     }
 
+    public void prepareStory(Long storyId) {
+        if (isFinished()) {
+            return;
+        }
+
+        if (storyId == null || storyId <= 0) {
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.PREPARED_STORY_ID_INVALID.message()
+            );
+        }
+
+        if (this.storyId != null && !this.storyId.equals(storyId)) {
+            throw new IllegalStateException(
+                    StoryGenerationInternalErrorMessage.PREPARED_STORY_ID_MISMATCH.message()
+            );
+        }
+
+        this.storyId = storyId;
+    }
+
     public void complete(Long storyId) {
         if (isFinished()) {
             return;

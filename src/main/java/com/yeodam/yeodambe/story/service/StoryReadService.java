@@ -17,6 +17,7 @@ import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
@@ -52,6 +53,14 @@ public class StoryReadService {
                         StoryGenerationInternalErrorMessage.CONTENT_DOCUMENT_MISSING
                 ));
 
+        return prepareContentResponse(tripId, trip.getUserId().equals(userId), content);
+    }
+
+    StoryDetailResponse prepareContentResponse(
+            Long tripId,
+            boolean userByMe,
+            StoryContentDocument content
+    ) {
         List<StoryContentBlock> blocks = content.getBlocks().stream()
                 .filter(block -> block.deletedAt() == null)
                 .toList();
@@ -70,9 +79,9 @@ public class StoryReadService {
         storyValidator.validateContentDisplayBlocks(tripId, visibleBlocks);
 
         return new StoryDetailResponse(
-                story.getId(),
+                content.getId(),
                 tripId,
-                trip.getUserId().equals(userId),
+                userByMe,
                 content.getMood(),
                 content.getStorySummary(),
                 buildContentDays(details)

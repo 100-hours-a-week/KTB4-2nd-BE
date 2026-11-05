@@ -10,6 +10,7 @@ import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
 import com.yeodam.yeodambe.trip.entity.TripDisplayStatus;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadBatch;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
@@ -24,6 +25,8 @@ import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.St
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
+
 @Service
 @RequiredArgsConstructor
 public class TripProcessingStatusService {
@@ -31,7 +34,6 @@ public class TripProcessingStatusService {
     private final TripDetailPlaceRepository places;
     private final TripAttachmentRepository attachments;
     private final TripPhotoAnalysisService analysis;
-    private final InitialUploadExecutionRegistry executions;
     private final InitialAttachmentUploadBatchRepository uploadBatches;
     private final TripCreationExecutionRepository creationExecutions;
     private final AdditionalAttachmentExecutionRepository additionalExecutions;
@@ -43,109 +45,117 @@ public class TripProcessingStatusService {
             Long userId
     ) {
         Trip trip = findTrip(tripId, userId);
-        var addition = additionalExecutions.findFirstByTripIdAndUserIdOrderByCreatedAtDescExecutionIdDesc(tripId, userId);
+        Optional<AdditionalAttachmentExecution> addition =
+                additionalExecutions.findFirstByTripIdAndUserIdOrderByCreatedAtDescExecutionIdDesc(tripId, userId);
         if (addition.isPresent()) {
-            var execution = addition.get();
-            String executionId = execution.getExecutionId();
-            long expectedVersion = execution.getStatusVersion();
-            TripDisplayStatus nextStatus = execution.getDisplayStatus();
-            String nextStep = execution.getCurrentStep();
-
-            if (!execution.isTerminal()
-                    && execution.getStatus() != AdditionalAttachmentExecution.Status.RESULT_APPLYING
-                    && execution.getProcessPublishedAt() != null) {
-                var ai = analysis.findStatus(tripId, executionId);
-                if (ai.progress() != null
-                        && !Integer.valueOf(ai.progress().total()).equals(execution.getAnalysisAttachmentCount())) {
-                    throw new IllegalStateException(
-                            TripInternalErrorMessage.AI_PROGRESS_TOTAL_EXECUTION_MISMATCH.message());
-                }
-                if (ai.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED) {
-                    nextStatus = TripDisplayStatus.FINALIZING;
-                    nextStep = null;
-                } else {
-                    nextStatus = TripDisplayStatus.PROCESSING;
-                    nextStep = ai.currentStep();
-                }
-            }
-
-            var snapshot = statusSyncService.synchronizeAddition(
-                    executionId, expectedVersion, nextStatus, nextStep);
-            return fromSnapshot(snapshot);
-        }
-
-        var creation = creationExecutions.findByTripId(tripId);
-        if (creation.isPresent()) {
-            var execution = creation.get();
-            String executionId = execution.getExecutionId();
-            long expectedVersion = execution.getStatusVersion();
-            TripDisplayStatus nextStatus = execution.getDisplayStatus();
-            String nextStep = execution.getCurrentStep();
-
-            if (!execution.isTerminal()
-                    && execution.getStatus() != TripCreationExecution.Status.RESULT_APPLYING
-                    && execution.getProcessPublishedAt() != null) {
-                var ai = analysis.findStatus(tripId, executionId);
-                if (ai.progress() != null && ai.progress().total() != execution.getTotalAttachmentCount()) {
-                    throw new IllegalStateException(
-                            TripInternalErrorMessage.AI_PROGRESS_TOTAL_EXECUTION_MISMATCH.message());
-                }
-                if (ai.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED) {
-                    nextStatus = TripDisplayStatus.FINALIZING;
-                    nextStep = null;
-                } else {
-                    nextStatus = TripDisplayStatus.PROCESSING;
-                    nextStep = ai.status() == TripPhotoAnalysisStatusResponse.Status.QUEUED
-                            ? null : ai.currentStep();
-                }
-            }
-
-            var snapshot = statusSyncService.synchronizeCreation(
-                    executionId, expectedVersion, nextStatus, nextStep);
-            return fromSnapshot(snapshot);
-        }
-
-        String executionId = null;
-        long statusVersion = 0L;
-        if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING) {
-            return fromDatabase(trip, executionId, statusVersion);
-        }
-        var latestBatch = uploadBatches.findFirstByTripIdAndUserIdOrderByIdDesc(tripId, userId);
-        if (latestBatch.isPresent() && latestBatch.get().getLastBatch()
-                && latestBatch.get().getStatus() == InitialAttachmentUploadStatus.FAILED) {
-            return new TripProcessingStatusResponse(tripId, executionId, statusVersion, Status.FAILED, null, null,
-                    new TripProcessingStatusResponse.Error(
-                            ErrorMessage.AI_PROCESSING_FAILED.name(),
-                            TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message()
-                    ));
-        }
-        if (!executions.isAnalysisStarted(tripId)
-                && !uploadBatches.existsByTripIdAndStatus(tripId, InitialAttachmentUploadStatus.ANALYZING)) {
-            return processing(tripId, executionId, statusVersion);
-        }
-
-        TripPhotoAnalysisStatusResponse aiStatus = analysis.findStatus(tripId);
-        if (aiStatus.status() == TripPhotoAnalysisStatusResponse.Status.QUEUED) {
-            return processing(tripId, executionId, statusVersion);
-        }
-        if (aiStatus.status() == TripPhotoAnalysisStatusResponse.Status.PROCESSING) {
-            return new TripProcessingStatusResponse(
+            AdditionalAttachmentExecution execution = addition.get();
+            return fromSnapshot(new TripProcessingStateSnapshot(
                     tripId,
-                    executionId,
-                    statusVersion,
-                    Status.PROCESSING,
-                    aiStatus.currentStep(),
-                    null,
-                    null
-            );
+                    execution.getExecutionId(),
+                    execution.getStatusVersion(),
+                    execution.getDisplayStatus(),
+                    execution.getCurrentStep(),
+                    execution.getErrorCode(),
+                    execution.getDisplayStatus() == TripDisplayStatus.COMPLETED ? execution.getResultRawPayload() : null
+            ));
         }
+        Optional<TripCreationExecution> creation = creationExecutions.findByTripId(tripId);
+        if (creation.isPresent()) {
+            TripCreationExecution execution = creation.get();
+            return fromSnapshot(new TripProcessingStateSnapshot(
+                    tripId,
+                    execution.getExecutionId(),
+                    execution.getStatusVersion(),
+                    execution.getDisplayStatus(),
+                    execution.getCurrentStep(),
+                    execution.getErrorCode(),
+                    execution.getDisplayStatus() == TripDisplayStatus.COMPLETED ? execution.getResultRawPayload() : null
+            ));
+        }
+        return findLegacyStatus(trip, userId);
+    }
 
-        Trip updated = findTrip(tripId, userId);
-        if (aiStatus.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED
-                && updated.getProcessingStatus() == ProcessingStatus.PROCESSING) {
-            return new TripProcessingStatusResponse(tripId, executionId, statusVersion, Status.FINALIZING,  null, null, null);
+    public void synchronizeStatus(Long tripId, Long userId) {
+        findTrip(tripId, userId);
+        Optional<AdditionalAttachmentExecution> addition =
+                additionalExecutions.findFirstByTripIdAndUserIdOrderByCreatedAtDescExecutionIdDesc(tripId, userId);
+        if (addition.isPresent()) {
+            synchronizeAddition(addition.get());
+            return;
         }
-        return fromDatabase(updated, executionId, statusVersion);
+        creationExecutions.findByTripId(tripId).ifPresent(this::synchronizeCreation);
+    }
+
+    private void synchronizeAddition(AdditionalAttachmentExecution execution) {
+        String executionId = execution.getExecutionId();
+        long expectedVersion = execution.getStatusVersion();
+        TripDisplayStatus nextStatus = execution.getDisplayStatus();
+        String nextStep = execution.getCurrentStep();
+        if (!execution.isTerminal()
+                && execution.getStatus() != AdditionalAttachmentExecution.Status.RESULT_APPLYING
+                && execution.getProcessPublishedAt() != null) {
+            TripPhotoAnalysisStatusResponse ai = analysis.findStatus(execution.getTripId(), executionId);
+            if (ai.progress() != null
+                    && !Integer.valueOf(ai.progress().total()).equals(execution.getAnalysisAttachmentCount())) {
+                throw new IllegalStateException(
+                        TripInternalErrorMessage.AI_PROGRESS_TOTAL_EXECUTION_MISMATCH.message());
+            }
+            if (ai.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED) {
+                nextStatus = TripDisplayStatus.FINALIZING;
+                nextStep = null;
+            } else {
+                nextStatus = TripDisplayStatus.PROCESSING;
+                nextStep = ai.currentStep();
+            }
+        }
+        statusSyncService.synchronizeAddition(executionId, expectedVersion, nextStatus, nextStep);
+    }
+
+    private void synchronizeCreation(TripCreationExecution execution) {
+        String executionId = execution.getExecutionId();
+        long expectedVersion = execution.getStatusVersion();
+        TripDisplayStatus nextStatus = execution.getDisplayStatus();
+        String nextStep = execution.getCurrentStep();
+        if (!execution.isTerminal()
+                && execution.getStatus() != TripCreationExecution.Status.RESULT_APPLYING
+                && execution.getProcessPublishedAt() != null) {
+            TripPhotoAnalysisStatusResponse ai = analysis.findStatus(execution.getTripId(), executionId);
+            if (ai.progress() != null && ai.progress().total() != execution.getTotalAttachmentCount()) {
+                throw new IllegalStateException(
+                        TripInternalErrorMessage.AI_PROGRESS_TOTAL_EXECUTION_MISMATCH.message());
+            }
+            if (ai.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED) {
+                nextStatus = TripDisplayStatus.FINALIZING;
+                nextStep = null;
+            } else {
+                nextStatus = TripDisplayStatus.PROCESSING;
+                nextStep = ai.status() == TripPhotoAnalysisStatusResponse.Status.QUEUED ? null : ai.currentStep();
+            }
+        }
+        statusSyncService.synchronizeCreation(executionId, expectedVersion, nextStatus, nextStep);
+    }
+
+    private TripProcessingStatusResponse findLegacyStatus(Trip trip, Long userId) {
+        if (trip.getProcessingStatus() == ProcessingStatus.PROCESSING) {
+            Optional<InitialAttachmentUploadBatch> latestBatch =
+                    uploadBatches.findFirstByTripIdAndUserIdOrderByIdDesc(trip.getId(), userId);
+            if (latestBatch.isPresent() && latestBatch.get().getLastBatch()
+                    && latestBatch.get().getStatus() == InitialAttachmentUploadStatus.FAILED) {
+                return new TripProcessingStatusResponse(
+                        trip.getId(),
+                        null,
+                        0L,
+                        Status.FAILED,
+                        null,
+                        null,
+                        new TripProcessingStatusResponse.Error(
+                                ErrorMessage.AI_PROCESSING_FAILED.name(),
+                                TripInternalErrorMessage.ATTACHMENT_PROCESSING_FAILED.message()
+                        )
+                );
+            }
+        }
+        return fromDatabase(trip, null, 0L);
     }
 
     private TripProcessingStatusResponse fromSnapshot(
@@ -154,7 +164,7 @@ public class TripProcessingStatusService {
         Status status = Status.valueOf(snapshot.displayStatus().name());
 
         if (status == Status.COMPLETED) {
-            var savedResult = completionSnapshots.resultFromRaw(snapshot.tripId(), snapshot.completedRawPayload());
+            TripProcessingStatusResponse.Result savedResult = completionSnapshots.resultFromRaw(snapshot.tripId(), snapshot.completedRawPayload());
             if (savedResult != null) {
                 return new TripProcessingStatusResponse(snapshot.tripId(), snapshot.executionId(), snapshot.statusVersion(),
                         Status.COMPLETED, null, savedResult, null);

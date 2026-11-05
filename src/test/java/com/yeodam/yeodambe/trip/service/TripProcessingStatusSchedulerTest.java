@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -34,9 +35,9 @@ class TripProcessingStatusSchedulerTest {
 
         scheduler.synchronizePendingExecutions();
 
-        var order = inOrder(statuses);
-        order.verify(statuses).findStatus(7L, 42L);
-        order.verify(statuses).findStatus(8L, 43L);
+        InOrder order = inOrder(statuses);
+        order.verify(statuses).synchronizeStatus(7L, 42L);
+        order.verify(statuses).synchronizeStatus(8L, 43L);
         verifyNoMoreInteractions(statuses);
     }
 
@@ -44,13 +45,13 @@ class TripProcessingStatusSchedulerTest {
     void aFailedExecutionDoesNotStopFollowingExecutionsOrTheAdditionalList() {
         when(creations.findAwaitingAiStatus()).thenReturn(List.of(creation(7L, 42L), creation(8L, 43L)));
         when(additions.findAwaitingAiStatus()).thenReturn(List.of(addition(9L, 44L)));
-        when(statuses.findStatus(7L, 42L)).thenThrow(new IllegalStateException("AI unavailable"));
+        doThrow(IllegalStateException.class).when(statuses).synchronizeStatus(7L, 42L);
 
         scheduler.synchronizePendingExecutions();
 
-        verify(statuses).findStatus(7L, 42L);
-        verify(statuses).findStatus(8L, 43L);
-        verify(statuses).findStatus(9L, 44L);
+        verify(statuses).synchronizeStatus(7L, 42L);
+        verify(statuses).synchronizeStatus(8L, 43L);
+        verify(statuses).synchronizeStatus(9L, 44L);
     }
 
     @Test
@@ -64,7 +65,7 @@ class TripProcessingStatusSchedulerTest {
 
     @Test
     void enablesTheSchedulerOnlyWhenConfiguredTrue() {
-        try (var context = context(Map.of("app.trip.status-polling-enabled", "true"))) {
+        try (AnnotationConfigApplicationContext context = context(Map.of("app.trip.status-polling-enabled", "true"))) {
             context.register(TripProcessingStatusScheduler.class);
             context.refresh();
             assertThat(context.getBeansOfType(TripProcessingStatusScheduler.class)).hasSize(1);
@@ -73,7 +74,7 @@ class TripProcessingStatusSchedulerTest {
 
     @Test
     void disablesTheSchedulerWhenConfiguredFalse() {
-        try (var context = context(Map.of("app.trip.status-polling-enabled", "false"))) {
+        try (AnnotationConfigApplicationContext context = context(Map.of("app.trip.status-polling-enabled", "false"))) {
             context.register(TripProcessingStatusScheduler.class);
             context.refresh();
             assertThat(context.getBeansOfType(TripProcessingStatusScheduler.class)).isEmpty();
@@ -83,7 +84,7 @@ class TripProcessingStatusSchedulerTest {
 
     @Test
     void doesNotEnableTheSchedulerWhenThePropertyIsMissing() {
-        try (var context = context(Map.of())) {
+        try (AnnotationConfigApplicationContext context = context(Map.of())) {
             context.register(TripProcessingStatusScheduler.class);
             context.refresh();
             assertThat(context.getBeansOfType(TripProcessingStatusScheduler.class)).isEmpty();
@@ -92,13 +93,13 @@ class TripProcessingStatusSchedulerTest {
 
     @Test
     void springInvokesStatusCollectionWithoutAFrontendRequest() throws Exception {
-        var called = new CountDownLatch(1);
+        CountDownLatch called = new CountDownLatch(1);
         when(creations.findAwaitingAiStatus()).thenReturn(List.of(creation(7L, 42L)));
-        when(statuses.findStatus(7L, 42L)).thenAnswer(invocation -> {
+        doAnswer(invocation -> {
             called.countDown();
             return null;
-        });
-        try (var context = context(Map.of("app.trip.status-polling-enabled", "true"))) {
+        }).when(statuses).synchronizeStatus(7L, 42L);
+        try (AnnotationConfigApplicationContext context = context(Map.of("app.trip.status-polling-enabled", "true"))) {
             context.register(SchedulingConfiguration.class);
             context.refresh();
 
@@ -107,7 +108,7 @@ class TripProcessingStatusSchedulerTest {
     }
 
     private AnnotationConfigApplicationContext context(Map<String, Object> properties) {
-        var context = new AnnotationConfigApplicationContext();
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", properties));
         context.registerBean(TripCreationExecutionRepository.class, () -> creations);
         context.registerBean(AdditionalAttachmentExecutionRepository.class, () -> additions);

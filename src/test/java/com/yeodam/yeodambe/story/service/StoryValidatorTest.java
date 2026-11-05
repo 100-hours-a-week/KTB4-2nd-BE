@@ -243,7 +243,7 @@ class StoryValidatorTest {
         var requested = List.of(
                 new StoryTonePreviewRequest.Block(existing.getId(), 99L, 1, null, null, null),
                 new StoryTonePreviewRequest.Block(null, 100L, 2, null, null, null));
-        assertThatCode(() -> validator.validatePreviewBlockIds(requested, List.of(existing)))
+        assertThatCode(() -> validator.validatePreviewBlockIds(requested, java.util.Set.of(existing.getId())))
                 .doesNotThrowAnyException();
     }
 
@@ -252,9 +252,9 @@ class StoryValidatorTest {
         var existing = row(1, 7, "날", null).block();
         var requested = List.of(
                 new StoryTonePreviewRequest.Block(999L, 99L, 1, null, null, null));
-        assertThatThrownBy(() -> validator.validatePreviewBlockIds(requested, List.of(existing)))
+        assertThatThrownBy(() -> validator.validatePreviewBlockIds(requested, java.util.Set.of(existing.getId())))
                 .isInstanceOf(StoryOrAttachmentNotFoundException.class);
-        assertThatThrownBy(() -> validator.validatePreviewBlockIds(requested, List.of()))
+        assertThatThrownBy(() -> validator.validatePreviewBlockIds(requested, java.util.Set.of()))
                 .isInstanceOf(StoryOrAttachmentNotFoundException.class);
     }
 

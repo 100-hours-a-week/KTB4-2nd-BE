@@ -11,11 +11,9 @@ import com.yeodam.yeodambe.common.exception.StoryOrAttachmentNotFoundException;
 import com.yeodam.yeodambe.common.exception.StoryTonePreviewTakenAtMissingException;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
-import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.service.request.StoryTonePreviewRequest;
 import com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail;
 
-import java.util.stream.Collectors;
 import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
@@ -144,12 +142,8 @@ public class StoryValidator {
 
     public void validatePreviewBlockIds(
             List<StoryTonePreviewRequest.Block> requestedBlocks,
-            List<StoryBlock> existingBlocks
+            Set<Long> existingBlockIds
     ) {
-        Set<Long> existingBlockIds = existingBlocks.stream()
-                .map(StoryBlock::getId)
-                .collect(Collectors.toSet());
-
         for (StoryTonePreviewRequest.Block requested : requestedBlocks) {
             Long blockId = requested.storyBlockId();
 

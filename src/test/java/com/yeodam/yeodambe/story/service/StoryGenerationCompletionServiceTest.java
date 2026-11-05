@@ -701,10 +701,10 @@ class StoryGenerationCompletionServiceTest {
     @Test
     void cancellationAfterMongoSavePreventsCompletion() {
         doAnswer(invocation -> {
-            invocation.callRealMethod();
+            Object inserted = invocation.callRealMethod();
             terminal.confirmCancellation(owner.getUserId(), job.getId());
             clearInvocations(publisher);
-            return null;
+            return inserted;
         }).when(contentStorage).insertIfAbsent(any());
 
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));

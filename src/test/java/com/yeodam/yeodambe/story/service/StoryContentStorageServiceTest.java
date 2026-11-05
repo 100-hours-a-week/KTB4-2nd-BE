@@ -10,6 +10,7 @@ import org.springframework.dao.DuplicateKeyException;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 class StoryContentStorageServiceTest {
@@ -20,7 +21,7 @@ class StoryContentStorageServiceTest {
     void insertsMissingDocument() {
         var document = document();
 
-        service.insertIfAbsent(document);
+        assertThat(service.insertIfAbsent(document)).isTrue();
 
         verify(repository).existsById(10L);
         verify(repository).insert(document);
@@ -31,7 +32,7 @@ class StoryContentStorageServiceTest {
     void leavesExistingDocumentUntouched() {
         when(repository.existsById(10L)).thenReturn(true);
 
-        service.insertIfAbsent(document());
+        assertThat(service.insertIfAbsent(document())).isFalse();
 
         verify(repository).existsById(10L);
         verifyNoMoreInteractions(repository);
@@ -43,7 +44,7 @@ class StoryContentStorageServiceTest {
         when(repository.existsById(10L)).thenReturn(false, true);
         when(repository.insert(document)).thenThrow(new DuplicateKeyException("duplicate"));
 
-        service.insertIfAbsent(document);
+        assertThat(service.insertIfAbsent(document)).isFalse();
 
         verify(repository, times(2)).existsById(10L);
         verify(repository).insert(document);

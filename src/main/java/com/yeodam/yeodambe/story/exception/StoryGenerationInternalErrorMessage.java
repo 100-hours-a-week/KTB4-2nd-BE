@@ -34,6 +34,7 @@ public enum StoryGenerationInternalErrorMessage {
     STATUS_APPLICATION_FAILED("스토리 생성 상태 반영에 실패했습니다."),
     GENERATION_TIMED_OUT("스토리 요청 Kafka 발행 후 1시간이 지나 작업을 실패 처리했습니다."),
     CONTENT_DOCUMENT_MISSING("완료된 스토리의 MongoDB 본문이 없습니다."),
+    MIGRATION_CONTENT_MISMATCH("스토리 본문의 MongoDB 이관 결과가 원본과 일치하지 않습니다."),
     READ_DATA_INTEGRITY_FAILED("스토리 조회 데이터의 정합성 검증에 실패했습니다.");
     private final String message;
 

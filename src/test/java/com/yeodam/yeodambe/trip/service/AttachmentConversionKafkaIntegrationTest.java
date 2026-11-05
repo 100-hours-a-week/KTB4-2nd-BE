@@ -699,7 +699,16 @@ class AttachmentConversionKafkaIntegrationTest {
 
         private void start() throws Exception {
             listener = spy(new AttachmentConversionKafkaListener(worker, JsonMapper.builder().build(), dlt,
-                    new AttachmentConversionProperties(null, null, null, topics, null), dltTopic, BACKOFF, scheduler, registry));
+                    new AttachmentConversionProperties(
+                            null,
+                            null,
+                            null,
+                            topics,
+                            null,
+                            true,
+                            true,
+                            true
+                    ), dltTopic, BACKOFF, scheduler, registry));
             doAnswer(call -> {
                 if (synchronousFailure.get()) {
                     synchronousAttempts.incrementAndGet();

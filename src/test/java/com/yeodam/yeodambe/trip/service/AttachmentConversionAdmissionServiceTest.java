@@ -192,12 +192,18 @@ class AttachmentConversionAdmissionServiceTest {
     }
 
     private AttachmentConversionAdmissionService service(AttachmentConversionRoute mode) {
-        return new AttachmentConversionAdmissionService(new AttachmentConversionProperties(mode,
+        return new AttachmentConversionAdmissionService(new AttachmentConversionProperties(
+                mode,
                 new Admission(Map.of(Lane.LIGHT, 100L, Lane.HEIC, 100L),
                         Map.of(Lane.LIGHT, 1000L, Lane.HEIC, 1000L),
                         Duration.ofSeconds(100), Duration.ofSeconds(10), Duration.ofSeconds(1), 0.5),
-                new Operations(false), null,
-                new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10)), jdbc, transactionManager, nanos::get);
+                new Operations(false),
+                null,
+                new AttachmentConversionProperties.Recovery(Duration.ofMinutes(5), 10, 2, 10),
+                true,
+                true,
+                true
+        ), jdbc, transactionManager, nanos::get);
     }
 
     private void observeEmptyBacklog() throws Exception {

@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
+import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
@@ -36,7 +37,16 @@ class InitialUploadAcceptanceStatusTest {
                             .collect(Collectors.toMap(type -> type, type -> "test-" + type.name()))),
                     mock(TripCreationOutboxRepository.class), mock(ApplicationEventPublisher.class),
                     mock(AttachmentConversionAdmissionService.class),
-                    new com.yeodam.yeodambe.trip.config.AttachmentConversionProperties(null, null, null, null, null),
+                    new AttachmentConversionProperties(
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            true,
+                            true,
+                            true
+                    ),
                     mock(AttachmentConversionEnqueueService.class), mock(AttachmentConversionTaskRepository.class));
 
     @Test

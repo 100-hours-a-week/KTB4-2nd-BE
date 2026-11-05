@@ -30,10 +30,30 @@ class AttachmentConversionPropertiesTest {
 
     @Test
     void preservesDistinctConfiguredTopicNames() {
-        var configured = new Topics("initial-light", "initial-heic", "additional-light", "additional-heic");
+        Topics configured = new Topics("initial-light", "initial-heic", "additional-light", "additional-heic");
         assertThat(configured.initialLight()).isEqualTo("initial-light");
         assertThat(configured.initialHeic()).isEqualTo("initial-heic");
         assertThat(configured.additionalLight()).isEqualTo("additional-light");
         assertThat(configured.additionalHeic()).isEqualTo("additional-heic");
+    }
+
+    @Test
+    void missingExecutionFlagsDefaultToEnabledForDirectFixtures() {
+        AttachmentConversionProperties properties = new AttachmentConversionProperties(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        assertThat(properties.consumerEnabled()).isTrue();
+        assertThat(properties.receiptListenerEnabled()).isTrue();
+        assertThat(properties.recoveryEnabled()).isTrue();
+        assertThat(properties.kafkaEnabled()).isFalse();
+        assertThat(properties.recoveryExecutionEnabled()).isFalse();
     }
 }

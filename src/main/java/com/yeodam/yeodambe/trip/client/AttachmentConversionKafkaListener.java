@@ -40,7 +40,8 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 @ConditionalOnProperty(name = "app.attachment-conversion.mode", havingValue = "KAFKA")
-@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
+@ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}"
+        + " && ${app.attachment-conversion.consumer-enabled:true}")
 public class AttachmentConversionKafkaListener {
     private final AttachmentConversionWorker worker;
     private final ObjectMapper mapper;

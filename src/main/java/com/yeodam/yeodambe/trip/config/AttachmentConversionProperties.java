@@ -15,9 +15,15 @@ public record AttachmentConversionProperties(
         Admission admission,
         Operations operations,
         Topics topics,
-        Recovery recovery
+        Recovery recovery,
+        Boolean consumerEnabled,
+        Boolean receiptListenerEnabled,
+        Boolean recoveryEnabled
 ) {
     public AttachmentConversionProperties {
+        consumerEnabled = consumerEnabled == null ? Boolean.TRUE : consumerEnabled;
+        receiptListenerEnabled = receiptListenerEnabled == null ? Boolean.TRUE : receiptListenerEnabled;
+        recoveryEnabled = recoveryEnabled == null ? Boolean.TRUE : recoveryEnabled;
         topics = topics == null ? new Topics(null, null, null, null) : topics;
         mode = mode == null ? AttachmentConversionRoute.DB : mode;
         operations = operations == null ? new Operations(false) : operations;
@@ -35,6 +41,10 @@ public record AttachmentConversionProperties(
 
     public boolean receiptEnabled() {
         return mode != AttachmentConversionRoute.DB && !operations.enabled();
+    }
+
+    public boolean recoveryExecutionEnabled() {
+        return kafkaEnabled() && recoveryEnabled;
     }
 
     public record Admission(

@@ -19,7 +19,8 @@ import java.time.Instant;
 @Component
 @RequiredArgsConstructor
 @ConditionalOnExpression("('${app.attachment-conversion.mode:DB}' == 'KAFKA' || '${app.attachment-conversion.mode:DB}' == 'HOLD')"
-        + " && !${app.attachment-conversion.operations.enabled:false}")
+        + " && !${app.attachment-conversion.operations.enabled:false}"
+        + " && ${app.attachment-conversion.receipt-listener-enabled:true}")
 public class AttachmentConversionReceiptListener {
     private final AttachmentConversionTransactionService transactions;
 

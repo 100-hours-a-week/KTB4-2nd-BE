@@ -81,6 +81,9 @@ auth:
 app:
   attachment-conversion:
     mode: ${ATTACHMENT_CONVERSION_MODE:DB}
+    consumer-enabled: ${ATTACHMENT_CONVERSION_CONSUMER_ENABLED:true}
+    receipt-listener-enabled: ${ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED:true}
+    recovery-enabled: ${ATTACHMENT_CONVERSION_RECOVERY_ENABLED:true}
     group-prefix: ${ATTACHMENT_CONVERSION_GROUP_PREFIX:yeodam-image-conversion}
     retry:
       technical-backoff: ${ATTACHMENT_CONVERSION_TECHNICAL_BACKOFF:}

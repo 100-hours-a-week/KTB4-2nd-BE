@@ -125,8 +125,16 @@ class AttachmentConversionMigrationIntegrationTest {
         entityManager.clear();
         Object source = kind == Kind.INITIAL ? initial : additional;
         Object original = ReflectionTestUtils.getField(source, "conversionProperties");
-        var db = new AttachmentConversionProperties(
-                AttachmentConversionRoute.DB, null, null, null, null);
+        AttachmentConversionProperties db = new AttachmentConversionProperties(
+                AttachmentConversionRoute.DB,
+                null,
+                null,
+                null,
+                null,
+                true,
+                true,
+                true
+        );
         ReflectionTestUtils.setField(source, "conversionProperties", db);
         InitialAttachmentUploadBatchSnapshot initialClaim = null;
         AdditionalAttachmentUploadBatchSnapshot additionalClaim = null;

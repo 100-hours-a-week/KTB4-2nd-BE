@@ -79,6 +79,11 @@ auth:
     internal-service-token: ${WEBSOCKET_INTERNAL_SERVICE_TOKEN:}
 
 app:
+  photo-list-cache:
+    namespace: ${PHOTO_LIST_CACHE_NAMESPACE:photo-list}
+    access-schema-version: ${PHOTO_LIST_CACHE_ACCESS_SCHEMA_VERSION:1}
+    response-schema-version: ${PHOTO_LIST_CACHE_RESPONSE_SCHEMA_VERSION:1}
+    page-schema-version: ${PHOTO_LIST_CACHE_PAGE_SCHEMA_VERSION:1}
   attachment-conversion:
     mode: ${ATTACHMENT_CONVERSION_MODE:DB}
     consumer-enabled: ${ATTACHMENT_CONVERSION_CONSUMER_ENABLED:true}

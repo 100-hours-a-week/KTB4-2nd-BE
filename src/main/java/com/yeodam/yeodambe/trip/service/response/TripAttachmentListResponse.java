@@ -8,6 +8,11 @@ public record TripAttachmentListResponse(
         String nextCursor,
         long sequence
 ) {
+
+    public TripAttachmentListResponse {
+        items = List.copyOf(items);
+    }
+
     public record Item(
             Long tripAttachmentId,
             String thumbnailUrl

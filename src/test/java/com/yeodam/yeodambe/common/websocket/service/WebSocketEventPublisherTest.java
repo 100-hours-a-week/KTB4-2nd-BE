@@ -59,7 +59,7 @@ class WebSocketEventPublisherTest {
 
     @ParameterizedTest
     @MethodSource("validTargets")
-    void serializesValidEventsAndPublishesToTheConfiguredChannel(
+    void 유효한_이벤트를_직렬화하고_설정된_채널로_발행한다(
             WebSocketEventType type, WebSocketEventTargetType targetType
     ) {
         var event = new WebSocketEvent(ID, type, 1, TIME,
@@ -82,7 +82,7 @@ class WebSocketEventPublisherTest {
 
     @ParameterizedTest
     @MethodSource("invalidEvents")
-    void rejectsInvalidInputBeforeCallingRedis(WebSocketEvent event, WebSocketEventInternalErrorMessage error) {
+    void 잘못된_입력은_Redis_호출_전에_거부한다(WebSocketEvent event, WebSocketEventInternalErrorMessage error) {
         assertThatThrownBy(() -> publisher.publish(event))
                 .isInstanceOf(IllegalArgumentException.class).hasMessage(error.message());
         verifyNoInteractions(redis);
@@ -115,7 +115,7 @@ class WebSocketEventPublisherTest {
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = "  ")
-    void rejectsMissingChannel(String channel) {
+    void 채널이_없으면_거부한다(String channel) {
         assertThatThrownBy(() -> new WebSocketEventPublisher(redis, mapper, new WebSocketEventProperties(channel)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(WebSocketEventInternalErrorMessage.CHANNEL_NOT_CONFIGURED.message());
@@ -157,7 +157,7 @@ class WebSocketEventPublisherTest {
     }
 
     @Test
-    void acceptsExactlySixtyFourKiB() {
+    void 정확히_64KiB인_이벤트는_허용한다() {
         int overhead = mapper.writeValueAsString(withData("")).getBytes(StandardCharsets.UTF_8).length;
         var boundary = withData("a".repeat(65_536 - overhead));
         assertThat(mapper.writeValueAsString(boundary).getBytes(StandardCharsets.UTF_8)).hasSize(65_536);
@@ -168,20 +168,20 @@ class WebSocketEventPublisherTest {
     }
 
     @Test
-    void rejectsOneByteAboveTheLimit() {
+    void 크기_제한을_1바이트_넘는_이벤트는_거부한다() {
         int overhead = mapper.writeValueAsString(withData("")).getBytes(StandardCharsets.UTF_8).length;
         assertTooLarge(withData("a".repeat(65_537 - overhead)));
     }
 
     @Test
-    void countsUtf8BytesRatherThanCharacters() {
+    void 문자_수가_아닌_UTF8_바이트_수로_크기를_계산한다() {
         var event = withData("가".repeat(22_000));
         assertThat(mapper.writeValueAsString(event).length()).isLessThan(65_536);
         assertTooLarge(event);
     }
 
     @Test
-    void propagatesRedisFailure() {
+    void Redis_실패를_호출자에게_전달한다() {
         var failure = new RedisConnectionFailureException("test redis unavailable");
         doThrow(failure).when(redis).convertAndSend(eq(CHANNEL), anyString());
 
@@ -189,7 +189,7 @@ class WebSocketEventPublisherTest {
     }
 
     @Test
-    void doesNotClaimDeliveryWhenThereAreNoSubscribers() {
+    void 구독자가_없어도_이벤트_발행은_예외_없이_끝난다() {
         when(redis.convertAndSend(eq(CHANNEL), anyString())).thenReturn(0L);
 
         assertThatCode(() -> publisher.publish(withData("data"))).doesNotThrowAnyException();
@@ -197,7 +197,7 @@ class WebSocketEventPublisherTest {
     }
 
     @Test
-    void propagatesSerializationFailureWithoutPublishing() {
+    void 직렬화가_실패하면_발행하지_않고_예외를_전달한다() {
         assertThatThrownBy(() -> publisher.publish(withData(new ExplodingPayload())))
                 .isInstanceOf(RuntimeException.class);
         verifyNoInteractions(redis);

@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class StoryGenerationJobPreparationTest {
     @Test
-    void completesUsingPreparedId() {
+    void 준비된_ID로_완료한다() {
         var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
         job.prepareStory(10L);
         long version = job.getStatusVersion();
@@ -26,7 +26,7 @@ class StoryGenerationJobPreparationTest {
     }
 
     @Test
-    void rejectsCompletionWithAnotherIdWithoutChangingState() {
+    void 다른_ID로_완료하면_상태를_바꾸지_않고_거부한다() {
         var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
         job.updateProcessing(30);
         job.prepareStory(10L);
@@ -42,7 +42,7 @@ class StoryGenerationJobPreparationTest {
     }
 
     @Test
-    void completesWithoutSeparatePreparation() {
+    void 별도_준비_없이_완료한다() {
         var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
 
         job.complete(10L);
@@ -52,7 +52,7 @@ class StoryGenerationJobPreparationTest {
     }
 
     @Test
-    void retainsPreparedIdWithoutCompletingOrAdvancingVersion() {
+    void 완료나_버전_증가_없이_준비된_ID를_유지한다() {
         var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
         job.updateProcessing(30);
         long version = job.getStatusVersion();
@@ -67,7 +67,7 @@ class StoryGenerationJobPreparationTest {
     }
 
     @Test
-    void rejectsAnotherIdWithoutReplacingPreparedId() {
+    void 다른_ID로_준비하면_기존_ID를_바꾸지_않고_거부한다() {
         var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
         job.prepareStory(10L);
 
@@ -79,7 +79,7 @@ class StoryGenerationJobPreparationTest {
     @ParameterizedTest
     @NullSource
     @ValueSource(longs = {0, -1})
-    void rejectsInvalidId(Long storyId) {
+    void 유효하지_않은_준비_ID를_거부한다(Long storyId) {
         var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
 
         assertThatThrownBy(() -> job.prepareStory(storyId))
@@ -90,7 +90,7 @@ class StoryGenerationJobPreparationTest {
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class,
             names = {"COMPLETED", "FAILED", "CANCELED"})
-    void ignoresPreparationForFinishedJob(StoryGenerationJob.Status status) {
+    void 종료된_작업의_준비를_무시한다(StoryGenerationJob.Status status) {
         var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);
         job.prepareStory(10L);
         ReflectionTestUtils.setField(job, "status", status);

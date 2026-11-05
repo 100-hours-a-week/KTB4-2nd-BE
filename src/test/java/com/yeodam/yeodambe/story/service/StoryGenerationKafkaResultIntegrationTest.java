@@ -176,7 +176,7 @@ class StoryGenerationKafkaResultIntegrationTest {
 
     @ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
-    void cancellationPersistsAndLateKafkaResultsCannotCreateStory(boolean taskMissing) throws Exception {
+    void 취소를_저장하고_늦은_Kafka_결과의_스토리_생성을_막는다(boolean taskMissing) throws Exception {
         if (taskMissing) {
             org.mockito.Mockito.when(ai.cancel(trip.getId())).thenThrow(
                     new com.yeodam.yeodambe.story.exception.StoryGenerationAiRequestException(
@@ -210,7 +210,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     @Test
-    void kafkaCompletionCommitsResultAndDuplicateDoesNotCreateAnotherStory() throws Exception {
+    void Kafka_완료는_결과를_커밋하고_중복_스토리를_생성하지_않는다() throws Exception {
         long first = send(completionEvent(job.getExecutionId()));
         awaitCommitted(first);
         assertCompletedOnce();
@@ -225,7 +225,7 @@ class StoryGenerationKafkaResultIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationAiResponse.Status.class, names = {"FAILED", "CANCELED"})
-    void kafkaTerminalResultUpdatesJobWithoutSavingStory(StoryGenerationAiResponse.Status status) throws Exception {
+    void Kafka_종료_결과는_스토리_저장_없이_작업을_갱신한다(StoryGenerationAiResponse.Status status) throws Exception {
         var error = status == StoryGenerationAiResponse.Status.FAILED
                 ? new StoryGenerationAiResponse.Failure("WORKER_DEAD", "worker unavailable", null) : null;
         long offset = send(new StoryCreateResultEvent("story_result", trip.getId(),
@@ -239,7 +239,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     @Test
-    void unrelatedAndUnknownExecutionResultsDoNotPreventFollowingValidResult() throws Exception {
+    void 관련_없거나_알_수_없는_실행의_결과는_다음_유효_결과를_막지_않는다() throws Exception {
         kafka.send(TOPIC, trip.getId().toString(), "{\"type\":\"process_result\"}")
                 .get(10, TimeUnit.SECONDS);
         long unknown = send(completionEvent("unknown-" + UUID.randomUUID()));
@@ -252,7 +252,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     @Test
-    void httpCompletedStatusWaitsForKafkaResultBeforeFinishingJob() throws Exception {
+    void HTTP_완료_상태는_Kafka_결과가_올_때까지_작업을_종료하지_않는다() throws Exception {
         when(ai.getStatus(trip.getId())).thenReturn(new StoryGenerationAiResponse(
                 trip.getId(), job.getExecutionId(), StoryGenerationAiResponse.Status.COMPLETED,
                 null, null, null, null));
@@ -265,7 +265,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     @Test
-    void failedSaveRollsBackThenKafkaRetriesSameRecordAndCommitsOnce() throws Exception {
+    void 저장_실패를_롤백한_뒤_Kafka가_같은_레코드를_재시도해_한_번만_커밋한다() throws Exception {
         var originalAnswer = mockingDetails(selectedPlaces).getMockCreationSettings().getDefaultAnswer();
         var attempts = new AtomicInteger();
         var retryEntered = new CountDownLatch(1);
@@ -307,7 +307,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     @Test
-    void malformedJsonIsPreservedAndFollowingValidResultCompletes() throws Exception {
+    void 잘못된_JSON을_보존하고_다음_유효_결과를_완료한다() throws Exception {
         String malformed = "{invalid-json";
         var offset = kafka.send(TOPIC, trip.getId().toString(), malformed)
                 .get(10, TimeUnit.SECONDS).getRecordMetadata().offset();
@@ -320,7 +320,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     @Test
-    void invalidPhotoResultFailsIdentifiedJobAndDoesNotBlockFollowingRecord() throws Exception {
+    void 잘못된_사진_결과는_식별된_작업을_실패시키고_다음_레코드를_막지_않는다() throws Exception {
         var response = completed(job.getExecutionId(), photo.getId() + 100000);
         var invalid = new StoryCreateResultEvent("story_result", trip.getId(), job.getExecutionId(),
                 StoryGenerationAiResponse.Status.COMPLETED, response.result(), null);
@@ -333,7 +333,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     @Test
-    void persistentStorageFailureRetriesThreeTimesThenPreservesResult() throws Exception {
+    void 지속된_저장_실패는_세_번_재시도한_뒤_결과를_보존한다() throws Exception {
         var attempts = new AtomicInteger();
         doAnswer(invocation -> {
             attempts.incrementAndGet();
@@ -371,7 +371,7 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     @Test
-    void kafkaLateCompletionForTimedOutJobIsConsumedWithoutSavingStory() throws Exception {
+    void 시간_초과_작업의_늦은_Kafka_완료는_스토리_저장_없이_소비한다() throws Exception {
         jdbc.update("""
                 UPDATE story_generation_outbox
                 SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR

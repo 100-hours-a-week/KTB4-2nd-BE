@@ -14,7 +14,7 @@ class StoryGenerationMessageTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void readsStoredPayloadPreservingReferencesAndCaptureInstant() {
+    void 저장된_페이로드를_읽을_때_참조와_촬영_시점을_보존한다() {
         var original = message(Story.Mood.EMOTIONAL, 74);
         String payload = objectMapper.writeValueAsString(original);
 
@@ -27,7 +27,7 @@ class StoryGenerationMessageTest {
     }
 
     @Test
-    void serializesStoryContractWithSnakeCaseAndKstOffset() {
+    void 스토리_계약을_스네이크_케이스와_KST_오프셋으로_직렬화한다() {
         var message = message(Story.Mood.EMOTIONAL, 74);
 
         var json = objectMapper.readTree(objectMapper.writeValueAsString(message));
@@ -55,7 +55,7 @@ class StoryGenerationMessageTest {
     }
 
     @Test
-    void retainsNullEvaluationInPhotoJson() {
+    void 사진_JSON의_null_평가값을_유지한다() {
         var json = objectMapper.readTree(objectMapper.writeValueAsString(
                 message(Story.Mood.PLAIN, null)));
 
@@ -65,7 +65,7 @@ class StoryGenerationMessageTest {
     }
 
     @Test
-    void serializesEachMoodAsContractString() {
+    void 각_분위기를_계약의_문자열로_직렬화한다() {
         for (Story.Mood mood : Story.Mood.values()) {
             var json = objectMapper.readTree(objectMapper.writeValueAsString(message(mood, 74)));
             assertThat(json.path("mood").asString()).isEqualTo(mood.name());

@@ -34,7 +34,7 @@ class StoryGenerationMessageServiceTest {
     private final StoryGenerationJob job = savedJob();
 
     @Test
-    void assemblesSavedJobAndSelectedPhotosIntoAiContractJson() {
+    void 저장된_작업과_선택한_사진을_AI_계약_JSON으로_조립한다() {
         prepareSource();
 
         var message = service.assemble(job);
@@ -77,7 +77,7 @@ class StoryGenerationMessageServiceTest {
     }
 
     @Test
-    void reassemblingUnchangedSourceKeepsSavedExecutionIdAndPayload() {
+    void 원본이_같으면_재조립해도_저장된_실행_ID와_페이로드를_유지한다() {
         prepareSource();
 
         var first = service.assemble(job);
@@ -89,7 +89,7 @@ class StoryGenerationMessageServiceTest {
 
     @ParameterizedTest
     @MethodSource("sourceFailures")
-    void propagatesSourceRejectionInsteadOfReturningPartialMessage(RuntimeException rejection) {
+    void 원본_조회_거부는_부분_메시지_반환_없이_전파한다(RuntimeException rejection) {
         prepareSelection();
         when(sourceService.read(2L, 100L, List.of(20L, 10L))).thenThrow(rejection);
 

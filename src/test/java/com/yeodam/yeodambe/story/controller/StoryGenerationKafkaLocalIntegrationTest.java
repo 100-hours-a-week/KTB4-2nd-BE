@@ -124,7 +124,7 @@ class StoryGenerationKafkaLocalIntegrationTest {
     }
 
     @Test
-    void apiCommitsCdcOutboxAndReturnsAcceptedWithExactRequestJson() throws Exception {
+    void API는_CDC_Outbox를_커밋하고_정확한_요청_JSON으로_접수_응답을_반환한다() throws Exception {
         Map<String, Object> config = Map.of(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS,
                 ConsumerConfig.GROUP_ID_CONFIG, "local-story-verification-" + UUID.randomUUID(),

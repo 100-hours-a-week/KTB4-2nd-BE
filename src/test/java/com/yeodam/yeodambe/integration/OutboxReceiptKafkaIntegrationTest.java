@@ -53,7 +53,7 @@ class OutboxReceiptKafkaIntegrationTest {
     }
 
     @Test
-    void databaseFailureStopsUntilExplicitRestartWithoutCommittingFailedOffset() throws Exception {
+    void DB_실패_시_실패한_오프셋을_커밋하지_않고_명시적_재시작까지_중단한다() throws Exception {
         var attempts = new AtomicInteger();
         var confirmed = new CountDownLatch(1);
         doAnswer(call -> {

@@ -31,7 +31,7 @@ class StoryGenerationResultRecoveryServiceTest {
     }
 
     @Test
-    void failsMatchingActiveJob() {
+    void 일치하는_활성_작업을_실패_처리한다() {
         var job = prepare();
         service.failIdentifiedJob(message);
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
@@ -39,7 +39,7 @@ class StoryGenerationResultRecoveryServiceTest {
     }
 
     @Test
-    void mismatchedTripDoesNotFailAnotherJob() {
+    void 여행이_다르면_다른_작업을_실패시키지_않는다() {
         var job = prepare();
         service.failIdentifiedJob(message.replace("7", "8"));
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
@@ -47,7 +47,7 @@ class StoryGenerationResultRecoveryServiceTest {
     }
 
     @Test
-    void completedJobIsNotOverwritten() {
+    void 완료된_작업을_덮어쓰지_않는다() {
         var job = prepare();
         job.complete(9L);
         service.failIdentifiedJob(message);
@@ -58,13 +58,13 @@ class StoryGenerationResultRecoveryServiceTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"{broken", "null", "{}", "{\"type\":\"process_result\"}"})
-    void unidentifiedMessageDoesNotModifyJobs(String malformed) {
+    void 식별할_수_없는_메시지는_작업을_수정하지_않는다(String malformed) {
         service.failIdentifiedJob(malformed);
         verifyNoInteractions(jobs, publisher);
     }
 
     @Test
-    void databaseFailureIsPropagatedToPreventRecoveryAcknowledgment() {
+    void 복구_확인을_막기_위해_DB_실패를_전파한다() {
         prepare();
         var failure = new DataAccessResourceFailureException("database unavailable");
         when(jobs.findByIdForUpdate(1L)).thenThrow(failure);

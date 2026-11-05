@@ -137,7 +137,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void findsSavedGenerationIdByExecutionIdAndReturnsEmptyForUnknownExecution() {
+    void 실행_ID로_저장된_생성_ID를_찾고_알_수_없는_실행은_빈_값을_반환한다() {
         var found = jobs.findByExecutionId(job.getExecutionId()).orElseThrow();
 
         assertThat(found.getId()).isEqualTo(job.getId());
@@ -146,7 +146,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void completedStoryRollbackDoesNotPublishOrAdvanceSequence() {
+    void 스토리_완료를_롤백하면_발행하거나_시퀀스를_증가시키지_않는다() {
         new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
             service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
             verifyNoInteractions(publisher);
@@ -158,7 +158,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void commitsStoryBlocksSelectionTripLinkAndFinishedJobTogether() {
+    void 스토리와_블록과_선택_정보와_여행_연결과_작업_완료를_함께_커밋한다() {
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
         var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
@@ -188,7 +188,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void repeatedCompletionDoesNotSaveAnotherStoryOrBlock() {
+    void 완료를_반복해도_스토리나_블록을_추가_저장하지_않는다() {
         var response = completed(job.getExecutionId(), photo.getId());
         service.complete(job.getId(), response);
         Long firstStoryId = jobs.findById(job.getId()).orElseThrow().getStoryId();
@@ -200,7 +200,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void rejectsOldExecutionBeforeSavingAnyStory() {
+    void 오래된_실행_ID는_스토리_저장_전에_거부한다() {
         assertThatThrownBy(() -> service.complete(job.getId(), completed("old-execution", photo.getId())))
                 .isInstanceOf(IllegalArgumentException.class);
 
@@ -208,7 +208,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void rejectsPhotoOutsidePublishedRequest() {
+    void 발행한_요청에_없는_사진을_거부한다() {
         assertThatThrownBy(() -> service.complete(job.getId(), completed(job.getExecutionId(), Long.MAX_VALUE)))
                 .isInstanceOf(IllegalArgumentException.class);
 
@@ -217,7 +217,7 @@ class StoryGenerationCompletionServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class, names = {"FAILED", "CANCELED"})
-    void lateCompletionDoesNotSaveResultForFinishedJob(StoryGenerationJob.Status status) {
+    void 종료된_작업에_늦게_도착한_완료_결과를_저장하지_않는다(StoryGenerationJob.Status status) {
         var error = status == StoryGenerationJob.Status.FAILED
                 ? new StoryGenerationAiResponse.Failure("WORKER_DEAD", "AI failure", null) : null;
         terminal.apply(job.getId(), new StoryGenerationAiResponse(trip.getId(), job.getExecutionId(),
@@ -233,7 +233,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void latePublicationReceiptDoesNotOverwriteCompletedJob() {
+    void 늦은_발행_수신_확인은_완료된_작업을_덮어쓰지_않는다() {
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
         Long outboxId = jdbc.queryForObject("SELECT outbox_id FROM story_generation_outbox WHERE generation_id = ?",
                 Long.class, job.getId());
@@ -248,7 +248,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void blockForeignKeyFailureRollsBackAlreadyInsertedStoryAndSelection() {
+    void 블록_외래키_실패_시_이미_삽입한_스토리와_선택_정보를_롤백한다() {
         attachments.deleteById(photo.getId());
 
         assertThatThrownBy(() -> service.complete(job.getId(), completed(job.getExecutionId(), photo.getId())))
@@ -260,7 +260,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void concurrentCompletionCallsCommitOnlyOneResult() throws Exception {
+    void 동시_완료_호출은_결과를_한_번만_커밋한다() throws Exception {
         var response = completed(job.getExecutionId(), photo.getId());
         var ready = new CountDownLatch(2);
         var start = new CountDownLatch(1);
@@ -280,7 +280,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void expiredJobIsPersistedAsFailedAndLateResultAndProgressAreIgnored() {
+    void 만료된_작업은_실패로_저장하고_늦은_결과와_진행률을_무시한다() {
         jdbc.update("""
                 UPDATE story_generation_outbox
                 SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
@@ -304,7 +304,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void lateCompletionExpiresJobEvenBeforeNextSchedulerCycle() {
+    void 다음_스케줄러_실행_전이라도_늦은_완료_응답은_작업을_만료시킨다() {
         jdbc.update("""
                 UPDATE story_generation_outbox
                 SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
@@ -328,7 +328,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void rolledBackLateCompletionDoesNotPublishOrPersistTimeout() {
+    void 늦은_완료를_롤백하면_시간_초과를_발행하거나_저장하지_않는다() {
         jdbc.update("""
                 UPDATE story_generation_outbox
                 SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
@@ -347,7 +347,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void completionBeforePublicationConfirmationIgnoresOldCreationDeadline() {
+    void 발행_확인_전_완료_응답은_기존_생성_기한을_무시한다() {
         jdbc.update("""
                 UPDATE story_generation_jobs
                 SET created_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
@@ -363,14 +363,14 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void timeoutCheckAfterCompletionKeepsSavedStory() {
+    void 완료_후_시간_초과를_확인해도_저장된_스토리를_유지한다() {
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
         assertThat(timeout.expire(job.getId(), LocalDateTime.now().plusHours(2))).isTrue();
         assertCompletedOnce();
     }
 
     @Test
-    void preparesContentOnceWithoutCompletingOrPublishing() {
+    void 완료나_발행_없이_내용을_한_번만_준비한다() {
         var response = completed(job.getExecutionId(), photo.getId());
 
         Long storyId = preparation.prepare(job.getId(), response).orElseThrow();
@@ -397,7 +397,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void rollsBackPreparedStoryAndChildrenTogether() {
+    void 준비한_스토리와_하위_데이터를_함께_롤백한다() {
         var response = completed(job.getExecutionId(), photo.getId());
         Long storyId = new TransactionTemplate(transactionManager).execute(transaction -> {
             Long preparedId = preparation.prepare(job.getId(), response).orElseThrow();
@@ -417,7 +417,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void doesNotPrepareCanceledJob() {
+    void 취소된_작업의_스토리를_준비하지_않는다() {
         terminal.confirmCancellation(owner.getUserId(), job.getId());
         clearInvocations(publisher);
 
@@ -429,7 +429,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void expiresLateResultWithoutPreparingStory() {
+    void 늦은_결과는_스토리_준비_없이_작업을_만료시킨다() {
         jdbc.update("""
                 UPDATE story_generation_outbox
                 SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
@@ -447,7 +447,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void readsPreparedDocumentWithUtcTimestampsWithoutPublishing() {
+    void 발행_없이_준비된_문서를_UTC_타임스탬프로_읽는다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
         jdbc.update("""
@@ -473,7 +473,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void readsBlocksInDisplayOrderIncludingDeletedIds() {
+    void 삭제된_ID를_포함해_표시_순서대로_블록을_읽는다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
         Long originalBlockId = jdbc.queryForObject(
@@ -508,7 +508,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void rejectsPreparedDocumentForDifferentStoryId() {
+    void 다른_스토리_ID의_준비된_문서는_거부한다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
 
@@ -517,7 +517,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void skipsPreparedDocumentAfterCancellation() {
+    void 취소_후에는_준비된_문서를_건너뛴다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
         terminal.confirmCancellation(owner.getUserId(), job.getId());
@@ -526,7 +526,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void rejectsDeletedPreparedStory() {
+    void 삭제된_준비_스토리를_거부한다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
         jdbc.update("UPDATE stories SET deleted_at = CURRENT_TIMESTAMP(6) WHERE story_id = ?", storyId);
@@ -550,7 +550,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void finalizesPreparedStoryOnceAndPublishesCommittedResult() {
+    void 준비된_스토리를_한_번만_완료하고_커밋된_결과를_발행한다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
 
@@ -571,7 +571,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void rollsBackFinalizationWithoutPublishingAndCanRetry() {
+    void 최종_완료를_롤백하면_발행하지_않고_재시도할_수_있다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
 
@@ -590,7 +590,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void doesNotFinalizeCanceledPreparedStory() {
+    void 취소된_준비_스토리를_최종_완료하지_않는다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
         terminal.confirmCancellation(owner.getUserId(), job.getId());
@@ -606,7 +606,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void expiresPreparedStoryInsteadOfFinalizing() {
+    void 준비된_스토리는_기한이_지나면_최종_완료_대신_만료시킨다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
         jdbc.update("""
@@ -625,7 +625,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void rejectsFinalizationForDifferentPreparedStory() {
+    void 다른_준비_스토리의_최종_완료를_거부한다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
 
@@ -637,7 +637,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void rejectsFinalizationForDeletedPreparedStory() {
+    void 삭제된_준비_스토리의_최종_완료를_거부한다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
         jdbc.update("UPDATE stories SET deleted_at = CURRENT_TIMESTAMP(6) WHERE story_id = ?", storyId);
@@ -658,7 +658,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void savesMongoContentBeforePublishingCompletion() {
+    void 완료_발행_전에_Mongo_내용을_저장한다() {
         doAnswer(invocation -> {
             assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
                     .isActualTransactionActive()).isFalse();
@@ -677,7 +677,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void retriesMongoFailureUsingSamePreparedStory() {
+    void Mongo_실패는_같은_준비_스토리로_재시도한다() {
         doThrow(new org.springframework.dao.DataAccessResourceFailureException("Mongo unavailable"))
                 .doCallRealMethod().when(contentStorage).insertIfAbsent(any());
 
@@ -699,7 +699,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void cancellationAfterMongoSavePreventsCompletion() {
+    void Mongo_저장_후_취소되면_완료를_막는다() {
         doAnswer(invocation -> {
             Object inserted = invocation.callRealMethod();
             terminal.confirmCancellation(owner.getUserId(), job.getId());
@@ -718,7 +718,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void retriesFinalizationFailureWithoutOverwritingMongoContent() {
+    void 최종_완료_실패는_Mongo_내용을_덮어쓰지_않고_재시도한다() {
         doThrow(new org.springframework.dao.TransientDataAccessResourceException("MySQL completion unavailable"))
                 .doCallRealMethod().when(finalization).finish(anyLong(), anyLong());
 
@@ -743,7 +743,7 @@ class StoryGenerationCompletionServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationAiResponse.Status.class, names = {"FAILED", "CANCELED"})
-    void terminalAiResultDiscardsPreparedStory(StoryGenerationAiResponse.Status state) {
+    void AI_종료_결과는_준비된_스토리를_폐기한다(StoryGenerationAiResponse.Status state) {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
         var error = state == StoryGenerationAiResponse.Status.FAILED
@@ -762,7 +762,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void finalResultRecoveryDiscardsPreparedStory() {
+    void 최종_결과_복구는_준비된_스토리를_폐기한다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
         String message = """
@@ -777,7 +777,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void cancellationRollbackAlsoRollsBackDiscardMarker() {
+    void 취소를_롤백하면_폐기_표시도_롤백한다() {
         Long storyId = preparation.prepare(job.getId(),
                 completed(job.getExecutionId(), photo.getId())).orElseThrow();
 
@@ -793,7 +793,7 @@ class StoryGenerationCompletionServiceTest {
     }
 
     @Test
-    void discardDoesNotTouchCompletedStory() {
+    void 폐기는_완료된_스토리를_변경하지_않는다() {
         service.complete(job.getId(), completed(job.getExecutionId(), photo.getId()));
         var saved = jobs.findById(job.getId()).orElseThrow();
 

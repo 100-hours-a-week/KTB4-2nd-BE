@@ -13,7 +13,7 @@ class StoryCreateResultEventTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
-    void readsCompletedKafkaJsonAndReusesExistingResultStructure() {
+    void 완료_Kafka_JSON을_읽고_기존_결과_구조를_재사용한다() {
         var event = mapper.readValue("""
                 {"type":"story_result","trip_id":77,"execution_id":"execution-1","status":"COMPLETED",
                  "result":{"story_summary":"여행 이야기","verification":{"passed":false},
@@ -41,7 +41,7 @@ class StoryCreateResultEventTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationAiResponse.Status.class, names = {"FAILED", "CANCELED"})
-    void readsTerminalMessageWithoutProgressAndPreservesError(StoryGenerationAiResponse.Status status) {
+    void 진행률_없는_종료_메시지를_읽고_오류를_보존한다(StoryGenerationAiResponse.Status status) {
         String error = status == StoryGenerationAiResponse.Status.FAILED
                 ? "{\"code\":\"WORKER_DEAD\",\"message\":\"worker unavailable\",\"detail\":null}" : "null";
         String json = """
@@ -63,7 +63,7 @@ class StoryCreateResultEventTest {
     }
 
     @Test
-    void internalEventTypeIsNotAnExtraWireField() {
+    void 내부_이벤트_타입은_전송_필드에_추가되지_않는다() {
         var event = new StoryCreateResultEvent("story_result", 77L, "execution-1",
                 StoryGenerationAiResponse.Status.CANCELED, null, null);
 

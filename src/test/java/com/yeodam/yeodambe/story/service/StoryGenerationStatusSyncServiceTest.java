@@ -37,7 +37,7 @@ class StoryGenerationStatusSyncServiceTest {
 
     @ParameterizedTest
     @EnumSource(StoryGenerationAiResponse.Status.class)
-    void httpUpdatesOnlyProcessingAndLeavesTerminalStateForKafka(StoryGenerationAiResponse.Status status) {
+    void HTTP는_처리_중_상태만_갱신하고_종료_상태는_Kafka에_맡긴다(StoryGenerationAiResponse.Status status) {
         prepareJob();
         var response = response(241L, "execution-1", status);
         when(ai.getStatus(241L)).thenReturn(response);
@@ -57,7 +57,7 @@ class StoryGenerationStatusSyncServiceTest {
     }
 
     @Test
-    void queuedResponseDoesNotMoveProcessingJobBackward() {
+    void 대기_응답은_처리_중_작업을_이전_상태로_되돌리지_않는다() {
         prepareJob();
         job.updateProcessing(50);
         when(ai.getStatus(241L)).thenReturn(response(241L, "execution-1", StoryGenerationAiResponse.Status.QUEUED));
@@ -71,7 +71,7 @@ class StoryGenerationStatusSyncServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class, names = {"COMPLETED", "FAILED", "CANCELED"})
-    void doesNotCallAiForFinishedJob(StoryGenerationJob.Status status) {
+    void 종료된_작업은_AI를_호출하지_않는다(StoryGenerationJob.Status status) {
         prepareJob();
         switch (status) {
             case COMPLETED -> job.complete(99L);
@@ -86,7 +86,7 @@ class StoryGenerationStatusSyncServiceTest {
     }
 
     @Test
-    void taskNotFoundLeavesJobForLaterQueryWithoutImmediateRetry() {
+    void TASK_NOT_FOUND는_즉시_재시도하지_않고_다음_조회를_위해_작업을_유지한다() {
         prepareJob();
         when(ai.getStatus(241L)).thenThrow(httpFailure(404, "TASK_NOT_FOUND"));
 
@@ -100,7 +100,7 @@ class StoryGenerationStatusSyncServiceTest {
 
     @ParameterizedTest
     @MethodSource("otherHttpFailures")
-    void propagatesLookupFailureWithoutFailingJob(Integer statusCode, String errorCode) {
+    void 조회_실패는_작업을_실패시키지_않고_전파한다(Integer statusCode, String errorCode) {
         prepareJob();
         var failure = httpFailure(statusCode, errorCode);
         when(ai.getStatus(241L)).thenThrow(failure);
@@ -119,7 +119,7 @@ class StoryGenerationStatusSyncServiceTest {
 
     @ParameterizedTest
     @MethodSource("invalidIdentities")
-    void rejectsWrongOrMissingExecutionReferenceBeforeDispatch(Long tripId, String executionId) {
+    void 잘못되거나_누락된_실행_참조는_전달_전에_거부한다(Long tripId, String executionId) {
         prepareJob();
         when(ai.getStatus(241L)).thenReturn(response(tripId, executionId, StoryGenerationAiResponse.Status.COMPLETED));
 
@@ -134,7 +134,7 @@ class StoryGenerationStatusSyncServiceTest {
     }
 
     @Test
-    void rejectsMissingResponseOrStatus() {
+    void 응답이나_상태가_없으면_거부한다() {
         prepareJob();
         when(ai.getStatus(241L)).thenReturn(null, response(241L, "execution-1", null));
 
@@ -146,7 +146,7 @@ class StoryGenerationStatusSyncServiceTest {
     }
 
     @Test
-    void missingJobDoesNotCallAi() {
+    void 작업이_없으면_AI를_호출하지_않는다() {
         when(jobs.findById(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.synchronize(10L)).isInstanceOf(IllegalStateException.class)
@@ -155,7 +155,7 @@ class StoryGenerationStatusSyncServiceTest {
     }
 
     @Test
-    void propagatesProgressSaveFailure() {
+    void 진행률_저장_실패를_전파한다() {
         prepareJob();
         var response = response(241L, "execution-1", StoryGenerationAiResponse.Status.PROCESSING);
         when(ai.getStatus(241L)).thenReturn(response);

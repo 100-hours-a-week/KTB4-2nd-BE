@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WebSocketEventConfigTest {
 
     @Test
-    void bindsTheLocalChannelFromTheCommonYamlDocument() throws IOException {
+    void 공통_YAML_문서에서_로컬_채널을_바인딩한다() throws IOException {
         context().run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context.getBean(WebSocketEventProperties.class).channel())
@@ -21,7 +21,7 @@ class WebSocketEventConfigTest {
     }
 
     @Test
-    void allowsTheDeploymentChannelToOverrideTheDefault() throws IOException {
+    void 배포_채널_설정으로_기본값을_덮어쓸_수_있다() throws IOException {
         context().withPropertyValues(
                 "WEBSOCKET_EVENTS_CHANNEL=yeodam:staging:websocket:events:v1"
         ).run(context -> {

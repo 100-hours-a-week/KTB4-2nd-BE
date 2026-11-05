@@ -23,7 +23,7 @@ class StoryGenerationRequestTest {
     }
 
     @Test
-    void acceptsEachCurrentMoodAndOneToTenFolders() {
+    void 현재_분위기와_폴더_1개부터_10개까지_허용한다() {
         for (Story.Mood mood : List.of(Story.Mood.PLAIN, Story.Mood.HUMOROUS, Story.Mood.LITERARY)) {
             assertThat(validator.validate(new StoryGenerationRequest(mood, List.of(101L))))
                     .isEmpty();
@@ -34,7 +34,7 @@ class StoryGenerationRequestTest {
     }
 
     @Test
-    void rejectsRetiredMoodsForNewGeneration() {
+    void 신규_생성에서_폐기된_분위기를_거부한다() {
         for (Story.Mood mood : List.of(Story.Mood.EMOTIONAL, Story.Mood.CALM)) {
             assertThat(validator.validate(new StoryGenerationRequest(mood, List.of(101L))))
                     .extracting(violation -> violation.getPropertyPath().toString())
@@ -43,7 +43,7 @@ class StoryGenerationRequestTest {
     }
 
     @Test
-    void rejectsMissingMoodOrFolderList() {
+    void 분위기나_폴더_목록이_없으면_거부한다() {
         assertThat(validator.validate(new StoryGenerationRequest(null, List.of(101L))))
                 .extracting(violation -> violation.getPropertyPath().toString())
                 .contains("mood");
@@ -53,7 +53,7 @@ class StoryGenerationRequestTest {
     }
 
     @Test
-    void rejectsEmptyListAndElevenFolders() {
+    void 빈_목록과_폴더_11개를_거부한다() {
         assertThat(validator.validate(new StoryGenerationRequest(Story.Mood.PLAIN, List.of())))
                 .isNotEmpty();
         assertThat(validator.validate(new StoryGenerationRequest(
@@ -62,7 +62,7 @@ class StoryGenerationRequestTest {
     }
 
     @Test
-    void rejectsNullZeroAndNegativeFolderIds() {
+    void null이나_0이나_음수인_폴더_ID를_거부한다() {
         for (List<Long> ids : List.of(Arrays.asList(101L, null), List.of(0L), List.of(-1L))) {
             assertThat(validator.validate(new StoryGenerationRequest(Story.Mood.PLAIN, ids)))
                     .isNotEmpty();
@@ -70,7 +70,7 @@ class StoryGenerationRequestTest {
     }
 
     @Test
-    void rejectsDuplicateFolderIdsWithoutRejectingDistinctIds() {
+    void 다른_ID는_허용하고_중복된_폴더_ID는_거부한다() {
         assertThat(validator.validate(new StoryGenerationRequest(
                 Story.Mood.PLAIN, List.of(101L, 101L, 102L))))
                 .extracting(violation -> violation.getPropertyPath().toString())

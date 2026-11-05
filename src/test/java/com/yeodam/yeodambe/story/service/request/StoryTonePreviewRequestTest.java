@@ -24,7 +24,7 @@ class StoryTonePreviewRequestTest {
     }
 
     @Test
-    void acceptsThreeMoodsAndOneOrThirtyBlocksWithNullableDraftText() {
+    void 세_분위기와_블록_1개나_30개와_null_초안_텍스트를_허용한다() {
         for (var mood : List.of(Story.Mood.PLAIN, Story.Mood.HUMOROUS, Story.Mood.LITERARY)) {
             for (int size : List.of(1, 30)) {
                 assertThat(validator.validate(new StoryTonePreviewRequest(mood, blocks(size)))).isEmpty();
@@ -33,7 +33,7 @@ class StoryTonePreviewRequestTest {
     }
 
     @Test
-    void rejectsRetiredOrMissingToneAndInvalidBlockLists() {
+    void 폐기되거나_누락된_말투와_잘못된_블록_목록을_거부한다() {
         for (var mood : List.of(Story.Mood.EMOTIONAL, Story.Mood.CALM)) {
             assertThat(validator.validate(new StoryTonePreviewRequest(mood, blocks(1)))).isNotEmpty();
         }
@@ -46,7 +46,7 @@ class StoryTonePreviewRequestTest {
     }
 
     @Test
-    void validatesNestedIdentifiersAndOrder() {
+    void 중첩된_ID와_순서를_검증한다() {
         for (var block : List.of(
                 new StoryTonePreviewRequest.Block(0L, 1L, 1, null, null, null),
                 new StoryTonePreviewRequest.Block(null, null, 1, null, null, null),
@@ -58,7 +58,7 @@ class StoryTonePreviewRequestTest {
     }
 
     @Test
-    void checksVisibleTextAndUnicodeCodePointLimits() {
+    void 보이는_텍스트와_유니코드_코드_포인트_제한을_검증한다() {
         String text = "😀".repeat(40);
         assertThat(validator.validate(request(new StoryTonePreviewRequest.Block(
                 1L, 2L, 1, text, text, "😀".repeat(125))))).isEmpty();
@@ -73,7 +73,7 @@ class StoryTonePreviewRequestTest {
     }
 
     @Test
-    void readsUnsavedBlockAndOmittedTextFromFrontendJson() {
+    void 프론트엔드_JSON에서_미저장_블록과_생략된_텍스트를_읽는다() {
         var request = new ObjectMapper().readValue("""
                 {"tone":"HUMOROUS","blocks":[{"tripAttachmentId":135,"orderNumber":1}]}
                 """, StoryTonePreviewRequest.class);

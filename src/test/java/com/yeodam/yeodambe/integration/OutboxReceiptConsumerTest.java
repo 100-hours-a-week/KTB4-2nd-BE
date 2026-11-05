@@ -22,7 +22,7 @@ class OutboxReceiptConsumerTest {
     private final OutboxReceiptConsumer consumer = new OutboxReceiptConsumer(receipts);
 
     @Test
-    void forwardsBrokerAppendTimeRatherThanConsumerObservationTime() {
+    void 소비자_관찰_시각이_아닌_브로커_추가_시각을_전달한다() {
         var headers = new RecordHeaders();
         headers.add("outbox-source", "story_generation_outbox".getBytes(StandardCharsets.UTF_8));
         headers.add("id", "7".getBytes(StandardCharsets.UTF_8));
@@ -38,14 +38,14 @@ class OutboxReceiptConsumerTest {
     }
 
     @Test
-    void ignoresHistoricalRequestWithoutCdcHeaders() {
+    void CDC_헤더가_없는_과거_요청은_무시한다() {
         consumer.consume(new ConsumerRecord<>("requests", 0, 0L, "77", "{}"));
 
         verifyNoInteractions(receipts);
     }
 
     @Test
-    void rejectsCreateTimeRatherThanStartingAnalysisFromSourceTime() {
+    void 생성_시각_방식은_거부하고_원본_시각으로_분석을_시작하지_않는다() {
         var headers = new RecordHeaders();
         headers.add("outbox-source", "story_generation_outbox".getBytes(StandardCharsets.UTF_8));
         headers.add("id", "7".getBytes(StandardCharsets.UTF_8));

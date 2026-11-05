@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class OutboxCdcStateTest {
     @Test
-    void storyRetainsPayloadAndFirstConfirmation() {
+    void 스토리_Outbox는_페이로드와_최초_발행_확인을_보존한다() {
         var outbox = new StoryGenerationOutbox(7L, "{\"type\":\"story\"}", "request");
         outbox.enableCdc(42L, "existing.story");
         var first = LocalDateTime.of(2026, 10, 15, 10, 0);
@@ -25,7 +25,7 @@ class OutboxCdcStateTest {
     }
 
     @Test
-    void additionalOutboxRetainsBatchAndFirstConfirmation() {
+    void 추가_사진_Outbox는_배치와_최초_발행_확인을_보존한다() {
         var outbox = new AdditionalAttachmentUploadOutbox(9L, "photos_ready", "{}", "request");
         assertThat(outbox.isCdcManaged()).isFalse();
         outbox.enableCdc(42L, "existing.update");

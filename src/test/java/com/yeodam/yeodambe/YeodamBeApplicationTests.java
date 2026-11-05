@@ -60,7 +60,7 @@ class YeodamBeApplicationTests {
     private TokenHasher tokenHasher;
 
     @Test
-    void normalStartupDoesNotRunOperations() {
+    void 일반_기동에서는_운영_작업을_실행하지_않는다() {
         assertThat(context.getBeansOfType(com.yeodam.yeodambe.trip.service.AttachmentConversionOperationsRunner.class)).isEmpty();
         assertThat(context.getBeansOfType(org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor.class)).hasSize(1);
     }

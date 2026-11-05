@@ -24,7 +24,7 @@ class MigrationProbeImageWorkflowTest {
             "refs/heads/main,true,false,true",
             "refs/heads/v2-probe,true,false,true"
     })
-    void imageSelectionKeepsReleaseNotificationSeparate(
+    void 이미지_선택은_릴리스_알림_여부를_별도로_결정한다(
             String ref,
             String rehearsal,
             boolean notifyRelease,
@@ -50,7 +50,7 @@ class MigrationProbeImageWorkflowTest {
     }
 
     @Test
-    void nonMainRefCannotPublishWithoutRehearsalInput() throws Exception {
+    void main_외의_ref는_리허설_입력_없이_이미지를_게시할_수_없다() throws Exception {
         Path output = temp.resolve("output");
         var process = new ProcessBuilder("bash", "-c", step("Select image reference").get("run").toString());
         process.environment().putAll(Map.of(
@@ -67,7 +67,7 @@ class MigrationProbeImageWorkflowTest {
     }
 
     @Test
-    void notifyStepRunsOnlyForExplicitReleaseOutputAndUsesSelectedImage() throws Exception {
+    void 명시적_릴리스_출력이_있을_때만_알림을_실행하고_선택한_이미지를_사용한다() throws Exception {
         var notify = step("Notify Cloud V2 release manifest");
         assertThat(notify.get("if")).isEqualTo("${{ github.ref == 'refs/heads/main' && steps.image.outputs.notify_release == 'true' }}");
         assertThat(((Map<?, ?>) notify.get("env")).get("IMAGE"))

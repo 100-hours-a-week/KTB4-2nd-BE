@@ -41,7 +41,7 @@ class StoryRepositoryAutoConfigurationTest {
     }
 
     @Test
-    void registersJpaAndMongoRepositoriesWithConfiguredDateConversions() {
+    void 설정된_날짜_변환과_함께_JPA와_Mongo_저장소를_등록한다() {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(
                         DataSourceAutoConfiguration.class,

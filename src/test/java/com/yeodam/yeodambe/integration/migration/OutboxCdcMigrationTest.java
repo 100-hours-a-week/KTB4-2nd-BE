@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OutboxCdcMigrationTest {
     @Test
-    void retainsExistingIdsPayloadsAndPublicationWhileBackfillingTripId() throws Exception {
+    void 여행_ID를_보완하면서_기존_ID와_페이로드와_발행_상태를_보존한다() throws Exception {
         var database = SharedTestMysql.createDatabase();
         var flyway = Flyway.configure().dataSource(
                 database.getJdbcUrl(), database.getUsername(), database.getPassword());

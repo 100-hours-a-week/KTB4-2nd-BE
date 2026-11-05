@@ -42,7 +42,7 @@ class StoryGenerationResultValidatorTest {
     }
 
     @Test
-    void acceptsThirtyBlocksAndMaximumTextLengths() {
+    void 블록_30개와_최대_길이_텍스트를_허용한다() {
         var blocks = IntStream.rangeClosed(1, 30)
                 .mapToObj(index -> new Block(index, 11L, (long) index,
                         "가".repeat(40), "나".repeat(40), "다".repeat(125)))
@@ -53,7 +53,7 @@ class StoryGenerationResultValidatorTest {
     }
 
     @Test
-    void rejectsThirtyOneBlocks() {
+    void 블록_31개를_거부한다() {
         var blocks = IntStream.rangeClosed(1, 31)
                 .mapToObj(index -> block(index, 11L, (long) index))
                 .toList();
@@ -63,7 +63,7 @@ class StoryGenerationResultValidatorTest {
 
     @ParameterizedTest
     @MethodSource("invalidResults")
-    void rejectsMissingResultSummaryOrBlocks(Result result) {
+    void 결과나_요약이나_블록이_없으면_거부한다(Result result) {
         assertInvalid(result);
     }
 
@@ -76,7 +76,7 @@ class StoryGenerationResultValidatorTest {
 
     @ParameterizedTest
     @MethodSource("invalidBlocks")
-    void rejectsInvalidBlockFields(Block block) {
+    void 유효하지_않은_블록_필드를_거부한다(Block block) {
         assertInvalid(new Result("요약", Arrays.asList(block)));
     }
 
@@ -93,39 +93,39 @@ class StoryGenerationResultValidatorTest {
     }
 
     @Test
-    void rejectsDuplicateOrderNumbers() {
+    void 중복된_순서_번호를_거부한다() {
         assertInvalid(new Result("요약", List.of(block(1, 11L, 21L), block(1, 11L, 22L))));
     }
 
     @Test
-    void rejectsDuplicatePhotosEvenWhenOrdersDiffer() {
+    void 순서가_달라도_중복된_사진을_거부한다() {
         assertInvalid(new Result("요약", List.of(block(1, 11L, 21L), block(2, 11L, 21L))));
     }
 
     @Test
-    void acceptsSelectedPhotosFromMultiplePlacesWithoutRequiringEveryInputPhoto() {
+    void 모든_입력_사진을_요구하지_않고_여러_장소에서_선택한_사진을_허용한다() {
         var result = new Result("요약", List.of(block(1, 11L, 21L), block(2, 12L, 23L)));
 
         assertThatCode(() -> validator.validate(result, request())).doesNotThrowAnyException();
     }
 
     @Test
-    void rejectsPhotoThatWasNotSent() {
+    void 전송하지_않은_사진을_거부한다() {
         assertInvalidReferences(new Result("요약", List.of(block(1, 11L, 99L))), request());
     }
 
     @Test
-    void rejectsPhotoAssignedToDifferentPlaceEvenWhenBothPlacesWereSent() {
+    void 두_장소를_모두_전송했어도_사진이_다른_장소에_배정되면_거부한다() {
         assertInvalidReferences(new Result("요약", List.of(block(1, 12L, 21L))), request());
     }
 
     @Test
-    void referenceValidationAlsoChecksResultFormat() {
+    void 참조_검증_시_결과_형식도_검증한다() {
         assertInvalidReferences(new Result(" ", List.of(block(1, 11L, 21L))), request());
     }
 
     @Test
-    void rejectsMissingRequestOrPlaces() {
+    void 요청이나_장소가_없으면_거부한다() {
         var result = new Result("요약", List.of(block(1, 11L, 21L)));
         assertInvalidReferences(result, null);
         var request = request();

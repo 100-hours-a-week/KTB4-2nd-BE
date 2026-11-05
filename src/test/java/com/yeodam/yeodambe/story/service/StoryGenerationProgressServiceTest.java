@@ -32,7 +32,7 @@ class StoryGenerationProgressServiceTest {
     private final StoryGenerationJob job = new StoryGenerationJob("execution-1", 241L, 2L, Story.Mood.PLAIN);
 
     @Test
-    void updatesProcessingStatusAndCalculatedPercentageUsingLockQuery() {
+    void 잠금_조회로_처리_상태와_계산한_진행률을_갱신한다() {
         prepareJob();
 
         service.updateProcessing(10L, response(241L, "execution-1", new StoryGenerationAiResponse.Progress(2, 4)));
@@ -47,7 +47,7 @@ class StoryGenerationProgressServiceTest {
     }
 
     @Test
-    void publishesOnlyOnceWhenSubsequentResponseChangesPercentageOnly() {
+    void 후속_응답이_진행률만_바꾸면_이벤트는_한_번만_발행한다() {
         prepareJob();
 
         service.updateProcessing(10L, response(241L, "execution-1", new StoryGenerationAiResponse.Progress(1, 4)));
@@ -63,7 +63,7 @@ class StoryGenerationProgressServiceTest {
     }
 
     @Test
-    void truncatesFractionalPercentage() {
+    void 진행률의_소수점_이하는_버린다() {
         prepareJob();
 
         service.updateProcessing(10L, response(241L, "execution-1", new StoryGenerationAiResponse.Progress(1, 3)));
@@ -72,7 +72,7 @@ class StoryGenerationProgressServiceTest {
     }
 
     @Test
-    void handlesLargeCountsWithoutIntegerMultiplicationOverflow() {
+    void 큰_수도_정수_곱셈_오버플로_없이_처리한다() {
         prepareJob();
 
         service.updateProcessing(10L, response(241L, "execution-1",
@@ -82,7 +82,7 @@ class StoryGenerationProgressServiceTest {
     }
 
     @Test
-    void lateLowerProgressDoesNotMoveProgressBackward() {
+    void 늦은_낮은_진행률은_기존_진행률을_낮추지_않는다() {
         prepareJob();
         job.updateProcessing(75);
 
@@ -93,7 +93,7 @@ class StoryGenerationProgressServiceTest {
     }
 
     @Test
-    void rejectsMissingJob() {
+    void 없는_작업을_거부한다() {
         when(jobRepository.findByIdForUpdate(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.updateProcessing(10L,
@@ -104,7 +104,7 @@ class StoryGenerationProgressServiceTest {
 
     @ParameterizedTest
     @MethodSource("invalidIdentities")
-    void rejectsDifferentTripOrExecutionWithoutChangingJob(Long tripId, String executionId) {
+    void 다른_여행이나_실행_ID는_작업을_바꾸지_않고_거부한다(Long tripId, String executionId) {
         prepareJob();
 
         assertThatThrownBy(() -> service.updateProcessing(10L,
@@ -123,7 +123,7 @@ class StoryGenerationProgressServiceTest {
 
     @ParameterizedTest
     @MethodSource("invalidProgress")
-    void rejectsInvalidCountsWithoutChangingJob(StoryGenerationAiResponse.Progress progress) {
+    void 잘못된_처리_건수는_작업을_바꾸지_않고_거부한다(StoryGenerationAiResponse.Progress progress) {
         prepareJob();
 
         assertThatThrownBy(() -> service.updateProcessing(10L, response(241L, "execution-1", progress)))
@@ -145,7 +145,7 @@ class StoryGenerationProgressServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class, names = {"COMPLETED", "FAILED", "CANCELED"})
-    void ignoresLateProcessingResponseForFinishedJob(StoryGenerationJob.Status status) {
+    void 종료된_작업의_늦은_처리_중_응답을_무시한다(StoryGenerationJob.Status status) {
         prepareJob();
         job.updateProcessing(75);
         switch (status) {
@@ -169,7 +169,7 @@ class StoryGenerationProgressServiceTest {
 
     @ParameterizedTest
     @MethodSource("nonProcessingResponses")
-    void rejectsOtherStatusesBeforeAccessingDatabase(StoryGenerationAiResponse response) {
+    void 다른_상태는_DB_접근_전에_거부한다(StoryGenerationAiResponse response) {
         assertThatThrownBy(() -> service.updateProcessing(10L, response))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID.message());

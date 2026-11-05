@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class StoryGenerationStatusVersionTest {
 
     @Test
-    void incrementsOnlyWhenThePublicStatusChanges() {
+    void 공개_상태가_바뀔_때만_버전을_증가시킨다() {
         StoryGenerationJob job = job();
         assertThat(job.getStatusVersion()).isEqualTo(1);
 
@@ -31,7 +31,7 @@ class StoryGenerationStatusVersionTest {
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class,
             names = {"COMPLETED", "FAILED", "CANCELED"})
-    void preservesTheTerminalStatusAndVersionAgainstLateUpdates(StoryGenerationJob.Status terminal) {
+    void 늦은_갱신에도_종료_상태와_버전을_보존한다(StoryGenerationJob.Status terminal) {
         StoryGenerationJob job = job();
         switch (terminal) {
             case COMPLETED -> job.complete(100L);
@@ -54,7 +54,7 @@ class StoryGenerationStatusVersionTest {
     }
 
     @Test
-    void invalidInputDoesNotAdvanceTheVersion() {
+    void 잘못된_입력은_버전을_증가시키지_않는다() {
         StoryGenerationJob job = job();
 
         assertThatThrownBy(() -> job.updateProcessing(101)).isInstanceOf(IllegalArgumentException.class);
@@ -65,7 +65,7 @@ class StoryGenerationStatusVersionTest {
     }
 
     @Test
-    void timeoutAdvancesTheVersionOnlyOnce() {
+    void 시간_초과는_버전을_한_번만_증가시킨다() {
         StoryGenerationJob job = job();
         LocalDateTime now = LocalDateTime.of(2026, 10, 29, 12, 0);
 

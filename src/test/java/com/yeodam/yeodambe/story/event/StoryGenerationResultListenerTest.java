@@ -31,7 +31,7 @@ class StoryGenerationResultListenerTest {
             """;
 
     @Test
-    void deserializesStoryResultAndDelegatesToHandler() {
+    void 스토리_결과를_역직렬화하고_핸들러에_위임한다() {
         listener.receive(STORY_RESULT);
 
         var captor = ArgumentCaptor.forClass(StoryCreateResultEvent.class);
@@ -43,7 +43,7 @@ class StoryGenerationResultListenerTest {
     }
 
     @Test
-    void skipsPhotoProcessingResultOnSharedTopic() {
+    void 공유_토픽의_사진_처리_결과는_건너뛴다() {
         listener.receive("""
                 {"type":"process_result","trip_id":77,"status":"COMPLETED"}
                 """);
@@ -53,13 +53,13 @@ class StoryGenerationResultListenerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"", " ", "null", "{}", "{\"type\":\"\"}", "{broken"})
-    void rejectsUnreadableOrMissingMessageType(String message) {
+    void 읽을_수_없거나_타입이_없는_메시지는_거부한다(String message) {
         assertThatThrownBy(() -> listener.receive(message)).isInstanceOf(RuntimeException.class);
         verifyNoInteractions(handler);
     }
 
     @Test
-    void propagatesSaveFailureToKafkaErrorHandler() {
+    void 저장_실패를_Kafka_오류_핸들러로_전파한다() {
         var failure = new IllegalStateException("database unavailable");
         doThrow(failure).when(handler).handle(any(StoryCreateResultEvent.class));
 

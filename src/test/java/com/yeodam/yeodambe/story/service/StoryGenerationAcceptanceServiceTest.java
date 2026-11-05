@@ -124,7 +124,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void queuedNotificationIsPublishedOnlyAfterCommit() {
+    void 대기_알림은_커밋_후에만_발행한다() {
         photo(takenAt);
         var job = new TransactionTemplate(transactionManager).execute(transaction -> {
             var accepted = service.accept(owner.getUserId(), trip.getId(), request(), "queued-test");
@@ -147,7 +147,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void rolledBackAcceptanceDoesNotPublishQueuedNotification() {
+    void 접수를_롤백하면_대기_알림을_발행하지_않는다() {
         photo(takenAt);
         new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
             service.accept(owner.getUserId(), trip.getId(), request(), "request-original");
@@ -158,7 +158,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void commitsJobSelectionAndSerializedMessageTogether() {
+    void 작업과_선택_정보와_직렬화한_메시지를_함께_커밋한다() {
         TripAttachment photo = photo(takenAt);
 
         StoryGenerationJob result = service.accept(owner.getUserId(), trip.getId(), request(), "request-original");
@@ -186,7 +186,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void publicationReceiptMarksExistingOutboxWithoutChangingQueuedJob() {
+    void 발행_수신_확인은_대기_작업을_바꾸지_않고_기존_Outbox에_기록한다() {
         photo(takenAt);
         var job = service.accept(owner.getUserId(), trip.getId(), request(), "request-original");
         var outbox = outboxes.findByGenerationId(job.getId()).orElseThrow();
@@ -211,7 +211,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void lateReceiptPreservesCanceledJob() {
+    void 늦은_수신_확인은_취소된_작업을_보존한다() {
         photo(takenAt);
         var job = service.accept(owner.getUserId(), trip.getId(), request(), "request-canceled");
         job.cancel();
@@ -227,7 +227,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void pendingPublicationPreservesJobAndPayload() {
+    void 발행_대기_중에는_작업과_페이로드를_보존한다() {
         photo(takenAt);
         var job = service.accept(owner.getUserId(), trip.getId(), request(), "request-original");
         var outbox = outboxes.findByGenerationId(job.getId()).orElseThrow();
@@ -238,7 +238,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void assemblyRejectionRollsBackPreviouslyFlushedJobAndSelection() {
+    void 메시지_조립_거부_시_이미_플러시한_작업과_선택_정보를_롤백한다() {
         photo(null);
 
         assertThatThrownBy(() -> service.accept(owner.getUserId(), trip.getId(), request(), "request-original"))
@@ -250,7 +250,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void outboxConstraintFailureRollsBackJobAndSelection() {
+    void Outbox_제약_실패_시_작업과_선택_정보를_롤백한다() {
         photo(takenAt);
 
         assertThatThrownBy(() -> service.accept(owner.getUserId(), trip.getId(), request(), null))
@@ -262,7 +262,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void rejectsProcessingTripWithoutSavingJobSelectionOrOutbox() {
+    void 처리_중인_여행은_작업과_선택_정보와_Outbox를_저장하지_않고_거부한다() {
         jdbcTemplate.update("UPDATE trips SET processing_status = 'PROCESSING' WHERE trip_id = ?", trip.getId());
         photo(takenAt);
 
@@ -275,7 +275,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void storyAcceptanceBlocksConcurrentPhotoAdditionUntilCommitThenRejectsIt() throws Exception {
+    void 스토리_접수는_동시_사진_추가를_커밋까지_대기시킨_뒤_거부한다() throws Exception {
         photo(takenAt);
         var addition = additionRequest();
         assertSecondRequestRejectedAfterCommit(
@@ -289,7 +289,7 @@ class StoryGenerationAcceptanceServiceTest {
     }
 
     @Test
-    void photoAdditionBlocksConcurrentStoryAcceptanceUntilCommitThenRejectsIt() throws Exception {
+    void 사진_추가는_동시_스토리_접수를_커밋까지_대기시킨_뒤_거부한다() throws Exception {
         photo(takenAt);
         stats.saveAndFlush(new UserStats(owner));
         var addition = additionRequest();

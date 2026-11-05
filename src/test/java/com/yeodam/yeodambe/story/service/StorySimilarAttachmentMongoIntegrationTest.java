@@ -39,9 +39,20 @@ import static org.mockito.Mockito.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, StorySimilarAttachmentMongoIntegrationTest.MongoConfig.class})
 @Transactional
 class StorySimilarAttachmentMongoIntegrationTest {
+
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class MongoConfig {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails isolatedMongo() {
+            return () -> new com.mongodb.ConnectionString(
+                    com.yeodam.yeodambe.SharedTestMongo.connectionString("storysimilarattachmentmongointegrationtest"));
+        }
+    }
+
     @Autowired private StorySimilarAttachmentService service;
     @Autowired private UserRepository users;
     @Autowired private TripRepository trips;

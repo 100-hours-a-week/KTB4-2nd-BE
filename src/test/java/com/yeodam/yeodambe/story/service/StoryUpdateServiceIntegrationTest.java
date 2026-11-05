@@ -43,10 +43,21 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @org.springframework.boot.test.context.SpringBootTest
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, StoryUpdateServiceIntegrationTest.MongoConfig.class})
 @ActiveProfiles("test")
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class StoryUpdateServiceIntegrationTest {
+
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class MongoConfig {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails isolatedMongo() {
+            return () -> new com.mongodb.ConnectionString(
+                    com.yeodam.yeodambe.SharedTestMongo.connectionString("storyupdateserviceintegrationtest"));
+        }
+    }
+
     @Autowired EntityManager em;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired StoryUpdateService service;

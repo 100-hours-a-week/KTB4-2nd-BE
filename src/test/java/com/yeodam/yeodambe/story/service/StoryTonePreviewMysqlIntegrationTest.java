@@ -47,9 +47,20 @@ import static org.mockito.Mockito.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, StoryTonePreviewMysqlIntegrationTest.MongoConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class StoryTonePreviewMysqlIntegrationTest {
+
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class MongoConfig {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails isolatedMongo() {
+            return () -> new com.mongodb.ConnectionString(
+                    com.yeodam.yeodambe.SharedTestMongo.connectionString("storytonepreviewmysqlintegrationtest"));
+        }
+    }
+
     @Autowired EntityManager em;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired StoryTonePreviewInputService input;

@@ -44,8 +44,20 @@ import static org.mockito.Mockito.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, AdditionalAttachmentReanalysisIntegrationTest.MongoConfig.class})
 class AdditionalAttachmentReanalysisIntegrationTest {
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class MongoConfig {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails isolatedMongo() {
+            return () -> new com.mongodb.ConnectionString(
+                    com.yeodam.yeodambe.SharedTestMongo.connectionString("additional_reanalysis_test"));
+        }
+    }
+
+    @Autowired private com.yeodam.yeodambe.story.repository.StoryContentRepository storyContents;
+
     @Autowired private AdditionalAttachmentKafkaResultService kafkaResults;
     @Autowired private AdditionalAttachmentExecutionRepository executionRepository;
     @Autowired private TripProcessingStatusService processingStatus;
@@ -557,6 +569,14 @@ class AdditionalAttachmentReanalysisIntegrationTest {
                 + "VALUES (?, ?, ?, ?, 1, '첫째 날', '기존 사진 이야기', '기존 메모')", storyId, oldPhotoId,
                 oldPlaceId, places.findById(oldPlaceId).orElseThrow().getStartedAt().toLocalDate());
         jdbc.update("UPDATE trips SET current_story_id = ? WHERE trip_id = ?", storyId, tripId);
+        Long blockId = jdbc.queryForObject("SELECT story_block_id FROM story_blocks WHERE story_id = ?",
+                Long.class, storyId);
+        storyContents.insert(new com.yeodam.yeodambe.story.document.StoryContentDocument(
+                storyId, com.yeodam.yeodambe.story.entity.Story.Mood.PLAIN, "기존 스토리",
+                List.of(oldPlaceId), List.of(new com.yeodam.yeodambe.story.document.StoryContentBlock(
+                blockId, oldPhotoId, oldPlaceId,
+                places.findById(oldPlaceId).orElseThrow().getStartedAt().toLocalDate(),
+                "첫째 날", "기존 사진 이야기", "기존 메모", null, null, null)), blockId + 1));
         return storyId;
     }
 

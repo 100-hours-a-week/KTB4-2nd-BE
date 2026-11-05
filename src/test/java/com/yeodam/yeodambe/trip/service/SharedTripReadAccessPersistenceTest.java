@@ -6,6 +6,9 @@ import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.entity.StoryBlock;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.story.service.StoryReadService;
 import com.yeodam.yeodambe.story.service.StoryValidator;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
@@ -75,6 +78,7 @@ class SharedTripReadAccessPersistenceTest {
     @Autowired private TripAttachmentDownloadService downloads;
     @Autowired private BulkAttachmentDownloadService bulkDownloads;
     @MockitoBean private TripAttachmentStorageClient storage;
+    @MockitoBean private StoryContentRepository contents;
 
     @TestConfiguration(proxyBeanMethods = false)
     static class TimeConfig {
@@ -311,8 +315,15 @@ class SharedTripReadAccessPersistenceTest {
         story.complete();
         em.persist(story);
         trip.changeCurrentStory(story.getId());
-        em.persist(new StoryBlock(story.getId(), first.getId(), place.getId(),
-                NOW.toLocalDate(), 1, "첫째 날", "사진 요약", null));
+        var block = new StoryBlock(story.getId(), first.getId(), place.getId(),
+                NOW.toLocalDate(), 1, "첫째 날", "사진 요약", null);
+        em.persist(block);
+        when(contents.findById(story.getId())).thenReturn(java.util.Optional.of(
+                new StoryContentDocument(story.getId(), Story.Mood.CALM, "공유 여행 요약",
+                        List.of(place.getId()), List.of(new StoryContentBlock(
+                        block.getId(), first.getId(), place.getId(), NOW.toLocalDate(),
+                        "첫째 날", "사진 요약", null, null, null, null)), block.getId() + 1)));
+
         return new Fixture(owner, reader, trip, first, second);
     }
 

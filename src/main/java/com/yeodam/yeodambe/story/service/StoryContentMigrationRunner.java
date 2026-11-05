@@ -9,6 +9,9 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 
 @Slf4j
 @Component
@@ -20,6 +23,7 @@ public class StoryContentMigrationRunner implements ApplicationRunner {
 
     private final StoryRepository storyRepository;
     private final StoryContentMigrationService migrationService;
+    private final StoryContentRepository storyContentRepository;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -55,11 +59,36 @@ public class StoryContentMigrationRunner implements ApplicationRunner {
                 afterId = storyId;
             }
         }
-
+        validateNoMissingContent();
         log.info(
                 "스토리 본문 자동 이관 확인 완료. checked_count={} last_story_id={}",
                 checkedCount,
                 afterId
         );
+    }
+    private void validateNoMissingContent() {
+        long afterId = 0L;
+
+        while (true) {
+            var storyIds = storyRepository.findContentMigrationTargetIds(
+                    afterId,
+                    PageRequest.of(0, PAGE_SIZE)
+            );
+
+            if (storyIds.isEmpty()) {
+                return;
+            }
+
+            for (Long storyId : storyIds) {
+                if (!storyContentRepository.existsById(storyId)) {
+                    log.error("스토리 본문 이관 누락. story_id={}", storyId);
+                    throw new StoryDataIntegrityException(
+                            StoryGenerationInternalErrorMessage.CONTENT_DOCUMENT_MISSING
+                    );
+                }
+
+                afterId = storyId;
+            }
+        }
     }
 }

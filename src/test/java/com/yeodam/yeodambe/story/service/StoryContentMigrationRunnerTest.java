@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.repository.StoryRepository;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.data.domain.PageRequest;
@@ -14,13 +16,14 @@ import static org.mockito.Mockito.*;
 class StoryContentMigrationRunnerTest {
     private final StoryRepository stories = mock(StoryRepository.class);
     private final StoryContentMigrationService migration = mock(StoryContentMigrationService.class);
-    private final StoryContentMigrationRunner runner = new StoryContentMigrationRunner(stories, migration);
+    private final StoryContentRepository contents = mock(StoryContentRepository.class);
+    private final StoryContentMigrationRunner runner = new StoryContentMigrationRunner(stories, migration, contents);
 
     @Test
     void emptyTargetFinishesWithoutMigrationCalls() {
         runner.run(new DefaultApplicationArguments());
-        verify(stories).findContentMigrationTargetIds(0L, PageRequest.of(0, 100));
-        verifyNoInteractions(migration);
+        verify(stories, times(2)).findContentMigrationTargetIds(0L, PageRequest.of(0, 100));
+        verifyNoInteractions(migration, contents);
     }
 
     @Test
@@ -33,6 +36,7 @@ class StoryContentMigrationRunnerTest {
         when(stories.findContentMigrationTargetIds(109L, PageRequest.of(0, 100)))
                 .thenReturn(List.of());
 
+        when(contents.existsById(anyLong())).thenReturn(true);
         runner.run(new DefaultApplicationArguments());
 
         var order = inOrder(stories, migration);
@@ -42,7 +46,11 @@ class StoryContentMigrationRunnerTest {
         order.verify(migration).migrateOne(104L);
         order.verify(migration).migrateOne(109L);
         order.verify(stories).findContentMigrationTargetIds(109L, PageRequest.of(0, 100));
+        order.verify(stories).findContentMigrationTargetIds(0L, PageRequest.of(0, 100));
+        order.verify(stories).findContentMigrationTargetIds(100L, PageRequest.of(0, 100));
+        order.verify(stories).findContentMigrationTargetIds(109L, PageRequest.of(0, 100));
         order.verifyNoMoreInteractions();
+        verify(contents, times(102)).existsById(anyLong());
     }
 
     @Test
@@ -59,6 +67,21 @@ class StoryContentMigrationRunnerTest {
         verify(migration, never()).migrateOne(3L);
         verify(stories).findContentMigrationTargetIds(0L, PageRequest.of(0, 100));
         verifyNoMoreInteractions(stories);
+    }
+
+    @Test
+    void missingMongoDocumentInFinalCheckFailsStartup() {
+        when(stories.findContentMigrationTargetIds(0L, PageRequest.of(0, 100)))
+                .thenReturn(List.of(1L));
+        when(stories.findContentMigrationTargetIds(1L, PageRequest.of(0, 100)))
+                .thenReturn(List.of());
+        when(contents.existsById(1L)).thenReturn(false);
+
+        assertThatThrownBy(() -> runner.run(new DefaultApplicationArguments()))
+                .isInstanceOf(StoryDataIntegrityException.class);
+
+        verify(migration).migrateOne(1L);
+        verify(contents).existsById(1L);
     }
 
     @Test

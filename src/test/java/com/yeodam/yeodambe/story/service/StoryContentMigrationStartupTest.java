@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.repository.StoryRepository;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
@@ -77,6 +79,25 @@ class StoryContentMigrationStartupTest {
         assertThat(readyEvent).isFalse();
     }
 
+    @Test
+    void missingDocumentPreventsApplicationReadyEvent() {
+        var stories = mock(StoryRepository.class);
+        var migration = mock(StoryContentMigrationService.class);
+        when(stories.findContentMigrationTargetIds(0L, PageRequest.of(0, 100)))
+                .thenReturn(List.of(10L));
+        var context = new AtomicReference<ConfigurableApplicationContext>();
+        var readyEvent = new AtomicBoolean();
+        var app = application(stories, migration, context, readyEvent);
+        app.addInitializers(applicationContext -> {
+            var contents = applicationContext.getBeanFactory().getBean(StoryContentRepository.class);
+            when(contents.existsById(10L)).thenReturn(false);
+        });
+
+        assertThatThrownBy(() -> app.run(arguments()))
+                .isInstanceOf(StoryDataIntegrityException.class);
+        assertThat(readyEvent).isFalse();
+    }
+
     private SpringApplication application(
             StoryRepository stories,
             StoryContentMigrationService migration,
@@ -91,6 +112,9 @@ class StoryContentMigrationStartupTest {
             context.set(applicationContext);
             applicationContext.getBeanFactory().registerSingleton("storyRepository", stories);
             applicationContext.getBeanFactory().registerSingleton("migrationService", migration);
+            var contents = mock(StoryContentRepository.class);
+            when(contents.existsById(anyLong())).thenReturn(true);
+            applicationContext.getBeanFactory().registerSingleton("storyContentRepository", contents);
         });
         app.addListeners((ApplicationListener<ApplicationReadyEvent>) event -> readyEvent.set(true));
         return app;

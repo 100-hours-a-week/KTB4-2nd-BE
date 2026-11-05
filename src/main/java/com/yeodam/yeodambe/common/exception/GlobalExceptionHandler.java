@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.common.exception;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
@@ -55,6 +56,15 @@ public class GlobalExceptionHandler {
         return new ApiResponse<>(ErrorMessage.TRIP_EDIT_COMMAND_RESULT_EXPIRED, null);
     }
 
+
+    @ExceptionHandler(AttachmentListUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handlePhotoListUnavailable(AttachmentListUnavailableException exception) {
+        log.atWarn().addKeyValue("event", "photo_list_unavailable")
+                .addKeyValue("failure", exception.getClass().getSimpleName())
+                .log(TripInternalErrorMessage.PHOTO_LIST_RESPONSE_DELIVERY_FAILED.message());
+        return new ApiResponse<>(ErrorMessage.PHOTO_LIST_UNAVAILABLE, null);
+    }
 
     @ExceptionHandler(InvalidRestoreRequestException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)

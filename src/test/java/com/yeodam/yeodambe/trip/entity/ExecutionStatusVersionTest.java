@@ -13,7 +13,7 @@ class ExecutionStatusVersionTest {
     private final LocalDateTime now = LocalDateTime.of(2026, 10, 29, 12, 0);
 
     @Test
-    void creationVersionsTheDisplayStatusAndStepTogether() {
+    void 생성_실행은_표시_상태와_단계의_버전을_함께_관리한다() {
         var execution = new TripCreationExecution("creation", 1L, 2L, 10);
         assertThat(execution.updateDisplayStatus(TripDisplayStatus.PROCESSING, null)).isFalse();
         assertThat(execution.getStatusVersion()).isEqualTo(1);
@@ -39,7 +39,7 @@ class ExecutionStatusVersionTest {
     }
 
     @Test
-    void additionVersionsTheDisplayStatusAndStepTogether() {
+    void 추가_실행은_표시_상태와_단계의_버전을_함께_관리한다() {
         var execution = new AdditionalAttachmentExecution("addition", 1L, 2L, 10, now);
         assertThat(execution.updateDisplayStatus(TripDisplayStatus.PROCESSING, null)).isFalse();
         assertThat(execution.getStatusVersion()).isEqualTo(1);
@@ -67,7 +67,7 @@ class ExecutionStatusVersionTest {
     @ParameterizedTest
     @EnumSource(value = TripCreationExecution.Status.class,
             names = {"COMPLETED", "FAILED", "CANCELED"})
-    void creationPreservesItsTerminalStateAgainstLateCallbacks(TripCreationExecution.Status status) {
+    void 생성_실행은_늦은_콜백에도_종료_상태를_보존한다(TripCreationExecution.Status status) {
         var execution = new TripCreationExecution("creation", 1L, 2L, 10);
         execution.finish(status, "original", now);
 
@@ -85,7 +85,7 @@ class ExecutionStatusVersionTest {
     }
 
     @Test
-    void creationKeepsTheFirstResultWhenItIsRedelivered() {
+    void 생성_실행은_결과_재전달시_최초_결과를_유지한다() {
         var execution = new TripCreationExecution("creation", 1L, 2L, 10);
         execution.receiveResult("first", "COMPLETED", now);
         execution.receiveResult("second", "FAILED", now.plusSeconds(1));
@@ -97,7 +97,7 @@ class ExecutionStatusVersionTest {
     }
 
     @Test
-    void creationIncrementsForTransitionsButNotRepeatedCallbacks() {
+    void 생성_실행은_상태_전이시에만_버전을_늘리고_반복_콜백에는_늘리지_않는다() {
         var execution = new TripCreationExecution("creation", 1L, 2L, 10);
         assertThat(execution.getStatusVersion()).isEqualTo(1);
 
@@ -121,7 +121,7 @@ class ExecutionStatusVersionTest {
     }
 
     @Test
-    void additionIncrementsForTransitionsAndPreservesTheTerminalState() {
+    void 추가_실행은_상태_전이시_버전을_늘리고_종료_상태를_보존한다() {
         var execution = new AdditionalAttachmentExecution("addition", 1L, 2L, 10, now);
         assertThat(execution.getStatusVersion()).isEqualTo(1);
 

@@ -325,7 +325,7 @@ class TripServiceTest {
     }
 
     @Test
-    void sameCoordinatesRemainSeparateMarkersForEachTrip() {
+    void 동일한_좌표여도_여행별_마커를_분리한다() {
         when(tripAttachmentRepository.findMapRepresentatives(1L))
                 .thenReturn(List.of(mapRepresentative(1L, "first-preview"), mapRepresentative(2L, "second-preview")));
         var response = tripService.findMap(1L);
@@ -339,7 +339,7 @@ class TripServiceTest {
     }
 
     @Test
-    void returnsExistingAttachmentCountDirectlyOnMarker() {
+    void 기존_첨부_개수를_마커에_그대로_반환한다() {
         when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of(mapRepresentative(1L, "preview")));
         when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(1L)))
                 .thenReturn(List.of(new TripAttachmentCount(1L, 3L)));
@@ -348,7 +348,7 @@ class TripServiceTest {
     }
 
     @Test
-    void usesSelectedPhotoPreviewWithoutReadingOrChangingTripThumbnail() {
+    void 여행_썸네일을_조회하거나_변경하지_않고_선택_사진의_미리보기를_사용한다() {
         when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of(mapRepresentative(1L, "selected-preview")));
         when(tripAttachmentStorageClient.createReadUrl("selected-preview")).thenReturn("https://example.test/selected");
         var response = tripService.findMap(1L);
@@ -358,7 +358,7 @@ class TripServiceTest {
     }
 
     @Test
-    void returnsEmptyMarkersWithoutCountOrUrlCallsWhenNoCoordinateCandidatesExist() {
+    void 좌표_후보가_없으면_개수와_URL_조회_없이_빈_마커를_반환한다() {
         when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
         assertThat(tripService.findMap(1L).markers()).isEmpty();
         verify(tripAttachmentRepository, never()).countNotDeletedByTripIds(anyList());
@@ -366,7 +366,7 @@ class TripServiceTest {
     }
 
     @Test
-    void cachedMapSkipsDatabaseAndCreatesFreshUrlsOnEachRequest() {
+    void 지도_캐시_적중시_DB를_조회하지_않고_요청마다_새_URL을_생성한다() {
         var cached = new com.yeodam.yeodambe.trip.service.response.TripMapCacheData(List.of(
                 new com.yeodam.yeodambe.trip.service.response.TripMapCacheData.Marker(
                         7L, "cached-trip", BigDecimal.ONE, BigDecimal.TEN, "preview-key", 3L)));
@@ -385,7 +385,7 @@ class TripServiceTest {
     }
 
     @Test
-    void cacheMissLoadsDatabaseAndStoresObjectKeyInsteadOfSignedUrl() {
+    void 캐시_미스시_DB를_조회하고_서명_URL_대신_객체_키를_저장한다() {
         when(mapCache.find(1L, "v1")).thenReturn(Optional.empty());
         when(tripAttachmentRepository.findMapRepresentatives(1L))
                 .thenReturn(List.of(mapRepresentative(7L, "preview-key")));
@@ -407,7 +407,7 @@ class TripServiceTest {
     }
 
     @Test
-    void emptyMapIsAlsoCached() {
+    void 빈_지도도_캐시한다() {
         when(tripAttachmentRepository.findMapRepresentatives(1L)).thenReturn(List.of());
         assertThat(tripService.findMap(1L).markers()).isEmpty();
         verify(mapCache).save(eq(1L), eq("v1"), eq(
@@ -415,7 +415,7 @@ class TripServiceTest {
     }
 
     @Test
-    void unavailableVersionBypassesCacheAndReadsDatabase() {
+    void 버전을_조회할_수_없으면_캐시를_우회하고_DB를_조회한다() {
         when(mapCache.version(1L)).thenReturn(Optional.empty());
         when(tripAttachmentRepository.findMapRepresentatives(1L))
                 .thenReturn(List.of(mapRepresentative(7L, "preview")));
@@ -427,7 +427,7 @@ class TripServiceTest {
     }
 
     @Test
-    void concurrentCacheMissesMayLoadDatabaseIndependently() throws Exception {
+    void 동시_캐시_미스는_각각_DB를_조회할_수_있다() throws Exception {
         var gate = new java.util.concurrent.CyclicBarrier(2);
         when(tripAttachmentRepository.findMapRepresentatives(1L)).thenAnswer(call -> {
             gate.await(5, java.util.concurrent.TimeUnit.SECONDS);
@@ -449,7 +449,7 @@ class TripServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void redisReadAndWriteFailuresDoNotPreventMapResponse() {
+    void Redis_읽기와_쓰기_실패에도_지도_응답을_반환한다() {
         var redis = mock(org.springframework.data.redis.core.StringRedisTemplate.class);
         var values = mock(org.springframework.data.redis.core.ValueOperations.class);
         when(redis.opsForValue()).thenReturn(values);
@@ -479,7 +479,7 @@ class TripServiceTest {
     }
 
     @Test
-    void databaseFailurePropagatesWithoutSavingCache() {
+    void DB_실패시_캐시를_저장하지_않고_실패를_전파한다() {
         var failure = new org.springframework.dao.DataAccessResourceFailureException("database unavailable");
         when(tripAttachmentRepository.findMapRepresentatives(1L)).thenThrow(failure);
 

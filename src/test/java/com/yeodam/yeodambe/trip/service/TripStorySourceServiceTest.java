@@ -39,7 +39,7 @@ class TripStorySourceServiceTest {
     private final LocalDateTime takenAt = LocalDateTime.of(2026, 10, 10, 9, 0);
 
     @Test
-    void preservesSelectedFolderOrderAndPhotoData() {
+    void 선택한_폴더_순서와_사진_데이터를_보존한다() {
         Trip trip = ownedTrip();
         when(trip.getId()).thenReturn(100L);
         when(trip.getTripName()).thenReturn("여행");
@@ -68,7 +68,7 @@ class TripStorySourceServiceTest {
     }
 
     @Test
-    void rejectsMissingTripBeforeReadingFolders() {
+    void 폴더_조회_전에_누락된_여행을_거부한다() {
         when(trips.findById(100L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.read(2L, 100L, List.of(10L)))
                 .isInstanceOf(TripNotFoundException.class);
@@ -76,7 +76,7 @@ class TripStorySourceServiceTest {
     }
 
     @Test
-    void rejectsDeletedTripBeforeReadingFolders() {
+    void 폴더_조회_전에_삭제된_여행을_거부한다() {
         Trip trip = ownedTrip();
         when(trip.getDeletedAt()).thenReturn(takenAt);
         assertThatThrownBy(() -> service.read(2L, 100L, List.of(10L)))
@@ -85,7 +85,7 @@ class TripStorySourceServiceTest {
     }
 
     @Test
-    void rejectsOtherOwnerBeforeReadingFolders() {
+    void 폴더_조회_전에_다른_소유자를_거부한다() {
         Trip trip = ownedTrip();
         when(trip.getUserId()).thenReturn(3L);
         assertThatThrownBy(() -> service.read(2L, 100L, List.of(10L)))
@@ -95,7 +95,7 @@ class TripStorySourceServiceTest {
 
     @ParameterizedTest
     @NullAndEmptySource
-    void rejectsMissingSelection(List<Long> selected) {
+    void 폴더_선택이_없으면_거부한다(List<Long> selected) {
         ownedTrip();
         assertThatThrownBy(() -> service.read(2L, 100L, selected))
                 .isInstanceOf(InvalidStoryRequestException.class);
@@ -104,7 +104,7 @@ class TripStorySourceServiceTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"missing", "deleted", "otherTrip", "duplicate"})
-    void rejectsInvalidFoldersBeforeReadingPhotos(String condition) {
+    void 사진_조회_전에_잘못된_폴더를_거부한다(String condition) {
         ownedTrip();
         List<Long> selected = condition.equals("duplicate") ? List.of(10L, 10L) : List.of(10L);
         TripDetailPlace folder = folder(10L);
@@ -119,7 +119,7 @@ class TripStorySourceServiceTest {
     }
 
     @Test
-    void rejectsEntireRequestWhenOneSelectedFolderHasNoEligiblePhotos() {
+    void 선택한_폴더_중_유효_사진이_없는_폴더가_있으면_전체_요청을_거부한다() {
         ownedTrip();
         List<Long> selected = List.of(10L, 20L);
         var selectedFolders = List.of(folder(10L), folder(20L));
@@ -134,7 +134,7 @@ class TripStorySourceServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = ProcessingStatus.class, names = {"PROCESSING", "FAILED", "CANCELED"})
-    void rejectsUnfinishedTripBeforeReadingFoldersAndPhotos(ProcessingStatus status) {
+    void 폴더와_사진_조회_전에_미완료_여행을_거부한다(ProcessingStatus status) {
         Trip trip = ownedTrip();
         when(trip.getProcessingStatus()).thenReturn(status);
 
@@ -144,7 +144,7 @@ class TripStorySourceServiceTest {
     }
 
     @Test
-    void rejectsActivePhotoAdditionBeforeReadingFoldersAndPhotos() {
+    void 폴더와_사진_조회_전에_진행중인_사진_추가를_거부한다() {
         ownedTrip();
         when(additionalExecutions.existsByTripIdAndEndedAtIsNull(100L)).thenReturn(true);
 

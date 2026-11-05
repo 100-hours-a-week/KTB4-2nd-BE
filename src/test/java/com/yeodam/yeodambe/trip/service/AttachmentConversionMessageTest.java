@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AttachmentConversionMessageTest {
 
     @Test
-    void messageContainsOnlyVersionAndTaskId() {
+    void 메시지는_버전과_작업_ID만_포함한다() {
         ObjectMapper mapper = new ObjectMapper();
         String taskId = "00000000-0000-0000-0000-000000000001";
         String wire = mapper.writeValueAsString(new AttachmentConversionMessage(1, taskId));

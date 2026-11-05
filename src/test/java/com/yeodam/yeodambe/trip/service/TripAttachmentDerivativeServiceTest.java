@@ -100,7 +100,7 @@ class TripAttachmentDerivativeServiceTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"HOLD", "KAFKA"})
-    void heldOrKafkaModeDoesNotStartLegacySubmission(String mode) {
+    void HOLD나_Kafka_모드에서는_기존_제출을_시작하지_않는다(String mode) {
         var route = AttachmentConversionRoute.valueOf(mode);
         var admission = new AttachmentConversionProperties.Admission(
                 Map.of(Lane.LIGHT, 100L,

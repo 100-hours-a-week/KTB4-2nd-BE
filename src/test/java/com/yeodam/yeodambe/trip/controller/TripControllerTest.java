@@ -55,7 +55,7 @@ class TripControllerTest {
     );
 
     @Test
-    void mapResponseContainsTripMarkersWithoutRegionGroupingFields() {
+    void 지도_응답은_지역_그룹_필드_없이_여행_마커를_포함한다() {
         var data = new com.yeodam.yeodambe.trip.service.response.TripMapResponse(List.of(
                 new com.yeodam.yeodambe.trip.service.response.TripMapResponse.Marker(7L, "trip",
                         new java.math.BigDecimal("37.5"), new java.math.BigDecimal("127.2"), "https://example.test/preview", 3L)));

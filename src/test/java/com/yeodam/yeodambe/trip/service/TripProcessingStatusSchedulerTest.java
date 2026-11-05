@@ -29,7 +29,7 @@ class TripProcessingStatusSchedulerTest {
             new TripProcessingStatusScheduler(creations, additions, statuses);
 
     @Test
-    void checksBothCreationAndAdditionalExecutionsWithTheirOwners() {
+    void 생성과_추가_실행을_각_소유자로_조회한다() {
         when(creations.findAwaitingAiStatus()).thenReturn(List.of(creation(7L, 42L)));
         when(additions.findAwaitingAiStatus()).thenReturn(List.of(addition(8L, 43L)));
 
@@ -42,7 +42,7 @@ class TripProcessingStatusSchedulerTest {
     }
 
     @Test
-    void aFailedExecutionDoesNotStopFollowingExecutionsOrTheAdditionalList() {
+    void 한_실행의_실패가_뒤의_실행과_추가_목록_처리를_막지_않는다() {
         when(creations.findAwaitingAiStatus()).thenReturn(List.of(creation(7L, 42L), creation(8L, 43L)));
         when(additions.findAwaitingAiStatus()).thenReturn(List.of(addition(9L, 44L)));
         doThrow(IllegalStateException.class).when(statuses).synchronizeStatus(7L, 42L);
@@ -55,7 +55,7 @@ class TripProcessingStatusSchedulerTest {
     }
 
     @Test
-    void doesNotQueryAiWhenNoExecutionsNeedStatusCollection() {
+    void 상태_수집_대상이_없으면_AI를_조회하지_않는다() {
         scheduler.synchronizePendingExecutions();
 
         verify(creations).findAwaitingAiStatus();
@@ -64,7 +64,7 @@ class TripProcessingStatusSchedulerTest {
     }
 
     @Test
-    void enablesTheSchedulerOnlyWhenConfiguredTrue() {
+    void 설정이_true일_때만_스케줄러를_활성화한다() {
         try (AnnotationConfigApplicationContext context = context(Map.of("app.trip.status-polling-enabled", "true"))) {
             context.register(TripProcessingStatusScheduler.class);
             context.refresh();
@@ -73,7 +73,7 @@ class TripProcessingStatusSchedulerTest {
     }
 
     @Test
-    void disablesTheSchedulerWhenConfiguredFalse() {
+    void 설정이_false이면_스케줄러를_비활성화한다() {
         try (AnnotationConfigApplicationContext context = context(Map.of("app.trip.status-polling-enabled", "false"))) {
             context.register(TripProcessingStatusScheduler.class);
             context.refresh();
@@ -83,7 +83,7 @@ class TripProcessingStatusSchedulerTest {
     }
 
     @Test
-    void doesNotEnableTheSchedulerWhenThePropertyIsMissing() {
+    void 설정이_없으면_스케줄러를_활성화하지_않는다() {
         try (AnnotationConfigApplicationContext context = context(Map.of())) {
             context.register(TripProcessingStatusScheduler.class);
             context.refresh();
@@ -92,7 +92,7 @@ class TripProcessingStatusSchedulerTest {
     }
 
     @Test
-    void springInvokesStatusCollectionWithoutAFrontendRequest() throws Exception {
+    void 프론트엔드_요청_없이_Spring이_상태를_수집한다() throws Exception {
         CountDownLatch called = new CountDownLatch(1);
         when(creations.findAwaitingAiStatus()).thenReturn(List.of(creation(7L, 42L)));
         doAnswer(invocation -> {

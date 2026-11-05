@@ -90,7 +90,7 @@ class AttachmentConversionMigrationIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void partiallyConvertedBatchReusesSuccessAndAttempts(Kind kind) {
+    void 일부_변환된_배치의_성공과_시도_이력을_재사용한다(Kind kind) {
         var batch = fixture(kind, List.of("image/jpeg", "image/heic"));
         accept(batch);
         entityManager.flush();
@@ -117,7 +117,7 @@ class AttachmentConversionMigrationIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void legacyLeaseAndLateCallbackCannotOverlapKafkaPhoto(Kind kind) {
+    void 기존_임대와_늦은_콜백이_Kafka_사진_변환과_겹치지_않는다(Kind kind) {
         var batch = fixture(kind, List.of("image/jpeg"));
         accept(batch);
         entityManager.flush();
@@ -167,7 +167,7 @@ class AttachmentConversionMigrationIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void unfinishedIoOrLiveClaimRejectsReturn(Kind kind) {
+    void 미완료_IO나_유효_제어권이_있으면_DB_복귀를_거부한다(Kind kind) {
         var batch = fixture(kind, List.of("image/jpeg"));
         accept(batch);
         entityManager.flush();
@@ -182,7 +182,7 @@ class AttachmentConversionMigrationIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void finalSweepOnlyTransfersRemainingSourceRoutes(Kind kind) {
+    void 최종_스캔은_남은_소스_경로만_전환한다(Kind kind) {
         var first = fixture(kind, List.of("image/jpeg"));
         accept(first);
         entityManager.flush();
@@ -196,7 +196,7 @@ class AttachmentConversionMigrationIntegrationTest {
     }
 
     @Test
-    void checkIsReadOnlyAndReportsHistoricalMissingExecution() {
+    void 점검은_읽기_전용이며_과거_실행_누락을_보고한다() {
         var batch = fixture(Kind.ADDITIONAL, List.of("image/jpeg"));
         accept(batch);
         entityManager.flush();
@@ -213,7 +213,7 @@ class AttachmentConversionMigrationIntegrationTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void holdAllowsExistingUploadContinuationButNoNewExecution(Kind kind) {
+    void HOLD는_기존_업로드_지속을_허용하고_새_실행을_거부한다(Kind kind) {
         var batch = fixture(kind, List.of("image/jpeg"));
         accept(batch);
         entityManager.flush();
@@ -233,7 +233,7 @@ class AttachmentConversionMigrationIntegrationTest {
     }
 
     @Test
-    void rollbackWaitsForPutAndPreservesJournal() {
+    void 복귀는_PUT_완료를_기다리고_저널을_보존한다() {
         var batch = fixture(Kind.INITIAL, List.of("image/jpeg"));
         accept(batch);
         entityManager.flush();
@@ -254,7 +254,7 @@ class AttachmentConversionMigrationIntegrationTest {
     }
 
     @Test
-    void commandValidatesEvidenceBeforeMutationAndExpiresBetweenPages() throws Exception {
+    void 명령은_변경_전에_근거를_검증하고_페이지_사이_만료도_확인한다() throws Exception {
         var batch = fixture(Kind.INITIAL, List.of("image/jpeg"));
         accept(batch);
         entityManager.flush();
@@ -299,7 +299,7 @@ class AttachmentConversionMigrationIntegrationTest {
     @EnumSource(Kind.class)
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
-    void transferRacingWithCompletionCreatesOneSetOfTasks(Kind kind) throws Exception {
+    void 완료와_전환이_경합해도_작업_집합은_한_번만_생성한다(Kind kind) throws Exception {
         var transaction = new TransactionTemplate(transactionManager);
         var batch = transaction.execute(status -> fixture(kind, List.of("image/jpeg", "image/heic")));
         var start = new CountDownLatch(1);
@@ -330,7 +330,7 @@ class AttachmentConversionMigrationIntegrationTest {
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
-    void commandFailurePreservesPriorPagesAndOffsets() {
+    void 명령_실패가_이전_페이지와_오프셋을_보존한다() {
         var transaction = new TransactionTemplate(transactionManager);
         var first = transaction.execute(status -> {
             var batch = fixture(Kind.INITIAL, List.of("image/jpeg"));
@@ -359,7 +359,7 @@ class AttachmentConversionMigrationIntegrationTest {
     @EnabledIfEnvironmentVariable(named = "OPERATIONS_REHEARSAL_JAR", matches = ".+")
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
-    void actualJarCommandsAndTwoApiInstancesPreserveSourceAndAiOrder() throws Exception {
+    void 실제_JAR_명령과_두_API_인스턴스가_소스와_AI_순서를_보존한다() throws Exception {
         var tx = new TransactionTemplate(transactionManager);
         var batch = tx.execute(status -> {
             var created = fixture(Kind.INITIAL, List.of("image/jpeg", "image/heic"));
@@ -550,7 +550,7 @@ class AttachmentConversionMigrationIntegrationTest {
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
-    void evidenceExpiringWhileWaitingForTaskLockDoesNotMutateClaimOrRoute() throws Exception {
+    void 작업_잠금_대기_중_근거가_만료되면_제어권과_경로를_변경하지_않는다() throws Exception {
         var tx = new TransactionTemplate(transactionManager);
         var batch = tx.execute(status -> {
             var created = fixture(Kind.INITIAL, List.of("image/jpeg"));

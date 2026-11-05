@@ -65,7 +65,7 @@ class AttachmentConversionRecoveryTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void normalBacklogCanBeRenotifiedWithoutRepeatingPhotos(Kind kind) {
+    void 정상_적체는_사진_변환을_반복하지_않고_재통지한다(Kind kind) {
         var fixture = fixture(kind);
         var before = protectedState(fixture);
         assertThat(transactions.renotifyIfEligible(candidate(fixture), INTERVAL)).isTrue();
@@ -79,7 +79,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void beforeIntervalDoesNotRenotify() {
+    void 최소_간격_전에는_재통지하지_않는다() {
         var fixture = fixture(Kind.INITIAL);
         jdbc.update("UPDATE attachment_conversion_outbox SET published_at = ? WHERE outbox_id = ?",
                 NOW.minus(INTERVAL).plusNanos(1000), fixture.outbox().getId());
@@ -88,7 +88,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void elapsedIntervalAllowsOneDelivery() {
+    void 간격이_지나면_한_번만_전달한다() {
         var fixture = fixture(Kind.INITIAL);
         var expected = candidate(fixture);
         assertThat(transactions.renotifyIfEligible(expected, INTERVAL)).isTrue();
@@ -98,7 +98,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void pendingOutboxDoesNotCreateAnotherDelivery() {
+    void 대기중인_Outbox가_있으면_새_전달을_만들지_않는다() {
         var fixture = fixture(Kind.INITIAL);
         jdbc.update("UPDATE attachment_conversion_outbox SET status = 'PENDING' WHERE outbox_id = ?", fixture.outbox().getId());
         assertThat(transactions.findRecoveryCandidates(null, 10, INTERVAL)).isEmpty();
@@ -106,7 +106,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void activeLeasePreventsRenotification() {
+    void 유효한_임대가_있으면_재통지하지_않는다() {
         var fixture = fixture(Kind.INITIAL);
         var expected = candidate(fixture);
         jdbc.update("UPDATE attachment_conversion_tasks SET status = 'RUNNING', claim_token = 'live', lease_until = ? WHERE task_id = ?",
@@ -117,7 +117,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void skippedCandidatesDoNotStarveLaterEligibleTask() {
+    void 건너뛴_후보가_뒤의_적격_작업을_막지_않는다() {
         var first = fixture(Kind.INITIAL);
         var second = fixture(Kind.INITIAL);
         doReturn(false).when(transactions).renotifyIfEligible(argThat(value -> value.taskId().equals(first.taskId())), any());
@@ -127,7 +127,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void pagesStopAtScanBudget() {
+    void 스캔_예산에_도달하면_페이지_조회를_멈춘다() {
         fixture(Kind.INITIAL);
         fixture(Kind.INITIAL);
         fixture(Kind.INITIAL);
@@ -137,7 +137,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void reissueLimitKeepsUninspectedPageRemainder() {
+    void 재발급_한도에_도달해도_미검사_페이지_잔여분을_보존한다() {
         fixture(Kind.INITIAL);
         var second = fixture(Kind.INITIAL);
         var recovery = service(10, 2, 1);
@@ -148,7 +148,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void nextRunResumesAndEndWrapsOnFollowingRun() {
+    void 다음_실행은_이어서_검사하고_끝에_도달한_다음_실행부터_처음으로_돌아간다() {
         var first = fixture(Kind.INITIAL);
         var second = fixture(Kind.INITIAL);
         doReturn(false).when(transactions).renotifyIfEligible(any(), any());
@@ -164,7 +164,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void restartBeginsAtFirstCandidate() {
+    void 재시작하면_첫_후보부터_검사한다() {
         var first = fixture(Kind.INITIAL);
         fixture(Kind.INITIAL);
         doReturn(false).when(transactions).renotifyIfEligible(any(), any());
@@ -175,7 +175,7 @@ class AttachmentConversionRecoveryTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void twoNodesCreateOneDelivery(Kind kind) throws Exception {
+    void 두_노드가_동시에_재통지해도_전달은_한_개만_생성한다(Kind kind) throws Exception {
         var fixture = fixture(kind);
         var expected = candidate(fixture);
         var start = new CountDownLatch(1);
@@ -196,7 +196,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void sameDeliveryNewReceiptInvalidatesOldCandidate() {
+    void 동일_전달의_새_수신_확인은_이전_후보를_무효화한다() {
         var fixture = fixture(Kind.INITIAL);
         var expected = candidate(fixture);
         var old = fixture.outbox();
@@ -209,7 +209,7 @@ class AttachmentConversionRecoveryTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void cancelledOrFinishedTaskIsNotRenotified(Kind kind) {
+    void 취소되거나_종료된_작업은_재통지하지_않는다(Kind kind) {
         var fixture = fixture(kind);
         var expected = candidate(fixture);
         jdbc.update("UPDATE " + executionTable(kind) + " SET status = 'CANCELED', ended_at = ? WHERE execution_id = ?", NOW, fixture.executionId());
@@ -220,7 +220,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void databaseFailureKeepsLastInspectedCursor() {
+    void DB_실패시_마지막_검사_커서를_유지한다() {
         var first = fixture(Kind.INITIAL);
         var second = fixture(Kind.INITIAL);
         var third = fixture(Kind.INITIAL);
@@ -241,7 +241,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void overlappingRunsAreSuppressed() throws Exception {
+    void 중첩_실행을_차단한다() throws Exception {
         fixture(Kind.INITIAL);
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
@@ -264,7 +264,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void dbHoldAndOperationsDoNotScheduleOrRunRecovery() {
+    void DB와_HOLD와_운영_모드에서는_복구를_등록하거나_실행하지_않는다() {
         for (var route : AttachmentConversionRoute.values()) {
             var configured = properties(10, 2, 10);
             AttachmentConversionProperties properties = new AttachmentConversionProperties(
@@ -287,7 +287,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void kafkaSchedulesUsingSameMinimumInterval() {
+    void Kafka_복구_스케줄은_동일한_최소_간격을_사용한다() {
         var registrar = new org.springframework.scheduling.config.ScheduledTaskRegistrar();
         service(10, 2, 10).configureTasks(registrar);
         assertThat(registrar.getFixedDelayTaskList()).singleElement()
@@ -296,7 +296,7 @@ class AttachmentConversionRecoveryTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void changedRouteOrTerminalTaskInvalidatesSnapshot(Kind kind) {
+    void 경로_변경이나_작업_종료는_후보_스냅샷을_무효화한다(Kind kind) {
         var fixture = fixture(kind);
         var expected = candidate(fixture);
         String table = kind == Kind.INITIAL ? "initial_attachment_upload_batches" : "additional_attachment_upload_batches";
@@ -311,7 +311,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void insertFailureRollsBackDeliveryWithoutChangingWorkState() {
+    void 삽입_실패시_작업_상태를_유지하고_전달을_롤백한다() {
         var fixture = fixture(Kind.INITIAL);
         var expected = candidate(fixture);
         var before = protectedState(fixture);
@@ -324,7 +324,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void keysetUsesTaskIdWhenCreationTimesMatch() {
+    void 생성시각이_같으면_작업_ID로_키셋을_구분한다() {
         fixture(Kind.INITIAL);
         fixture(Kind.INITIAL);
         jdbc.update("UPDATE attachment_conversion_tasks SET created_at = ?", NOW);
@@ -340,7 +340,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void pageQueryFailurePreservesPreviouslyInspectedCursor() {
+    void 페이지_조회_실패시_이전에_검사한_커서를_보존한다() {
         var first = fixture(Kind.INITIAL);
         var second = fixture(Kind.INITIAL);
         doReturn(false).when(transactions).renotifyIfEligible(any(), any());
@@ -355,7 +355,7 @@ class AttachmentConversionRecoveryTest {
     }
 
     @Test
-    void candidateSnapshotContainsCreatedAtWithoutLossClassifier() {
+    void 후보_스냅샷은_유실_분류_없이_생성시각을_포함한다() {
         var fixture = fixture(Kind.INITIAL);
         var expected = candidate(fixture);
         var mapper = new ObjectMapper();

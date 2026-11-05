@@ -22,7 +22,7 @@ import static org.mockito.Mockito.*;
 
 class AdditionalAttachmentUploadCompletionServiceTest {
     @Test
-    void passesOnlySuppliedBatchKeysAndTypesToSharedPreparation() {
+    void 전달된_배치의_키와_형식만_공유_준비_로직에_전달한다() {
         var preparation = mock(AttachmentDerivativePreparationService.class);
         var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
         var validator = mock(AttachmentUploadedFileValidator.class);
@@ -45,7 +45,7 @@ class AdditionalAttachmentUploadCompletionServiceTest {
     @CsvSource({
             "HOLD,VERIFIED", "KAFKA,VERIFIED", "HOLD,PREPARED", "KAFKA,PREPARED", "HOLD,COMPLETED", "KAFKA,COMPLETED"
     })
-    void nonDbRouteCannotUseLegacyPreparation(String route, String status) {
+    void DB_외의_경로는_기존_준비_로직을_사용할_수_없다(String route, String status) {
         var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
         var preparation = mock(AttachmentDerivativePreparationService.class);
         var analysis = mock(AdditionalAttachmentAnalysisPreparationService.class);
@@ -67,7 +67,7 @@ class AdditionalAttachmentUploadCompletionServiceTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"size", "type", "unsupported"})
-    void endsOnlyExecutionWhoseFileValidationFailedAndRethrowsOriginalError(String stage) {
+    void 파일_검증이_실패한_실행만_종료하고_원래_오류를_다시_던진다(String stage) {
         var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
         var validator = mock(AttachmentUploadedFileValidator.class);
         var service = new AdditionalAttachmentUploadCompletionService(transactions, validator,
@@ -92,7 +92,7 @@ class AdditionalAttachmentUploadCompletionServiceTest {
     }
 
     @Test
-    void doesNotEndExecutionWhenOwnershipLookupFails() {
+    void 소유권_조회_실패시_실행을_종료하지_않는다() {
         var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
         var validator = mock(AttachmentUploadedFileValidator.class);
         var service = new AdditionalAttachmentUploadCompletionService(transactions, validator,

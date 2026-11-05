@@ -3,13 +3,15 @@ package com.yeodam.yeodambe.story.service;
 import com.yeodam.yeodambe.common.exception.StoryOrAttachmentNotFoundException;
 import com.yeodam.yeodambe.common.exception.AttachmentCannotBeReusedException;
 import com.yeodam.yeodambe.common.exception.InvalidStoryUpdateException;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.entity.Story;
-import com.yeodam.yeodambe.story.entity.StoryBlock;
-import com.yeodam.yeodambe.story.repository.StoryBlockRepository;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import com.yeodam.yeodambe.story.service.response.StoryUpdateResponse;
-import jakarta.persistence.EntityManager;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
@@ -21,7 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
 
 import java.util.List;
-import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.Map;
@@ -35,11 +40,10 @@ public class StoryUpdateService {
     private final StoryRepository storyRepository;
     private final TripRepository tripRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
-    private final StoryBlockRepository storyBlockRepository;
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
     private final StoryValidator storyValidator;
     private final StoryReadService storyReadService;
-    private final EntityManager entityManager;
+    private final StoryContentRepository storyContentRepository;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public StoryUpdateResponse update(
@@ -48,37 +52,192 @@ public class StoryUpdateService {
             StoryUpdateRequest request
     ) {
         storyValidator.validateUpdateBlocks(request.blocks());
+        if (request.tone() == null || request.storySummary() == null
+                || !request.isStorySummaryValid()) {
+            throw new InvalidStoryUpdateException();
+        }
+        for (StoryUpdateRequest.Block block : request.blocks()) {
+            if (!block.isBlockTextValid() || !block.isMemoLengthValid()) {
+                throw new InvalidStoryUpdateException();
+            }
+        }
 
         Story story = requireEditableStory(userId, storyId);
-
-        List<StoryBlock> existingBlocks =
-                requireExistingBlocks(storyId, request.blocks());
-
-        validateAttachmentReuse(request.blocks(), existingBlocks);
+        StoryContentDocument content = requireContent(storyId);
+        validateContentBlockIds(content, request.blocks());
+        validateContentAttachmentReuse(request.blocks(), content.getBlocks());
 
         Map<Long, TripAttachment> attachmentsById =
                 requireAttachments(story.getTripId(), request.blocks());
+        Map<Long, TripDetailPlace> placesById = findPlaces(attachmentsById);
+        List<StoryContentBlock> updatedBlocks = applyContentBlocks(
+                content, request.blocks(), attachmentsById, placesById);
+        content.updateContent(request.tone(), request.storySummary(), updatedBlocks);
 
-        Map<Long, TripDetailPlace> placesById =
-                findPlaces(attachmentsById);
+        StoryUpdateResponse response = StoryUpdateResponse.from(
+                storyReadService.prepareContentResponse(story.getTripId(), true, content));
+        storyContentRepository.save(content);
+        return response;
+    }
 
-        story.updateContent(request.tone(), request.storySummary());
+    private StoryContentDocument requireContent(Long storyId) {
+        return storyContentRepository.findById(storyId)
+                .orElseThrow(() -> new StoryDataIntegrityException(
+                        StoryGenerationInternalErrorMessage.CONTENT_DOCUMENT_MISSING
+                ));
+    }
 
-        applyBlocks(
-                storyId,
-                request.blocks(),
-                existingBlocks,
-                attachmentsById,
-                placesById
+    private void validateContentBlockIds(
+            StoryContentDocument content,
+            List<StoryUpdateRequest.Block> requestedBlocks
+    ) {
+        Set<Long> existingBlockIds = new HashSet<>();
+
+        for (StoryContentBlock block : content.getBlocks()) {
+            existingBlockIds.add(block.id());
+        }
+
+        for (StoryUpdateRequest.Block requested : requestedBlocks) {
+            Long blockId = requested.storyBlockId();
+
+            if (blockId != null && !existingBlockIds.contains(blockId)) {
+                throw new StoryOrAttachmentNotFoundException();
+            }
+        }
+    }
+
+    private void validateContentAttachmentReuse(
+            List<StoryUpdateRequest.Block> requestedBlocks,
+            List<StoryContentBlock> existingBlocks
+    ) {
+        Map<Long, StoryContentBlock> blocksByAttachmentId =
+                new java.util.HashMap<>();
+
+        for (StoryContentBlock block : existingBlocks) {
+            blocksByAttachmentId.put(block.tripAttachmentId(), block);
+        }
+
+        for (StoryUpdateRequest.Block requested : requestedBlocks) {
+            StoryContentBlock existing =
+                    blocksByAttachmentId.get(requested.tripAttachmentId());
+
+            if (requested.storyBlockId() != null
+                    && existing != null
+                    && !requested.storyBlockId().equals(existing.id())) {
+                throw new AttachmentCannotBeReusedException();
+            }
+        }
+    }
+
+    private StoryContentBlock applyContentBlock(
+            StoryContentDocument content,
+            StoryUpdateRequest.Block requested,
+            StoryContentBlock existing,
+            TripAttachment attachment,
+            Map<Long, TripDetailPlace> placesById,
+            Instant now
+    ) {
+        boolean photoChanged = existing == null
+                || !existing.tripAttachmentId().equals(attachment.getId());
+
+        Long sourcePlaceId = existing == null
+                ? null : existing.sourceTripPlaceId();
+        LocalDate sourceDate = existing == null
+                ? null : existing.sourceDate();
+
+        if (photoChanged) {
+            Long placeId = attachment.getTripPlaceId();
+            TripDetailPlace place = placeId == null
+                    ? null : placesById.get(placeId);
+
+            if (place == null
+                    || place.getDeletedAt() != null
+                    || !attachment.getTripId().equals(place.getTripId())
+                    || place.getStartedAt() == null) {
+                throw new InvalidStoryUpdateException();
+            }
+
+            sourcePlaceId = place.getId();
+            sourceDate = place.getStartedAt().toLocalDate();
+        }
+
+        Long blockId = existing == null
+                ? content.issueBlockId() : existing.id();
+        Instant createdAt = existing == null
+                ? now : existing.createdAt();
+
+        return new StoryContentBlock(
+                blockId,
+                attachment.getId(),
+                sourcePlaceId,
+                sourceDate,
+                requested.dayLabel(),
+                requested.detailSummary(),
+                requested.memo(),
+                createdAt,
+                now,
+                null
         );
+    }
 
-        Long tripId = story.getTripId();
-        entityManager.flush();
-        entityManager.clear();
+    private List<StoryContentBlock> applyContentBlocks(
+            StoryContentDocument content,
+            List<StoryUpdateRequest.Block> requestedBlocks,
+            Map<Long, TripAttachment> attachmentsById,
+            Map<Long, TripDetailPlace> placesById
+    ) {
+        Map<Long, StoryContentBlock> blocksById = new java.util.HashMap<>();
+        Map<Long, StoryContentBlock> blocksByAttachmentId =
+                new java.util.HashMap<>();
 
-        return StoryUpdateResponse.from(
-                storyReadService.findStory(userId, tripId)
-        );
+        for (StoryContentBlock block : content.getBlocks()) {
+            blocksById.put(block.id(), block);
+            blocksByAttachmentId.put(block.tripAttachmentId(), block);
+        }
+
+        List<StoryUpdateRequest.Block> orderedRequests =
+                new ArrayList<>(requestedBlocks);
+        orderedRequests.sort(Comparator.comparingInt(
+                block -> block.orderNumber()
+        ));
+
+        Set<Long> retainedBlockIds = new HashSet<>();
+        List<StoryContentBlock> result = new ArrayList<>();
+        Instant now = Instant.now();
+
+        for (StoryUpdateRequest.Block requested : orderedRequests) {
+            StoryContentBlock existing = requested.storyBlockId() == null
+                    ? blocksByAttachmentId.get(requested.tripAttachmentId())
+                    : blocksById.get(requested.storyBlockId());
+
+            if (existing != null && !retainedBlockIds.add(existing.id())) {
+                throw new AttachmentCannotBeReusedException();
+            }
+
+            result.add(applyContentBlock(
+                    content, requested, existing,
+                    attachmentsById.get(requested.tripAttachmentId()),
+                    placesById, now
+            ));
+        }
+
+        for (StoryContentBlock existing : content.getBlocks()) {
+            if (retainedBlockIds.contains(existing.id())) {
+                continue;
+            }
+            if (existing.deletedAt() != null) {
+                result.add(existing);
+                continue;
+            }
+            result.add(new StoryContentBlock(
+                    existing.id(), existing.tripAttachmentId(),
+                    existing.sourceTripPlaceId(), existing.sourceDate(),
+                    existing.dayLabel(), existing.detailSummary(), existing.memo(),
+                    existing.createdAt(), now, now
+            ));
+        }
+
+        return result;
     }
 
     private Story requireEditableStory(Long userId, Long storyId) {
@@ -117,51 +276,6 @@ public class StoryUpdateService {
                         attachment -> attachment
                 ));
     }
-    private List<StoryBlock> requireExistingBlocks(
-            Long storyId,
-            List<StoryUpdateRequest.Block> requestedBlocks
-    ) {
-        List<StoryBlock> existingBlocks =
-                storyBlockRepository.findAllByStoryId(storyId);
-
-        Map<Long, StoryBlock> blocksById = existingBlocks.stream()
-                .collect(Collectors.toMap(
-                        StoryBlock::getId,
-                        block -> block
-                ));
-
-        for (StoryUpdateRequest.Block requested : requestedBlocks) {
-            Long blockId = requested.storyBlockId();
-
-            if (blockId != null && !blocksById.containsKey(blockId)) {
-                throw new StoryOrAttachmentNotFoundException();
-            }
-        }
-
-        return existingBlocks;
-    }
-    private void validateAttachmentReuse(
-            List<StoryUpdateRequest.Block> requestedBlocks,
-            List<StoryBlock> existingBlocks
-    ) {
-        Map<Long, StoryBlock> blocksByAttachmentId =
-                existingBlocks.stream()
-                        .collect(Collectors.toMap(
-                                StoryBlock::getTripAttachmentId,
-                                block -> block
-                        ));
-
-        for (StoryUpdateRequest.Block requested : requestedBlocks) {
-            StoryBlock existing =
-                    blocksByAttachmentId.get(requested.tripAttachmentId());
-
-            if (requested.storyBlockId() != null
-                    && existing != null
-                    && !requested.storyBlockId().equals(existing.getId())) {
-                throw new AttachmentCannotBeReusedException();
-            }
-        }
-    }
     private Map<Long, TripDetailPlace> findPlaces(
             Map<Long, TripAttachment> attachmentsById
     ) {
@@ -180,109 +294,5 @@ public class StoryUpdateService {
                         TripDetailPlace::getId,
                         place -> place
                 ));
-    }
-    private StoryBlock applyBlock(
-            Long storyId,
-            StoryUpdateRequest.Block requested,
-            StoryBlock existing,
-            TripAttachment attachment,
-            Map<Long, TripDetailPlace> placesById
-    ) {
-        boolean photoChanged = existing == null
-                || !existing.getTripAttachmentId().equals(attachment.getId());
-
-        if (photoChanged) {
-            Long placeId = attachment.getTripPlaceId();
-            TripDetailPlace place = placeId == null
-                    ? null : placesById.get(placeId);
-
-            if (place == null
-                    || place.getDeletedAt() != null
-                    || !attachment.getTripId().equals(place.getTripId())
-                    || place.getStartedAt() == null) {
-                throw new InvalidStoryUpdateException();
-            }
-
-            if (existing == null) {
-                return new StoryBlock(
-                        storyId,
-                        attachment.getId(),
-                        place.getId(),
-                        place.getStartedAt().toLocalDate(),
-                        requested.orderNumber(),
-                        requested.dayLabel(),
-                        requested.detailSummary(),
-                        requested.memo()
-                );
-            }
-
-            existing.replaceAttachment(
-                    attachment.getId(),
-                    place.getId(),
-                    place.getStartedAt().toLocalDate()
-            );
-        }
-
-        existing.updateContent(
-                requested.dayLabel(),
-                requested.detailSummary(),
-                requested.memo(),
-                requested.orderNumber()
-        );
-        existing.restore();
-
-        return existing;
-    }
-    private void applyBlocks(
-            Long storyId,
-            List<StoryUpdateRequest.Block> requestedBlocks,
-            List<StoryBlock> existingBlocks,
-            Map<Long, TripAttachment> attachmentsById,
-            Map<Long, TripDetailPlace> placesById
-    ) {
-        Map<Long, StoryBlock> blocksById = existingBlocks.stream()
-                .collect(Collectors.toMap(
-                        StoryBlock::getId,
-                        block -> block
-                ));
-
-        Map<Long, StoryBlock> blocksByAttachmentId =
-                existingBlocks.stream()
-                        .collect(Collectors.toMap(
-                                StoryBlock::getTripAttachmentId,
-                                block -> block
-                        ));
-
-        Set<StoryBlock> retainedBlocks = new HashSet<>();
-
-        for (StoryUpdateRequest.Block requested : requestedBlocks) {
-            StoryBlock existing = requested.storyBlockId() == null
-                    ? blocksByAttachmentId.get(requested.tripAttachmentId())
-                    : blocksById.get(requested.storyBlockId());
-
-            if (existing != null && !retainedBlocks.add(existing)) {
-                throw new AttachmentCannotBeReusedException();
-            }
-
-            StoryBlock applied = applyBlock(
-                    storyId,
-                    requested,
-                    existing,
-                    attachmentsById.get(requested.tripAttachmentId()),
-                    placesById
-            );
-
-            if (existing == null) {
-                storyBlockRepository.save(applied);
-            }
-        }
-
-        LocalDateTime deletedAt = LocalDateTime.now();
-        for (StoryBlock existing : existingBlocks) {
-            if (existing.getDeletedAt() == null
-                    && !retainedBlocks.contains(existing)) {
-                existing.softDelete(deletedAt);
-            }
-        }
     }
 }

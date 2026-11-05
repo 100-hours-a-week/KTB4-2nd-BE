@@ -3,7 +3,6 @@ package com.yeodam.yeodambe.story.service;
 import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.common.exception.StoryOrAttachmentNotFoundException;
 import com.yeodam.yeodambe.story.client.request.StoryTonePreviewAiRequest;
-import com.yeodam.yeodambe.story.repository.StoryBlockRepository;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.story.service.request.StoryTonePreviewRequest;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
@@ -11,7 +10,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.story.entity.StoryBlock;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -26,7 +28,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class StoryTonePreviewInputService {
     private final StoryRepository storyRepository;
-    private final StoryBlockRepository storyBlockRepository;
+    private final StoryContentRepository storyContentRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final StoryTonePreviewRequestValidator requestValidator;
     private final StoryValidator storyValidator;
@@ -43,11 +45,21 @@ public class StoryTonePreviewInputService {
                 .findOwnedCurrentCompletedForPreviewById(storyId, userId)
                 .orElseThrow(StoryNotFoundException::new);
 
-        var existingBlocks =
-                storyBlockRepository.findAllByStoryId(storyId);
+        var content = storyContentRepository.findById(story.getId())
+                .orElseThrow(() -> new StoryDataIntegrityException(
+                        StoryGenerationInternalErrorMessage.CONTENT_DOCUMENT_MISSING
+                ));
+
+        var existingBlocks = content.getBlocks().stream()
+                .filter(block -> block.deletedAt() == null)
+                .toList();
+
+        var existingBlockIds = existingBlocks.stream()
+                .map(block -> block.id())
+                .collect(Collectors.toSet());
 
         storyValidator.validatePreviewBlockIds(
-                request.blocks(), existingBlocks
+                request.blocks(), existingBlockIds
         );
 
         var attachmentIds = request.blocks().stream()
@@ -104,7 +116,7 @@ public class StoryTonePreviewInputService {
             TripAttachment attachment =
                     attachmentsById.get(block.tripAttachmentId());
 
-            StoryBlock existing = findExistingBlock(
+            StoryContentBlock existing = findExistingBlock(
                     requested, existingBlocks
             );
 
@@ -147,17 +159,17 @@ public class StoryTonePreviewInputService {
         );
     }
 
-    private StoryBlock findExistingBlock(
+    private StoryContentBlock findExistingBlock(
             StoryTonePreviewRequest.Block requested,
-            List<StoryBlock> existingBlocks
+            List<StoryContentBlock> existingBlocks
     ) {
-        for (StoryBlock existing : existingBlocks) {
+        for (StoryContentBlock existing : existingBlocks) {
             if (requested.storyBlockId() != null) {
-                if (requested.storyBlockId().equals(existing.getId())) {
+                if (requested.storyBlockId().equals(existing.id())) {
                     return existing;
                 }
             } else if (requested.tripAttachmentId()
-                    .equals(existing.getTripAttachmentId())) {
+                    .equals(existing.tripAttachmentId())) {
                 return existing;
             }
         }
@@ -168,17 +180,17 @@ public class StoryTonePreviewInputService {
     private BlockSource assembleSource(
             StoryTonePreviewRequest.Block requested,
             TripAttachment attachment,
-            StoryBlock existing
+            StoryContentBlock existing
     ) {
         boolean samePhoto = existing != null
-                && existing.getTripAttachmentId().equals(attachment.getId());
+                && existing.tripAttachmentId().equals(attachment.getId());
 
         Long placeId;
         LocalDate date;
 
         if (samePhoto) {
-            placeId = existing.getSourceTripPlaceId();
-            date = existing.getSourceDate();
+            placeId = existing.sourceTripPlaceId();
+            date = existing.sourceDate();
         } else {
             if (attachment.getTripPlace().getStartedAt() == null) {
                 throw new StoryOrAttachmentNotFoundException();
@@ -189,7 +201,7 @@ public class StoryTonePreviewInputService {
         }
 
         return new BlockSource(
-                existing == null ? null : existing.getId(),
+                existing == null ? null : existing.id(),
                 requested.orderNumber(),
                 attachment.getId(),
                 placeId,

@@ -474,6 +474,16 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     @Query("""
         select attachment
         from TripAttachment attachment
+        left join fetch attachment.file
+        where attachment.id in :tripAttachmentIds
+        """)
+    List<TripAttachment> findAllWithFileByIds(
+            @Param("tripAttachmentIds") Collection<Long> tripAttachmentIds
+    );
+
+    @Query("""
+        select attachment
+        from TripAttachment attachment
         join fetch attachment.file file
         join fetch attachment.trip trip
         where attachment.id in :tripAttachmentIds

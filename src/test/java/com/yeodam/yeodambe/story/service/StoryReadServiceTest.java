@@ -8,6 +8,10 @@ import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.trip.service.TripAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,15 +38,20 @@ class StoryReadServiceTest {
     StoryRepository stories;
 
     @Mock
-    StoryBlockRepository blocks;
+    TripAttachmentRepository attachments;
+
+    @Mock
+    TripDetailPlaceRepository places;
 
     @Mock
     TripAttachmentStorageClient storage;
+    @Mock
+    StoryContentRepository contents;
     StoryReadService service;
 
     @BeforeEach
     void setup() {
-        service = new StoryReadService(access, stories, blocks, new StoryValidator(), storage);
+        service = new StoryReadService(access, stories, new StoryValidator(), storage, contents, attachments, places);
         lenient().when(access.requireReadableTrip(7L, 42L))
                 .thenReturn(new Trip(42L, "여행", LocalDate.now(), LocalDate.now()));
     }
@@ -51,7 +60,113 @@ class StoryReadServiceTest {
         Story story = new Story(7L, Story.Mood.EMOTIONAL, "여행 요약");
         ReflectionTestUtils.setField(story, "id", 1L);
         when(stories.findCurrentCompletedByTripId(7L)).thenReturn(Optional.of(story));
-        when(blocks.findDetailsByStoryId(1L)).thenReturn(rows);
+        List<StoryContentBlock> documentBlocks = new ArrayList<>();
+        Map<Long, com.yeodam.yeodambe.trip.entity.TripAttachment> photos = new LinkedHashMap<>();
+        Map<Long, com.yeodam.yeodambe.trip.entity.TripDetailPlace> sourcePlaces = new LinkedHashMap<>();
+        for (BlockDetail row : rows) {
+            var block = row.getBlock();
+            documentBlocks.add(new StoryContentBlock(
+                    block.getId(), block.getTripAttachmentId(), block.getSourceTripPlaceId(),
+                    block.getSourceDate(), block.getDayLabel(), block.getDetailSummary(), block.getMemo(),
+                    null, null, block.getDeletedAt() == null ? null
+                            : block.getDeletedAt().toInstant(java.time.ZoneOffset.UTC)));
+            if (row.getAttachment() != null) {
+                ReflectionTestUtils.setField(row.getAttachment(), "file", row.getFile());
+                photos.put(row.getAttachment().getId(), row.getAttachment());
+            }
+            if (row.getPlace() != null) {
+                sourcePlaces.put(row.getPlace().getId(), row.getPlace());
+            }
+        }
+        when(contents.findById(1L)).thenReturn(Optional.of(new StoryContentDocument(
+                1L, story.getMood(), story.getStorySummary(), List.of(), documentBlocks, 100L)));
+        lenient().when(attachments.findAllWithFileByIds(anyCollection()))
+                .thenReturn(new ArrayList<>(photos.values()));
+        lenient().when(places.findAllById(anyIterable()))
+                .thenReturn(new ArrayList<>(sourcePlaces.values()));
+    }
+
+    @Test
+    void 분위기와_요약은_MySQL이_아닌_MongoDB_본문을_사용한다() {
+        found(List.of());
+        when(contents.findById(1L)).thenReturn(Optional.of(new StoryContentDocument(
+                1L, Story.Mood.CALM, "문서의 요약", List.of(), List.of(), 1L)));
+
+        var response = service.findStory(42L, 7L);
+
+        assertThat(response.mood()).isEqualTo(Story.Mood.CALM);
+        assertThat(response.storySummary()).isEqualTo("문서의 요약");
+        verifyNoInteractions(attachments, places, storage);
+    }
+
+    @Test
+    void 완료된_스토리의_문서가_없으면_정합성_오류다() {
+        found(List.of());
+        when(contents.findById(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.findStory(42L, 7L))
+                .isInstanceOf(StoryDataIntegrityException.class)
+                .hasMessage("완료된 스토리의 MongoDB 본문이 없습니다.");
+        verifyNoInteractions(attachments, places, storage);
+    }
+
+    @Test
+    void 사진_조회순서와_무관하게_문서_배열순서와_블록ID를_유지한다() {
+        var first = row(9, 7, "날", null);
+        var second = row(3, 7, "날", null);
+        found(List.of(first, second));
+        when(attachments.findAllWithFileByIds(anyCollection()))
+                .thenReturn(List.of(second.attachment(), first.attachment()));
+        when(storage.createReadUrl(anyString())).thenAnswer(call -> "url/" + call.getArgument(0));
+
+        var blocks = service.findStory(42L, 7L).days().getFirst().blocks();
+
+        assertThat(blocks).extracting(StoryDetailResponse.Block::storyBlockId).containsExactly(9L, 3L);
+        assertThat(blocks).extracting(StoryDetailResponse.Block::tripAttachmentId).containsExactly(9L, 3L);
+        assertThat(blocks).extracting(StoryDetailResponse.Block::orderNumber).containsExactly(1, 2);
+        verify(attachments).findAllWithFileByIds(List.of(9L, 3L));
+        verify(places).findAllById(List.of(7L, 7L));
+    }
+
+    @Test
+    void 삭제된_문서블록은_사진조회에서_제외하고_삭제사진은_순서만_남긴다() {
+        var removed = row(1, 7, "날", null);
+        removed.block().softDelete(LocalDateTime.now());
+        var deletedPhoto = row(2, 7, "날", null);
+        deletedPhoto.attachment().softDelete(LocalDateTime.now());
+        found(List.of(removed, deletedPhoto, row(3, 7, "날", null)));
+        when(storage.createReadUrl("preview/3")).thenReturn("url/3");
+
+        var blocks = service.findStory(42L, 7L).days().getFirst().blocks();
+
+        assertThat(blocks).hasSize(1);
+        assertThat(blocks.getFirst().storyBlockId()).isEqualTo(3L);
+        assertThat(blocks.getFirst().orderNumber()).isEqualTo(2);
+        verify(attachments).findAllWithFileByIds(List.of(2L, 3L));
+        verify(storage).createReadUrl("preview/3");
+        verifyNoMoreInteractions(storage);
+    }
+
+    @Test
+    void 참조된_사진이_없으면_URL발급전에_거절한다() {
+        var source = row(1, 7, "날", null);
+        found(List.of(new StoryValidatorTest.Row(source.block(), null, source.file(), source.place())));
+
+        assertThatThrownBy(() -> service.findStory(42L, 7L))
+                .isInstanceOf(StoryDataIntegrityException.class)
+                .hasMessage("블록 관계: 첨부가 없습니다.");
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 파일이_없는_사진도_URL발급전에_거절한다() {
+        var source = row(1, 7, "날", null);
+        found(List.of(new StoryValidatorTest.Row(source.block(), source.attachment(), null, source.place())));
+
+        assertThatThrownBy(() -> service.findStory(42L, 7L))
+                .isInstanceOf(StoryDataIntegrityException.class)
+                .hasMessage("블록 관계: 파일이 없습니다.");
+        verifyNoInteractions(storage);
     }
 
     @Test
@@ -81,7 +196,7 @@ class StoryReadServiceTest {
         assertThat(first.block().getMemo()).isNull();
         verify(access).requireReadableTrip(7L, 42L);
         verify(stories, never()).save(any());
-        verify(blocks, never()).save(any());
+        verify(attachments, never()).save(any());
     }
 
     @Test
@@ -149,14 +264,14 @@ class StoryReadServiceTest {
     void 권한이_없으면_스토리와_URL을_조회하지_않는다() {
         doThrow(new TripNotFoundException()).when(access).requireReadableTrip(7L, 42L);
         assertThatThrownBy(() -> service.findStory(42L, 7L)).isInstanceOf(StoryNotFoundException.class);
-        verifyNoInteractions(stories, blocks, storage);
+        verifyNoInteractions(stories, contents, attachments, places, storage);
     }
 
     @Test
     void 현재_완료_스토리가_없으면_404다() {
         when(stories.findCurrentCompletedByTripId(7L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.findStory(42L, 7L)).isInstanceOf(StoryNotFoundException.class);
-        verifyNoInteractions(blocks, storage);
+        verifyNoInteractions(contents, attachments, places, storage);
     }
 
     @Test

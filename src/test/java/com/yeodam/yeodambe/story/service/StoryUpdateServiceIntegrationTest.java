@@ -15,6 +15,10 @@ import com.yeodam.yeodambe.trip.service.TripEditAuthorizationService;
 import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -38,16 +42,31 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
-@DataJpaTest
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({TestcontainersConfiguration.class, StoryUpdateService.class, StoryReadService.class,
-        StoryValidator.class, TripAccessService.class})
+@org.springframework.boot.test.context.SpringBootTest
+@Import({TestcontainersConfiguration.class, StoryUpdateServiceIntegrationTest.MongoConfig.class})
 @ActiveProfiles("test")
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class StoryUpdateServiceIntegrationTest {
+
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class MongoConfig {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails isolatedMongo() {
+            return () -> new com.mongodb.ConnectionString(
+                    com.yeodam.yeodambe.SharedTestMongo.connectionString("storyupdateserviceintegrationtest"));
+        }
+    }
+
     @Autowired EntityManager em;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired StoryUpdateService service;
+    @MockitoSpyBean StoryContentRepository contents;
+    @Autowired com.yeodam.yeodambe.story.repository.StoryBlockRepository sqlBlocks;
+    @Autowired com.yeodam.yeodambe.story.repository.StorySelectedPlaceRepository selectedPlaces;
+    @Autowired com.yeodam.yeodambe.story.repository.StoryRepository stories;
+    @Autowired StoryContentDocumentFactory factory;
+    @Autowired org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
     @MockitoBean TripAttachmentStorageClient storage;
     @MockitoBean TripEditAuthorizationService authorizationService;
     private TransactionTemplate tx;
@@ -75,7 +94,83 @@ class StoryUpdateServiceIntegrationTest {
             trip.changeCurrentStory(story.getId());
             return new Fixture(user.getUserId(), trip.getId(), story.getId(), block.getId(), photo.getId(), place.getId());
         });
+        tx.executeWithoutResult(status -> contents.insert(factory.create(
+                stories.findById(fixture.storyId()).orElseThrow(),
+                selectedPlaces.findAllByStoryIdOrderByIdAsc(fixture.storyId()),
+                sqlBlocks.findAllByStoryIdOrderByOrderNumberAscIdAsc(fixture.storyId()),
+                java.time.ZoneOffset.UTC)));
         when(storage.createReadUrl(anyString())).thenAnswer(invocation -> "https://image.test/" + invocation.getArgument(0));
+    }
+
+    @AfterEach
+    void cleanMongo() {
+        if (fixture != null) contents.deleteById(fixture.storyId());
+    }
+
+    @Test
+    void 읽은뒤_문서버전이_변하면_최신본문을_덮어쓰지_않는다() {
+        doAnswer(invocation -> {
+            var newer = contents.findById(fixture.storyId()).orElseThrow();
+            newer.updateContent(Story.Mood.PLAIN, "먼저 저장한 요약", newer.getBlocks());
+            mongoTemplate.save(newer);
+            return mongoTemplate.save((StoryContentDocument) invocation.getArgument(0));
+        }).when(contents).save(any(StoryContentDocument.class));
+
+        assertThatThrownBy(() -> service.update(fixture.userId(), fixture.storyId(),
+                request(block(fixture.blockId(), fixture.photoId(), 1))))
+                .isInstanceOf(org.springframework.dao.OptimisticLockingFailureException.class);
+
+        assertThat(contents.findById(fixture.storyId()).orElseThrow().getStorySummary())
+                .isEqualTo("먼저 저장한 요약");
+    }
+
+    @Test
+    void 응답URL_준비가_실패하면_본문과_버전을_저장하지_않는다() {
+        var before = contents.findById(fixture.storyId()).orElseThrow();
+        when(storage.createReadUrl(anyString())).thenThrow(new IllegalStateException("URL failure"));
+
+        assertThatThrownBy(() -> service.update(fixture.userId(), fixture.storyId(),
+                request(block(fixture.blockId(), fixture.photoId(), 1))))
+                .isInstanceOf(IllegalStateException.class);
+
+        var after = contents.findById(fixture.storyId()).orElseThrow();
+        assertThat(after.getVersion()).isEqualTo(before.getVersion());
+        assertThat(after.getBlocks()).isEqualTo(before.getBlocks());
+        assertThat(after.getStorySummary()).isEqualTo(before.getStorySummary());
+        verify(contents, never()).save(any(StoryContentDocument.class));
+    }
+
+    @Test
+    void 저장호출이_실행전_실패하면_기존문서를_유지한다() {
+        var before = contents.findById(fixture.storyId()).orElseThrow();
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("Mongo failure"))
+                .when(contents).save(any(StoryContentDocument.class));
+
+        assertThatThrownBy(() -> service.update(fixture.userId(), fixture.storyId(),
+                request(block(fixture.blockId(), fixture.photoId(), 1))))
+                .isInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
+
+        var after = contents.findById(fixture.storyId()).orElseThrow();
+        assertThat(after.getVersion()).isEqualTo(before.getVersion());
+        assertThat(after.getBlocks()).isEqualTo(before.getBlocks());
+    }
+
+    @Test
+    void 응답준비후에_저장하고_SQL롤백이_저장한_Mongo본문을_되돌리지_않는다() {
+        tx.executeWithoutResult(status -> {
+            var response = service.update(fixture.userId(), fixture.storyId(),
+                    request(block(fixture.blockId(), fixture.photoId(), 1)));
+            assertThat(response.storySummary()).isEqualTo("수정 요약");
+            status.setRollbackOnly();
+        });
+
+        assertThat(contents.findById(fixture.storyId()).orElseThrow().getStorySummary())
+                .isEqualTo("수정 요약");
+        tx.executeWithoutResult(status -> assertThat(em.find(Story.class, fixture.storyId())
+                .getStorySummary()).isEqualTo("기존 요약"));
+        var order = inOrder(storage, contents);
+        order.verify(storage).createReadUrl(anyString());
+        order.verify(contents).save(any(StoryContentDocument.class));
     }
 
     @Test
@@ -106,10 +201,14 @@ class StoryUpdateServiceIntegrationTest {
         var repeated = service.update(fixture.userId(), fixture.storyId(), input);
         assertThat(repeated.days().getFirst().blocks().getFirst().storyBlockId()).isEqualTo(newBlock);
         tx.executeWithoutResult(status -> {
-            assertThat(em.find(StoryBlock.class, fixture.blockId()).getDeletedAt()).isNotNull();
+            var savedDocument = contents.findById(fixture.storyId()).orElseThrow();
+            assertThat(savedDocument.getBlocks()).filteredOn(block -> block.id().equals(fixture.blockId()))
+                    .allSatisfy(block -> assertThat(block.deletedAt()).isNotNull());
+            assertThat(savedDocument.getBlocks()).hasSize(2);
+            assertThat(em.find(StoryBlock.class, fixture.blockId()).getDeletedAt()).isNull();
             assertThat(em.find(TripAttachment.class, fixture.photoId()).getDeletedAt()).isNull();
             assertThat(em.createQuery("select count(b) from StoryBlock b where b.storyId = :id", Long.class)
-                    .setParameter("id", fixture.storyId()).getSingleResult()).isEqualTo(2L);
+                    .setParameter("id", fixture.storyId()).getSingleResult()).isEqualTo(1L);
         });
         var restored = service.update(fixture.userId(), fixture.storyId(), request(
                 block(null, fixture.photoId(), 1), block(newBlock, newPhoto, 2)));

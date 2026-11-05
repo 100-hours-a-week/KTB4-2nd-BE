@@ -4,10 +4,15 @@ import com.yeodam.yeodambe.common.exception.StoryBlockNotFoundException;
 import com.yeodam.yeodambe.story.client.StorySimilarAttachmentAiClient;
 import com.yeodam.yeodambe.story.client.request.StorySimilarAttachmentAiRequest;
 import com.yeodam.yeodambe.story.client.response.StorySimilarAttachmentAiResponse;
-import com.yeodam.yeodambe.story.entity.StoryBlock;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
+import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
 import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentAiRequestException;
 import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentInternalErrorMessage;
-import com.yeodam.yeodambe.story.repository.StoryBlockRepository;
+import com.yeodam.yeodambe.story.repository.StoryRepository;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.service.response.StorySimilarAttachmentListResponse;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.RegionOrigin;
@@ -34,23 +39,29 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class StorySimilarAttachmentServiceTest {
-    private final StoryBlockRepository blocks = mock(StoryBlockRepository.class);
+    private final StoryRepository stories = mock(StoryRepository.class);
+    private final StoryContentRepository contents = mock(StoryContentRepository.class);
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final StorySimilarAttachmentAiClient aiClient = mock(StorySimilarAttachmentAiClient.class);
     private final StorySimilarAttachmentService service =
-            new StorySimilarAttachmentService(blocks, attachments, aiClient);
+            new StorySimilarAttachmentService(stories, contents, attachments, aiClient);
     private final StorySimilarAttachmentAiRequest expectedRequest =
             new StorySimilarAttachmentAiRequest(501L, List.of(506L, 507L), 10);
     private final TripAttachment source = attachment(501L, 31L);
 
     @BeforeEach
     void setUp() {
-        StoryBlock block = block(101L, source);
-        when(blocks.findOwnedCurrentCompletedBlock(71L, 101L, 1L)).thenReturn(Optional.of(block));
-        var details = List.of(detail(block), detail(block(102L, attachment(502L, 31L))));
-        when(blocks.findDetailsByStoryId(71L)).thenReturn(details);
-        when(attachments.findAllActiveByTripPlaceId(11L, ClassificationStatus.ACTIVE)).thenReturn(List.of(
-                source, attachment(502L, 31L), attachment(506L, 31L), attachment(507L, 31L), attachment(777L, 99L)));
+        Story story = new Story(31L, Story.Mood.PLAIN, "요약");
+        ReflectionTestUtils.setField(story, "id", 71L);
+        when(stories.findOwnedCurrentCompletedForSimilarById(71L, 1L))
+                .thenReturn(Optional.of(story));
+        arrangeContent(List.of(block(101L, source), block(102L, attachment(502L, 31L))));
+        when(attachments.findAllActiveWithTripAndFileByIds(List.of(501L)))
+                .thenReturn(List.of(source));
+        var candidates = List.of(source, attachment(502L, 31L), attachment(506L, 31L),
+                attachment(507L, 31L), attachment(777L, 99L));
+        when(attachments.findAllActiveByTripPlaceId(11L, ClassificationStatus.ACTIVE))
+                .thenReturn(candidates);
         when(aiClient.findSimilar(31L, expectedRequest)).thenReturn(new StorySimilarAttachmentAiResponse(501L,
                 List.of(item(507L, 0.94), item(506L, 0.91))));
     }
@@ -70,8 +81,10 @@ class StorySimilarAttachmentServiceTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void 후보가_없거나_모두_사용중이면_AI를_호출하지_않는다(boolean onlyUsed) {
+        List<TripAttachment> candidates = onlyUsed
+                ? List.of(source, attachment(502L, 31L)) : List.of();
         when(attachments.findAllActiveByTripPlaceId(11L, ClassificationStatus.ACTIVE))
-                .thenReturn(onlyUsed ? List.of(source, attachment(502L, 31L)) : List.of());
+                .thenReturn(candidates);
 
         var actual = service.findSimilar(1L, 71L, 101L);
 
@@ -81,13 +94,13 @@ class StorySimilarAttachmentServiceTest {
 
     @Test
     void 기준_블록에_접근할_수_없으면_후보조회와_AI호출_전에_중단한다() {
-        when(blocks.findOwnedCurrentCompletedBlock(71L, 101L, 1L)).thenReturn(Optional.empty());
+        when(stories.findOwnedCurrentCompletedForSimilarById(71L, 1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.findSimilar(1L, 71L, 101L))
                 .isInstanceOf(StoryBlockNotFoundException.class);
 
         verifyNoInteractions(attachments, aiClient);
-        verify(blocks, never()).findDetailsByStoryId(anyLong());
+        verifyNoInteractions(contents);
     }
 
     @Test
@@ -145,20 +158,66 @@ class StorySimilarAttachmentServiceTest {
         ReflectionTestUtils.setField(attachment, "id", id);
         attachment.classify(11L, RegionOrigin.EXIF, LocalDateTime.of(2026, 10, 30, 12, 0),
                 BigDecimal.ZERO, BigDecimal.ZERO, 1);
+        TripDetailPlace place = mock(TripDetailPlace.class);
+        when(place.getTripId()).thenReturn(tripId);
+        ReflectionTestUtils.setField(attachment, "tripPlace", place);
         return attachment;
     }
 
-    private static StoryBlock block(Long id, TripAttachment attachment) {
-        StoryBlock block = new StoryBlock(71L, attachment.getId(), 91L, LocalDate.of(2026, 10, 29),
-                1, "첫날", "산책", null);
-        ReflectionTestUtils.setField(block, "id", id);
-        ReflectionTestUtils.setField(block, "attachment", attachment);
-        return block;
+    private static StoryContentBlock block(Long id, TripAttachment attachment) {
+        return new StoryContentBlock(id, attachment.getId(), 91L,
+                LocalDate.of(2026, 10, 29), "첫날", "산책", null, null, null, null);
     }
 
-    private static StoryBlockRepository.BlockDetail detail(StoryBlock block) {
-        var detail = mock(StoryBlockRepository.BlockDetail.class);
-        when(detail.getBlock()).thenReturn(block);
-        return detail;
+    private void arrangeContent(List<StoryContentBlock> blocks) {
+        when(contents.findById(71L)).thenReturn(Optional.of(new StoryContentDocument(
+                71L, Story.Mood.PLAIN, "요약", List.of(91L), blocks, 200L)));
+    }
+
+    @Test
+    void Mongo본문이_없으면_사진과_AI를_조회하지않는다() {
+        when(contents.findById(71L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.findSimilar(1L, 71L, 101L))
+                .isInstanceOf(StoryDataIntegrityException.class);
+        verifyNoInteractions(attachments, aiClient);
+    }
+
+    @Test
+    void 삭제된_Mongo블록은_조회할수없다() {
+        arrangeContent(List.of(new StoryContentBlock(101L, 501L, 91L,
+                LocalDate.of(2026, 10, 29), "날", "문구", null, null, null,
+                java.time.Instant.parse("2026-11-01T00:00:00Z"))));
+        assertThatThrownBy(() -> service.findSimilar(1L, 71L, 101L))
+                .isInstanceOf(StoryBlockNotFoundException.class);
+        verifyNoInteractions(attachments, aiClient);
+    }
+
+    @Test
+    void 삭제된블록의_사진은_후보에서_제외하지않는다() {
+        arrangeContent(List.of(block(101L, source), new StoryContentBlock(
+                102L, 502L, 91L, LocalDate.of(2026, 10, 29), "날", "문구", null,
+                null, null, java.time.Instant.parse("2026-11-01T00:00:00Z"))));
+        var request = new StorySimilarAttachmentAiRequest(501L, List.of(502L, 506L, 507L), 10);
+        when(aiClient.findSimilar(31L, request)).thenReturn(
+                new StorySimilarAttachmentAiResponse(501L, List.of(item(502L, 0.99))));
+        assertThat(service.findSimilar(1L, 71L, 101L).items()).containsExactly(
+                new StorySimilarAttachmentListResponse.Item(502L, 0.99));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing-photo", "other-trip", "unclassified", "missing-place", "deleted-place", "other-trip-place"})
+    void 사용할수없는_기준사진은_AI호출전에_거절한다(String condition) {
+        switch (condition) {
+            case "missing-photo" -> when(attachments.findAllActiveWithTripAndFileByIds(List.of(501L)))
+                    .thenReturn(List.of());
+            case "other-trip" -> ReflectionTestUtils.setField(source, "tripId", 99L);
+            case "unclassified" -> ReflectionTestUtils.setField(source, "classificationStatus", ClassificationStatus.UNCLASSIFIED);
+            case "missing-place" -> ReflectionTestUtils.setField(source, "tripPlace", null);
+            case "deleted-place" -> when(source.getTripPlace().getDeletedAt()).thenReturn(LocalDateTime.now());
+            case "other-trip-place" -> when(source.getTripPlace().getTripId()).thenReturn(99L);
+        }
+        assertThatThrownBy(() -> service.findSimilar(1L, 71L, 101L))
+                .isInstanceOf(StoryBlockNotFoundException.class);
+        verifyNoInteractions(aiClient);
     }
 }

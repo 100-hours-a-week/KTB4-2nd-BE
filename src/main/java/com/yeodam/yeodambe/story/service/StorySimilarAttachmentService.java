@@ -6,7 +6,10 @@ import com.yeodam.yeodambe.story.client.request.StorySimilarAttachmentAiRequest;
 import com.yeodam.yeodambe.story.client.response.StorySimilarAttachmentAiResponse;
 import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentAiRequestException;
 import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentInternalErrorMessage;
-import com.yeodam.yeodambe.story.repository.StoryBlockRepository;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
+import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.story.service.response.StorySimilarAttachmentListResponse;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
@@ -24,7 +27,8 @@ import java.util.stream.Collectors;
 public class StorySimilarAttachmentService {
     private static final int RESULT_LIMIT = 10;
 
-    private final StoryBlockRepository storyBlockRepository;
+    private final StoryRepository storyRepository;
+    private final StoryContentRepository storyContentRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final StorySimilarAttachmentAiClient aiClient;
 
@@ -33,16 +37,44 @@ public class StorySimilarAttachmentService {
             Long storyId,
             Long storyBlockId
     ) {
-        var block = storyBlockRepository.findOwnedCurrentCompletedBlock(
-                storyId, storyBlockId, userId
+        var story = storyRepository.findOwnedCurrentCompletedForSimilarById(
+                storyId, userId
         ).orElseThrow(StoryBlockNotFoundException::new);
 
-        TripAttachment source = block.getAttachment();
+        var content = storyContentRepository.findById(story.getId())
+                .orElseThrow(() -> new StoryDataIntegrityException(
+                        StoryGenerationInternalErrorMessage.CONTENT_DOCUMENT_MISSING
+                ));
 
-        Set<Long> usedAttachmentIds = storyBlockRepository
-                .findDetailsByStoryId(storyId)
+        var blocks = content.getBlocks().stream()
+                .filter(block -> block.deletedAt() == null)
+                .toList();
+
+        var block = blocks.stream()
+                .filter(candidate -> storyBlockId.equals(candidate.id()))
+                .findFirst()
+                .orElseThrow(StoryBlockNotFoundException::new);
+
+        TripAttachment source = tripAttachmentRepository
+                .findAllActiveWithTripAndFileByIds(
+                        List.of(block.tripAttachmentId())
+                )
                 .stream()
-                .map(detail -> detail.getBlock().getTripAttachmentId())
+                .findFirst()
+                .orElseThrow(StoryBlockNotFoundException::new);
+
+        var place = source.getTripPlace();
+
+        if (!story.getTripId().equals(source.getTripId())
+                || source.getClassificationStatus() != ClassificationStatus.ACTIVE
+                || place == null
+                || place.getDeletedAt() != null
+                || !story.getTripId().equals(place.getTripId())) {
+            throw new StoryBlockNotFoundException();
+        }
+
+        Set<Long> usedAttachmentIds = blocks.stream()
+                .map(existing -> existing.tripAttachmentId())
                 .collect(Collectors.toSet());
 
         List<Long> candidateIds = tripAttachmentRepository

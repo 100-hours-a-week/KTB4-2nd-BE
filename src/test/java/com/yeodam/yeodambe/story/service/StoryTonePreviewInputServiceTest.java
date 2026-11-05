@@ -4,8 +4,11 @@ import com.yeodam.yeodambe.common.exception.InvalidStoryTonePreviewException;
 import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.common.exception.StoryTonePreviewTakenAtMissingException;
 import com.yeodam.yeodambe.story.entity.Story;
-import com.yeodam.yeodambe.story.entity.StoryBlock;
-import com.yeodam.yeodambe.story.repository.StoryBlockRepository;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
+import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
+import com.yeodam.yeodambe.common.exception.StoryOrAttachmentNotFoundException;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.story.service.request.StoryTonePreviewRequest;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
@@ -18,6 +21,7 @@ import jakarta.validation.ValidatorFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -30,10 +34,10 @@ import static org.mockito.Mockito.*;
 class StoryTonePreviewInputServiceTest {
     private static final ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
     private final StoryRepository stories = mock(StoryRepository.class);
-    private final StoryBlockRepository blocks = mock(StoryBlockRepository.class);
+    private final StoryContentRepository contents = mock(StoryContentRepository.class);
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final StoryTonePreviewInputService service = new StoryTonePreviewInputService(
-            stories, blocks, attachments,
+            stories, contents, attachments,
             new StoryTonePreviewRequestValidator(factory.getValidator()), new StoryValidator());
 
     @AfterAll
@@ -72,14 +76,15 @@ class StoryTonePreviewInputServiceTest {
         assertThat(prepared.request().blocks().get(1).tripAttachmentId()).isEqualTo(102L);
         assertThat(prepared.request().blocks().get(1).memo()).isNull();
         verify(stories, never()).save(any());
-        verify(blocks, never()).save(any());
+        verify(contents, never()).save(any());
+        verify(contents, never()).insert(any(StoryContentDocument.class));
     }
 
     @Test
     void 잘못된입력이면_DB조회전에_거절한다() {
         assertThatThrownBy(() -> service.prepare(2L, 9L, null))
                 .isInstanceOf(InvalidStoryTonePreviewException.class);
-        verifyNoInteractions(stories, blocks, attachments);
+        verifyNoInteractions(stories, contents, attachments);
     }
 
     @Test
@@ -87,7 +92,7 @@ class StoryTonePreviewInputServiceTest {
         when(stories.findOwnedCurrentCompletedForPreviewById(9L, 2L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.prepare(2L, 9L, request()))
                 .isInstanceOf(StoryNotFoundException.class);
-        verifyNoInteractions(blocks, attachments);
+        verifyNoInteractions(contents, attachments);
     }
 
     @Test
@@ -105,7 +110,7 @@ class StoryTonePreviewInputServiceTest {
         arrangeStory();
         var unchanged = existing(11L, 101L, 500L, LocalDate.of(2026, 9, 1));
         var replaced = existing(12L, 999L, 600L, LocalDate.of(2026, 9, 2));
-        when(blocks.findAllByStoryId(9L)).thenReturn(List.of(unchanged, replaced));
+        arrangeContent(List.of(unchanged, replaced));
         var photos = List.of(photo(101L), photo(102L), photo(103L));
         when(attachments.findAllActiveWithTripAndFileByIds(List.of(103L, 102L, 101L)))
                 .thenReturn(photos);
@@ -133,7 +138,7 @@ class StoryTonePreviewInputServiceTest {
     void 기존블록ID를_생략해도_같은사진의_블록ID와_보존정보를_재사용한다() {
         arrangeStory();
         var existing = existing(11L, 101L, 500L, LocalDate.of(2026, 9, 1));
-        when(blocks.findAllByStoryId(9L)).thenReturn(List.of(existing));
+        arrangeContent(List.of(existing));
         var photo = photo(101L);
         when(attachments.findAllActiveWithTripAndFileByIds(List.of(101L))).thenReturn(List.of(photo));
 
@@ -154,22 +159,61 @@ class StoryTonePreviewInputServiceTest {
                 .isInstanceOf(com.yeodam.yeodambe.common.exception.StoryOrAttachmentNotFoundException.class);
     }
 
-    private StoryBlock existing(Long id, Long photoId, Long placeId, LocalDate date) {
-        var block = mock(StoryBlock.class);
-        when(block.getId()).thenReturn(id);
-        when(block.getTripAttachmentId()).thenReturn(photoId);
-        when(block.getSourceTripPlaceId()).thenReturn(placeId);
-        when(block.getSourceDate()).thenReturn(date);
-        return block;
+    @Test
+    void Mongo본문이_없으면_사진조회전에_거절한다() {
+        arrangeStory();
+        when(contents.findById(9L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.prepare(2L, 9L, request()))
+                .isInstanceOf(StoryDataIntegrityException.class);
+        verifyNoInteractions(attachments);
+    }
+
+    @Test
+    void 삭제된_Mongo블록_ID는_거절한다() {
+        arrangeStory();
+        var deleted = new StoryContentBlock(11L, 101L, 500L, LocalDate.of(2026, 9, 1),
+                "라벨", "문구", null, null, null, Instant.parse("2026-10-01T00:00:00Z"));
+        arrangeContent(List.of(deleted));
+        var input = new StoryTonePreviewRequest(Story.Mood.PLAIN, List.of(
+                new StoryTonePreviewRequest.Block(11L, 101L, 1, null, null, null)));
+        assertThatThrownBy(() -> service.prepare(2L, 9L, input))
+                .isInstanceOf(StoryOrAttachmentNotFoundException.class);
+        verifyNoInteractions(attachments);
+    }
+
+    @Test
+    void 삭제된블록의_같은사진을_추가하면_옛블록정보를_재사용하지않는다() {
+        arrangeStory();
+        arrangeContent(List.of(new StoryContentBlock(11L, 101L, 500L,
+                LocalDate.of(2026, 9, 1), "라벨", "문구", null, null, null,
+                Instant.parse("2026-10-01T00:00:00Z"))));
+        var photo = photo(101L);
+        when(attachments.findAllActiveWithTripAndFileByIds(List.of(101L)))
+                .thenReturn(List.of(photo));
+        var source = service.prepare(2L, 9L, request()).sources().getFirst();
+        assertThat(source.storyBlockId()).isNull();
+        assertThat(source.tripPlaceId()).isEqualTo(1101L);
+        assertThat(source.date()).isEqualTo(LocalDate.of(2026, 10, 2));
+    }
+
+    private StoryContentBlock existing(Long id, Long photoId, Long placeId, LocalDate date) {
+        return new StoryContentBlock(id, photoId, placeId, date,
+                "기존 라벨", "기존 문구", null, null, null, null);
+    }
+
+    private void arrangeContent(List<StoryContentBlock> blocks) {
+        when(contents.findById(9L)).thenReturn(Optional.of(new StoryContentDocument(
+                9L, Story.Mood.PLAIN, "기존 요약", List.of(), blocks, 100L)));
     }
 
     private void arrangeStory() {
         var story = mock(Story.class);
+        when(story.getId()).thenReturn(9L);
         when(story.getTripId()).thenReturn(7L);
         when(story.getTrip()).thenReturn(new Trip(2L, "제주 여행",
                 LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 3)));
         when(stories.findOwnedCurrentCompletedForPreviewById(9L, 2L)).thenReturn(Optional.of(story));
-        when(blocks.findAllByStoryId(9L)).thenReturn(List.of());
+        arrangeContent(List.of());
     }
 
     private TripAttachment photo(Long id) {

@@ -1,6 +1,9 @@
 package com.yeodam.yeodambe.story.service;
 
-import com.yeodam.yeodambe.SharedTestMysql;
+import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
+import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.common.exception.StoryOrAttachmentNotFoundException;
 import com.yeodam.yeodambe.common.exception.StoryTonePreviewTakenAtMissingException;
@@ -11,22 +14,19 @@ import com.yeodam.yeodambe.story.client.StoryTonePreviewAiClient;
 import com.yeodam.yeodambe.story.client.request.StoryTonePreviewAiRequest;
 import com.yeodam.yeodambe.story.client.response.StoryTonePreviewAiResponse;
 import com.yeodam.yeodambe.story.entity.Story;
-import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.service.request.StoryTonePreviewRequest;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -37,7 +37,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
-import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -46,22 +45,27 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-@DataJpaTest(properties = {
-        "spring.flyway.enabled=true",
-        "spring.jpa.hibernate.ddl-auto=validate",
-        "spring.jpa.show-sql=false"
-})
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({StoryTonePreviewMysqlIntegrationTest.MysqlConfig.class,
-        StoryTonePreviewInputService.class, StoryTonePreviewRequestValidator.class,
-        StoryValidator.class, StoryTonePreviewService.class, StoryTonePreviewResultValidator.class,
-        org.springframework.validation.beanvalidation.LocalValidatorFactoryBean.class})
+@SpringBootTest
+@ActiveProfiles("test")
+@Import({TestcontainersConfiguration.class, StoryTonePreviewMysqlIntegrationTest.MongoConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class StoryTonePreviewMysqlIntegrationTest {
+
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class MongoConfig {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails isolatedMongo() {
+            return () -> new com.mongodb.ConnectionString(
+                    com.yeodam.yeodambe.SharedTestMongo.connectionString("storytonepreviewmysqlintegrationtest"));
+        }
+    }
+
     @Autowired EntityManager em;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired StoryTonePreviewInputService input;
     @Autowired StoryTonePreviewService service;
+    @Autowired StoryContentRepository contents;
     @MockitoBean RunpodStatusService ready;
     @MockitoBean StoryTonePreviewAiClient ai;
     @MockitoBean TripAttachmentStorageClient storage;
@@ -69,14 +73,6 @@ class StoryTonePreviewMysqlIntegrationTest {
     private Fixture fixture;
 
     record Fixture(Long userId, Long tripId, Long storyId, Long blockId, Long photoId, Long placeId) {}
-
-    @TestConfiguration(proxyBeanMethods = false)
-    static class MysqlConfig {
-        @Bean
-        JdbcConnectionDetails mysql() throws SQLException {
-            return SharedTestMysql.createDatabase();
-        }
-    }
 
     @BeforeEach
     void prepare() {
@@ -91,12 +87,18 @@ class StoryTonePreviewMysqlIntegrationTest {
             var story = new Story(trip.getId(), Story.Mood.PLAIN, "기존 요약");
             story.complete();
             em.persist(story);
-            var block = new StoryBlock(story.getId(), photo.getId(), photo.getTripPlaceId(),
-                    LocalDate.of(2026, 10, 1), 1, "기존 라벨", "기존 캡션", null);
-            em.persist(block);
             trip.changeCurrentStory(story.getId());
-            return new Fixture(user.getUserId(), trip.getId(), story.getId(), block.getId(), photo.getId(), photo.getTripPlaceId());
+            return new Fixture(user.getUserId(), trip.getId(), story.getId(), 91L, photo.getId(), photo.getTripPlaceId());
         });
+        contents.insert(new StoryContentDocument(fixture.storyId(), Story.Mood.PLAIN,
+                "Mongo 요약", List.of(fixture.placeId()), List.of(new StoryContentBlock(
+                fixture.blockId(), fixture.photoId(), fixture.placeId(), LocalDate.of(2026, 10, 1),
+                "Mongo 라벨", "Mongo 캡션", null, null, null, null)), 92L));
+    }
+
+    @AfterEach
+    void cleanMongo() {
+        if (fixture != null) contents.deleteById(fixture.storyId());
     }
 
     @Test
@@ -125,11 +127,15 @@ class StoryTonePreviewMysqlIntegrationTest {
             var story = em.find(Story.class, fixture.storyId());
             assertThat(story.getMood()).isEqualTo(Story.Mood.PLAIN);
             assertThat(story.getStorySummary()).isEqualTo("기존 요약");
-            assertThat(em.find(StoryBlock.class, fixture.blockId()).getDetailSummary()).isEqualTo("기존 캡션");
             assertThat(em.find(Trip.class, fixture.tripId()).getCurrentStoryId()).isEqualTo(fixture.storyId());
             assertThat(em.createQuery("select count(b) from StoryBlock b where b.storyId=:id", Long.class)
-                    .setParameter("id", fixture.storyId()).getSingleResult()).isEqualTo(1L);
+                    .setParameter("id", fixture.storyId()).getSingleResult()).isZero();
         });
+        var saved = contents.findById(fixture.storyId()).orElseThrow();
+        assertThat(saved.getStorySummary()).isEqualTo("Mongo 요약");
+        assertThat(saved.getBlocks()).hasSize(1);
+        assertThat(saved.getBlocks().getFirst().detailSummary()).isEqualTo("Mongo 캡션");
+        assertThat(saved.getVersion()).isZero();
     }
 
     @ParameterizedTest
@@ -198,7 +204,7 @@ class StoryTonePreviewMysqlIntegrationTest {
         assertThat(prepared.sources().getFirst().tripAttachmentId()).isEqualTo(photoId);
         tx.executeWithoutResult(status -> assertThat(em.createQuery(
                 "select count(b) from StoryBlock b where b.storyId=:id", Long.class)
-                .setParameter("id", fixture.storyId()).getSingleResult()).isEqualTo(1L));
+                .setParameter("id", fixture.storyId()).getSingleResult()).isZero());
     }
 
     private StoryTonePreviewRequest request() {

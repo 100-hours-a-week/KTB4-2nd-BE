@@ -3,6 +3,8 @@ package com.yeodam.yeodambe.story.repository;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.story.entity.*;
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.story.service.StoryReadService;
@@ -57,6 +59,9 @@ class StoryRepositoryTest {
     @MockitoBean
     TripAttachmentStorageClient storage;
 
+    @MockitoBean
+    StoryContentRepository contents;
+
     @Test
     void 실제_소유권_현재대상_조회와_삭제필터_메모보존을_통합검증한다() {
         Trip trip = trip();
@@ -71,6 +76,15 @@ class StoryRepositoryTest {
         em.find(TripAttachment.class, deleted.getTripAttachmentId()).softDelete(LocalDateTime.now());
         em.flush();
         em.clear();
+        var mongoBlocks = List.of(deleted, earlier, later).stream()
+                .map(block -> new StoryContentBlock(
+                        block.getId(), block.getTripAttachmentId(), block.getSourceTripPlaceId(),
+                        block.getSourceDate(), block.getDayLabel(), block.getDetailSummary(),
+                        block.getMemo(), null, null, null))
+                .toList();
+        when(contents.findById(story.getId())).thenReturn(java.util.Optional.of(
+                new StoryContentDocument(story.getId(), story.getMood(), story.getStorySummary(),
+                        List.of(place.getId()), mongoBlocks, later.getId() + 100L)));
         when(storage.createReadUrl("미리보기")).thenReturn("https://image.test/preview");
         var response = service.findStory(trip.getUserId(), trip.getId());
         assertThat(response.days()).hasSize(1);

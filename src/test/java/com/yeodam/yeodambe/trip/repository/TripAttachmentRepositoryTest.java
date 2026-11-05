@@ -46,6 +46,40 @@ class TripAttachmentRepositoryTest {
     private EntityManager entityManager;
 
     @Test
+    void 스토리_첨부_일괄조회는_삭제정보를_보존하고_파일도_함께_읽는다() {
+        User owner = userRepository.save(new User("story-fetch@yeodam.test", "스토리"));
+        Trip trip = tripRepository.save(new Trip(owner.getUserId(), "스토리",
+                LocalDate.now(), LocalDate.now()));
+        StoredFile activeFile = storedFileRepository.save(StoredFile.uploaded(
+                owner.getUserId(), "active.jpg", "story-active", "image/jpeg"));
+        StoredFile deletedFile = storedFileRepository.save(StoredFile.uploaded(
+                owner.getUserId(), "deleted.jpg", "story-deleted", "image/jpeg"));
+        deletedFile.softDelete(LocalDateTime.now());
+        TripAttachment active = tripAttachmentRepository.save(TripAttachment.initial(
+                trip.getId(), activeFile.getId(), "analysis-active", "preview-active"));
+        TripAttachment deleted = tripAttachmentRepository.save(TripAttachment.initial(
+                trip.getId(), activeFile.getId(), "analysis-deleted", "preview-deleted"));
+        deleted.softDelete(LocalDateTime.now());
+        TripAttachment deletedFilePhoto = tripAttachmentRepository.save(TripAttachment.initial(
+                trip.getId(), deletedFile.getId(), "analysis-file", "preview-file"));
+        entityManager.flush();
+        entityManager.clear();
+
+        var result = tripAttachmentRepository.findAllWithFileByIds(
+                List.of(active.getId(), deleted.getId(), deletedFilePhoto.getId(), Long.MAX_VALUE));
+
+        assertThat(result).extracting(TripAttachment::getId).containsExactlyInAnyOrder(
+                active.getId(), deleted.getId(), deletedFilePhoto.getId());
+        assertThat(result).allSatisfy(attachment ->
+                assertThat(entityManager.getEntityManagerFactory().getPersistenceUnitUtil()
+                        .isLoaded(attachment, "file")).isTrue());
+        assertThat(result).filteredOn(attachment -> attachment.getId().equals(deleted.getId()))
+                .allSatisfy(attachment -> assertThat(attachment.getDeletedAt()).isNotNull());
+        assertThat(result).filteredOn(attachment -> attachment.getId().equals(deletedFilePhoto.getId()))
+                .allSatisfy(attachment -> assertThat(attachment.getFile().getDeletedAt()).isNotNull());
+    }
+
+    @Test
     void 장소_폴더의_활성_첨부를_커서_다음부터_최신순으로_조회한다() {
         User user = userRepository.save(new User("attachment-list@yeodam.test", "사진목록"));
         Trip trip = tripRepository.save(new Trip(

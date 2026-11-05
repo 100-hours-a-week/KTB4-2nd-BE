@@ -113,6 +113,22 @@ class InternalMetricsIntegrationTest {
         }
     }
 
+    @Test
+    void MongoDB_장애는_Readiness만_실패시킨다() throws Exception {
+        HealthContributor original = healthContributorRegistry.getContributor("mongo");
+        assertThat(original).isNotNull();
+        healthContributorRegistry.unregisterContributor("mongo");
+        healthContributorRegistry.registerContributor("mongo",
+                (HealthIndicator) () -> Health.down().build());
+        try {
+            assertThat(get(9091, "/actuator/health/readiness").statusCode()).isEqualTo(503);
+            assertThat(get(9091, "/actuator/health/liveness").statusCode()).isEqualTo(200);
+        } finally {
+            healthContributorRegistry.unregisterContributor("mongo");
+            healthContributorRegistry.registerContributor("mongo", original);
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"kafka", "ai", "externalApi", "attachmentBacklog"})
     void 판정_대상_밖의_장애는_Probe에_영향을_주지_않는다(String dependency) throws Exception {

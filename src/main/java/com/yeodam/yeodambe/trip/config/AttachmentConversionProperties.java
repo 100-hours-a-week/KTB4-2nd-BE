@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.config;
 
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -28,9 +29,9 @@ public record AttachmentConversionProperties(
         mode = mode == null ? AttachmentConversionRoute.DB : mode;
         operations = operations == null ? new Operations(false) : operations;
         if (mode == AttachmentConversionRoute.KAFKA) {
-            Assert.notNull(admission, "KAFKA 모드에는 admission 설정이 필요합니다.");
+            Assert.notNull(admission, TripInternalErrorMessage.CONVERSION_KAFKA_ADMISSION_MISSING.message());
             admission.validate();
-            Assert.notNull(recovery, "KAFKA 모드에는 recovery 설정이 필요합니다.");
+            Assert.notNull(recovery, TripInternalErrorMessage.CONVERSION_KAFKA_RECOVERY_MISSING.message());
             recovery.validate();
         }
     }
@@ -63,21 +64,22 @@ public record AttachmentConversionProperties(
         private void validate() {
             for (Lane lane : Lane.values()) {
                 Assert.isTrue(maxUnfinishedPhotos.getOrDefault(lane, 0L) > 0,
-                        "각 lane의 미완료 사진 수 한도는 양수여야 합니다.");
+                        TripInternalErrorMessage.CONVERSION_UNFINISHED_PHOTO_LIMIT_INVALID.message());
                 Assert.isTrue(maxUnfinishedBytes.getOrDefault(lane, 0L) > 0,
-                        "각 lane의 미완료 바이트 한도는 양수여야 합니다.");
+                        TripInternalErrorMessage.CONVERSION_UNFINISHED_BYTE_LIMIT_INVALID.message());
             }
             requirePositive(maxUnfinishedAge);
             requirePositive(snapshotMaxAge);
             requirePositive(sampleInterval);
             Assert.isTrue(sampleInterval.compareTo(snapshotMaxAge) <= 0,
-                    "관측 간격은 snapshot 유효 기간 이하여야 합니다.");
+                    TripInternalErrorMessage.CONVERSION_ADMISSION_SAMPLE_INTERVAL_INVALID.message());
             Assert.isTrue(Double.isFinite(reopenRatio) && reopenRatio > 0 && reopenRatio < 1,
-                    "재허용 비율은 0 초과 1 미만이어야 합니다.");
+                    TripInternalErrorMessage.CONVERSION_ADMISSION_REOPEN_RATIO_INVALID.message());
         }
 
         private static void requirePositive(Duration value) {
-            Assert.isTrue(value != null && value.isPositive(), "admission 시간 설정은 양수여야 합니다.");
+            Assert.isTrue(value != null && value.isPositive(),
+                    TripInternalErrorMessage.CONVERSION_ADMISSION_DURATION_INVALID.message());
         }
     }
 
@@ -88,9 +90,10 @@ public record AttachmentConversionProperties(
             int maxReissuesPerRun
     ) {
         private void validate() {
-            Assert.isTrue(interval != null && interval.isPositive(), "재알림 간격은 양수여야 합니다.");
+            Assert.isTrue(interval != null && interval.isPositive(),
+                    TripInternalErrorMessage.CONVERSION_RECOVERY_INTERVAL_INVALID.message());
             Assert.isTrue(pageSize > 0 && maxPagesPerRun > 0 && maxReissuesPerRun > 0,
-                    "재알림 실행 예산은 양수여야 합니다.");
+                    TripInternalErrorMessage.CONVERSION_RECOVERY_BUDGET_INVALID.message());
         }
     }
 
@@ -105,12 +108,13 @@ public record AttachmentConversionProperties(
             initialHeic = initialHeic == null ? "yeodam-image-initial-heic" : initialHeic;
             additionalLight = additionalLight == null ? "yeodam-image-additional-light" : additionalLight;
             additionalHeic = additionalHeic == null ? "yeodam-image-additional-heic" : additionalHeic;
-            Assert.hasText(initialLight, "초기 LIGHT 토픽이 필요합니다.");
-            Assert.hasText(initialHeic, "초기 HEIC 토픽이 필요합니다.");
-            Assert.hasText(additionalLight, "추가 LIGHT 토픽이 필요합니다.");
-            Assert.hasText(additionalHeic, "추가 HEIC 토픽이 필요합니다.");
+            Assert.hasText(initialLight, TripInternalErrorMessage.CONVERSION_INITIAL_LIGHT_TOPIC_MISSING.message());
+            Assert.hasText(initialHeic, TripInternalErrorMessage.CONVERSION_INITIAL_HEIC_TOPIC_MISSING.message());
+            Assert.hasText(additionalLight,
+                    TripInternalErrorMessage.CONVERSION_ADDITIONAL_LIGHT_TOPIC_MISSING.message());
+            Assert.hasText(additionalHeic, TripInternalErrorMessage.CONVERSION_ADDITIONAL_HEIC_TOPIC_MISSING.message());
             Assert.isTrue(Stream.of(initialLight, initialHeic, additionalLight, additionalHeic).distinct().count() == 4,
-                    "네 변환 작업 토픽은 서로 달라야 합니다.");
+                    TripInternalErrorMessage.CONVERSION_TOPIC_CONFLICT.message());
         }
     }
 

@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -13,6 +14,7 @@ import java.time.LocalDateTime;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "app.trip.result-worker-enabled", havingValue = "true", matchIfMissing = true)
 public class TripUploadTimeoutService {
     private final TripCreationExecutionRepository creationExecutions;
     private final InitialAttachmentUploadTransactionService uploadTransactions;

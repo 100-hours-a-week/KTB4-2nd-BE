@@ -7,12 +7,14 @@ import com.yeodam.yeodambe.common.response.ErrorMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "app.trip.result-worker-enabled", havingValue = "true", matchIfMissing = true)
 public class TripAnalysisResultWorker {
     private final TripAnalysisResultService results;
     private final TripPlaceNameService placeNames;

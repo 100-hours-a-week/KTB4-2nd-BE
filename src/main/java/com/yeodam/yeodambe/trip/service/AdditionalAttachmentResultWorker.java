@@ -6,12 +6,14 @@ import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
 @Slf4j
+@ConditionalOnProperty(name = "app.trip.result-worker-enabled", havingValue = "true", matchIfMissing = true)
 public class AdditionalAttachmentResultWorker {
     private final AdditionalAttachmentKafkaResultService results;
     private final TripPlaceNameService placeNames;

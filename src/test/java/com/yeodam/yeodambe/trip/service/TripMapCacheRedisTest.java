@@ -44,7 +44,7 @@ class TripMapCacheRedisTest {
     }
 
     @Test
-    void concurrentVersionInitializationReturnsOneSharedVersion() throws Exception {
+    void 동시_버전_초기화는_하나의_공유_버전을_반환한다() throws Exception {
         try (var pool = Executors.newFixedThreadPool(8)) {
             var store = store();
             var tasks = IntStream.range(0, 8)
@@ -60,7 +60,7 @@ class TripMapCacheRedisTest {
     }
 
     @Test
-    void independentStoresIgnoreLateOldVersionWriteAndKeepMembersSeparate() {
+    void 독립_저장소는_늦은_이전_버전_쓰기를_무시하고_회원별로_분리한다() {
         var first = store();
         var second = store();
         String oldVersion = first.version(2L).orElseThrow();
@@ -76,7 +76,7 @@ class TripMapCacheRedisTest {
     }
 
     @Test
-    void realRedisAppliesDataAndVersionExpiry() {
+    void 실제_Redis는_데이터와_버전의_만료를_적용한다() {
         var store = store();
         String version = store.version(4L).orElseThrow();
         store.save(4L, version, sample());

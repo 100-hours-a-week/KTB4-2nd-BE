@@ -50,7 +50,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void findsBatchesAndFilesInBatchAndFileOrder() {
+    void 배치와_파일을_각각의_순서대로_조회한다() {
         String additionId = UUID.randomUUID().toString();
         Long second = insertBatch(UUID.randomUUID().toString(), additionId, 2);
         Long first = insertBatch(UUID.randomUUID().toString(), additionId, 1);
@@ -72,7 +72,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void lockedLookupRequiresMatchingUploadTripAndOwner() {
+    void 잠금_조회는_업로드와_여행과_소유자가_일치해야_한다() {
         String uploadId = UUID.randomUUID().toString();
         insertBatch(uploadId, UUID.randomUUID().toString(), 1);
         Long otherUserId = users.saveAndFlush(new User(UUID.randomUUID() + "@yeodam.test", "다른회원")).getUserId();
@@ -86,7 +86,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void detectsOnlyOtherAdditionsInRequestedStatesOfSameTrip() {
+    void 같은_여행에서_요청한_상태의_다른_추가만_감지한다() {
         String currentAdditionId = UUID.randomUUID().toString();
         insertBatch(UUID.randomUUID().toString(), currentAdditionId, 1);
         var activeStates = List.of(AdditionalAttachmentUploadStatus.PENDING,
@@ -113,7 +113,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void persistsEntitiesWithBatchRelationshipAndTakenAtOffset() {
+    void 배치_관계와_촬영_시각_오프셋을_포함해_엔티티를_저장한다() {
         var batch = new AdditionalAttachmentUploadBatch(UUID.randomUUID().toString(),
                 UUID.randomUUID().toString(), tripId, userId, 1, 1, true);
         entityManager.persist(batch);
@@ -138,7 +138,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void migratesTablesAndStoresBatchWithUnlinkedFiles() {
+    void 테이블을_마이그레이션하고_미연결_파일이_있는_배치를_저장한다() {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '17' AND success = 1",
                 Integer.class)).isEqualTo(1);
@@ -166,7 +166,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void rejectsDuplicateUploadId() {
+    void 중복된_업로드_ID를_거부한다() {
         String uploadId = UUID.randomUUID().toString();
         insertBatch(uploadId, UUID.randomUUID().toString(), 1);
         assertThatThrownBy(() -> insertBatch(uploadId, UUID.randomUUID().toString(), 1))
@@ -174,7 +174,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void rejectsDuplicateBatchNumberInSameAddition() {
+    void 같은_추가의_중복된_배치_번호를_거부한다() {
         String additionId = UUID.randomUUID().toString();
         insertBatch(UUID.randomUUID().toString(), additionId, 1);
         assertThatThrownBy(() -> insertBatch(UUID.randomUUID().toString(), additionId, 1))
@@ -182,7 +182,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void rejectsDuplicateFileOrderInSameBatch() {
+    void 같은_배치의_중복된_파일_순서를_거부한다() {
         Long batchId = insertBatch(UUID.randomUUID().toString(), UUID.randomUUID().toString(), 1);
         insertItem(batchId, 1);
         assertThatThrownBy(() -> insertItem(batchId, 1))
@@ -190,7 +190,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void storesBothMessageTypesAndPreservesLargePayloadWithPendingDefaults() {
+    void 두_메시지_유형과_큰_본문을_저장하고_대기_기본값을_유지한다() {
         Long batchId = insertBatch(UUID.randomUUID().toString(), UUID.randomUUID().toString(), 2);
         String payload = "{\"content\":\"" + "x".repeat(70_000) + "\"}";
         insertOutbox(batchId, "photos_ready", payload);
@@ -219,7 +219,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void rejectsDuplicateOutboxMessageTypeForSameBatch() {
+    void 같은_배치의_중복된_아웃박스_메시지_유형을_거부한다() {
         Long batchId = insertBatch(UUID.randomUUID().toString(), UUID.randomUUID().toString(), 1);
         insertOutbox(batchId, "photos_ready", "{}");
         assertThatThrownBy(() -> insertOutbox(batchId, "photos_ready", "{}"))
@@ -227,7 +227,7 @@ class AdditionalAttachmentUploadSchemaTest {
     }
 
     @Test
-    void rejectsOutboxForMissingBatchAndUnsupportedTypeOrStatus() {
+    void 없는_배치와_지원하지_않는_유형이나_상태의_아웃박스를_거부한다() {
         assertThatThrownBy(() -> insertOutbox(Long.MAX_VALUE, "photos_ready", "{}"))
                 .isInstanceOf(DataIntegrityViolationException.class);
         Long batchId = insertBatch(UUID.randomUUID().toString(), UUID.randomUUID().toString(), 1);

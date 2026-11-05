@@ -181,7 +181,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void resultReceptionPublishesFinalizingOnlyWhenTheDisplayStateChanges(boolean alreadyFinalizing) {
+    void 결과_수신은_표시_상태가_바뀔_때만_FINALIZING을_발행한다(boolean alreadyFinalizing) {
         prepareAsync();
         publishBoth();
         String raw = successfulPayload();
@@ -216,7 +216,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void rollingBackResultReceptionDoesNotPublishFinalizing() {
+    void 결과_수신을_롤백하면_FINALIZING을_발행하지_않는다() {
         prepareAsync();
         publishBoth();
         String raw = successfulPayload();
@@ -235,7 +235,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void completedAdditionRollbackDoesNotPublishOrChangeOldClassification() {
+    void 추가_완료를_롤백하면_이벤트를_발행하거나_기존_분류를_바꾸지_않는다() {
         prepareAsync();
         publishBoth();
         String raw = successfulPayload();
@@ -257,7 +257,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void asyncPipelinePublishesInOrderAndAppliesAllPhotosOnceWhilePreservingStory() {
+    void 비동기_파이프라인은_순서대로_발행하고_스토리를_유지하며_모든_사진을_한_번_적용한다() {
         Long storyId = createExistingStory();
         prepareAsync();
         assertThat(processingStatus.findStatus(tripId, userId).status())
@@ -296,7 +296,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void duplicatePublicationReceiptKeepsFirstTimestamp() {
+    void 중복_발행_수신은_최초_시각을_유지한다() {
         prepareAsync();
         var ready = outboxes.findAll().stream().filter(value -> value.getTripId().equals(tripId)
                 && "photos_ready".equals(value.getMessageType())).findFirst().orElseThrow();
@@ -307,7 +307,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void failedAiResultCleansOnlyNewPhotosAndRetainsOldClassificationAndStory() {
+    void AI_결과가_실패하면_새_사진만_정리하고_기존_분류와_스토리를_유지한다() {
         Long storyId = createExistingStory();
         prepareAsync();
         publishBoth();
@@ -325,7 +325,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void withdrawalStopsPendingAdditionAndReleasesUnconvertedReservation() {
+    void 회원_탈퇴는_대기_중인_추가를_중단하고_미변환_예약량을_해제한다() {
         completion.complete(tripId, userId, completeRequest());
         tripWithdrawal.withdrawAll(userId, LocalDateTime.now());
         var ended = executionRepository.findById(additionId).orElseThrow();
@@ -339,7 +339,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void failedAdditionObjectsRemainForThirtyDaysAndAreThenCleanedWithoutDeletingOldPhoto() {
+    void 추가_실패_객체는_30일_보존한_뒤_기존_사진을_삭제하지_않고_정리한다() {
         prepareAsync();
         transactions.failExecution(additionId, "IMAGE_CONVERSION_FAILED");
         var item = additionalItems.findAdditionItems(additionId).getFirst();
@@ -363,7 +363,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void timesOutOneHourAfterProcessPublicationButIgnoresLateResult() {
+    void process_발행_한_시간_후_시간_초과로_종료하고_늦은_결과를_무시한다() {
         prepareAsync();
         publishBoth();
         jdbc.update("UPDATE additional_attachment_executions SET process_published_at = CURRENT_TIMESTAMP - INTERVAL 61 MINUTE WHERE execution_id = ?", additionId);
@@ -378,7 +378,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void reusesPhotosReadyAndCreatesProcessOnlyAfterItsReceipt() {
+    void photos_ready를_재사용하고_수신이_확인된_뒤에만_process를_생성한다() {
         var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
         var saved = outboxService.save(tripId, userId, uploadId, prepared, "request-first");
         var ready = outboxes.findById(saved.photosReady().getId()).orElseThrow();
@@ -397,7 +397,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void savesOnlyPhotosReadyForIntermediateBatch() {
+    void 중간_배치는_photos_ready만_저장한다() {
         jdbc.update("UPDATE additional_attachment_upload_batches SET is_last_batch = false, "
                 + "total_attachment_count = 2 WHERE upload_id = ?", uploadId);
         var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
@@ -409,7 +409,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void outboxInsertFailureRollsBackWithoutRemovingPreparedPhotos() {
+    void 아웃박스_삽입이_실패하면_준비된_사진을_제거하지_않고_롤백한다() {
         var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
         assertThatThrownBy(() -> outboxService.save(tripId, userId, uploadId, prepared, null))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
@@ -421,7 +421,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void rejectsOutboxSaveForDifferentOwnerWithoutWritingMessages() {
+    void 다른_소유자의_아웃박스_저장을_거부하고_메시지를_쓰지_않는다() {
         var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
         Long otherUserId = users.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원")).getUserId();
         assertThatThrownBy(() -> outboxService.save(tripId, otherUserId, uploadId, prepared, "request-other"))
@@ -430,7 +430,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void laterBatchValidationFailureEndsAdditionButPreservesExistingTravelData() {
+    void 후속_배치_검증이_실패하면_추가를_종료하고_기존_여행_데이터를_보존한다() {
         transactions.failExecution(additionId, "TEST_RESET");
         additionId = UUID.randomUUID().toString();
         uploadId = urls.issueUploadUrls(tripId, userId, request(1, 2, false)).uploadId();
@@ -468,7 +468,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void reclassificationKeepsExistingStoryRowsAndCurrentStoryWithoutRegeneration() {
+    void 재분류는_재생성_없이_기존_스토리_행과_현재_스토리를_유지한다() {
         Long storyId = createExistingStory();
         LocalDate sourceDate = places.findById(oldPlaceId).orElseThrow().getStartedAt().toLocalDate();
         var beforeStory = jdbc.queryForMap("SELECT * FROM stories WHERE story_id = ?", storyId);
@@ -497,7 +497,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void failedAdditionPreservesExistingStoryAndItsReadablePhoto() {
+    void 추가가_실패해도_기존_스토리와_조회_가능한_사진을_유지한다() {
         Long storyId = createExistingStory();
         var beforeStory = jdbc.queryForMap("SELECT * FROM stories WHERE story_id = ?", storyId);
         var beforeBlocks = jdbc.queryForList("SELECT * FROM story_blocks WHERE story_id = ?", storyId);
@@ -515,7 +515,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void keepsStoryReadableWithSourcePlaceAndDateWhenPhotoBecomesUnclassified() {
+    void 사진이_미분류가_되어도_원본_장소와_날짜로_스토리를_조회한다() {
         Long storyId = createExistingStory();
         LocalDate sourceDate = places.findById(oldPlaceId).orElseThrow().getStartedAt().toLocalDate();
         completion.prepareBatchPhotos(tripId, userId, completeRequest());
@@ -544,7 +544,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void requiresStorySourcePlaceAndDateAndRejectsMissingSourcePlace() {
+    void 스토리의_원본_장소와_날짜는_필수이며_없는_원본_장소를_거부한다() {
         Long storyId = createExistingStory();
         var snapshot = jdbc.queryForMap("SELECT source_trip_place_id, source_date FROM story_blocks WHERE story_id = ?", storyId);
         assertThat(((Number) snapshot.get("source_trip_place_id")).longValue()).isEqualTo(oldPlaceId);
@@ -581,7 +581,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void preparesAllPhotosAndReplacesClassificationOnceWithoutChangingTripId() {
+    void 모든_사진을_준비하고_여행_ID를_유지하며_분류를_한_번_교체한다() {
         var photos = completion.prepareBatchPhotos(tripId, userId, completeRequest());
         completion.prepareBatchPhotos(tripId, userId, completeRequest());
         verify(derivatives, times(1)).createAll(eq(uploadId), anyList(), anyList());
@@ -610,7 +610,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void keepsOldClassificationOnMalformedResultAndAllowsCorrectResultRetry() {
+    void 잘못된_결과는_기존_분류를_유지하고_올바른_결과로_재시도할_수_있다() {
         completion.prepareBatchPhotos(tripId, userId, completeRequest());
         var prepared = preparation.prepare(tripId, userId, uploadId);
         assertThatThrownBy(() -> resultTransactions.saveResult(tripId, userId, additionId,
@@ -624,7 +624,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void movesPreviouslyClassifiedPhotoToUnclassifiedAndClearsOldPlaceLink() {
+    void 기존_분류_사진을_미분류로_옮기고_이전_장소_연결을_제거한다() {
         completion.prepareBatchPhotos(tripId, userId, completeRequest());
         var prepared = preparation.prepare(tripId, userId, uploadId);
         List<Map<String, Object>> unclassified = prepared.request().attachments().stream()
@@ -641,7 +641,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void failsJobWithoutDeletingOldDataAndIgnoresLateResult() {
+    void 작업이_실패해도_기존_데이터를_삭제하지_않고_늦은_결과를_무시한다() {
         completion.prepareBatchPhotos(tripId, userId, completeRequest());
         var prepared = preparation.prepare(tripId, userId, uploadId);
         results.fail(tripId, userId, additionId);
@@ -654,7 +654,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void rejectsSecondConversionClaimAndReleasesOnlyMatchingToken() {
+    void 두_번째_변환_선점을_거부하고_일치하는_토큰만_해제한다() {
         completion.verifyBatch(tripId, userId, completeRequest());
         var claim = transactions.claimConversion(tripId, userId, uploadId);
         assertThat(batchStatus()).isEqualTo("CONVERTING");
@@ -667,7 +667,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void blocksPhotoAndTripChangesWhileKeepingQueriesAvailable() {
+    void 추가_중에는_사진과_여행_변경을_막고_조회는_허용한다() {
         assertThatThrownBy(() -> deletion.deleteOne(userId, oldPhotoId))
                 .isInstanceOf(TripAttachmentAddNotAllowedException.class);
         assertThatThrownBy(() -> tripService.updateTrip(tripId, userId, new TripUpdateRequest("수정 이름", null, null, null)))
@@ -679,7 +679,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void retainFailureReusesSavedPhotosInsteadOfReconversion() {
+    void 보존_처리가_실패하면_재변환_없이_저장된_사진을_재사용한다() {
         doThrow(new IllegalStateException("test retain failure")).doNothing().when(storage).retain(anyList());
         assertThatThrownBy(() -> completion.prepareBatchPhotos(tripId, userId, completeRequest()))
                 .isInstanceOf(IllegalStateException.class).hasMessage("test retain failure");
@@ -690,7 +690,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void conversionFailureReleasesClaimAndPreservesOriginalAndExistingPhoto() {
+    void 변환이_실패하면_선점을_해제하고_원본과_기존_사진을_보존한다() {
         when(derivatives.createAll(anyString(), anyList(), anyList()))
                 .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("test conversion")));
         assertThatThrownBy(() -> completion.prepareBatchPhotos(tripId, userId, completeRequest()))
@@ -702,7 +702,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void preparesAnalysisOnlyAfterAllBatchesAndReusesPreparedInputOnRepeat() {
+    void 모든_배치_이후에만_분석을_준비하고_반복_요청은_준비된_입력을_재사용한다() {
         jdbc.update("DELETE FROM additional_attachment_upload_items WHERE object_key LIKE ?", "trip-additions/" + additionId + "/original/%");
         jdbc.update("DELETE FROM additional_attachment_upload_batches WHERE addition_id = ?", additionId);
         jdbc.update("DELETE FROM additional_attachment_executions WHERE execution_id = ?", additionId);
@@ -722,7 +722,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void concurrentIdenticalResultsCreateOnlyOneReplacement() throws Exception {
+    void 동일한_결과를_동시에_적용해도_분류를_한_번만_교체한다() throws Exception {
         var prepared = completion.prepareAddition(tripId, userId, completeRequest()).orElseThrow();
         JsonNode result = result(prepared, false);
         CountDownLatch start = new CountDownLatch(1);
@@ -744,7 +744,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void rejectsOtherJobIdentityAndMissingOrDuplicatePhotoResults() {
+    void 다른_작업_식별자와_누락되거나_중복된_사진_결과를_거부한다() {
         var prepared = completion.prepareAddition(tripId, userId, completeRequest()).orElseThrow();
         JsonNode wrongJob = json.valueToTree(Map.of("trip_id", tripId, "execution_id", "other-job", "places", List.of(), "unclassified", List.of()));
         assertThatThrownBy(() -> results.acceptResult(tripId, userId, additionId, wrongJob)).isInstanceOf(IllegalStateException.class);
@@ -762,7 +762,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void queueBatchHasOnlyNewKeysAndProcessHasAllPhotosWithSameAttemptId() {
+    void 큐_배치는_새_키만_포함하고_process는_동일한_시도_ID로_모든_사진을_포함한다() {
         var prepared = completion.prepareQueueBatch(tripId, userId, completeRequest());
         var ready = prepared.photosReady();
         var process = prepared.process().orElseThrow();
@@ -785,7 +785,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void preservesRawInitialAndAdditionalTimesAndOmitsInferredCoordinates() {
+    void 초기와_추가_사진의_원본_시각을_보존하고_추론된_좌표를_제외한다() {
         var sourceBatch = initialBatches.saveAndFlush(new InitialAttachmentUploadBatch(
                 UUID.randomUUID().toString(), UUID.randomUUID().toString(), tripId, userId, 1, 1, true));
         var sourceItem = new InitialAttachmentUploadItem(sourceBatch, 1, "old.jpg", "image/jpeg", 12L, "old-original");
@@ -807,7 +807,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void missingOriginalTimeStaysNullInsteadOfUsingAiCorrectedTime() {
+    void 원본_시각이_없으면_AI_보정_시각을_쓰지_않고_null을_유지한다() {
         jdbc.update("UPDATE trip_attachments SET taken_at = '2099-01-01 00:00:00', region_origin = 'UNKNOWN' WHERE trip_attachment_id = ?", oldPhotoId);
         var message = completion.prepareQueueBatch(tripId, userId, completeRequest())
                 .process().orElseThrow();

@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AdditionalAttachmentExecutionTest {
     @Test
-    void retriesReceivedResultWithNewOwnershipAndPreservesFailureHistory() {
+    void 수신한_결과를_새_소유권으로_재시도하고_실패_이력을_유지한다() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 13, 14, 0);
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 20, now);
@@ -39,7 +39,7 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
-    void renewsLeaseWithoutStartingAnotherAttemptOrChangingOwner() {
+    void 새_시도를_시작하거나_소유자를_바꾸지_않고_임대를_갱신한다() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 13, 14, 0);
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 20, now);
@@ -56,7 +56,7 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
-    void preservesOriginalProcessRequestAndAnalysisCountOnRepeatedAttachment() {
+    void 반복_연결은_최초_process_요청과_분석_개수를_유지한다() {
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 20, LocalDateTime.now());
         execution.attachProcessOutbox(120L, 50);
@@ -68,7 +68,7 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
-    void recordsFirstPublicationTimeOnlyAndMovesActiveExecutionToQueued() {
+    void 최초_발행_시각만_기록하고_활성_실행을_대기_상태로_옮긴다() {
         LocalDateTime first = LocalDateTime.of(2026, 10, 13, 14, 0);
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 20, first);
@@ -82,7 +82,7 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
-    void latePublicationRecordDoesNotRevertReceivedResultOrTerminalState() {
+    void 늦은_발행_기록은_수신된_결과나_종료_상태를_되돌리지_않는다() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 13, 14, 0);
         var applying = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 20, now);
@@ -99,7 +99,7 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
-    void preservesFirstResultPayloadStatusAndReceiptTimeOnRepeatedReceipt() {
+    void 중복_수신은_최초_결과_본문과_상태와_수신_시각을_유지한다() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 13, 14, 0);
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 20, now);
@@ -116,7 +116,7 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
-    void preservesFirstConflictingPayloadWithoutOverwritingAcceptedResult() {
+    void 수락한_결과를_덮어쓰지_않고_최초_충돌_본문을_보존한다() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 13, 14, 0);
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 20, now);
@@ -130,7 +130,7 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
-    void ignoresLateResultAfterExecutionHasFailed() {
+    void 실행_실패_후_늦게_온_결과를_무시한다() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 13, 14, 0);
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 20, now);
@@ -145,7 +145,7 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
-    void settlesReservationOnceWithoutReplacingOriginalAccountedBytes() {
+    void 최초_반영_바이트를_바꾸지_않고_예약량을_한_번_정산한다() {
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 20, LocalDateTime.now());
         execution.reserve(3072L);
@@ -160,7 +160,7 @@ class AdditionalAttachmentExecutionTest {
     @ParameterizedTest
     @EnumSource(value = AdditionalAttachmentExecution.Status.class,
             names = {"COMPLETED", "FAILED", "CANCELED"})
-    void preservesFirstTerminalStateAndReleasesResultClaim(AdditionalAttachmentExecution.Status status) {
+    void 최초_종료_상태를_유지하고_결과_선점을_해제한다(AdditionalAttachmentExecution.Status status) {
         LocalDateTime now = LocalDateTime.of(2026, 10, 13, 14, 0);
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 20, now);
@@ -181,7 +181,7 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
-    void transfersSavedPhotoBytesFromReservationToAccountedAndRejectsOverSettlement() {
+    void 저장된_사진_바이트를_예약량에서_사용량으로_옮기고_초과_정산을_거부한다() {
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 2, LocalDateTime.now());
         execution.reserve(3072L);
@@ -198,7 +198,7 @@ class AdditionalAttachmentExecutionTest {
     }
 
     @Test
-    void rejectsReservationOverflowWithoutReplacingPreviousAmount() {
+    void 이전_예약량을_바꾸지_않고_예약량_오버플로를_거부한다() {
         var execution = new AdditionalAttachmentExecution(
                 UUID.randomUUID().toString(), 1L, 2L, 1, LocalDateTime.now());
         execution.reserve(Long.MAX_VALUE);

@@ -78,7 +78,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void concurrentLastPhotosCreateOnePhotosReady() throws Exception {
+    void 마지막_사진들이_동시에_완료되어도_photos_ready를_하나만_생성한다() throws Exception {
         var batch = accepted(true);
         var light = claim(batch, Lane.LIGHT);
         var heic = claim(batch, Lane.HEIC);
@@ -107,7 +107,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void ambiguousBeginReusesSameAttemptForSameClaim() {
+    void 시작_결과가_불확실하면_같은_선점의_동일한_시도를_재사용한다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         Attempt firstAttempt = begin(claim);
         Attempt repeatedAttempt = begin(claim);
@@ -120,7 +120,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void duplicateSuccessDoesNotAccountAgain() {
+    void 중복_성공은_사용량을_다시_반영하지_않는다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         var attempt = begin(claim);
         long reserved = stats.findById(owner.getUserId()).orElseThrow().getStorageReservedBytes();
@@ -135,7 +135,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void oldClaimOutputIsJournaledButNotApplied() {
+    void 이전_선점의_결과는_기록만_하고_적용하지_않는다() {
         var batch = accepted(false);
         var old = claim(batch, Lane.LIGHT);
         var first = begin(old);
@@ -155,7 +155,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void retryLimitSurvivesRestart() {
+    void 재시작해도_재시도_제한을_유지한다() {
         var batch = accepted(false);
         var claim = claim(batch, Lane.LIGHT);
         for (int attemptNo = 1; attemptNo <= 3; attemptNo++) {
@@ -180,7 +180,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void inputClosedQueueWaitDoesNotTriggerUploadTimeout() {
+    void 입력_종료_후_큐_대기는_업로드_시간_초과를_유발하지_않는다() {
         var batch = accepted(false);
         jdbc.update("UPDATE trip_creation_executions SET last_upload_activity_at = ? WHERE execution_id = ?", NOW.minusDays(45), batch.executionId());
         source.failExpiredExecution(batch.executionId(), false);
@@ -192,7 +192,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void alreadyStoredPhotosFinalizeParentWithoutReconversion() {
+    void 이미_저장된_사진은_재변환_없이_부모를_완료한다() {
         var batch = accepted(false);
         jdbc.update("UPDATE initial_attachment_upload_batches SET conversion_route = 'DB' WHERE upload_batch_id = ?", batch.batchId());
         var legacy = source.claimBatch(trip.getId(), owner.getUserId(), batch.uploadId()).orElseThrow();
@@ -213,7 +213,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void rollbackBetweenPhotoTaskAndParentCompletionLeavesNoPartialState() {
+    void 사진과_작업과_부모_완료_사이에서_롤백해도_부분_상태를_남기지_않는다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         var attempt = begin(claim);
         transaction.executeWithoutResult(status -> {
@@ -230,7 +230,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void rolledBackBeginDoesNotSpendAnAttemptOrKeepPlannedKeys() {
+    void 시작을_롤백하면_시도_횟수를_소모하거나_예정_키를_남기지_않는다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         transaction.executeWithoutResult(status -> {
             assertThat(source.startPhotoAttempt(claim, itemId(claim)).attempt().attemptNo()).isEqualTo(1);
@@ -242,7 +242,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void permanentFailureReleasesOnceAndKeepsObjectsForThirtyDays() {
+    void 영구_실패는_예약량을_한_번_해제하고_객체를_30일_보존한다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         begin(claim);
         assertThat(txFailure(claim, true).status()).isEqualTo(ACK_READY);
@@ -261,7 +261,7 @@ class InitialAttachmentConversionTaskTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void cancelOrDeletePreventsLateOutputFromBecomingActive(boolean deleted) {
+    void 취소하거나_삭제하면_늦은_결과를_활성화하지_않는다(boolean deleted) {
         var claim = claim(accepted(false), Lane.LIGHT);
         var attempt = begin(claim);
         if (deleted) {
@@ -278,7 +278,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void wrongItemAndWrongKeysCannotWriteAnotherLane() {
+    void 잘못된_항목과_키로_다른_레인에_쓸_수_없다() {
         var batch = accepted(true);
         var light = claim(batch, Lane.LIGHT);
         var attempt = begin(light);
@@ -294,7 +294,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void allOverloadsRequireCallerTransaction() {
+    void 모든_오버로드는_호출자의_트랜잭션을_요구한다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         assertThatThrownBy(() -> source.startPhotoAttempt(claim, itemId(claim)))
                 .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
@@ -307,7 +307,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void retryDeadlineAndStoredPhotoHaveDistinctBeginOutcomes() {
+    void 재시도_시각과_저장된_사진은_서로_다른_시작_결과를_반환한다() {
         var batch = accepted(false);
         var claim = claim(batch, Lane.LIGHT);
         begin(claim);
@@ -326,7 +326,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void restartAfterThirdBeginFailsWithoutFourthConversion() {
+    void 세_번째_시작_후_재시작하면_네_번째_변환_없이_실패한다() {
         var batch = accepted(false);
         var claim = claim(batch, Lane.LIGHT);
         for (int number = 1; number <= 3; number++) {
@@ -344,7 +344,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void expiredOwnerOutputIsTrackedEvenBeforeAnotherClaim() {
+    void 다른_선점_전에도_만료된_소유자의_결과를_추적한다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         var attempt = begin(claim);
         expire(claim);
@@ -356,7 +356,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void lateOldOutputCannotScheduleActiveSuccessKeysOrResetRetentionClock() {
+    void 늦은_이전_결과는_활성_성공_키를_정리_예약하거나_보존_시각을_초기화하지_않는다() {
         var batch = accepted(false);
         var old = claim(batch, Lane.LIGHT);
         var first = begin(old);
@@ -377,7 +377,7 @@ class InitialAttachmentConversionTaskTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void cancellationAndPhotoSaveSerializeOnTripLock(boolean cancellationWins) throws Exception {
+    void 취소와_사진_저장은_여행_잠금으로_직렬화한다(boolean cancellationWins) throws Exception {
         var claim = claim(accepted(false), Lane.LIGHT);
         var attempt = begin(claim);
         var locked = new CountDownLatch(1);
@@ -430,7 +430,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void partialAndLaneCompletionUpdateRemainingOnceAndWaitForOtherFormat() {
+    void 부분_완료와_레인_완료는_잔여량을_한_번_갱신하고_다른_형식을_기다린다() {
         var batch = accepted(List.of(
                 new InitialAttachmentUploadUrlRequest.Attachment("first.jpg", "image/jpeg", 100L),
                 new InitialAttachmentUploadUrlRequest.Attachment("second.png", "image/png", 110L),
@@ -455,7 +455,7 @@ class InitialAttachmentConversionTaskTest {
     }
 
     @Test
-    void terminalTaskWithAnotherLiveOwnerWaitsForItsCleanup() {
+    void 종료된_작업에_다른_활성_소유자가_있으면_정리를_기다린다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         var attempt = begin(claim);
         jdbc.update("UPDATE attachment_conversion_tasks SET status = 'SUCCEEDED', claim_token = 'other', lease_until = ? WHERE task_id = ?",

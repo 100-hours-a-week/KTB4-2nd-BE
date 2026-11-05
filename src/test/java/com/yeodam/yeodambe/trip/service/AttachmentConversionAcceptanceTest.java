@@ -96,7 +96,7 @@ class AttachmentConversionAcceptanceTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void mixedBatchCreatesTwoTasksAndTwoOutboxesAtomically(Kind kind) {
+    void 혼합_배치는_작업_두_개와_아웃박스_두_개를_원자적으로_생성한다(Kind kind) {
         var batch = fixture(kind, List.of("image/jpeg", "image/png", "image/heic"));
 
         accept(batch);
@@ -136,7 +136,7 @@ class AttachmentConversionAcceptanceTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void singleFormatDoesNotCreateEmptyTask(Kind kind) {
+    void 단일_형식은_빈_작업을_생성하지_않는다(Kind kind) {
         var batch = fixture(kind, List.of("image/heic"));
         accept(batch);
         assertThat(tasks.findAll()).singleElement().satisfies(task -> {
@@ -148,7 +148,7 @@ class AttachmentConversionAcceptanceTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void duplicateAcceptanceDoesNotEnqueueAgain(Kind kind) {
+    void 중복_수락은_다시_큐에_넣지_않는다(Kind kind) {
         var batch = fixture(kind, List.of("image/jpeg", "image/heic"));
         accept(batch);
         entityManager.flush();
@@ -166,7 +166,7 @@ class AttachmentConversionAcceptanceTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void holdAcceptanceDoesNotEnqueueOrChangeRouteOnReacceptance(Kind kind) {
+    void HOLD_수락은_큐에_넣지_않고_재수락해도_경로를_바꾸지_않는다(Kind kind) {
         var batch = fixture(kind, List.of("image/jpeg"));
         setMode(AttachmentConversionRoute.HOLD);
         accept(batch);
@@ -183,7 +183,7 @@ class AttachmentConversionAcceptanceTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void heldOrKafkaBatchIsNotClaimedByLegacyWorker(Kind kind) {
+    void HOLD나_Kafka_배치는_기존_워커가_선점하지_않는다(Kind kind) {
         var batch = fixture(kind, List.of("image/jpeg"));
         setMode(AttachmentConversionRoute.DB);
         accept(batch);
@@ -210,7 +210,7 @@ class AttachmentConversionAcceptanceTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void dbAcceptanceKeepsLegacyClaimAvailable(Kind kind) {
+    void DB_수락은_기존_선점을_허용한다(Kind kind) {
         var batch = fixture(kind, List.of("image/jpeg"));
         setMode(AttachmentConversionRoute.DB);
         accept(batch);
@@ -228,7 +228,7 @@ class AttachmentConversionAcceptanceTest {
     @ParameterizedTest
     @EnumSource(Kind.class)
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void rollbackLeavesNeitherTaskNorOutbox(Kind kind) {
+    void 롤백하면_작업과_아웃박스를_남기지_않는다(Kind kind) {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             var batch = fixture(kind, List.of("image/jpeg", "image/heic"));
             accept(batch);
@@ -242,7 +242,7 @@ class AttachmentConversionAcceptanceTest {
     }
 
     @Test
-    void dbLegacyBatchWithoutExecutionCanStillBeAccepted() {
+    void 실행이_없는_기존_DB_배치도_수락할_수_있다() {
         var batch = fixture(Kind.ADDITIONAL, List.of("image/jpeg"));
         jdbc.update("DELETE FROM additional_attachment_executions WHERE trip_id = ?", batch.tripId());
         entityManager.clear();
@@ -261,7 +261,7 @@ class AttachmentConversionAcceptanceTest {
 
     @ParameterizedTest
     @EnumSource(value = AttachmentConversionRoute.class, names = {"HOLD", "KAFKA"})
-    void nonDbAcceptanceRequiresMatchingActiveExecution(AttachmentConversionRoute mode) {
+    void DB_외_경로의_수락은_일치하는_활성_실행을_요구한다(AttachmentConversionRoute mode) {
         var batch = fixture(Kind.ADDITIONAL, List.of("image/jpeg"));
         jdbc.update("DELETE FROM additional_attachment_executions WHERE trip_id = ?", batch.tripId());
         entityManager.clear();

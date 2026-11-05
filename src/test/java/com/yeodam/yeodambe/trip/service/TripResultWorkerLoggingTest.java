@@ -15,7 +15,7 @@ import static org.mockito.Mockito.*;
 
 class TripResultWorkerLoggingTest {
     @Test
-    void recoveredCreationClaimRestoresJobContextAndCallerAfterFailure() {
+    void 복구한_생성_선점은_실패_후_작업_문맥과_호출자_문맥을_복원한다() {
         var results = mock(TripAnalysisResultService.class);
         var names = mock(TripPlaceNameService.class);
         var claim = new TripAnalysisResultClaim("job-1", 42L, 1L, "token", "{}", 2);
@@ -37,7 +37,7 @@ class TripResultWorkerLoggingTest {
     }
 
     @Test
-    void recoveredAdditionalClaimKeepsItsWorkflowDuringGeocoding() {
+    void 복구한_추가_선점은_지오코딩_중_워크플로를_유지한다() {
         var results = mock(AdditionalAttachmentKafkaResultService.class);
         var names = mock(TripPlaceNameService.class);
         var claim = new TripAnalysisResultClaim("job-2", 42L, 1L, "token", "{}", 1);

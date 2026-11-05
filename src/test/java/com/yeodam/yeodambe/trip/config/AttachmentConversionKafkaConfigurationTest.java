@@ -48,7 +48,7 @@ class AttachmentConversionKafkaConfigurationTest {
             });
 
     @Test
-    void holdReceiptIsIndependentOfWorkerAndOverridesUnsafeGlobalConsumerSettings() {
+    void HOLD_수신_확인은_워커와_독립적이며_안전하지_않은_전역_컨슈머_설정을_덮어쓴다() {
         context.withPropertyValues("app.attachment-conversion.mode=HOLD", "app.attachment-conversion.retry.technical-backoff=100ms")
                 .run(ctx -> {
                     assertThat(ctx).hasNotFailed().hasBean("attachmentConversionReceiptKafkaListenerContainerFactory")
@@ -63,7 +63,7 @@ class AttachmentConversionKafkaConfigurationTest {
     }
 
     @Test
-    void kafkaWorkFactoryUsesFourIndependentAsyncSingleRecordContainers() {
+    void Kafka_작업_팩토리는_독립적인_비동기_단일_레코드_컨테이너_네_개를_사용한다() {
         configured().run(ctx -> {
             assertThat(ctx).hasNotFailed();
             var factory = ctx.getBean("attachmentConversionKafkaListenerContainerFactory", ConcurrentKafkaListenerContainerFactory.class);
@@ -79,28 +79,28 @@ class AttachmentConversionKafkaConfigurationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"DB", "HOLD", "KAFKA"})
-    void operationsNeverCreatesConversionKafkaFactories(String mode) {
+    void 운영_모드는_변환_Kafka_팩토리를_생성하지_않는다(String mode) {
         context.withPropertyValues("app.attachment-conversion.mode=" + mode,
                 "app.attachment-conversion.operations.enabled=true").run(ctx -> assertThat(ctx).hasNotFailed()
                 .doesNotHaveBean(AttachmentConversionKafkaConfiguration.class));
     }
 
     @Test
-    void defaultDbDoesNotRequireKafkaSizingOrRetryConfiguration() {
+    void 기본_DB_모드는_Kafka_용량과_재시도_설정을_요구하지_않는다() {
         context.run(ctx -> assertThat(ctx).hasNotFailed().doesNotHaveBean(AttachmentConversionKafkaConfiguration.class));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"app.attachment-conversion.kafka.fetch-max-bytes=0", "app.attachment-conversion.kafka.partition-fetch-max-bytes=-1",
             "app.attachment-conversion.kafka.max-message-bytes=0", "app.attachment-conversion.retry.technical-backoff=0ms"})
-    void kafkaRejectsInvalidRequiredSizingOrBackoff(String property) {
+    void Kafka는_잘못된_필수_용량이나_백오프_설정을_거부한다(String property) {
         configured().withPropertyValues(property).run(ctx -> assertThat(ctx).hasFailed());
     }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     @SuppressWarnings("unchecked")
-    void revokedPartitionLateCommitDoesNotPauseOrCommitNewAssignment(boolean lost) {
+    void 회수된_파티션의_늦은_커밋은_새_할당을_중지하거나_커밋하지_않는다(boolean lost) {
         configured().withPropertyValues("app.attachment-conversion.retry.technical-backoff=1ns").run(ctx -> {
             var factory = ctx.getBean("attachmentConversionKafkaListenerContainerFactory", ConcurrentKafkaListenerContainerFactory.class);
             Consumer<Object, Object> delegate = mock(Consumer.class);

@@ -23,7 +23,7 @@ class AttachmentConversionReceiptListenerTest {
     private final AttachmentConversionReceiptListener listener = new AttachmentConversionReceiptListener(transactions);
 
     @Test
-    void preservesRecordPositionWithoutInferringTopicIdentity() {
+    void 토픽_식별자를_추론하지_않고_레코드_위치를_보존한다() {
         var record = record("attachment_conversion_outbox", "id", TimestampType.LOG_APPEND_TIME, 0, 12);
         listener.consume(record);
         verify(transactions).recordPublished(new AttachmentConversionPublication("id", record.topic(), "7", "DO_NOT_LOG",
@@ -31,7 +31,7 @@ class AttachmentConversionReceiptListenerTest {
     }
 
     @Test
-    void invalidHeadersAndPositionDoNotBlockControlGroup(CapturedOutput output) {
+    void 잘못된_헤더와_위치는_제어_그룹을_막지_않는다(CapturedOutput output) {
         for (var record : java.util.List.of(
                 record(null, "id", TimestampType.LOG_APPEND_TIME, 0, 12),
                 record("story_generation_outbox", "id", TimestampType.LOG_APPEND_TIME, 0, 12),
@@ -47,7 +47,7 @@ class AttachmentConversionReceiptListenerTest {
     }
 
     @Test
-    void permanentMismatchIsSkippedWithoutLoggingPayloadOrException(CapturedOutput output) {
+    void 영구적인_불일치는_본문이나_예외를_로그에_남기지_않고_건너뛴다(CapturedOutput output) {
         doThrow(new IllegalArgumentException("DO_NOT_LOG")).when(transactions).recordPublished(any());
         assertThatCode(() -> listener.consume(record("attachment_conversion_outbox", "id", TimestampType.LOG_APPEND_TIME, 0, 12)))
                 .doesNotThrowAnyException();
@@ -55,7 +55,7 @@ class AttachmentConversionReceiptListenerTest {
     }
 
     @Test
-    void databaseFailurePropagatesForUnlimitedFactoryRetry() {
+    void DB_실패는_팩토리의_무제한_재시도를_위해_전파한다() {
         var failure = new TransientDataAccessResourceException("DO_NOT_LOG");
         doThrow(failure).when(transactions).recordPublished(any());
         assertThatThrownBy(() -> listener.consume(record("attachment_conversion_outbox", "id", TimestampType.LOG_APPEND_TIME, 0, 12)))

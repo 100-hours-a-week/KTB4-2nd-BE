@@ -93,7 +93,7 @@ class AdditionalAttachmentExecutionRepositoryTest {
     }
 
     @Test
-    void findsLatestOwnedExecutionWithDeterministicTimestampTieOrder() {
+    void 소유한_최신_실행을_조회하고_동일_시각은_일정한_순서로_정렬한다() {
         var fixture = createTrip();
         LocalDateTime now = LocalDateTime.of(2026, 10, 13, 14, 0);
         saveExecution(fixture, "ffffffff-ffff-ffff-ffff-ffffffffffff", now.minusMinutes(1));
@@ -114,7 +114,7 @@ class AdditionalAttachmentExecutionRepositoryTest {
     }
 
     @Test
-    void findsOnlyExistingExecutionByIdForUpdate() {
+    void 존재하는_실행만_ID로_잠금_조회한다() {
         var fixture = createTrip();
         String executionId = UUID.randomUUID().toString();
         saveExecution(fixture, executionId, LocalDateTime.now());
@@ -126,7 +126,7 @@ class AdditionalAttachmentExecutionRepositoryTest {
     }
 
     @Test
-    void checksUnfinishedExecutionAndCanReadLatestTerminalExecution() {
+    void 미완료_실행을_확인하고_최근_종료_실행을_조회할_수_있다() {
         var fixture = createTrip();
         String executionId = UUID.randomUUID().toString();
         assertThat(executions.existsByTripIdAndEndedAtIsNull(fixture.tripId())).isFalse();
@@ -147,7 +147,7 @@ class AdditionalAttachmentExecutionRepositoryTest {
 
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void waitsForOtherTransactionAndReadsCommittedReservationBeforeUpdating() throws Exception {
+    void 다른_트랜잭션을_기다리고_커밋된_예약량을_읽은_뒤_갱신한다() throws Exception {
         var fixture = createTrip();
         String executionId = UUID.randomUUID().toString();
         saveExecution(fixture, executionId, LocalDateTime.now());

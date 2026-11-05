@@ -84,7 +84,7 @@ class AttachmentConversionKafkaIntegrationTest {
     @TempDir private Path temporary;
 
     @Test
-    void commitWaitsForTaskDatabaseAndCleanup() throws Exception {
+    void 커밋은_작업_DB_반영과_정리를_기다린다() throws Exception {
         var db = mock(AttachmentConversionTransactionService.class, org.mockito.AdditionalAnswers.delegatesTo(database));
         var photos = mock(TripAttachmentDerivativeService.class);
         var cleanup = new CompletableFuture<DerivedPhotoKeys>();
@@ -128,7 +128,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void commitFailureKeepsTopicPausedUntilOriginalCommitConfirmed() throws Exception {
+    void 커밋이_실패하면_원래_커밋이_확인될_때까지_토픽_중지를_유지한다() throws Exception {
         var worker = mockWorker();
         var seen = new LinkedBlockingQueue<String>();
         when(worker.process(anyString(), any(), any(), anyString(), anyInt())).thenAnswer(call -> {
@@ -156,7 +156,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void heicDelayDoesNotPauseLightContainer() throws Exception {
+    void HEIC_지연은_LIGHT_컨테이너를_중지하지_않는다() throws Exception {
         var worker = mockWorker();
         var blocked = new CompletableFuture<Void>();
         var lightCompleted = new CountDownLatch(1);
@@ -180,7 +180,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void blockedHeicDltSendDoesNotBlockLightWorkOrAnotherDltCallback() throws Exception {
+    void HEIC_DLT_전송이_막혀도_LIGHT_작업과_다른_DLT_콜백을_막지_않는다() throws Exception {
         var sending = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         var dlt = mock(KafkaTemplate.class);
@@ -218,7 +218,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void dltFailureAndDatabaseFailureLeaveOriginalUncommitted() throws Exception {
+    void DLT_실패와_DB_실패는_원본을_커밋하지_않는다() throws Exception {
         var worker = mockWorker();
         var attempts = new AtomicInteger();
         when(worker.process(anyString(), any(), any(), anyString(), anyInt())).thenAnswer(call -> {
@@ -243,7 +243,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void malformedMessageIsAckedOnlyAfterDltSuccess() throws Exception {
+    void 잘못된_메시지는_DLT_전송이_성공한_뒤에만_ACK한다() throws Exception {
         var dlt = mock(KafkaTemplate.class);
         var send = new CompletableFuture<SendResult<String, String>>();
         var captured = new AtomicReference<ProducerRecord<String, String>>();
@@ -268,7 +268,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void synchronousFatalFailureAndCancelledFutureLeaveOffsetPendingWithoutUnsafeLogs() throws Exception {
+    void 동기_치명적_실패와_Future_취소는_민감한_로그_없이_오프셋을_대기시킨다() throws Exception {
         var worker = mockWorker();
         var cancelled = new CompletableFuture<Void>();
         cancelled.cancel(true);
@@ -301,7 +301,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void receiptStartsFromExistingRecordAndRetriesWithoutWorkerOrEarlyCommit() throws Exception {
+    void 수신_확인은_기존_레코드부터_시작하고_워커나_조기_커밋_없이_재시도한다() throws Exception {
         try (var h = new Harness(mockWorker(), kafka)) {
             var record = h.send(h.topics.initialLight(), "receipt-before-start");
             var received = new ReceiptProbe();
@@ -343,7 +343,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void partitionLossInjectionWaitsForTheOwningConsumer() throws Exception {
+    void 파티션_상실_주입은_소유한_컨슈머를_기다린다() throws Exception {
         try (var h = new Harness(mockWorker(), kafka)) {
             var target = new TopicPartition(h.topics.initialLight(), 0);
             var other = new TopicPartition(h.topics.initialHeic(), 0);
@@ -367,7 +367,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void partitionLostNeverAcknowledgesUnfinishedTask() throws Exception {
+    void 파티션을_상실해도_미완료_작업을_ACK하지_않는다() throws Exception {
         var worker = mockWorker();
         var unfinished = new CompletableFuture<Void>();
         var started = new CountDownLatch(1);
@@ -389,7 +389,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void thirdTransientPhotoFailureCommitsFailedExecutionBeforeAck() throws Exception {
+    void 세_번째_일시적_사진_실패는_실행_실패를_커밋한_뒤_ACK한다() throws Exception {
         var photos = mock(TripAttachmentDerivativeService.class);
         when(photos.processConversionPhoto(any(), any(), any(), any())).thenReturn(
                 CompletableFuture.failedFuture(new IllegalStateException("temporary native failure")));
@@ -423,7 +423,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void rebalanceFinishesCurrentPhotoAndResumesWithoutDuplicateAccounting() throws Exception {
+    void 리밸런싱은_현재_사진을_마치고_사용량_중복_반영_없이_재개한다() throws Exception {
         var photos = mock(TripAttachmentDerivativeService.class);
         var current = new CompletableFuture<DerivedPhotoKeys>();
         var firstOutput = new AtomicReference<DerivedPhotoKeys>();
@@ -458,7 +458,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void lostDatabaseTokenCannotApplyOldOutput() throws Exception {
+    void 소유권을_잃은_DB_토큰은_이전_결과를_적용할_수_없다() throws Exception {
         var photos = mock(TripAttachmentDerivativeService.class);
         var current = new CompletableFuture<DerivedPhotoKeys>();
         var original = new AtomicReference<com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim>();
@@ -492,7 +492,7 @@ class AttachmentConversionKafkaIntegrationTest {
     }
 
     @Test
-    void delayedDatabaseAndDltFailureKeepOffsetAcrossRestart() throws Exception {
+    void DB_지연과_DLT_실패가_있어도_재시작_후_오프셋을_유지한다() throws Exception {
         try (var h = new Harness(mockWorker(), kafka)) {
             var valid = h.send(h.topics.initialLight(), message(UUID.randomUUID().toString()));
             var malformed = h.send(h.topics.initialHeic(), "{");

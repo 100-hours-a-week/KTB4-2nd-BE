@@ -37,7 +37,7 @@ class TripProcessingStatusSyncServiceTest {
     }
 
     @Test
-    void appliesAChangedDisplayStateWhenTheVersionMatches() {
+    void 버전이_일치하면_변경된_표시_상태를_적용한다() {
         var snapshot = service.synchronizeCreation("execution", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
 
         assertThat(snapshot.tripId()).isEqualTo(7L);
@@ -53,7 +53,7 @@ class TripProcessingStatusSyncServiceTest {
     }
 
     @Test
-    void preservesTheVersionWhenTheDisplayStateIsUnchanged() {
+    void 표시_상태가_같으면_버전을_유지한다() {
         execution.updateDisplayStatus(TripDisplayStatus.PROCESSING, "EMBEDDING");
 
         var snapshot = service.synchronizeCreation("execution", 2, TripDisplayStatus.PROCESSING, "EMBEDDING");
@@ -63,7 +63,7 @@ class TripProcessingStatusSyncServiceTest {
     }
 
     @Test
-    void ignoresAnAiResponseBasedOnAnOlderVersion() {
+    void 이전_버전을_기준으로_한_AI_응답을_무시한다() {
         execution.updateDisplayStatus(TripDisplayStatus.PROCESSING, "CLUSTERING");
 
         var snapshot = service.synchronizeCreation("execution", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
@@ -74,7 +74,7 @@ class TripProcessingStatusSyncServiceTest {
     }
 
     @Test
-    void comparesAgainstTheRefreshedStateInsteadOfThePreviouslyReadEntity() {
+    void 이전에_읽은_엔티티_대신_새로_읽은_상태와_비교한다() {
         doAnswer(invocation -> {
             execution.receiveResult("{}", "COMPLETED", LocalDateTime.of(2026, 10, 29, 12, 0));
             return null;
@@ -89,7 +89,7 @@ class TripProcessingStatusSyncServiceTest {
     }
 
     @Test
-    void preservesAFinishedExecutionAndItsErrorEvenWhenTheVersionMatches() {
+    void 버전이_일치해도_종료된_실행과_오류를_유지한다() {
         execution.finish(TripCreationExecution.Status.FAILED, "AI_PROCESSING_FAILED",
                 LocalDateTime.of(2026, 10, 29, 12, 0));
 
@@ -102,7 +102,7 @@ class TripProcessingStatusSyncServiceTest {
     }
 
     @Test
-    void rejectsAMissingExecutionWithoutRefreshingAnything() {
+    void 실행이_없으면_어떤_상태도_새로_읽지_않고_거부한다() {
         when(repository.findForUpdate("missing")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.synchronizeCreation("missing", 1, TripDisplayStatus.PROCESSING, null))
@@ -112,7 +112,7 @@ class TripProcessingStatusSyncServiceTest {
     }
 
     @Test
-    void appliesAndThenPreservesAnAdditionalExecutionDisplayState() {
+    void 추가_실행의_표시_상태를_적용하고_같은_상태는_유지한다() {
         var addition = additionalExecution();
 
         var changed = service.synchronizeAddition("addition", 1, TripDisplayStatus.PROCESSING, "EMBEDDING");
@@ -130,7 +130,7 @@ class TripProcessingStatusSyncServiceTest {
     }
 
     @Test
-    void ignoresAnOlderAdditionalExecutionResponseAfterRefresh() {
+    void 새로_읽은_뒤_오래된_추가_실행_응답을_무시한다() {
         var addition = additionalExecution();
         doAnswer(invocation -> {
             addition.updateDisplayStatus(TripDisplayStatus.FINALIZING, null);
@@ -146,7 +146,7 @@ class TripProcessingStatusSyncServiceTest {
     }
 
     @Test
-    void preservesAnAdditionalExecutionFailure() {
+    void 추가_실행의_실패를_유지한다() {
         var addition = additionalExecution();
         addition.finish(AdditionalAttachmentExecution.Status.FAILED, "AI_PROCESSING_FAILED",
                 LocalDateTime.of(2026, 10, 29, 12, 0));
@@ -160,7 +160,7 @@ class TripProcessingStatusSyncServiceTest {
     }
 
     @Test
-    void rejectsAMissingAdditionalExecution() {
+    void 존재하지_않는_추가_실행을_거부한다() {
         assertThatThrownBy(() -> service.synchronizeAddition("missing", 1, TripDisplayStatus.PROCESSING, null))
                 .isInstanceOf(TripNotFoundException.class);
         verifyNoInteractions(entityManager);

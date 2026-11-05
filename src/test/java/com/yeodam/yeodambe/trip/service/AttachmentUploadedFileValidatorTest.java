@@ -21,7 +21,7 @@ class AttachmentUploadedFileValidatorTest {
     private final AttachmentUploadedFileValidator validator = new AttachmentUploadedFileValidator(storage);
 
     @Test
-    void acceptsMatchingSizeAndRejectsMismatch() {
+    void 일치하는_크기를_허용하고_불일치를_거부한다() {
         when(storage.size("photo")).thenReturn(1024L);
         assertThatCode(() -> validator.verifySize("photo", 1024L)).doesNotThrowAnyException();
         assertThatThrownBy(() -> validator.verifySize("photo", 2048L))
@@ -29,7 +29,7 @@ class AttachmentUploadedFileValidatorTest {
     }
 
     @Test
-    void distinguishesMissingObjectFromMissingBucketAndAccessDenied() {
+    void 객체_누락과_버킷_누락과_접근_거부를_구분한다() {
         when(storage.size("photo")).thenThrow(s3Failure(404, "NoSuchKey"));
         assertThatThrownBy(() -> validator.verifySize("photo", 1024))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
@@ -41,7 +41,7 @@ class AttachmentUploadedFileValidatorTest {
     }
 
     @Test
-    void acceptsJpegPngAndSupportedHeicHeaders() {
+    void JPEG와_PNG와_지원하는_HEIC_헤더를_허용한다() {
         accepts(new byte[]{(byte) 255, (byte) 216, (byte) 255}, "image/jpeg");
         accepts(new byte[]{(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, "image/png");
         for (String brand : new String[]{"heic", "heix", "heim", "heis"}) {
@@ -50,7 +50,7 @@ class AttachmentUploadedFileValidatorTest {
     }
 
     @Test
-    void rejectsDeclaredTypeMismatchAndUnrecognizedOrShortHeader() {
+    void 선언한_타입의_불일치와_알_수_없거나_짧은_헤더를_거부한다() {
         when(storage.open("photo")).thenReturn(new ByteArrayInputStream(
                 new byte[]{(byte) 255, (byte) 216, (byte) 255}));
         assertThatThrownBy(() -> validator.verifyType("photo", "image/png"))
@@ -63,7 +63,7 @@ class AttachmentUploadedFileValidatorTest {
     }
 
     @Test
-    void closesStreamWhenTypeCheckFails() throws IOException {
+    void 타입_검사가_실패하면_스트림을_닫는다() throws IOException {
         InputStream input = spy(new ByteArrayInputStream(new byte[]{(byte) 255, (byte) 216, (byte) 255}));
         when(storage.open("photo")).thenReturn(input);
         assertThatThrownBy(() -> validator.verifyType("photo", "image/png"))
@@ -72,7 +72,7 @@ class AttachmentUploadedFileValidatorTest {
     }
 
     @Test
-    void wrapsReadFailureAndClosesStream() throws IOException {
+    void 읽기_실패를_감싸고_스트림을_닫는다() throws IOException {
         InputStream input = mock(InputStream.class);
         IOException failure = new IOException("test read failure");
         when(input.readNBytes(12)).thenThrow(failure);

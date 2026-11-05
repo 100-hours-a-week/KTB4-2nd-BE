@@ -153,7 +153,7 @@ class InitialAttachmentUploadRepositoryTest {
     }
 
     @Test
-    void heldOrKafkaBatchIsNotClaimedByLegacyWorker() {
+    void HOLD나_Kafka_배치는_기존_워커가_선점하지_않는다() {
         var execution = new com.yeodam.yeodambe.trip.entity.TripCreationExecution(
                 UUID.randomUUID().toString(), trip.getId(), owner.getUserId(), 3);
         entityManager.persist(execution);

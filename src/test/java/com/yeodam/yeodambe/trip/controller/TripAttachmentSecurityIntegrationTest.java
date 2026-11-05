@@ -460,7 +460,7 @@ class TripAttachmentSecurityIntegrationTest {
     }
 
     @Test
-    void additionalCompletionRequiresAuthenticationAndCsrfAndReturnsAccepted() throws Exception {
+    void 추가_완료는_인증과_CSRF를_요구하고_Accepted를_반환한다() throws Exception {
         given(csrfTokenStore.find("upload-browser")).willReturn("csrf-token");
         mockMvc.perform(post("/trips/7/attachments").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"uploadId\":\"upload-id\"}")

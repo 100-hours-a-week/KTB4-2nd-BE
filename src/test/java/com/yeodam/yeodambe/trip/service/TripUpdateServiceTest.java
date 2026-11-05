@@ -81,7 +81,7 @@ class TripUpdateServiceTest {
     }
 
     @Test
-    void changingInformationAdvancesSequenceOnceButIdenticalInformationDoesNot() {
+    void 정보가_바뀌면_시퀀스를_한_번_증가시키고_같은_정보면_증가시키지_않는다() {
         service.updateTrip(7L, 1L, new TripUpdateRequest("변경 여행", null, null, null));
         verify(trips).advanceSequence(7L);
         clearInvocations(trips);

@@ -79,7 +79,7 @@ class S3HeaderReadHttpTest {
     }
 
     @Test
-    void headerReadRequestsOnlyFirstTwelveBytes() throws Exception {
+    void 헤더_읽기는_처음_12바이트만_요청한다() throws Exception {
         try (var input = storage.openHeader("original/photo.jpg")) {
             assertThat(input.readAllBytes()).isEqualTo(Arrays.copyOf(body, 12));
         }
@@ -88,7 +88,7 @@ class S3HeaderReadHttpTest {
     }
 
     @Test
-    void shortObjectIsNotPaddedToTwelveBytes() throws Exception {
+    void 짧은_객체는_12바이트로_채우지_않는다() throws Exception {
         body = new byte[]{1, 2};
         try (var input = storage.openHeader("short")) {
             assertThat(input.readNBytes(12)).containsExactly((byte) 1, (byte) 2);
@@ -97,7 +97,7 @@ class S3HeaderReadHttpTest {
     }
 
     @Test
-    void originalReadStillRequestsAndReturnsEntireObject() throws Exception {
+    void 원본_읽기는_계속_전체_객체를_요청하고_반환한다() throws Exception {
         try (var input = storage.open("original/photo.jpg")) {
             assertThat(input.readAllBytes()).isEqualTo(body);
         }
@@ -105,7 +105,7 @@ class S3HeaderReadHttpTest {
     }
 
     @Test
-    void missingObjectErrorIsNotConvertedToEmptyHeader() {
+    void 객체_누락_오류를_빈_헤더로_변환하지_않는다() {
         status = 404;
         body = "<Error><Code>NoSuchKey</Code><Message>missing</Message></Error>".getBytes();
         assertThatThrownBy(() -> storage.openHeader("missing"))

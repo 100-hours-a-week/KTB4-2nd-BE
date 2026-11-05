@@ -39,7 +39,7 @@ class TripStatusPollingRepositoryTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void selectsOnlyPublishedProcessingExecutionsWithoutAResult(boolean creation) {
+    void 결과가_없고_발행된_처리_중_실행만_선택한다(boolean creation) {
         String table = creation ? "trip_creation_executions" : "additional_attachment_executions";
         jdbc.update("INSERT INTO users (user_id,email,nickname) VALUES (89000,'polling@test.local','polling')");
         var fixtures = List.of(

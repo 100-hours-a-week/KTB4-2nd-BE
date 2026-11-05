@@ -45,7 +45,7 @@ class AdditionalAttachmentExecutionSchemaTest {
     }
 
     @Test
-    void storesDefaultsAndAllowsMultipleExecutionsForOneTrip() {
+    void 기본값을_저장하고_한_여행의_여러_실행을_허용한다() {
         String first = insertExecution(tripId, userId, 1);
         insertExecution(tripId, userId, 200);
         assertThat(jdbc.queryForObject(
@@ -77,7 +77,7 @@ class AdditionalAttachmentExecutionSchemaTest {
     }
 
     @Test
-    void keepsNewAndAnalysisCountsSeparateAndStoresLargeResult() {
+    void 신규_사진_수와_분석_사진_수를_구분하고_큰_결과를_저장한다() {
         String executionId = insertExecution(tripId, userId, 20);
         String payload = "{\"result\":\"" + "x".repeat(70_000) + "\"}";
         jdbc.update("""
@@ -95,7 +95,7 @@ class AdditionalAttachmentExecutionSchemaTest {
     }
 
     @Test
-    void enforcesTripUserAndOutboxReferences() {
+    void 여행과_사용자와_아웃박스_참조를_강제한다() {
         assertThatThrownBy(() -> insertExecution(Long.MAX_VALUE, userId, 1))
                 .isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> insertExecution(tripId, Long.MAX_VALUE, 1))
@@ -109,14 +109,14 @@ class AdditionalAttachmentExecutionSchemaTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, 201})
-    void rejectsInvalidNewCount(int count) {
+    void 잘못된_신규_사진_수를_거부한다(int count) {
         assertThatThrownBy(() -> insertExecution(tripId, userId, count))
                 .isInstanceOfAny(DataIntegrityViolationException.class, UncategorizedSQLException.class);
     }
 
     @ParameterizedTest
     @ValueSource(ints = {0, 201})
-    void rejectsInvalidAnalysisCount(int count) {
+    void 잘못된_분석_사진_수를_거부한다(int count) {
         String executionId = insertExecution(tripId, userId, 1);
         assertThatThrownBy(() -> jdbc.update("""
                 UPDATE additional_attachment_executions
@@ -126,7 +126,7 @@ class AdditionalAttachmentExecutionSchemaTest {
     }
 
     @Test
-    void rejectsNegativeReservedAndAccountedBytes() {
+    void 음수인_예약_바이트와_사용량_바이트를_거부한다() {
         String executionId = insertExecution(tripId, userId, 1);
         assertThatThrownBy(() -> jdbc.update("""
                 UPDATE additional_attachment_executions

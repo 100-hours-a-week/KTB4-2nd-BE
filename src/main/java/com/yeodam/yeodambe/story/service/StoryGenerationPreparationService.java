@@ -25,6 +25,17 @@ import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import java.time.ZoneId;
+import java.time.LocalDate;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HexFormat;
+import com.yeodam.yeodambe.story.entity.StoryGenerationOutbox;
+import com.yeodam.yeodambe.story.service.response.StoryPreparationSnapshot;
+import com.yeodam.yeodambe.trip.entity.Trip;
+import org.springframework.beans.factory.annotation.Value;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -52,35 +63,58 @@ public class StoryGenerationPreparationService {
     private final StoryContentDocumentFactory documentFactory;
     private final TripAttachmentRepository tripAttachmentRepository;
 
+    @Value("${app.story.mongo-native-generation-enabled:false}")
+    private boolean nativeGenerationEnabled;
+
+    @Transactional
+    public Optional<StoryContentDocument> prepareContent(
+            Long generationId,
+            StoryGenerationAiResponse response
+    ) {
+        Optional<StoryGenerationJob> active = findActiveJob(generationId, response);
+        if (active.isEmpty()) {
+            return Optional.empty();
+        }
+        StoryGenerationJob job = active.orElseThrow();
+        if (job.getPreparedContentMetadata() == null
+                && (job.getStoryId() != null || !nativeGenerationEnabled)) {
+            Long storyId = prepareLegacy(job, response);
+            return readPreparedContent(generationId, storyId, ZoneOffset.UTC);
+        }
+        return Optional.of(prepareNative(job, response));
+    }
+
     @Transactional
     public Optional<Long> prepare(
             Long generationId,
             StoryGenerationAiResponse response
     ) {
-        var job = jobRepository.findByIdForUpdate(generationId)
+        return findActiveJob(generationId, response).map(job -> prepareLegacy(job, response));
+    }
+
+    private Optional<StoryGenerationJob> findActiveJob(
+            Long generationId,
+            StoryGenerationAiResponse response
+    ) {
+        StoryGenerationJob job = jobRepository.findByIdForUpdate(generationId)
                 .orElseThrow(() -> new IllegalStateException(
                         StoryGenerationInternalErrorMessage.JOB_NOT_FOUND.message()
                 ));
-
-        if (response == null
-                || response.status() != StoryGenerationAiResponse.Status.COMPLETED) {
-            throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID
-            );
+        if (response == null || response.status() != StoryGenerationAiResponse.Status.COMPLETED) {
+            throw new InvalidStoryResultException(StoryGenerationInternalErrorMessage.AI_RESPONSE_INVALID);
         }
-
         if (!job.getTripId().equals(response.tripId())
                 || !job.getExecutionId().equals(response.executionId())) {
-            throw new InvalidStoryResultException(
-                    StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH
-            );
+            throw new InvalidStoryResultException(StoryGenerationInternalErrorMessage.AI_EXECUTION_MISMATCH);
         }
-
         if (job.isFinished() || timeoutService.expire(generationId)) {
             return Optional.empty();
         }
+        return Optional.of(job);
+    }
 
-        var trip = tripRepository.findOwnedActiveForUpdate(
+    private Long prepareLegacy(StoryGenerationJob job, StoryGenerationAiResponse response) {
+        Trip trip = tripRepository.findOwnedActiveForUpdate(
                 job.getTripId(),
                 job.getUserId()
         ).orElseThrow(TripNotFoundException::new);
@@ -89,7 +123,7 @@ public class StoryGenerationPreparationService {
             throw new StoryAlreadyExistsException();
         }
 
-        var request = readAndValidateRequest(job, response);
+        StoryGenerationMessage request = readAndValidateRequest(job, response);
         boolean firstPreparation = job.getStoryId() == null;
 
         Story story = findOrCreateStory(
@@ -101,7 +135,7 @@ public class StoryGenerationPreparationService {
             saveInitialContent(story, request, response.result());
         }
 
-        return Optional.of(story.getId());
+        return story.getId();
     }
 
     @Transactional(readOnly = true)
@@ -162,12 +196,12 @@ public class StoryGenerationPreparationService {
             StoryGenerationJob job,
             StoryGenerationAiResponse response
     ) {
-        var outbox = outboxRepository.findByGenerationId(job.getId())
+        StoryGenerationOutbox outbox = outboxRepository.findByGenerationId(job.getId())
                 .orElseThrow(() -> new IllegalStateException(
                         StoryGenerationInternalErrorMessage.OUTBOX_NOT_FOUND.message()
                 ));
 
-        var request = objectMapper.readValue(
+        StoryGenerationMessage request = objectMapper.readValue(
                 outbox.getPayload(),
                 StoryGenerationMessage.class
         );
@@ -227,7 +261,7 @@ public class StoryGenerationPreparationService {
         List<StorySelectedPlace> selectedPlaces = new ArrayList<>();
         List<Long> placeIds = new ArrayList<>();
 
-        for (var place : request.places()) {
+        for (StoryGenerationMessage.Place place : request.places()) {
             selectedPlaces.add(new StorySelectedPlace(
                     story.getId(),
                     place.tripPlaceId()
@@ -237,7 +271,7 @@ public class StoryGenerationPreparationService {
 
         selectedPlaceRepository.saveAll(selectedPlaces);
 
-        var sourcePlaces = new HashMap<Long, TripDetailPlace>();
+        Map<Long, TripDetailPlace> sourcePlaces = new HashMap<>();
 
         for (TripDetailPlace place : tripDetailPlaceRepository.findAllById(placeIds)) {
             sourcePlaces.put(place.getId(), place);
@@ -245,7 +279,7 @@ public class StoryGenerationPreparationService {
 
         List<StoryBlock> blocks = new ArrayList<>();
 
-        for (var block : result.blocks()) {
+        for (StoryGenerationAiResponse.Block block : result.blocks()) {
             TripDetailPlace sourcePlace = sourcePlaces.get(block.tripPlaceId());
 
             if (sourcePlace == null
@@ -270,6 +304,143 @@ public class StoryGenerationPreparationService {
 
         blockRepository.saveAllAndFlush(blocks);
     }
+    private StoryContentDocument prepareNative(
+            StoryGenerationJob job,
+            StoryGenerationAiResponse response
+    ) {
+        if (job.getPreparedContentMetadata() != null && job.getStoryId() == null) {
+            throw invalidMetadata();
+        }
+        Trip trip = tripRepository.findOwnedActiveForUpdate(job.getTripId(), job.getUserId())
+                .orElseThrow(TripNotFoundException::new);
+        if (storyRepository.findCurrentCompletedByTripId(trip.getId()).isPresent()) {
+            throw new StoryAlreadyExistsException();
+        }
+        StoryGenerationMessage request = readAndValidateRequest(job, response);
+        boolean firstPreparation = job.getStoryId() == null;
+        Story story = findOrCreateStory(job, response.result().storySummary());
+        List<Long> selectedPlaceIds = request.places().stream()
+                .map(StoryGenerationMessage.Place::tripPlaceId)
+                .toList();
+        Map<Long, LocalDate> currentDates = loadSourceDates(job.getTripId(), response.result());
+        Map<Long, String> previewKeys = loadResultPreviewKeys(job.getTripId(), response.result());
+        Map<Long, LocalDate> sourceDates;
+        if (firstPreparation) {
+            sourceDates = currentDates;
+        } else {
+            StoryPreparationSnapshot snapshot = readSnapshot(job.getPreparedContentMetadata());
+            sourceDates = snapshot.sourcePlaces().stream().collect(Collectors.toMap(
+                    StoryPreparationSnapshot.SourcePlace::tripPlaceId,
+                    StoryPreparationSnapshot.SourcePlace::sourceDate
+            ));
+            if (!sourceDates.keySet().equals(currentDates.keySet())) {
+                throw new InvalidStoryResultException(StoryGenerationInternalErrorMessage.PREPARED_CONTENT_MISMATCH);
+            }
+        }
+        String hash = initialContentHash(job, request, response.result(), sourceDates);
+        if (firstPreparation) {
+            List<StorySelectedPlace> selectedPlaces = selectedPlaceIds.stream()
+                    .map(placeId -> new StorySelectedPlace(story.getId(), placeId))
+                    .toList();
+            selectedPlaceRepository.saveAll(selectedPlaces);
+            List<StoryPreparationSnapshot.SourcePlace> sources = sourceDates.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .map(entry -> new StoryPreparationSnapshot.SourcePlace(entry.getKey(), entry.getValue()))
+                    .toList();
+            job.prepareContent(objectMapper.writeValueAsString(new StoryPreparationSnapshot(hash, sources)));
+        } else if (!hash.equals(readSnapshot(job.getPreparedContentMetadata()).initialContentHash())) {
+            throw new InvalidStoryResultException(StoryGenerationInternalErrorMessage.PREPARED_CONTENT_MISMATCH);
+        }
+        return documentFactory.createFromResult(
+                story, response.result(), selectedPlaceIds, sourceDates, previewKeys, hash
+        );
+    }
+
+    private Map<Long, LocalDate> loadSourceDates(Long tripId, StoryGenerationAiResponse.Result result) {
+        List<Long> placeIds = result.blocks().stream()
+                .map(StoryGenerationAiResponse.Block::tripPlaceId)
+                .distinct()
+                .toList();
+        List<TripDetailPlace> places = tripDetailPlaceRepository.findAllById(placeIds);
+        if (places.size() != placeIds.size() || places.stream().anyMatch(place ->
+                !tripId.equals(place.getTripId()) || place.getStartedAt() == null)) {
+            throw new StoryDataIntegrityException(StoryGenerationInternalErrorMessage.RESULT_SOURCE_INVALID);
+        }
+        return places.stream().collect(Collectors.toMap(
+                TripDetailPlace::getId, place -> place.getStartedAt().toLocalDate()
+        ));
+    }
+
+    private Map<Long, String> loadResultPreviewKeys(Long tripId, StoryGenerationAiResponse.Result result) {
+        List<Long> attachmentIds = result.blocks().stream()
+                .map(StoryGenerationAiResponse.Block::tripAttachmentId)
+                .toList();
+        List<TripAttachment> attachments = tripAttachmentRepository.findAllWithFileByIds(attachmentIds);
+        if (attachments.size() != attachmentIds.size() || attachments.stream().anyMatch(attachment ->
+                !tripId.equals(attachment.getTripId()) || attachment.getFile() == null)) {
+            throw new StoryDataIntegrityException(StoryGenerationInternalErrorMessage.RESULT_SOURCE_INVALID);
+        }
+        return attachments.stream()
+                .filter(attachment -> attachment.getPreviewStorageKey() != null)
+                .collect(Collectors.toMap(TripAttachment::getId, TripAttachment::getPreviewStorageKey));
+    }
+
+    private StoryPreparationSnapshot readSnapshot(String metadata) {
+        if (metadata == null) {
+            throw invalidMetadata();
+        }
+        StoryPreparationSnapshot snapshot;
+        try {
+            snapshot = objectMapper.readValue(metadata, StoryPreparationSnapshot.class);
+        } catch (tools.jackson.core.JacksonException failure) {
+            throw invalidMetadata();
+        }
+        if (snapshot == null || snapshot.initialContentHash() == null
+                || !snapshot.initialContentHash().matches("[0-9a-f]{64}")
+                || snapshot.sourcePlaces() == null || snapshot.sourcePlaces().isEmpty()
+                || snapshot.sourcePlaces().size() > 30
+                || snapshot.sourcePlaces().stream().anyMatch(place -> place == null
+                || place.tripPlaceId() == null || place.tripPlaceId() < 1 || place.sourceDate() == null)
+                || snapshot.sourcePlaces().stream().map(StoryPreparationSnapshot.SourcePlace::tripPlaceId)
+                .distinct().count() != snapshot.sourcePlaces().size()) {
+            throw invalidMetadata();
+        }
+        return snapshot;
+    }
+
+    private StoryDataIntegrityException invalidMetadata() {
+        return new StoryDataIntegrityException(StoryGenerationInternalErrorMessage.PREPARATION_METADATA_INVALID);
+    }
+
+    private String initialContentHash(
+            StoryGenerationJob job,
+            StoryGenerationMessage request,
+            StoryGenerationAiResponse.Result result,
+            Map<Long, LocalDate> sourceDates
+    ) {
+        List<List<Object>> sources = sourceDates.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> List.<Object>of(entry.getKey(), entry.getValue().toString()))
+                .toList();
+        List<List<Object>> blocks = result.blocks().stream()
+                .sorted(Comparator.comparing(StoryGenerationAiResponse.Block::orderNumber))
+                .map(block -> Arrays.<Object>asList(
+                        block.orderNumber(), block.tripPlaceId(), block.tripAttachmentId(),
+                        block.dayLabel(), block.detailSummary(), block.memo()
+                )).toList();
+        List<Object> canonical = List.of(
+                "story-init-v1", job.getId(), job.getExecutionId(), job.getTripId(), job.getStoryId(),
+                job.getMood().name(), result.storySummary(),
+                request.places().stream().map(StoryGenerationMessage.Place::tripPlaceId).toList(), sources, blocks
+        );
+        byte[] bytes = objectMapper.writeValueAsString(canonical).getBytes(StandardCharsets.UTF_8);
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException failure) {
+            throw new IllegalStateException(StoryGenerationInternalErrorMessage.CONTENT_HASH_UNAVAILABLE.message(), failure);
+        }
+    }
+
     private Map<Long, String> loadPreviewKeys(List<StoryBlock> blocks) {
         if (blocks.isEmpty()) {
             return Map.of();

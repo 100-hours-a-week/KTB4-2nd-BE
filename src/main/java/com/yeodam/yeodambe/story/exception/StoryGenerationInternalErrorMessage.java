@@ -37,6 +37,9 @@ public enum StoryGenerationInternalErrorMessage {
     MIGRATION_CONTENT_MISMATCH("스토리 본문의 MongoDB 이관 결과가 원본과 일치하지 않습니다."),
     BACKFILL_RANGE_INVALID("프리뷰 키 보정 커서는 0 이상이며 배치 크기는 1부터 500 사이여야 합니다."),
     CONTENT_VERSION_INVALID("스토리 본문의 버전 또는 블록 식별자가 올바르지 않습니다."),
+    PREPARED_CONTENT_MISMATCH("최초 준비한 스토리 결과와 재처리 결과가 일치하지 않습니다."),
+    PREPARATION_METADATA_INVALID("스토리 생성 준비 메타데이터가 올바르지 않습니다."),
+    CONTENT_HASH_UNAVAILABLE("스토리 결과 해시를 생성할 수 없습니다."),
     READ_DATA_INTEGRITY_FAILED("스토리 조회 데이터의 정합성 검증에 실패했습니다.");
     private final String message;
 

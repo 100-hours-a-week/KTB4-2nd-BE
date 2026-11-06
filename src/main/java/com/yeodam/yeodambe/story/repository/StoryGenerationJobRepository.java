@@ -25,6 +25,8 @@ public interface StoryGenerationJobRepository
             String executionId
     );
 
+    Optional<StoryGenerationJob> findByStoryId(Long storyId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select job

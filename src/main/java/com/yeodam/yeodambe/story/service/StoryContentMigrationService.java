@@ -2,6 +2,8 @@ package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.entity.StorySelectedPlace;
 import com.yeodam.yeodambe.trip.entity.Trip;
@@ -51,13 +53,19 @@ public class StoryContentMigrationService {
     private final MongoTemplate mongo;
     private final StoryBlockReferenceQuery referenceQuery;
     private final StoryValidator validator;
+    private final StoryGenerationJobRepository jobRepository;
 
     @Transactional(readOnly = true)
     public void migrateOne(Long storyId) {
         StoryContentDocument existing = storyContentRepository.findById(storyId)
                 .orElse(null);
 
-        if (existing != null
+        StoryGenerationJob job = jobRepository.findByStoryId(storyId).orElse(null);
+        boolean nativeContent = job != null && job.getPreparedContentMetadata() != null;
+        if (!nativeContent && existing != null && existing.getInitialContentHash() != null) {
+            throw nativeContentMismatch();
+        }
+        if (!nativeContent && existing != null
                 && existing.getVersion() != null
                 && existing.getVersion() > 0) {
             return;
@@ -72,6 +80,12 @@ public class StoryContentMigrationService {
                 || story.getProcessingStatus() != Story.Status.COMPLETED
                 || trip.getDeletedAt() != null
                 || !storyId.equals(trip.getCurrentStoryId())) {
+            return;
+        }
+
+        if (nativeContent) {
+            validateNativeContent(job, existing, story.getTripId());
+            validateBackfillContent(existing);
             return;
         }
 
@@ -173,7 +187,14 @@ public class StoryContentMigrationService {
                 Story story = storyRepository.findById(storyId)
                         .orElseThrow(() -> new StoryDataIntegrityException(
                                 StoryGenerationInternalErrorMessage.READ_DATA_INTEGRITY_FAILED));
-                if (content.getVersion() == null || content.getVersion() == 0) {
+                StoryGenerationJob job = jobRepository.findByStoryId(storyId).orElse(null);
+                boolean nativeContent = job != null && job.getPreparedContentMetadata() != null;
+                if (nativeContent) {
+                    validateNativeContent(job, content, story.getTripId());
+                } else if (content.getInitialContentHash() != null) {
+                    throw nativeContentMismatch();
+                }
+                if (!nativeContent && (content.getVersion() == null || content.getVersion() == 0)) {
                     StoryContentDocument expected = documentFactory.create(
                             story, selectedPlaceRepository.findAllByStoryIdOrderByIdAsc(storyId),
                             storyBlockRepository.findAllByStoryIdOrderByOrderNumberAscIdAsc(storyId),
@@ -197,6 +218,27 @@ public class StoryContentMigrationService {
                 nextAfterStoryId, documents.size(), updated, unchanged,
                 List.copyOf(conflicts), List.copyOf(invalid)
         );
+    }
+
+    private void validateNativeContent(StoryGenerationJob job, StoryContentDocument content, Long tripId) {
+        if (content == null) {
+            throw new StoryDataIntegrityException(StoryGenerationInternalErrorMessage.CONTENT_DOCUMENT_MISSING);
+        }
+        String expectedHash;
+        try {
+            expectedHash = Document.parse(job.getPreparedContentMetadata()).getString("initialContentHash");
+        } catch (IllegalArgumentException | ClassCastException failure) {
+            throw nativeContentMismatch();
+        }
+        if (expectedHash == null || !expectedHash.matches("[0-9a-f]{64}")
+                || !expectedHash.equals(content.getInitialContentHash())
+                || !job.getStoryId().equals(content.getId()) || !job.getTripId().equals(tripId)) {
+            throw nativeContentMismatch();
+        }
+    }
+
+    private StoryDataIntegrityException nativeContentMismatch() {
+        return new StoryDataIntegrityException(StoryGenerationInternalErrorMessage.PREPARATION_METADATA_INVALID);
     }
 
     private void validateBackfillContent(StoryContentDocument content) {

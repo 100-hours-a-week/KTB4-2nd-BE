@@ -1,9 +1,10 @@
 package com.yeodam.yeodambe.trip.config;
 
-import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;
+import org.redisson.config.BaseConfig;
 import org.redisson.config.Config;
+import org.redisson.config.SslVerificationMode;
 import org.redisson.config.SingleServerConfig;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.context.properties.bind.Bindable;
@@ -14,8 +15,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.env.Environment;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(TripEditLockProperties.class)
@@ -29,28 +28,31 @@ public class TripEditLockConfiguration {
             TripEditLockProperties lockProperties,
             Environment environment
     ) {
-        if (!(factory instanceof LettuceConnectionFactory lettuce)
-                || lettuce.getStandaloneConfiguration() == null) {
-            throw new IllegalStateException(TripInternalErrorMessage.EDIT_LOCK_REQUIRES_STANDALONE_REDIS.message());
-        }
-        RedisStandaloneConfiguration standalone = lettuce.getStandaloneConfiguration();
-        String scheme = lettuce.getClientConfiguration().isUseSsl() ? "rediss://" : "redis://";
-        Config config = new Config();
+        return Redisson.create(createConfig(factory, redisProperties, lockProperties, environment));
+    }
+
+    Config createConfig(
+            RedisConnectionFactory factory,
+            DataRedisProperties redisProperties,
+            TripEditLockProperties lockProperties,
+            Environment environment
+    ) {
+        Config config = TripRedissonConfigFactory.createConnectionConfig(factory, redisProperties);
         Binder binder = Binder.get(environment);
         binder.bind("app.trip.edit-lock.client", Bindable.ofInstance(config));
         config.setLockWatchdogTimeout(lockProperties.watchdogTimeout().toMillis());
-        SingleServerConfig server = config.useSingleServer()
-                .setAddress(scheme + standalone.getHostName() + ":" + standalone.getPort())
-                .setDatabase(standalone.getDatabase())
-                .setTimeout(Math.toIntExact(lettuce.getClientConfiguration().getCommandTimeout().toMillis()))
-                .setConnectTimeout(Math.toIntExact(redisProperties.getConnectTimeout().toMillis()));
+        BaseConfig<?> server;
+        if (config.isSentinelConfig()) {
+            SingleServerConfig settings = new Config().useSingleServer();
+            binder.bind("app.trip.edit-lock.client.server", Bindable.ofInstance(settings));
+            TripRedissonConfigFactory.applyServerSettings(config, settings);
+            server = config.useSentinelServers();
+        } else {
+            server = config.useSingleServer();
+        }
         binder.bind("app.trip.edit-lock.client.server", Bindable.ofInstance(server));
-        if (standalone.getUsername() != null) {
-            server.setUsername(standalone.getUsername());
-        }
-        if (standalone.getPassword().isPresent()) {
-            server.setPassword(new String(standalone.getPassword().get()));
-        }
-        return Redisson.create(config);
+        config.setSslVerificationMode(SslVerificationMode.STRICT);
+        server.setSslVerificationMode(SslVerificationMode.STRICT);
+        return config;
     }
 }

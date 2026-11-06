@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
@@ -20,7 +21,7 @@ public class TripAttachmentRedisLockClient {
     private final TripAttachmentCacheProperties properties;
 
     public TripAttachmentRedisLockClient(
-            @Lazy RedissonClient redisson,
+            @Lazy @Qualifier("photoListRedissonClient") RedissonClient redisson,
             TripAttachmentCacheProperties properties
     ) {
         this.redisson = redisson;

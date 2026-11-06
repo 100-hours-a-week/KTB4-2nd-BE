@@ -111,6 +111,21 @@ app:
     receipt-consumer-group: ${KAFKA_OUTBOX_RECEIPT_CONSUMER_GROUP:yeodam-outbox-receipts}
   public-api-prefix: /api
   trip:
+    edit-lock:
+      enabled: ${TRIP_EDIT_LOCK_ENABLED:false}
+      namespace: ${TRIP_EDIT_LOCK_NAMESPACE:yeodam:local}
+      wait-time: ${TRIP_EDIT_LOCK_WAIT_TIME:2s}
+      watchdog-timeout: ${TRIP_EDIT_LOCK_WATCHDOG_TIMEOUT:30s}
+      client:
+        threads: ${TRIP_EDIT_LOCK_THREADS:2}
+        netty-threads: ${TRIP_EDIT_LOCK_NETTY_THREADS:2}
+        server:
+          subscription-timeout: ${TRIP_EDIT_LOCK_SUBSCRIPTION_TIMEOUT_MS:1000}
+          retry-attempts: ${TRIP_EDIT_LOCK_RETRY_ATTEMPTS:0}
+          connection-minimum-idle-size: ${TRIP_EDIT_LOCK_CONNECTION_MINIMUM_IDLE_SIZE:1}
+          connection-pool-size: ${TRIP_EDIT_LOCK_CONNECTION_POOL_SIZE:8}
+          subscription-connection-minimum-idle-size: ${TRIP_EDIT_LOCK_SUBSCRIPTION_CONNECTION_MINIMUM_IDLE_SIZE:1}
+          subscription-connection-pool-size: ${TRIP_EDIT_LOCK_SUBSCRIPTION_CONNECTION_POOL_SIZE:32}
     result-worker-enabled: ${TRIP_RESULT_WORKER_ENABLED:true}
     status-polling-enabled: ${TRIP_STATUS_POLLING_ENABLED:true}
   story:

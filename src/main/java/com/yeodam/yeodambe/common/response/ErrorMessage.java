@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.common.response;
 
 public enum ErrorMessage {
+    TRIP_EDIT_BUSY,
+    TRIP_EDIT_LOCK_UNAVAILABLE,
     TRIP_EDIT_COMMAND_MISMATCH,
     TRIP_EDIT_COMMAND_RESULT_EXPIRED,
     INVALID_TRIP_SHARE_REQUEST,

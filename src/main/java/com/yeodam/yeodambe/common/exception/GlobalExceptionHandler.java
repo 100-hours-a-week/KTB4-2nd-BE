@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.common.exception;
 
+import com.yeodam.yeodambe.trip.exception.TripEditLockRejectedException;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
@@ -44,6 +45,14 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(TripEditLockRejectedException.class)
+    ResponseEntity<ApiResponse<Void>> handleTripEditLockRejected(TripEditLockRejectedException exception) {
+        boolean contended = exception.reason() == TripEditLockRejectedException.Reason.CONTENDED;
+        return ResponseEntity.status(contended ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ApiResponse<>(contended ? ErrorMessage.TRIP_EDIT_BUSY
+                        : ErrorMessage.TRIP_EDIT_LOCK_UNAVAILABLE, null));
+    }
+
     @ExceptionHandler(TripEditCommandMismatchException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     ApiResponse<Void> handleTripEditCommandMismatch(TripEditCommandMismatchException exception) {

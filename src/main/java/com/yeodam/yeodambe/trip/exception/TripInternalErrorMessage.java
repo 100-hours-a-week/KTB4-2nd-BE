@@ -1,6 +1,11 @@
 package com.yeodam.yeodambe.trip.exception;
 
 public enum TripInternalErrorMessage {
+    EDIT_LOCK_REQUIRES_STANDALONE_REDIS("여행 편집 락은 단일 Redis 연결 설정이 필요합니다."),
+    EDIT_LOCK_NAMESPACE_INVALID("여행 편집 락 namespace가 올바르지 않습니다."),
+    EDIT_LOCK_DURATION_INVALID("여행 편집 락 대기·연장 시간은 양수여야 합니다."),
+    EDIT_LOCK_REQUIRES_NEW_TRANSACTION("여행 편집 락은 DB 트랜잭션 전에 획득해야 합니다."),
+    EDIT_LOCK_REJECTED("여행 편집 요청을 접수하지 못했습니다."),
     PLACE_API_ERROR("행안부 API 오류: %s"),
     PLACE_RESPONSE_FIELD_MISSING("응답 필드가 없습니다: %s"),
     PLACE_COLLECTION_PAGE_INCOMPLETE("여행지 수집 페이지가 불완전합니다. query=%s, pageNo=%s"),

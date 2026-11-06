@@ -85,7 +85,8 @@ public class StoryContentMigrationService {
 
         if (nativeContent) {
             validateNativeContent(job, existing, story.getTripId());
-            validateBackfillContent(existing);
+            validateContentStructure(existing);
+            findValidatedVisibleBlocks(story.getTripId(), existing);
             return;
         }
 
@@ -183,7 +184,7 @@ public class StoryContentMigrationService {
             try {
                 long nextVersion = nextVersion(raw);
                 StoryContentDocument content = mongoConverter.read(StoryContentDocument.class, raw);
-                validateBackfillContent(content);
+                validateContentStructure(content);
                 Story story = storyRepository.findById(storyId)
                         .orElseThrow(() -> new StoryDataIntegrityException(
                                 StoryGenerationInternalErrorMessage.READ_DATA_INTEGRITY_FAILED));
@@ -241,7 +242,7 @@ public class StoryContentMigrationService {
         return new StoryDataIntegrityException(StoryGenerationInternalErrorMessage.PREPARATION_METADATA_INVALID);
     }
 
-    private void validateBackfillContent(StoryContentDocument content) {
+    private void validateContentStructure(StoryContentDocument content) {
         if (content.getBlocks() == null || content.getNextBlockId() == null
                 || content.getNextBlockId() < 1 || content.getMood() == null
                 || content.getStorySummary() == null || content.getSelectedPlaceIds() == null
@@ -269,16 +270,7 @@ public class StoryContentMigrationService {
     }
 
     private Document previewKeyUpdates(Long tripId, StoryContentDocument content) {
-        List<StoryContentBlock> active = content.getBlocks().stream()
-                .filter(block -> block.deletedAt() == null)
-                .toList();
-        validator.validateBlockCount(active);
-        List<StoryContentBlockDetail> details = referenceQuery.findByBlocks(active);
-        validator.validateContentBlockRelations(tripId, details);
-        List<StoryContentBlockDetail> visible = details.stream()
-                .filter(detail -> detail.attachmentDeletedAt() == null && detail.fileDeletedAt() == null)
-                .toList();
-        validator.validateContentDisplayBlocks(tripId, visible);
+        List<StoryContentBlockDetail> visible = findValidatedVisibleBlocks(tripId, content);
         Map<Long, String> keys = visible.stream().collect(Collectors.toMap(
                 detail -> detail.block().id(), StoryContentBlockDetail::currentPreviewStorageKey));
         Document updates = new Document();
@@ -290,6 +282,23 @@ public class StoryContentMigrationService {
             }
         }
         return updates;
+    }
+
+    private List<StoryContentBlockDetail> findValidatedVisibleBlocks(
+            Long tripId,
+            StoryContentDocument content
+    ) {
+        List<StoryContentBlock> active = content.getBlocks().stream()
+                .filter(block -> block.deletedAt() == null)
+                .toList();
+        validator.validateBlockCount(active);
+        List<StoryContentBlockDetail> details = referenceQuery.findByBlocks(active);
+        validator.validateContentBlockRelations(tripId, details);
+        List<StoryContentBlockDetail> visible = details.stream()
+                .filter(detail -> detail.attachmentDeletedAt() == null && detail.fileDeletedAt() == null)
+                .toList();
+        validator.validateContentDisplayBlocks(tripId, visible);
+        return visible;
     }
 
     private boolean updatePreviewKeys(Document raw, Document updates, long nextVersion) {

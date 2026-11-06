@@ -33,7 +33,9 @@ class StoryContentMigrationServiceTest {
     private final MongoConverter converter = mock(MongoConverter.class);
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final StoryContentMigrationService service = new StoryContentMigrationService(
-            stories, blocks, places, contents, new StoryContentDocumentFactory(), storage, converter, attachments);
+            stories, blocks, places, contents, new StoryContentDocumentFactory(), storage, converter, attachments,
+            mock(org.springframework.data.mongodb.core.MongoTemplate.class),
+            mock(com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery.class), new StoryValidator());
     private Story story;
     private Trip trip;
 

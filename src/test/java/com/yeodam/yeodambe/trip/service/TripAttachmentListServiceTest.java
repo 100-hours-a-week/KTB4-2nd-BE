@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import com.yeodam.yeodambe.common.exception.PlaceFolderNotFoundException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.config.TripAttachmentCacheProperties;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
@@ -36,11 +37,13 @@ class TripAttachmentListServiceTest {
     private final TripAttachmentRepository tripAttachmentRepository = mock(TripAttachmentRepository.class);
     private final TripAttachmentStorageClient storageClient = mock(TripAttachmentStorageClient.class);
     private final TripAttachmentListService service = new TripAttachmentListService(
-            tripDetailPlaceRepository,
-            tripAttachmentRepository,
+            new TripAttachmentPageReader(
+                    new TripAccessService(tripRepository, mock(TripEditAuthorizationService.class)),
+                    tripRepository, tripDetailPlaceRepository, tripAttachmentRepository, mock(TripAttachmentPageStore.class),
+                    new TripAttachmentCacheProperties(), new ObjectMapper()),
             storageClient,
-            new ObjectMapper(),
-            new TripAccessService(tripRepository, mock(TripEditAuthorizationService.class))
+            new TripAttachmentCacheProperties(),
+            mock(TripAttachmentResponseCacheService.class)
     );
 
     @Test

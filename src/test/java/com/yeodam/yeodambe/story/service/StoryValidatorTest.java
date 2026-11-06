@@ -245,7 +245,7 @@ class StoryValidatorTest {
     @Test
     void 미리보기는_한장이라도_촬영시각이_없으면_전체를_거절한다() {
         TripAttachment valid = row(1, 7, "날", null).attachment();
-        var missing = row(2, 7, "날", null).attachment();
+        TripAttachment missing = row(2, 7, "날", null).attachment();
         ReflectionTestUtils.setField(missing, "takenAt", null);
         assertThatThrownBy(() -> validator.validatePreviewAttachments(7L, 2, List.of(valid, missing)))
                 .isInstanceOf(StoryTonePreviewTakenAtMissingException.class);

@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.SharedTestMongo;
+import com.mongodb.ConnectionString;
 import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
 import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
 import com.yeodam.yeodambe.file.entity.StoredFile;
@@ -27,8 +29,14 @@ import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -53,8 +61,17 @@ import static org.mockito.Mockito.*;
 
 @SpringBootTest(properties = "app.story.mongo-native-generation-enabled=true")
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, StoryNativeGenerationIntegrationTest.MongoConfig.class})
 class StoryNativeGenerationIntegrationTest {
+    @TestConfiguration(proxyBeanMethods = false)
+    static class MongoConfig {
+        @Bean
+        @Primary
+        MongoConnectionDetails nativeMongo() {
+            return () -> new ConnectionString(SharedTestMongo.connectionString("story_native_generation_test"));
+        }
+    }
+
     @Autowired private StoryGenerationAcceptanceService acceptance;
     @Autowired private StoryGenerationPreparationService preparation;
     @Autowired private StoryGenerationCompletionService completion;
@@ -308,6 +325,36 @@ class StoryNativeGenerationIntegrationTest {
 
         assertThatThrownBy(() -> migration.migrateOne(storyId)).isInstanceOf(StoryDataIntegrityException.class);
         assertThat(contents.findById(storyId).orElseThrow().getStorySummary()).isEqualTo("편집 본문");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"sourceDate", "tripAttachmentId", "sourceTripPlaceId"})
+    void native기동검증은_편집후_본문의_공개참조와_날짜도_검증한다(String field) {
+        completion.complete(job.getId(), result("요약"));
+        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        StoryContentDocument edited = contents.findById(storyId).orElseThrow();
+        edited.updateContent(Story.Mood.CALM, "편집 본문", edited.getBlocks());
+        contents.save(edited);
+        Object invalidValue = field.equals("sourceDate") ? null : Long.MAX_VALUE;
+        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
+                new Document("$set", new Document("blocks.0." + field, invalidValue)));
+
+        assertThatThrownBy(() -> migration.migrateOne(storyId)).isInstanceOf(StoryDataIntegrityException.class);
+        assertThat(contents.findById(storyId).orElseThrow().getStorySummary()).isEqualTo("편집 본문");
+    }
+
+    @Test
+    void native기동검증도_삭제사진의_표시조건은_검사하지_않는다() {
+        completion.complete(job.getId(), result("요약"));
+        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        jdbc.update("UPDATE trip_attachments SET deleted_at = CURRENT_TIMESTAMP WHERE trip_attachment_id = ?", photo.getId());
+        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
+                new Document("$set", new Document("blocks.0.sourceDate", null)
+                        .append("blocks.0.sourceTripPlaceId", Long.MAX_VALUE)
+                        .append("blocks.0.previewStorageKey", null)));
+
+        assertThatCode(() -> migration.migrateOne(storyId)).doesNotThrowAnyException();
+        assertThat(contents.findById(storyId).orElseThrow().getVersion()).isZero();
     }
 
     private TripAttachment savePhoto(StoredFile file) {

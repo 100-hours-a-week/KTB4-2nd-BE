@@ -136,6 +136,16 @@ class TripEditAuthorizationServiceTest {
         verifyNoInteractions(shares);
     }
 
+    @Test
+    void 조회컨텍스트의_소유자정보로_같은_공유검증을_수행한다() {
+        stored(share(1L, TripSharePermission.READ, NOW.plusSeconds(5)));
+
+        TripEditAccess access = service.requireReadPermission(73L, 1L, 2L);
+
+        assertThat(access.permission()).isEqualTo("READ");
+        assertThat(access.accessValidUntil()).isEqualTo(clock.instant().plusSeconds(5));
+    }
+
     private TripShareUser share(Long issuerId, TripSharePermission permission, LocalDateTime expiresAt) {
         return new TripShareUser(73L, issuerId, 2L, permission, expiresAt, NOW.minusHours(1));
     }

@@ -37,7 +37,7 @@ import static org.mockito.Mockito.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import({TestcontainersConfiguration.class, StoryReadMongoIntegrationTest.MongoConfig.class})
+@Import({TestcontainersConfiguration.class, StoryReadMongoIntegrationTest.MongoConfig.class, StorySqlCounterConfiguration.class})
 @Transactional
 class StoryReadMongoIntegrationTest {
 
@@ -55,7 +55,8 @@ class StoryReadMongoIntegrationTest {
     @Autowired private UserRepository users;
     @Autowired private TripRepository trips;
     @Autowired private StoryRepository stories;
-    @Autowired private StoryContentRepository contents;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    private StoryContentRepository contents;
     @Autowired private TripAttachmentRepository attachments;
     @Autowired private TripDetailPlaceRepository places;
     @Autowired private StoredFileRepository files;
@@ -94,11 +95,13 @@ class StoryReadMongoIntegrationTest {
 
     @AfterEach
     void cleanMongo() {
-        if (storyId != null) contents.deleteById(storyId);
+        if (storyId != null) {
+            contents.deleteById(storyId);
+        }
     }
 
     @Test
-    void readsMongoBodyWithoutMysqlBlocksAndPreservesSnapshotDate() {
+    void SQL블록없이_Mongo본문과_원본날짜를_조회한다() {
         contents.insert(new StoryContentDocument(storyId, Story.Mood.CALM, "MongoDB 요약", List.of(placeId),
                 List.of(new StoryContentBlock(91L, photoId, placeId, LocalDate.of(2026, 10, 3),
                         "셋째 날", "문서 본문", "메모", null, null, null)), 92L));
@@ -122,10 +125,46 @@ class StoryReadMongoIntegrationTest {
     }
 
     @Test
-    void missingMongoDocumentIsNotReplacedWithMysqlBody() {
+    void 누락된_Mongo본문을_SQL로_대체하지_않는다() {
         assertThatThrownBy(() -> service.findStory(userId, tripId))
                 .isInstanceOf(StoryDataIntegrityException.class)
                 .hasMessage("완료된 스토리의 MongoDB 본문이 없습니다.");
         verifyNoInteractions(storage);
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void 정상사진_GET은_소유자2회_공유자3회_SQL을_사용한다(boolean shared) {
+        Long actorId = userId;
+        if (shared) {
+            User reader = users.save(new User(UUID.randomUUID() + "@shared-count.test", "공유"));
+            actorId = reader.getUserId();
+            LocalDateTime now = LocalDateTime.now();
+            entityManager.persist(new TripShareUser(
+                    tripId, userId, actorId, TripSharePermission.READ, now.plusDays(1), now
+            ));
+        }
+        contents.insert(new StoryContentDocument(
+                storyId, Story.Mood.PLAIN, "계측 요약", List.of(placeId),
+                List.of(new StoryContentBlock(91L, photoId, placeId, LocalDate.of(2026, 10, 3),
+                        "날", "문구", null, null, null, null)), 92L
+        ));
+        entityManager.flush();
+        entityManager.clear();
+        clearInvocations(contents);
+        when(storage.createReadUrl("preview/mongo-read")).thenReturn("signed-url");
+        StorySqlCounterConfiguration.begin();
+        try {
+            service.findStory(actorId, tripId);
+            List<String> queries = StorySqlCounterConfiguration.finish();
+
+            assertThat(queries).hasSize(shared ? 3 : 2);
+            assertThat(queries).anyMatch(sql -> sql.contains("JSON_TABLE"));
+            assertThat(queries).noneMatch(sql -> sql.contains("story_blocks"));
+            verify(contents).findById(storyId);
+            verify(contents, never()).save(any());
+        } finally {
+            StorySqlCounterConfiguration.clear();
+        }
+    }
+
 }

@@ -38,7 +38,7 @@ import static org.mockito.Mockito.*;
 
 @DataJpaTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({TestcontainersConfiguration.class, StoryReadService.class, StoryValidator.class, TripAccessService.class})
+@Import({TestcontainersConfiguration.class, StoryReadService.class, StoryValidator.class, TripAccessService.class, StoryBlockReferenceQuery.class, org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration.class})
 @ActiveProfiles("test")
 class StoryRepositoryTest {
     @MockitoBean
@@ -94,7 +94,7 @@ class StoryRepositoryTest {
         assertThat(em.find(StoryBlock.class, earlier.getId()).getMemo()).isEqualTo("편집 메모");
         verify(storage, times(2)).createReadUrl("미리보기");
         doThrow(new TripNotFoundException()).when(authorizationService)
-                .requireReadPermission(any(Trip.class), eq(-1L));
+                .requireReadPermission(anyLong(), anyLong(), eq(-1L));
         assertThatThrownBy(() -> service.findStory(-1L, trip.getId())).isInstanceOf(StoryNotFoundException.class);
         Trip loaded = em.find(Trip.class, trip.getId());
         loaded.softDelete(LocalDateTime.now());
@@ -352,6 +352,44 @@ class StoryRepositoryTest {
 
         assertThat(actual.getSourceTripPlaceId()).isEqualTo(original.getId());
         assertThat(actual.getAttachment().getTripPlaceId()).isEqualTo(current.getId());
+    }
+
+    @Test
+    void 여행과_현재완료스토리를_SQL한번으로_조회한다() {
+        Trip trip = trip();
+        Story story = story(trip, Story.Status.COMPLETED);
+        select(trip, story);
+        em.clear();
+        Statistics statistics = em.getEntityManagerFactory().unwrap(SessionFactory.class).getStatistics();
+        statistics.clear();
+
+        com.yeodam.yeodambe.story.service.response.StoryReadContext context =
+                stories.findReadContextByTripId(trip.getId()).orElseThrow();
+
+        assertThat(context.tripId()).isEqualTo(trip.getId());
+        assertThat(context.ownerId()).isEqualTo(trip.getUserId());
+        assertThat(context.storyId()).isEqualTo(story.getId());
+        assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
+    }
+
+    @Test
+    void 현재완료스토리가_없어도_여행소유자_컨텍스트를_반환한다() {
+        Trip trip = trip();
+        Story processing = story(trip, Story.Status.PROCESSING);
+        select(trip, processing);
+        em.clear();
+
+        assertThat(stories.findReadContextByTripId(trip.getId()).orElseThrow().storyId()).isNull();
+    }
+
+    @Test
+    void 삭제여행은_조회컨텍스트에서_제외한다() {
+        Trip trip = trip();
+        trip.softDelete(LocalDateTime.now());
+        em.flush();
+        em.clear();
+
+        assertThat(stories.findReadContextByTripId(trip.getId())).isEmpty();
     }
 
     private Trip trip() {

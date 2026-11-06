@@ -1,14 +1,18 @@
 package com.yeodam.yeodambe.story.service.response;
 
-import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
-import com.yeodam.yeodambe.trip.entity.TripAttachment;
-import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
+
+import java.time.LocalDateTime;
 
 public record StoryContentBlockDetail(
         StoryContentBlock block,
-        TripAttachment attachment,
-        StoredFile file,
-        TripDetailPlace place
+        Long attachmentId,
+        Long attachmentTripId,
+        LocalDateTime attachmentDeletedAt,
+        Long fileId,
+        LocalDateTime fileDeletedAt,
+        Long placeId,
+        Long placeTripId,
+        String currentPreviewStorageKey
 ) {
 }

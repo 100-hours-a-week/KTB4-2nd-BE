@@ -35,16 +35,20 @@ public class TripEditAuthorizationService {
         if (trip.getDeletedAt() != null) {
             throw new TripNotFoundException();
         }
+        return requireReadPermission(trip.getId(), trip.getUserId(), actorId);
+    }
+
+    public TripEditAccess requireReadPermission(Long tripId, Long ownerId, Long actorId) {
         Instant checkedAt = clock.instant();
         // 30초 재검증의 처리 여유를 두되 실제 공유 만료는 넘기지 않는다.
         Instant accessValidUntil = checkedAt.plusSeconds(60);
-        if (trip.getUserId().equals(actorId)) {
+        if (ownerId.equals(actorId)) {
             return new TripEditAccess("OWNER", checkedAt, accessValidUntil);
         }
 
         LocalDateTime shareCheckedAt = LocalDateTime.ofInstant(checkedAt, SHARE_ZONE);
-        TripShareUser share = shareRepository.findByTripIdAndGranteeUserId(trip.getId(), actorId)
-                .filter(found -> found.getUserId().equals(trip.getUserId()))
+        TripShareUser share = shareRepository.findByTripIdAndGranteeUserId(tripId, actorId)
+                .filter(found -> found.getUserId().equals(ownerId))
                 .filter(found -> found.isEffective(shareCheckedAt))
                 .orElseThrow(TripNotFoundException::new);
         Instant shareExpiresAt = share.getExpiresAt().atZone(SHARE_ZONE).toInstant();

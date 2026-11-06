@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -30,8 +31,9 @@ class StoryContentMigrationServiceTest {
     private final StoryContentRepository contents = mock(StoryContentRepository.class);
     private final StoryContentStorageService storage = mock(StoryContentStorageService.class);
     private final MongoConverter converter = mock(MongoConverter.class);
+    private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final StoryContentMigrationService service = new StoryContentMigrationService(
-            stories, blocks, places, contents, new StoryContentDocumentFactory(), storage, converter);
+            stories, blocks, places, contents, new StoryContentDocumentFactory(), storage, converter, attachments);
     private Story story;
     private Trip trip;
 
@@ -54,12 +56,12 @@ class StoryContentMigrationServiceTest {
     }
 
     @Test
-    void existingEditedMongoContentIsSkippedBeforeReadingMysql() {
-        var edited = document("Mongo 최신 본문");
+    void 편집된_Mongo본문은_SQL이관으로_덮어쓰지_않는다() {
+        StoryContentDocument edited = document("Mongo 최신 본문");
         ReflectionTestUtils.setField(edited, "version", 1L);
         when(contents.findById(10L)).thenReturn(Optional.of(edited));
         service.migrateOne(10L);
-        verifyNoInteractions(stories, blocks, places, storage, converter);
+        verifyNoInteractions(stories, blocks, places, storage, converter, attachments);
         verify(contents).findById(10L);
     }
 
@@ -73,12 +75,12 @@ class StoryContentMigrationServiceTest {
             case "history" -> trip.changeCurrentStory(11L);
         }
         service.migrateOne(10L);
-        verifyNoInteractions(blocks, places, storage, converter);
+        verifyNoInteractions(blocks, places, storage, converter, attachments);
     }
 
     @Test
-    void anotherBackendInitialInsertionIsStillVerified() {
-        var saved = document("이관 본문");
+    void 다른서버가_먼저삽입해도_최초내용을_검증한다() {
+        StoryContentDocument saved = document("이관 본문");
         when(contents.findById(10L)).thenReturn(Optional.empty(), Optional.of(saved));
         when(storage.insertIfAbsent(any())).thenReturn(false);
         service.migrateOne(10L);
@@ -88,15 +90,15 @@ class StoryContentMigrationServiceTest {
     }
 
     @Test
-    void insertionFailureIsPropagatedForStartupFailure() {
-        var failure = new DataAccessResourceFailureException("Mongo unavailable");
+    void 삽입실패는_기동실패로_전파한다() {
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("Mongo unavailable");
         when(storage.insertIfAbsent(any())).thenThrow(failure);
         assertThatThrownBy(() -> service.migrateOne(10L)).isSameAs(failure);
         verifyNoInteractions(converter);
     }
 
     @Test
-    void missingDocumentAfterInsertionIsRejected() {
+    void 삽입후_누락문서는_거절한다() {
         when(storage.insertIfAbsent(any())).thenReturn(true);
         when(contents.findById(10L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.migrateOne(10L))
@@ -105,7 +107,7 @@ class StoryContentMigrationServiceTest {
     }
 
     @Test
-    void mismatchedInitialDocumentIsRejected() {
+    void 최초이관내용_불일치는_거절한다() {
         when(storage.insertIfAbsent(any())).thenReturn(true);
         when(contents.findById(10L)).thenReturn(Optional.of(document("잘못된 본문")));
         doAnswer(invocation -> {
@@ -121,8 +123,8 @@ class StoryContentMigrationServiceTest {
     }
 
     @Test
-    void laterEditedMongoContentIsNotComparedWithOldMysql() {
-        var edited = document("정상적으로 수정한 본문");
+    void 뒤늦게_편집된본문은_과거SQL과_비교하지_않는다() {
+        StoryContentDocument edited = document("정상적으로 수정한 본문");
         ReflectionTestUtils.setField(edited, "version", 1L);
         when(storage.insertIfAbsent(any())).thenReturn(true);
         when(contents.findById(10L)).thenReturn(Optional.empty(), Optional.of(edited));
@@ -131,7 +133,7 @@ class StoryContentMigrationServiceTest {
     }
 
     @Test
-    void initialMismatchIsRejectedAgainOnRetry() {
+    void 최초내용_불일치는_재시도해도_거절한다() {
         when(contents.findById(10L)).thenReturn(Optional.of(document("잘못된 본문")));
         when(storage.insertIfAbsent(any())).thenReturn(false);
 
@@ -146,7 +148,7 @@ class StoryContentMigrationServiceTest {
     }
 
     private StoryContentDocument document(String summary) {
-        var document = new StoryContentDocument(10L, Story.Mood.PLAIN, summary, List.of(), List.of(), 1L);
+        StoryContentDocument document = new StoryContentDocument(10L, Story.Mood.PLAIN, summary, List.of(), List.of(), 1L);
         ReflectionTestUtils.setField(document, "version", 0L);
         return document;
     }

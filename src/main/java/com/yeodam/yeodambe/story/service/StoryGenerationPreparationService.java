@@ -30,6 +30,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
 import java.time.ZoneOffset;
+import java.util.Map;
+import java.util.stream.Collectors;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.entity.TripAttachment;
 
 @Service
 @RequiredArgsConstructor
@@ -46,6 +50,7 @@ public class StoryGenerationPreparationService {
     private final StorySelectedPlaceRepository selectedPlaceRepository;
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
     private final StoryContentDocumentFactory documentFactory;
+    private final TripAttachmentRepository tripAttachmentRepository;
 
     @Transactional
     public Optional<Long> prepare(
@@ -146,7 +151,8 @@ public class StoryGenerationPreparationService {
                 story,
                 selectedPlaces,
                 blocks,
-                sourceZone
+                sourceZone,
+                loadPreviewKeys(blocks)
         );
 
         return Optional.of(document);
@@ -264,4 +270,19 @@ public class StoryGenerationPreparationService {
 
         blockRepository.saveAllAndFlush(blocks);
     }
+    private Map<Long, String> loadPreviewKeys(List<StoryBlock> blocks) {
+        if (blocks.isEmpty()) {
+            return Map.of();
+        }
+        return tripAttachmentRepository.findAllWithFileByIds(blocks.stream()
+                        .map(StoryBlock::getTripAttachmentId)
+                        .distinct()
+                        .toList()).stream()
+                .filter(attachment -> attachment.getPreviewStorageKey() != null)
+                .collect(Collectors.toMap(
+                        TripAttachment::getId,
+                        TripAttachment::getPreviewStorageKey
+                ));
+    }
+
 }

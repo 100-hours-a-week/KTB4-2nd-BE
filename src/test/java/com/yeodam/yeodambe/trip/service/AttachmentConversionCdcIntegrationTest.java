@@ -108,7 +108,7 @@ class AttachmentConversionCdcIntegrationTest {
     }
 
     @Test
-    void receiptWithUnknownTopicIdPreservesPosition() throws Exception {
+    void 토픽_ID를_알_수_없는_수신_확인도_위치를_보존한다() throws Exception {
         assertThat(context.getBeansOfType(AttachmentConversionWorker.class)).isEmpty();
         for (var kind : AttachmentConversionTask.Kind.values()) {
             for (var lane : AttachmentConversionTask.Lane.values()) {
@@ -136,7 +136,7 @@ class AttachmentConversionCdcIntegrationTest {
     }
 
     @Test
-    void rollbackPublishesNothingThroughCdc() throws Exception {
+    void 롤백하면_CDC로_아무것도_발행하지_않는다() throws Exception {
         var rolledBack = fixture(AttachmentConversionTask.Kind.INITIAL, AttachmentConversionTask.Lane.LIGHT, true);
         var committed = fixture(AttachmentConversionTask.Kind.INITIAL, AttachmentConversionTask.Lane.LIGHT, false);
         var records = new ArrayList<ConsumerRecord<String, String>>();
@@ -156,7 +156,7 @@ class AttachmentConversionCdcIntegrationTest {
     }
 
     @Test
-    void receiptFailureDoesNotLoseOriginalPosition() throws Exception {
+    void 수신_확인이_실패해도_원래_위치를_잃지_않는다() throws Exception {
         var unavailable = new AtomicBoolean(true);
         var failures = new AtomicInteger();
         doAnswer(invocation -> {
@@ -193,7 +193,7 @@ class AttachmentConversionCdcIntegrationTest {
     }
 
     @Test
-    void malformedReceiptDoesNotBlockControlGroup() throws Exception {
+    void 잘못된_수신_확인은_제어_그룹을_막지_않는다() throws Exception {
         // Direct send exercises control-group poison handling; the valid observation below still goes through Connect.
         var bad = new ProducerRecord<String, String>(TOPICS.getFirst(), "7", "secret malformed payload");
         bad.headers().add("outbox-source", "attachment_conversion_outbox".getBytes(StandardCharsets.UTF_8));

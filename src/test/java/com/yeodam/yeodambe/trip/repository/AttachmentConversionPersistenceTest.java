@@ -68,7 +68,7 @@ class AttachmentConversionPersistenceTest {
     }
 
     @Test
-    void sameBatchAndLaneIsUnique() {
+    void 같은_배치와_레인의_조합은_유일해야_한다() {
         prepareBatch();
         for (Kind kind : Kind.values()) {
             Long batchId = kind == Kind.INITIAL ? initial.getId() : additional.getId();
@@ -84,7 +84,7 @@ class AttachmentConversionPersistenceTest {
     }
 
     @Test
-    void exactlyOneSourceBatchIsRequired() {
+    void 정확히_하나의_원본_배치가_필요하다() {
         prepareBatch();
         assertThatThrownBy(() -> insertTask(null, null, Kind.INITIAL, Lane.LIGHT, tripId))
                 .hasMessageContaining("ck_conversion_source_batch");
@@ -95,7 +95,7 @@ class AttachmentConversionPersistenceTest {
     }
 
     @Test
-    void missingParentsAreRejectedByMysqlForeignKeys() {
+    void 없는_부모는_MySQL_외래_키로_거부한다() {
         prepareBatch();
         assertThatThrownBy(() -> insertTask(Long.MAX_VALUE, null, Kind.INITIAL, Lane.LIGHT, tripId))
                 .hasMessageContaining("fk_conversion_initial_batch");
@@ -112,7 +112,7 @@ class AttachmentConversionPersistenceTest {
     }
 
     @Test
-    void deliveryCanBeReissuedWithoutDuplicatingTask() {
+    void 작업을_중복하지_않고_전달을_재발급할_수_있다() {
         prepareBatch();
         AttachmentConversionTask task = taskRepository.saveAndFlush(task(Kind.INITIAL, initial.getId(), Lane.LIGHT));
         AttachmentConversionOutbox first = outboxRepository.saveAndFlush(outbox(task, 1));
@@ -137,7 +137,7 @@ class AttachmentConversionPersistenceTest {
     }
 
     @Test
-    void persistsClaimProgressAndPublicationPosition() {
+    void 선점_진행과_발행_위치를_영속화한다() {
         prepareBatch();
         AttachmentConversionTask task = task(Kind.INITIAL, initial.getId(), Lane.LIGHT);
         LocalDateTime now = LocalDateTime.of(2026, 10, 31, 10, 0);
@@ -178,7 +178,7 @@ class AttachmentConversionPersistenceTest {
     }
 
     @Test
-    void existingBatchRoutesDefaultToDbInEntitiesAndSql() {
+    void 기존_배치_경로는_엔티티와_SQL에서_DB를_기본값으로_사용한다() {
         prepareBatch();
         assertThat(initial.getConversionRoute()).isEqualTo(AttachmentConversionRoute.DB);
         assertThat(additional.getConversionRoute()).isEqualTo(AttachmentConversionRoute.DB);
@@ -193,7 +193,7 @@ class AttachmentConversionPersistenceTest {
     }
 
     @Test
-    void migrationPreservesExistingBatchesAndConcurrentInsertCreatesOneTask() throws Exception {
+    void 마이그레이션은_기존_배치를_보존하고_동시_삽입은_작업을_하나만_생성한다() throws Exception {
         var details = SharedTestMysql.createDatabase();
         Flyway.configure().dataSource(details.getJdbcUrl(), details.getUsername(), details.getPassword())
                 .target("32").load().migrate();
@@ -259,7 +259,7 @@ class AttachmentConversionPersistenceTest {
     }
 
     @Test
-    void generatedSchemaAllowsRawBatchInsertsWithDefaultDbRoute() {
+    void 생성된_스키마는_DB_경로를_기본값으로_하는_배치의_직접_삽입을_허용한다() {
         String url = "jdbc:h2:mem:" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1;MODE=MySQL";
         var registry = new StandardServiceRegistryBuilder()
                 .applySetting("hibernate.connection.url", url)

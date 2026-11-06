@@ -31,7 +31,7 @@ class AdditionalAttachmentConversionPersistenceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 13, 12, 0);
 
     @Test
-    void migrationAndMappingsPreserveBatchLeaseAndRetryAcrossReloads() {
+    void 마이그레이션과_매핑은_재조회해도_배치_임대와_재시도를_유지한다() {
         var batch = persistBatch();
         entityManager.flush();
         assertThat(jdbcTemplate.queryForObject(
@@ -56,7 +56,7 @@ class AdditionalAttachmentConversionPersistenceTest {
     }
 
     @Test
-    void preservesLargePhotoResultAndCleanupAfterFailureAndSuccessfulRetry() {
+    void 실패와_성공적인_재시도_후에도_큰_사진_결과와_정리_정보를_보존한다() {
         var batch = persistBatch();
         var item = new AdditionalAttachmentUploadItem(batch, 1, "photo.jpg", "image/jpeg", 1024L, "original");
         entityManager.persist(item);

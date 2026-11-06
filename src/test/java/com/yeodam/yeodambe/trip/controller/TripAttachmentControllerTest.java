@@ -89,7 +89,7 @@ class TripAttachmentControllerTest {
     );
 
     @Test
-    void additionalUploadCompletionReturnsAcceptedAndBatchCount() throws Exception {
+    void 추가_업로드_완료는_Accepted와_배치_개수를_반환한다() throws Exception {
         var request = new com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadCompleteRequest("upload-id");
         when(additionalUploadCompletion.complete(7L, 1L, request)).thenReturn(
                 new com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse(7L, "QUEUED", 10));

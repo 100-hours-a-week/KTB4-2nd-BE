@@ -76,7 +76,7 @@ class TripMapCacheIntegrationTest {
     }
 
     @Test
-    void repeatMapReadUsesRedisAndSkipsRealRepositoryQueries() {
+    void 반복_지도_조회는_Redis를_사용하고_실제_저장소_조회를_생략한다() {
         var first = service.findMap(userId);
         var second = service.findMap(userId);
         assertThat(second).isEqualTo(first);
@@ -90,7 +90,7 @@ class TripMapCacheIntegrationTest {
     }
 
     @Test
-    void committedRenameChangesVersionAndReturnsNewName() {
+    void 커밋된_이름_변경은_버전을_바꾸고_새_이름을_반환한다() {
         service.findMap(userId);
         String before = cache.version(userId).orElseThrow();
         service.updateTrip(tripId, userId, new TripUpdateRequest("after", null, null, null));
@@ -101,7 +101,7 @@ class TripMapCacheIntegrationTest {
     }
 
     @Test
-    void committedPhotoDeletionRefreshesCountImageAndCoordinates() {
+    void 커밋된_사진_삭제는_개수와_이미지와_좌표를_갱신한다() {
         service.findMap(userId);
         deletions.deleteOne(userId, selectedAttachmentId);
         assertThat(service.findMap(userId).markers()).singleElement().satisfies(marker -> {

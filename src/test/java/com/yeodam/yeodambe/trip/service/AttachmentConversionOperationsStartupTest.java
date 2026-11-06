@@ -49,7 +49,7 @@ class AttachmentConversionOperationsStartupTest {
     private KafkaListenerEndpointRegistry listeners;
 
     @Test
-    void operationsStartupDoesNotRunSchedulersListenersOrBackfill() {
+    void 운영_시작은_스케줄러와_리스너와_백필을_실행하지_않는다() {
         assertThat(context.getEnvironment().getActiveProfiles()).doesNotContain("test");
         assertThat(context.getBeansOfType(ScheduledAnnotationBeanPostProcessor.class)).isEmpty();
         assertThat(listeners.getListenerContainers()).isEmpty();

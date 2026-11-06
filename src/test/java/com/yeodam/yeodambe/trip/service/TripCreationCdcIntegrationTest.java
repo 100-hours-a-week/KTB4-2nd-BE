@@ -55,7 +55,7 @@ class TripCreationCdcIntegrationTest {
     }
 
     @Test
-    void processWaitsForEveryBatchAndConfirmationIsIdempotent() {
+    void process는_모든_배치를_기다리고_발행_확인은_멱등적이다() {
         convert(1, false);
         convert(2, true);
         var ready = outboxes.findAll().stream().filter(value -> value.getTripId().equals(trip.getId())).toList();
@@ -75,7 +75,7 @@ class TripCreationCdcIntegrationTest {
     }
 
     @Test
-    void delayedReceiptStartsTimeoutAtBrokerAppendTimeAndDuplicateDoesNotExtendIt() {
+    void 지연된_수신_확인은_브로커_추가_시각부터_시간_초과를_계산하고_중복은_연장하지_않는다() {
         convert(1, false);
         convert(2, true);
         outboxes.findAll().stream().filter(value -> value.getTripId().equals(trip.getId()))
@@ -92,7 +92,7 @@ class TripCreationCdcIntegrationTest {
     }
 
     @Test
-    void rollbackDoesNotLeaveAnEventAndWrongKeyDoesNotConfirm() {
+    void 롤백은_이벤트를_남기지_않고_잘못된_키로는_발행을_확인하지_않는다() {
         convert(1, false);
         var outbox = outboxes.findAll().stream().filter(value -> value.getTripId().equals(trip.getId())).findFirst().orElseThrow();
         assertThatThrownBy(() -> transactions.recordPublished(outbox.getId(), new OutboxReceipt(
@@ -106,7 +106,7 @@ class TripCreationCdcIntegrationTest {
     }
 
     @Test
-    void rolledBackConversionLeavesNoCdcEvent() {
+    void 변환을_롤백하면_CDC_이벤트를_남기지_않는다() {
         transaction.executeWithoutResult(status -> {
             convert(1, false);
             assertThat(outboxes.findAll().stream()
@@ -120,7 +120,7 @@ class TripCreationCdcIntegrationTest {
     }
 
     @Test
-    void cancelledExecutionDoesNotEnqueueProcessOnLateConfirmation() {
+    void 취소된_실행은_늦은_발행_확인으로_process를_큐에_넣지_않는다() {
         convert(1, false);
         convert(2, true);
         transactions.cancelExecution(trip.getId(), owner.getUserId());
@@ -131,7 +131,7 @@ class TripCreationCdcIntegrationTest {
     }
 
     @Test
-    void concurrentLastBatchConfirmationsCreateOneProcess() throws Exception {
+    void 마지막_배치를_동시에_확인해도_process를_하나만_생성한다() throws Exception {
         convert(1, false);
         convert(2, true);
         var ready = outboxes.findAll().stream().filter(value -> value.getTripId().equals(trip.getId())).toList();

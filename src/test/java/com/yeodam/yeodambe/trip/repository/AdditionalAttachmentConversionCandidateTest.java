@@ -46,7 +46,7 @@ class AdditionalAttachmentConversionCandidateTest {
     }
 
     @Test
-    void selectsVerifiedAndExpiredConvertingButExcludesLiveLeaseFutureRetryAndEndedExecution() {
+    void 검증됨과_임대가_만료된_변환_중_배치를_선택하고_활성_임대와_미래_재시도와_종료_실행은_제외한다() {
         var verified = batch();
         verified.markVerified();
         var expired = batch();
@@ -80,7 +80,7 @@ class AdditionalAttachmentConversionCandidateTest {
     }
 
     @Test
-    void limitsCandidatesAndOrdersByBatchId() {
+    void 후보_수를_제한하고_배치_ID로_정렬한다() {
         var first = batch();
         first.markVerified();
         var second = batch();
@@ -99,7 +99,7 @@ class AdditionalAttachmentConversionCandidateTest {
     }
 
     @Test
-    void excludesMissingExecutionAndMismatchedTripOrOwner() {
+    void 실행_누락과_여행이나_소유자_불일치를_제외한다() {
         var missing = persistBatch(UUID.randomUUID().toString(), trip.getId(), user.getUserId());
         missing.markVerified();
         var other = new User(UUID.randomUUID() + "@yeodam.test", "other");
@@ -118,7 +118,7 @@ class AdditionalAttachmentConversionCandidateTest {
     }
 
     @Test
-    void heldOrKafkaBatchIsNotClaimedByLegacyWorker() {
+    void HOLD나_Kafka_배치는_기존_워커가_선점하지_않는다() {
         var db = batch();
         db.markVerified();
         var hold = batch();

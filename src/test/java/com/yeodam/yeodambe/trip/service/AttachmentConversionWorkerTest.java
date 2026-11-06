@@ -92,7 +92,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void guardDatabaseUncertaintyFencesAndReclaimsBeforeAnotherPhysicalAttempt() throws Exception {
+    void DB_확인_결과가_불확실하면_차단하고_재선점한_뒤_다음_물리_시도를_시작한다() throws Exception {
         var first = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         var nextOwner = new AttachmentConversionClaim(first.taskId(), "next-token", first.kind(), first.lane(), first.batchId(),
                 first.uploadId(), first.executionId(), first.tripId(), first.userId(), first.requestId(), first.photos());
@@ -143,7 +143,7 @@ class AttachmentConversionWorkerTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void stopOrRevokeWhileDatabaseOutcomeIsBlockedPreventsNextPhoto(boolean stop) throws Exception {
+    void DB_결과가_막힌_동안_중단하거나_선점을_회수하면_다음_사진을_시작하지_않는다(boolean stop) throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 2);
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
@@ -174,7 +174,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void invalidInternalRoutingIsRejectedBeforeAdmission() {
+    void 잘못된_내부_라우팅은_진입_허용_검사_전에_거부한다() {
         assertThatThrownBy(() -> worker.process("id", null, Lane.LIGHT, topics.additionalLight(), 0))
                 .isInstanceOf(com.yeodam.yeodambe.trip.client.InvalidAttachmentConversionMessageException.class);
         assertThatThrownBy(() -> worker.process("id", Kind.INITIAL, null, topics.initialLight(), 0))
@@ -183,7 +183,7 @@ class AttachmentConversionWorkerTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void photoFailureIsCommittedBeforeAckOrNextPersistedAttempt(boolean permanent) throws Exception {
+    void 사진_실패를_커밋한_뒤_ACK하거나_다음_시도를_영속화한다(boolean permanent) throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         var beginCount = new AtomicInteger();
         when(db.beginPhoto(eq(claim), anyLong())).thenAnswer(call -> new AttachmentConversionAttemptResult(
@@ -216,7 +216,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void kafkaWorkerWiringRequiresExplicitPositiveBackoff() {
+    void Kafka_워커_설정은_명시적인_양수_백오프를_요구한다() {
         var runner = new ApplicationContextRunner().withUserConfiguration(AttachmentConversionWorker.class)
                 .withBean(AttachmentConversionTransactionService.class, () -> db)
                 .withBean(TripAttachmentDerivativeService.class, () -> photos)
@@ -240,7 +240,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void dbHoldAndOperationsStartupDoNotRequireWorkerNumbers() {
+    void DB와_HOLD와_운영_시작은_워커_수치_설정을_요구하지_않는다() {
         for (String[] config : List.of(new String[]{"app.attachment-conversion.mode=DB"},
                 new String[]{"app.attachment-conversion.mode=HOLD"},
                 new String[]{"app.attachment-conversion.mode=KAFKA", "app.attachment-conversion.operations.enabled=true"})) {
@@ -251,7 +251,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void fencingDoesNotAcknowledgeAnUnfinishedTask() throws Exception {
+    void 소유권이_차단되어도_미완료_작업을_ACK하지_않는다() throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         var checked = new CountDownLatch(1);
         var polls = new AtomicInteger();
@@ -273,7 +273,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void storedSnapshotFinalizesParentWithoutStartingAnAttempt() throws Exception {
+    void 저장된_스냅샷은_새_시도_없이_부모를_완료한다() throws Exception {
         var base = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         var saved = new Photo(1L, "image/jpeg", "original/1", 100, 1, null, new DerivedPhotoKeys("original/1", "a", "p"));
         var claim = new AttachmentConversionClaim(base.taskId(), base.claimToken(), base.kind(), base.lane(), base.batchId(),
@@ -286,7 +286,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void fourTasksNeverBecomeMoreThanTwoPhotos() throws Exception {
+    void 네_작업을_받아도_동시에_두_사진을_초과해_처리하지_않는다() throws Exception {
         var futures = new ArrayList<CompletableFuture<Void>>();
         for (Lane lane : Lane.values()) {
             for (Kind kind : Kind.values()) {
@@ -307,7 +307,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void sameLaneAlternatesKindsAfterEachPhoto() throws Exception {
+    void 같은_레인은_사진마다_작업_종류를_번갈아_처리한다() throws Exception {
         var first = fixture(Kind.INITIAL, Lane.LIGHT, 2);
         var second = fixture(Kind.ADDITIONAL, Lane.LIGHT, 1);
         var a = process(first);
@@ -324,7 +324,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void waitingOrRetryingKindDoesNotBlockOtherKind() throws Exception {
+    void 대기하거나_재시도하는_종류는_다른_종류를_막지_않는다() throws Exception {
         var delayed = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         when(db.beginPhoto(eq(delayed), anyLong())).thenReturn(new AttachmentConversionAttemptResult(
                 AttachmentConversionAttemptResult.Status.RETRY_LATER, null, LocalDateTime.now().plusHours(1)));
@@ -339,7 +339,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void databaseOutcomeRetryDoesNotReconvertPhoto() throws Exception {
+    void DB_결과_재시도는_사진을_재변환하지_않는다() throws Exception {
         var first = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         var saves = new AtomicInteger();
         var failure = new CountDownLatch(1);
@@ -366,7 +366,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void technicalFailureWaitsBeforeRetryWithoutConsumingAttempt() throws Exception {
+    void 기술적_실패는_시도_횟수를_소모하지_않고_대기_후_재시도한다() throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         var attempts = new AtomicInteger();
         var firstAt = new AtomicLong();
@@ -389,7 +389,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void shutdownWaitsForNativeAndPutCleanup() throws Exception {
+    void 종료는_네이티브_처리와_PUT_정리를_기다린다() throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 2);
         var result = process(claim);
         var photo = next();
@@ -407,7 +407,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void longQueueWaitDoesNotConsumeAttempt() throws Exception {
+    void 긴_큐_대기는_시도_횟수를_소모하지_않는다() throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         when(db.claim(eq(claim.taskId()), any(), any())).thenReturn(new AttachmentConversionClaimResult(
                 AttachmentConversionClaimResult.Status.RETRY_LATER, null, LocalDateTime.now().plusYears(1)));
@@ -425,7 +425,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void releasedClaimIsObservedBeforePreviousLeaseDeadline() throws Exception {
+    void 해제된_선점은_기존_임대_만료_전에_확인한다() throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         when(db.claim(eq(claim.taskId()), any(), any())).thenReturn(
                 new AttachmentConversionClaimResult(AttachmentConversionClaimResult.Status.RETRY_LATER, null, LocalDateTime.now().plusMinutes(10)),
@@ -437,7 +437,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void revokeWaitsForDatabaseSettlementAndClaimReleaseWithoutAckingUnfinishedTask() throws Exception {
+    void 선점_회수는_미완료_작업을_ACK하지_않고_DB_확정과_선점_해제를_기다린다() throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 2);
         var result = process(claim);
         var photo = next();
@@ -462,7 +462,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void schedulerRejectionRetriesSameAttemptWithoutBusinessFailure() throws Exception {
+    void 스케줄러_거부는_비즈니스_실패_없이_같은_시도를_재시도한다() throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         var result = process(claim);
         next().result().completeExceptionally(new RejectedExecutionException("scheduler full"));
@@ -473,7 +473,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void beginAlreadySavedAndAckReadyDoNotRunPhotoProcessing() throws Exception {
+    void 시작_결과가_ALREADY_SAVED나_ACK_READY이면_사진을_처리하지_않는다() throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 2);
         when(db.beginPhoto(eq(claim), anyLong())).thenReturn(
                 new AttachmentConversionAttemptResult(AttachmentConversionAttemptResult.Status.ALREADY_SAVED, null, null),
@@ -483,7 +483,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void fencedPhotoRetainsLaneUntilDatabaseOutcomeIsConfirmed() throws Exception {
+    void 소유권이_차단된_사진은_DB_결과가_확정될_때까지_레인을_유지한다() throws Exception {
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
         var first = process(claim);
         var photo = next();
@@ -508,7 +508,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void stopDoesNotWaitForLongBackoffBeforeReleasingAnIdleClaim() throws Exception {
+    void 중단은_긴_백오프를_기다리지_않고_유휴_선점을_해제한다() throws Exception {
         worker.close();
         worker = new AttachmentConversionWorker(db, photos, topics, Duration.ofMinutes(2));
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
@@ -526,7 +526,7 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
-    void leaseRenewalRunsWhileTechnicalBackoffIsLongerThanRenewalCadence() throws Exception {
+    void 기술적_백오프가_갱신_주기보다_길어도_임대를_갱신한다() throws Exception {
         worker.close();
         worker = new AttachmentConversionWorker(db, photos, topics, Duration.ofMinutes(2));
         var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);

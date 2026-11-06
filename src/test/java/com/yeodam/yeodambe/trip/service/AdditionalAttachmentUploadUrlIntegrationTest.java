@@ -78,7 +78,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"QUEUED", "PROCESSING"})
-    void rejectsActiveStoryBeforeReservingOrIssuingUrls(String status) {
+    void 진행_중인_스토리가_있으면_예약과_URL_발급_전에_거부한다(String status) {
         var job = new StoryGenerationJob(UUID.randomUUID().toString(), tripId, userId, Story.Mood.PLAIN);
         if (status.equals("PROCESSING")) job.updateProcessing(10);
         storyJobs.saveAndFlush(job);
@@ -96,7 +96,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"FAILED", "CANCELED"})
-    void permitsPhotoAdditionAfterStoryJobHasEnded(String status) {
+    void 스토리_작업이_끝나면_사진_추가를_허용한다(String status) {
         var job = new StoryGenerationJob(UUID.randomUUID().toString(), tripId, userId, Story.Mood.PLAIN);
         if (status.equals("FAILED")) job.fail("TEST_FAILURE");
         else job.cancel();
@@ -108,7 +108,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"QUEUED", "PROCESSING"})
-    void rejectsCompletionBeforeS3VerificationWhenStoryIsActive(String status) {
+    void 진행_중인_스토리가_있으면_S3_검증_전에_완료_요청을_거부한다(String status) {
         var issued = service.issueUploadUrls(tripId, userId, request());
         var job = new StoryGenerationJob(UUID.randomUUID().toString(), tripId, userId, Story.Mood.PLAIN);
         if (status.equals("PROCESSING")) job.updateProcessing(10);
@@ -126,7 +126,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"QUEUED", "PROCESSING"})
-    void rejectsMarkVerifiedWithoutChangingBatchWhenStoryIsActive(String status) {
+    void 진행_중인_스토리가_있으면_배치를_변경하지_않고_검증_완료_처리를_거부한다(String status) {
         var issued = service.issueUploadUrls(tripId, userId, request());
         var job = new StoryGenerationJob(UUID.randomUUID().toString(), tripId, userId, Story.Mood.PLAIN);
         if (status.equals("PROCESSING")) job.updateProcessing(10);
@@ -143,7 +143,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void includesExistingPhotosInTwoHundredPhotoLimitBeforeIssuingUrls() {
+    void URL_발급_전_사진_200장_제한에_기존_사진도_포함한다() {
         String key = "existing/" + UUID.randomUUID();
         jdbcTemplate.update("INSERT INTO files (user_id, original_file_name, object_key, mime_type, original_size_bytes) "
                 + "VALUES (?, 'old.jpg', ?, 'image/jpeg', 1024)", userId, key);
@@ -166,7 +166,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void refusesOtherOwnerAndDeletedTripBeforeSavingBatchOrIssuingUrls() {
+    void 다른_소유자와_삭제된_여행은_배치_저장과_URL_발급_전에_거부한다() {
         Long otherUserId = userRepository.save(new User(UUID.randomUUID() + "@yeodam.test", "다른회원")).getUserId();
         assertThatThrownBy(() -> service.issueUploadUrls(tripId, otherUserId, request()))
                 .isInstanceOf(TripNotFoundException.class);
@@ -180,7 +180,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"PROCESSING", "FAILED"})
-    void refusesTripThatHasNotCompletedBeforeSavingBatchOrIssuingUrls(String processingStatus) {
+    void 완료되지_않은_여행은_배치_저장과_URL_발급_전에_거부한다(String processingStatus) {
         jdbcTemplate.update("UPDATE trips SET processing_status = ? WHERE trip_id = ?", processingStatus, tripId);
         assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, request()))
                 .isInstanceOf(TripAttachmentAddNotAllowedException.class);
@@ -190,7 +190,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void issuesOrderedUrlsAndReusesCommittedBatchAndKeysOnRepeat() {
+    void URL을_순서대로_발급하고_반복_요청은_커밋된_배치와_키를_재사용한다() {
         OffsetDateTime earliest = OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(10);
         var response = service.issueUploadUrls(tripId, userId, request());
         OffsetDateTime latest = OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(10);
@@ -219,7 +219,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void rollsBackNewBatchAndFilesWhenSecondUrlCannotBeIssued() {
+    void 두_번째_URL_발급이_실패하면_새_배치와_파일을_롤백한다() {
         when(storage.createUploadUrl(anyString(), anyString(), eq(Duration.ofMinutes(10))))
                 .thenReturn("https://example.test/first")
                 .thenThrow(new IllegalStateException("test presign failure"));
@@ -236,7 +236,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void refusesNewUrlsForBatchAlreadyVerified() {
+    void 이미_검증된_배치의_새_URL_발급을_거부한다() {
         var response = service.issueUploadUrls(tripId, userId, request());
         jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET status = 'VERIFIED' WHERE upload_id = ?",
                 response.uploadId());
@@ -256,7 +256,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void createsUploadingExecutionWithDeclaredCountAndDatabaseActivityTime() {
+    void 요청한_사진_수와_DB_활동_시각으로_업로드_중인_실행을_생성한다() {
         service.issueUploadUrls(tripId, userId, request());
 
         Map<String, Object> execution = jdbcTemplate.queryForMap(
@@ -279,7 +279,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void addsOnlyNewBatchBytesToSameExecutionAndMemberReservation() {
+    void 같은_실행과_회원_예약량에_새_배치의_바이트만_추가한다() {
         var first = new AdditionalAttachmentUploadUrlRequest(additionId, 1, 3, false, request().attachments());
         var firstResponse = service.issueUploadUrls(tripId, userId, first);
         jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET status = 'VERIFIED' WHERE upload_id = ?",
@@ -299,7 +299,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void rollsBackNewExecutionWhenMemberCapacityIsInsufficient() {
+    void 회원_용량이_부족하면_새_실행을_롤백한다() {
         jdbcTemplate.update("UPDATE user_stats SET storage_maximum_bytes = 3071 WHERE user_id = ?", userId);
 
         assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, request()))
@@ -313,7 +313,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void refreshesActivityOnPendingBatchReissueWithoutReservingAgain() {
+    void 대기_배치_재발급은_다시_예약하지_않고_활동_시각을_갱신한다() {
         service.issueUploadUrls(tripId, userId, request());
         jdbcTemplate.update("UPDATE additional_attachment_executions "
                 + "SET last_upload_activity_at = '2020-01-01 00:00:00' WHERE execution_id = ?", additionId);
@@ -328,7 +328,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void rejectsNewBatchAfterInputClosedAndRejectsReissueAfterExecutionEnded() {
+    void 입력_종료_후_새_배치를_거부하고_실행_종료_후_재발급을_거부한다() {
         var first = new AdditionalAttachmentUploadUrlRequest(additionId, 1, 3, false, request().attachments());
         var response = service.issueUploadUrls(tripId, userId, first);
         jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET status = 'VERIFIED' WHERE upload_id = ?",
@@ -367,7 +367,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void verifiesEveryFileOutsideTransactionAndPersistsStateOnce() {
+    void 모든_파일을_트랜잭션_밖에서_검증하고_상태를_한_번_저장한다() {
         var response = service.issueUploadUrls(tripId, userId, request());
         configureUploadedFiles();
         clearInvocations(storage);
@@ -389,7 +389,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void endsExecutionWhenLaterFileSizeIsWrongAndAllowsNewAddition() {
+    void 후속_파일의_크기가_틀리면_실행을_종료하고_새_추가를_허용한다() {
         var response = service.issueUploadUrls(tripId, userId, request());
         configureUploadedFiles();
         String secondKey = jdbcTemplate.queryForObject(
@@ -415,7 +415,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void rejectsUploadIdOfAnotherTripBeforeAccessingStorage() {
+    void 다른_여행의_업로드_ID는_스토리지_접근_전에_거부한다() {
         var response = service.issueUploadUrls(tripId, userId, request());
         Long otherTripId = tripRepository.save(
                 new Trip(userId, "다른 완료 여행", LocalDate.now(), LocalDate.now())).getId();
@@ -430,7 +430,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void rejectsMissingUploadIdAndAlreadyProcessingBatch() {
+    void 누락된_업로드_ID와_이미_처리_중인_배치를_거부한다() {
         assertThatThrownBy(() -> completionService.verifyBatch(tripId, userId, null))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
         assertThatThrownBy(() -> completionService.verifyBatch(tripId, userId,
@@ -449,7 +449,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"unsupported", "mismatch"})
-    void endsExecutionOnInvalidFileHeaderWithoutWaitingForTimeout(String kind) {
+    void 잘못된_파일_헤더는_시간_초과를_기다리지_않고_실행을_종료한다(String kind) {
         var issued = service.issueUploadUrls(tripId, userId, request());
         configureUploadedFiles();
         doAnswer(call -> new ByteArrayInputStream(
@@ -466,7 +466,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void transientS3FailureKeepsExecutionAndReservationForRetry() {
+    void 일시적인_S3_실패는_재시도를_위해_실행과_예약량을_유지한다() {
         var issued = service.issueUploadUrls(tripId, userId, request());
         configureUploadedFiles();
         doThrow(S3Exception.builder().statusCode(503).message("unavailable").build()).when(storage).size(anyString());
@@ -508,7 +508,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void savesFilesAttachmentsAndOffsetsAndReusesTheirIdsOnRepeat() {
+    void 파일과_첨부와_시차를_저장하고_반복_요청은_기존_ID를_재사용한다() {
         String uploadId = verifiedBatch();
         var derived = derivedPhotos();
 
@@ -541,7 +541,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void rollsBackFirstPhotoWhenSecondPhotoOriginalKeyIsWrong() {
+    void 두_번째_사진의_원본_키가_틀리면_첫_사진도_롤백한다() {
         String uploadId = verifiedBatch();
         var derived = derivedPhotos();
         var wrong = new DerivedPhotoKeys("wrong-original", "wrong-analyze", "wrong-preview");
@@ -554,7 +554,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void rollsBackFirstPhotoWhenSecondPhotoSizeMetadataIsMissing() {
+    void 두_번째_사진의_크기_메타데이터가_없으면_첫_사진도_롤백한다() {
         String uploadId = verifiedBatch();
         var derived = derivedPhotos();
         var incomplete = new DerivedPhotoKeys(derived.get(1).originalKey(), "analyze", "preview");
@@ -567,7 +567,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void rejectsAttachmentSaveBeforeS3Verification() {
+    void S3_검증_전에는_첨부_저장을_거부한다() {
         var response = service.issueUploadUrls(tripId, userId, request());
         assertThatThrownBy(() -> transactionService.saveAttachments(
                 tripId, userId, response.uploadId(), derivedPhotos()))

@@ -97,7 +97,7 @@ class AttachmentConversionAdmissionHttpTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void staleOrMissingSnapshotRejectsOnlyNewExecution(boolean initial) throws Exception {
+    void 스냅샷이_오래되거나_없으면_새_실행만_거부한다(boolean initial) throws Exception {
         prepareTrip(initial);
         setMode(AttachmentConversionRoute.KAFKA);
         mvc.perform(request(initial, 1, 1, true)).andExpect(status().isServiceUnavailable())
@@ -108,7 +108,7 @@ class AttachmentConversionAdmissionHttpTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void rejectionDoesNotReserveBytesOrIssueUrls(boolean initial) throws Exception {
+    void 진입이_거부되면_바이트를_예약하거나_URL을_발급하지_않는다(boolean initial) throws Exception {
         prepareTrip(initial);
         setMode(AttachmentConversionRoute.HOLD);
         mvc.perform(request(initial, 1, 1, true)).andExpect(status().isServiceUnavailable());
@@ -122,7 +122,7 @@ class AttachmentConversionAdmissionHttpTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void existingExecutionCanReissueAndContinue(boolean initial) throws Exception {
+    void 기존_실행은_재발급하고_계속_진행할_수_있다(boolean initial) throws Exception {
         prepareTrip(initial);
         MvcResult first = mvc.perform(request(initial, 1, 2, false)).andExpect(status().isOk()).andReturn();
         String uploadId = json.readTree(first.getResponse().getContentAsString()).path("data").path("uploadId").asString();
@@ -144,7 +144,7 @@ class AttachmentConversionAdmissionHttpTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void legacyDbModeRemainsCompatible(boolean initial) throws Exception {
+    void 기존_DB_모드의_호환성을_유지한다(boolean initial) throws Exception {
         prepareTrip(initial);
         mvc.perform(request(initial, 1, 1, true)).andExpect(status().isOk());
         entityManager.flush();
@@ -156,7 +156,7 @@ class AttachmentConversionAdmissionHttpTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void validationOwnershipAndSecurityPrecedeAdmission(boolean initial) throws Exception {
+    void 입력_검증과_소유권과_보안_검사는_진입_허용_검사보다_먼저_실행한다(boolean initial) throws Exception {
         prepareTrip(initial);
         setMode(AttachmentConversionRoute.HOLD);
         mvc.perform(request(initial, 1, 1, true).content(body(initial, 1, 1, true).replace("1024", "0")))
@@ -175,7 +175,7 @@ class AttachmentConversionAdmissionHttpTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void mysqlSamplingRejectsUntransferredConversionBatches(boolean initial) throws Exception {
+    void MySQL_표본_검사는_아직_이관되지_않은_변환_배치를_거부한다(boolean initial) throws Exception {
         prepareTrip(initial);
         mvc.perform(request(initial, 1, 2, false)).andExpect(status().isOk());
         entityManager.flush();
@@ -191,7 +191,7 @@ class AttachmentConversionAdmissionHttpTest {
     }
 
     @Test
-    void mysqlSamplingCountsTasksRatherThanDeliveriesAndUsesDatabaseAge() throws Exception {
+    void MySQL_표본_검사는_전달_대신_작업을_세고_DB_기준_경과_시간을_사용한다() throws Exception {
         prepareTrip(true);
         mvc.perform(request(true, 1, 2, false)).andExpect(status().isOk());
         entityManager.flush();

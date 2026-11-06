@@ -65,7 +65,7 @@ class TripProcessingStatusEventHandlerMysqlTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void publishesOnlyAfterCommitAndDoesNotRepeatAnUnchangedState(boolean creation) {
+    void 커밋_후에만_발행하고_같은_상태는_반복_발행하지_않는다(boolean creation) {
         var fixture = fixture(creation);
         var transaction = new TransactionTemplate(transactionManager);
         var snapshot = transaction.execute(status -> {
@@ -99,7 +99,7 @@ class TripProcessingStatusEventHandlerMysqlTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void doesNotPublishWhenTheTransactionRollsBack(boolean creation) {
+    void 트랜잭션을_롤백하면_발행하지_않는다(boolean creation) {
         var fixture = fixture(creation);
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             synchronize(creation, fixture.executionId(), 1);
@@ -112,7 +112,7 @@ class TripProcessingStatusEventHandlerMysqlTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void publicationFailureDoesNotUndoTheCommittedStateOrFailTheCaller(boolean creation) {
+    void 발행_실패는_커밋된_상태를_되돌리거나_호출자를_실패시키지_않는다(boolean creation) {
         var fixture = fixture(creation);
         doThrow(new IllegalStateException("redis unavailable")).when(publisher).publish(any());
 

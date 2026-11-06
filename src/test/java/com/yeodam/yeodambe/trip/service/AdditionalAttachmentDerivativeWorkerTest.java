@@ -32,7 +32,7 @@ class AdditionalAttachmentDerivativeWorkerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"HOLD", "KAFKA"})
-    void heldOrKafkaModeDoesNotStartLegacySubmission(String mode) {
+    void HOLD나_Kafka_모드는_기존_작업_제출을_시작하지_않는다(String mode) {
         var admission = new AttachmentConversionProperties.Admission(
                 Map.of(Lane.LIGHT, 100L,
                         Lane.HEIC, 100L),
@@ -66,7 +66,7 @@ class AdditionalAttachmentDerivativeWorkerTest {
     }
 
     @Test
-    void convertsOnlyUnsavedPhotoAndCompletesBatchAfterPhotoPersistence() throws Exception {
+    void 미저장_사진만_변환하고_사진을_영속화한_뒤_배치를_완료한다() throws Exception {
         var claim = claim();
         when(transactions.claimBatch()).thenReturn(Optional.of(claim));
         when(transactions.renewLease(claim)).thenReturn(true);
@@ -96,7 +96,7 @@ class AdditionalAttachmentDerivativeWorkerTest {
     }
 
     @Test
-    void conversionFailurePreservesJobContextAndRestoresCaller() throws Exception {
+    void 변환_실패는_작업_문맥을_유지하고_호출자_문맥을_복원한다() throws Exception {
         var claim = claim();
         when(transactions.claimBatch()).thenReturn(Optional.of(claim));
         when(transactions.renewLease(claim)).thenReturn(true);
@@ -153,7 +153,7 @@ class AdditionalAttachmentDerivativeWorkerTest {
     }
 
     @Test
-    void admissionRejectionDoesNotStartPhotoConversion() {
+    void 진입이_거부되면_사진_변환을_시작하지_않는다() {
         var claim = claim();
         when(transactions.claimBatch()).thenReturn(Optional.of(claim));
         var scheduler = mock(TripDerivativeScheduler.class);

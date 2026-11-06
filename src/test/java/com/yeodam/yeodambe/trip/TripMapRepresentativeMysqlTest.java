@@ -57,7 +57,7 @@ class TripMapRepresentativeMysqlTest {
     }
 
     @Test
-    void selectsNextHighestCoordinatePhotoAndKeepsImageCoordinatesAndGlobalThumbnailConsistent() {
+    void 좌표가_있는_차순위_사진을_선택하고_이미지와_좌표와_전체_썸네일을_일치시킨다() {
         var trip = trip(owner.getUserId(), ProcessingStatus.COMPLETED, false);
         trip.changeThumbnailKey("existing-global-thumbnail");
         photo(trip, 100, null, null, "no-coordinates");
@@ -78,7 +78,7 @@ class TripMapRepresentativeMysqlTest {
     }
 
     @Test
-    void sameScoreUsesLowerAttachmentId() {
+    void 점수가_같으면_첨부_ID가_작은_사진을_선택한다() {
         var trip = trip(owner.getUserId(), ProcessingStatus.COMPLETED, false);
         var first = photo(trip, 90, BigDecimal.ONE, BigDecimal.TEN, "first");
         var second = photo(trip, 90, BigDecimal.ONE, BigDecimal.TEN, "second");
@@ -89,7 +89,7 @@ class TripMapRepresentativeMysqlTest {
     }
 
     @Test
-    void nullScoreRanksAfterZeroAndZeroCoordinatesAreAllowed() {
+    void null_점수는_0점보다_뒤에_배치하고_0인_좌표를_허용한다() {
         var trip = trip(owner.getUserId(), ProcessingStatus.COMPLETED, false);
         photo(trip, null, BigDecimal.ONE, BigDecimal.TEN, "null-score");
         photo(trip, 0, BigDecimal.ZERO, BigDecimal.ZERO, "zero-score");
@@ -102,7 +102,7 @@ class TripMapRepresentativeMysqlTest {
     }
 
     @Test
-    void allNullScoresStillSelectOneLowerIdPhoto() {
+    void 모든_점수가_null이어도_ID가_작은_사진_하나를_선택한다() {
         var trip = trip(owner.getUserId(), ProcessingStatus.COMPLETED, false);
         photo(trip, null, BigDecimal.ONE, BigDecimal.TEN, "first-null");
         photo(trip, null, BigDecimal.ONE, BigDecimal.TEN, "second-null");
@@ -112,7 +112,7 @@ class TripMapRepresentativeMysqlTest {
     }
 
     @Test
-    void deletedPhotosDeletedFilesAndUnclassifiedPhotosCannotWin() {
+    void 삭제된_사진과_파일과_미분류_사진은_대표가_될_수_없다() {
         var trip = trip(owner.getUserId(), ProcessingStatus.COMPLETED, false);
         var deletedPhoto = photo(trip, 100, BigDecimal.ONE, BigDecimal.TEN, "deleted-photo");
         deletedPhoto.softDelete(LocalDateTime.now());
@@ -128,7 +128,7 @@ class TripMapRepresentativeMysqlTest {
     }
 
     @Test
-    void onlyOwnCompletedUndeletedTripsAppear() {
+    void 본인의_완료된_미삭제_여행만_표시한다() {
         var other = users.save(new User(UUID.randomUUID() + "@yeodam.test", "other"));
         var visible = trip(owner.getUserId(), ProcessingStatus.COMPLETED, false);
         photo(visible, 90, BigDecimal.ONE, BigDecimal.TEN, "visible");
@@ -143,7 +143,7 @@ class TripMapRepresentativeMysqlTest {
     }
 
     @Test
-    void coordinateLessTripIsExcludedFromMapButKeptInDatabase() {
+    void 좌표가_없는_여행은_지도에서_제외하고_DB에는_유지한다() {
         var trip = trip(owner.getUserId(), ProcessingStatus.COMPLETED, false);
         photo(trip, 100, null, null, "no-gps");
         flushAndClear();
@@ -153,7 +153,7 @@ class TripMapRepresentativeMysqlTest {
     }
 
     @Test
-    void multipleRegionsAndSameCoordinatesDoNotMergeOrDuplicateTripMarkers() {
+    void 여러_지역과_동일_좌표가_여행_마커를_합치거나_중복시키지_않는다() {
         var first = trip(owner.getUserId(), ProcessingStatus.COMPLETED, false);
         var second = trip(owner.getUserId(), ProcessingStatus.COMPLETED, false);
         photo(first, 90, BigDecimal.ONE, BigDecimal.TEN, "first-trip");

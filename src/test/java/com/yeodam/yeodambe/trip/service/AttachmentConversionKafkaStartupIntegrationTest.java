@@ -67,7 +67,7 @@ class AttachmentConversionKafkaStartupIntegrationTest {
     }
 
     @Test
-    void kafkaModeStartsFourIndependentContainersWithoutCircularReferences() throws Exception {
+    void Kafka_모드는_순환_참조_없이_독립_컨테이너_네_개를_시작한다() throws Exception {
         assertThat(worker).isNotNull();
         var containers = SUFFIXES.stream().map(suffix -> registry.getListenerContainer("attachment-conversion-" + suffix)).toList();
         assertThat(containers).doesNotContainNull().allSatisfy(container -> assertThat(container.isRunning()).isTrue());

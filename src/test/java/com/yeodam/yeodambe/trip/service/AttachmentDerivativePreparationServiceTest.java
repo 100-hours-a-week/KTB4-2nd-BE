@@ -18,7 +18,7 @@ class AttachmentDerivativePreparationServiceTest {
     private final List<String> types = List.of("image/jpeg", "image/heic");
 
     @Test
-    void passesInputsToExistingConverterAndPreservesOrderedResults() {
+    void 기존_변환기에_입력을_전달하고_결과_순서를_유지한다() {
         List<DerivedPhotoKeys> photos = List.of(
                 new DerivedPhotoKeys("original-one", "analyze-one", "preview-one"),
                 new DerivedPhotoKeys("original-two", "analyze-two", "preview-two", "display-two",
@@ -30,7 +30,7 @@ class AttachmentDerivativePreparationServiceTest {
     }
 
     @Test
-    void rejectsNullOrIncompleteResultCount() {
+    void null_결과와_부족한_결과_개수를_거부한다() {
         for (List<DerivedPhotoKeys> photos : Arrays.<List<DerivedPhotoKeys>>asList(null, List.of())) {
             doReturn(CompletableFuture.completedFuture(photos)).when(derivatives).createAll("batch-id", keys, types);
             assertThatThrownBy(() -> service.create("batch-id", keys, types))
@@ -40,7 +40,7 @@ class AttachmentDerivativePreparationServiceTest {
     }
 
     @Test
-    void rejectsWrongOriginalMissingKeysAndHeicWithoutDisplay() {
+    void 잘못된_원본과_누락된_키와_표시용_파일이_없는_HEIC를_거부한다() {
         List<DerivedPhotoKeys> invalid = Arrays.asList(
                 null,
                 new DerivedPhotoKeys("wrong", "analyze", "preview"),
@@ -58,7 +58,7 @@ class AttachmentDerivativePreparationServiceTest {
     }
 
     @Test
-    void propagatesFailureFromAsynchronousConverter() {
+    void 비동기_변환기의_실패를_전파한다() {
         RuntimeException failure = new IllegalStateException("test conversion failure");
         when(derivatives.createAll("batch-id", keys, types)).thenReturn(CompletableFuture.failedFuture(failure));
         assertThatThrownBy(() -> service.create("batch-id", keys, types))

@@ -71,7 +71,7 @@ class InitialAttachmentStoragePipelineTest {
     }
 
     @Test
-    void queuedAcceptedPhotoParticipatesInDrainBeforeItsControlTaskStarts() throws Exception {
+    void 큐에서_수락된_사진은_제어_작업_시작_전에도_종료_대기에_포함된다() throws Exception {
         var photo = new com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo(
                 1L, "image/jpeg", "original/1", 1, 0, null, null);
         var upload = new CompletableFuture<String>();
@@ -122,7 +122,7 @@ class InitialAttachmentStoragePipelineTest {
     }
 
     @Test
-    void singlePhotoShutdownWaitsForPutBeforeClosingCallbackExecutor() throws Exception {
+    void 단일_사진_종료는_PUT을_기다린_뒤_콜백_실행기를_닫는다() throws Exception {
         var photo = new com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo(
                 1L, "image/jpeg", "original/1", 1, 0, null, null);
         var upload = new CompletableFuture<String>();
@@ -157,7 +157,7 @@ class InitialAttachmentStoragePipelineTest {
     }
 
     @Test
-    void singlePhotoCancellationKeepsPutInputUntilUploadSettles() throws Exception {
+    void 단일_사진_취소는_업로드가_확정될_때까지_PUT_입력을_유지한다() throws Exception {
         var photo = new com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo(
                 1L, "image/jpeg", "original/1", 1, 0, null, null);
         var upload = new CompletableFuture<String>();

@@ -156,7 +156,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void completedResultPublishesACompleteListSnapshotOnce() {
+    void 완료_결과는_완전한_목록_스냅샷을_한_번_발행한다() {
         String raw = prepareResultNotification();
         results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
         clearInvocations(notificationPublisher);
@@ -181,7 +181,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
     }
 
     @Test
-    void rollingBackCompletedResultDoesNotPublishOrAdvanceTripSequence() {
+    void 완료_결과를_롤백하면_발행하거나_여행_시퀀스를_증가시키지_않는다() {
         String raw = prepareResultNotification();
         results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
         var claim = results.claimResult().orElseThrow();

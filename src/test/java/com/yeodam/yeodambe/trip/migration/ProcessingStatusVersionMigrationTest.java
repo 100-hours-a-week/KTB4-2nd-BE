@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProcessingStatusVersionMigrationTest {
 
     @Test
-    void migratesExistingStatesAndInitializesNewWorkAtVersionZero() throws Exception {
+    void 기존_상태를_마이그레이션하고_새_작업의_버전을_0으로_초기화한다() throws Exception {
         var database = SharedTestMysql.createDatabase();
         Flyway.configure()
                 .dataSource(database.getJdbcUrl(), database.getUsername(), database.getPassword())

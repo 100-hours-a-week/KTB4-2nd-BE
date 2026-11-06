@@ -101,7 +101,7 @@ class AttachmentConversionClaimTest {
     }
 
     @Test
-    void databaseTimeChangeDoesNotReplaceOtherQueryResults() throws Exception {
+    void DB_시각_변경은_다른_조회_결과를_바꾸지_않는다() throws Exception {
         jdbc.setDatabaseTime(NOW.plusMinutes(1));
         Integer first = CompletableFuture.supplyAsync(() -> jdbc.queryForObject("SELECT 1", Integer.class))
                 .get(5, TimeUnit.SECONDS);
@@ -116,7 +116,7 @@ class AttachmentConversionClaimTest {
     @ParameterizedTest
     @EnumSource(Kind.class)
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void twoNodesClaimOnlyOnce(Kind kind) throws Exception {
+    void 두_노드가_동시에_요청해도_한_번만_선점한다(Kind kind) throws Exception {
         var fixture = new TransactionTemplate(transactionManager).execute(status -> fixture(kind));
         var ready = new CountDownLatch(2);
         var start = new CountDownLatch(1);
@@ -157,7 +157,7 @@ class AttachmentConversionClaimTest {
     @ParameterizedTest
     @CsvSource({"INITIAL,false", "ADDITIONAL,false", "INITIAL,true", "ADDITIONAL,true"})
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void lostTokenOnlyJournalsItsAbandonedAttemptWithoutClearingNewOwner(Kind kind, boolean nextBegan) {
+    void 소유권을_잃은_토큰은_새_소유자를_해제하지_않고_포기한_시도만_기록한다(Kind kind, boolean nextBegan) {
         var fixture = new TransactionTemplate(transactionManager).execute(status -> fixture(kind));
         var old = claimed(fixture);
         var first = transactions.beginPhoto(old, fixture.lightItemId()).attempt();
@@ -187,7 +187,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void releaseDoesNotScheduleActiveSavedDerivativeKeys(Kind kind) {
+    void 선점_해제는_활성_파생_파일_키를_정리_예약하지_않는다(Kind kind) {
         var fixture = fixture(kind);
         var claim = claimed(fixture);
         var attempt = transactions.beginPhoto(claim, fixture.lightItemId()).attempt();
@@ -209,7 +209,7 @@ class AttachmentConversionClaimTest {
     @ParameterizedTest
     @EnumSource(Kind.class)
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void revokedPartialPhotoStartsRetentionWithoutFollowingBegin(Kind kind) throws Exception {
+    void 부분_사진의_선점_회수는_다음_시작_호출_없이_보존을_시작한다(Kind kind) throws Exception {
         var fixture = new TransactionTemplate(transactionManager).execute(status -> fixture(kind));
         var processing = mock(TripAttachmentDerivativeService.class);
         var photo = new CompletableFuture<DerivedPhotoKeys>();
@@ -267,7 +267,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void currentOwnerCanReleaseTerminalClaimBeforeOldLeaseDeadline(Kind kind) {
+    void 현재_소유자는_기존_임대_만료_전에도_종료된_작업의_선점을_해제한다(Kind kind) {
         var fixture = fixture(kind);
         var claim = claimed(fixture);
         entityManager.flush();
@@ -280,7 +280,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void releaseOnlyCurrentTokenPreservesAttemptAndAllowsImmediateReclaim(Kind kind) {
+    void 현재_토큰만_해제하고_시도를_유지하며_즉시_재선점할_수_있다(Kind kind) {
         var fixture = fixture(kind);
         var first = claimed(fixture);
         var attempt = transactions.beginPhoto(first, fixture.lightItemId()).attempt();
@@ -302,7 +302,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void expiredTokenCannotRenewOrPersist(Kind kind) {
+    void 만료된_토큰은_갱신하거나_저장할_수_없다(Kind kind) {
         var fixture = fixture(kind);
         var first = claimed(fixture);
         entityManager.flush();
@@ -326,7 +326,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void wrongTopicKindOrLaneIsInvalidMessage(Kind kind) {
+    void 토픽의_종류나_레인이_다르면_잘못된_메시지로_거부한다(Kind kind) {
         var fixture = fixture(kind);
         assertThatThrownBy(() -> transactions.claim(fixture.taskId(), kind, Lane.HEIC))
                 .isInstanceOf(InvalidAttachmentConversionMessageException.class);
@@ -340,7 +340,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void databaseFailureIsNotTerminalAck(Kind kind) {
+    void DB_실패를_종료_ACK로_처리하지_않는다(Kind kind) {
         var fixture = fixture(kind);
         var failure = new TransientDataAccessResourceException("test DB unavailable");
         doThrow(failure).when(tasks).findById(fixture.taskId());
@@ -351,7 +351,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @CsvSource({"INITIAL,SUCCEEDED", "INITIAL,CANCELED", "INITIAL,FAILED", "ADDITIONAL,SUCCEEDED", "ADDITIONAL,CANCELED", "ADDITIONAL,FAILED"})
-    void terminalTaskCanBeAcknowledgedWithoutConversion(Kind kind, String state) {
+    void 종료된_작업은_변환_없이_ACK할_수_있다(Kind kind, String state) {
         var fixture = fixture(kind);
         jdbc.update("UPDATE attachment_conversion_tasks SET status = ? WHERE task_id = ?", state, fixture.taskId());
         entityManager.clear();
@@ -364,7 +364,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void activeLeaseAndRetryDeadlineStayPendingUntilBothAreDue(Kind kind) {
+    void 활성_임대와_재시도_시각이_모두_도래할_때까지_대기한다(Kind kind) {
         var fixture = fixture(kind);
         jdbc.update("UPDATE attachment_conversion_tasks SET status = 'RUNNING', claim_token = 'other', lease_until = ?, next_attempt_at = ? WHERE task_id = ?",
                 NOW.plusMinutes(3), NOW.plusMinutes(5), fixture.taskId());
@@ -381,7 +381,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void dbOrHeldParentRouteIsPendingRatherThanMalformed(Kind kind) {
+    void 부모_경로가_DB나_HOLD이면_잘못된_메시지로_보지_않고_대기한다(Kind kind) {
         var fixture = fixture(kind);
         for (String route : List.of("DB", "HOLD")) {
             jdbc.update("UPDATE " + batchTable(kind) + " SET conversion_route = ? WHERE upload_batch_id = ?", route, fixture.batchId());
@@ -394,7 +394,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @CsvSource({"INITIAL,COMPLETED,SUCCEEDED", "INITIAL,CANCELED,CANCELED", "INITIAL,FAILED,FAILED", "ADDITIONAL,COMPLETED,SUCCEEDED", "ADDITIONAL,CANCELED,CANCELED", "ADDITIONAL,FAILED,FAILED"})
-    void endedParentSettlesTaskWithoutStartingPhotos(Kind kind, String parentStatus, String expectedTaskStatus) {
+    void 부모가_종료되면_사진을_시작하지_않고_작업을_정리한다(Kind kind, String parentStatus, String expectedTaskStatus) {
         var fixture = fixture(kind);
         jdbc.update("UPDATE " + executionTable(kind) + " SET status = ?, ended_at = ? WHERE execution_id = ?", parentStatus, NOW, fixture.executionId());
         entityManager.clear();
@@ -406,7 +406,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void alreadyConvertedLaneStaysClaimedUntilAtomicParentCompletion(Kind kind) {
+    void 변환된_레인도_부모가_원자적으로_완료될_때까지_선점을_유지한다(Kind kind) {
         var fixture = fixture(kind);
         var derived = new DerivedPhotoKeys("original/" + fixture.uploadId() + "/light", "analyze", "preview", null,
                 null, null, null, null, 100L, 50L, 25L, null);
@@ -427,7 +427,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void deletedTripPreventsRenewal(Kind kind) {
+    void 삭제된_여행의_임대_갱신을_거부한다(Kind kind) {
         var fixture = fixture(kind);
         var claim = claimed(fixture);
         entityManager.flush();
@@ -439,7 +439,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void heicTaskOnlyContainsHeicPhotos(Kind kind) {
+    void HEIC_작업은_HEIC_사진만_포함한다(Kind kind) {
         var fixture = fixture(kind);
         var task = new AttachmentConversionTask(UUID.randomUUID().toString(), kind, fixture.batchId(), fixture.tripId(), Lane.HEIC, 1, 200);
         entityManager.persist(task);
@@ -455,7 +455,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void activeOtherClaimIsNotAcknowledgedEvenIfPhotosAreSaved(Kind kind) {
+    void 사진이_저장되어도_다른_활성_선점이_있으면_ACK하지_않는다(Kind kind) {
         var fixture = fixture(kind);
         claimed(fixture);
         entityManager.flush();
@@ -468,7 +468,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void forgedParentSnapshotCannotRenew(Kind kind) {
+    void 위조된_부모_스냅샷으로_임대를_갱신할_수_없다(Kind kind) {
         var fixture = fixture(kind);
         var claim = claimed(fixture);
         var forged = new AttachmentConversionClaim(claim.taskId(), claim.claimToken(), claim.kind(), claim.lane(),
@@ -481,7 +481,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void renewalDatabaseFailureIsPropagatedRatherThanLosingOwnership(Kind kind) {
+    void 갱신_중_DB_실패는_소유권_상실로_처리하지_않고_전파한다(Kind kind) {
         var fixture = fixture(kind);
         var claim = claimed(fixture);
         var failure = new TransientDataAccessResourceException("test DB unavailable");
@@ -491,7 +491,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void missingExecutionRemainsPendingWithNoInventedDeadline(Kind kind) {
+    void 실행이_없으면_임의의_기한을_만들지_않고_대기한다(Kind kind) {
         var fixture = fixture(kind);
         jdbc.update("DELETE FROM " + executionTable(kind) + " WHERE execution_id = ?", fixture.executionId());
         entityManager.clear();
@@ -503,7 +503,7 @@ class AttachmentConversionClaimTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void terminalTaskWithLiveClaimRemainsPendingUntilCleanupCanReleaseOwnership(Kind kind) {
+    void 종료된_작업도_활성_선점이_있으면_정리로_소유권을_해제할_때까지_대기한다(Kind kind) {
         var fixture = fixture(kind);
         jdbc.update("UPDATE attachment_conversion_tasks SET status = 'SUCCEEDED', claim_token = 'other', lease_until = ? WHERE task_id = ?",
                 NOW.plusMinutes(10), fixture.taskId());

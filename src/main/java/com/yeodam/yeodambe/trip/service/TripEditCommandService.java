@@ -26,6 +26,8 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.StreamSupport;
 
 @Service
@@ -35,35 +37,57 @@ public class TripEditCommandService {
     private final TripEditCommandTransactionService transactions;
     private final ObjectMapper objectMapper;
     private final Validator validator;
+    private final TripEditLock editLock;
 
     public ApiResponse<TripEditCommandResultResponse> update(
             Long tripId, Long actorId, TripEditUpdateCommandRequest command
     ) {
         String hash = fingerprint(command.changes());
-        try {
-            return transactions.update(tripId, actorId, command.requestId(), parseUpdate(command.changes()), hash);
-        } catch (RuntimeException exception) {
-            ErrorMessage message = TripEditRejectionMessageResolver.resolve(exception);
-            if (message == null) {
-                throw exception;
-            }
-            return transactions.reject(tripId, actorId, command.requestId(), CommandType.UPDATE_TRIP, hash, message);
-        }
+        return executeCommand(tripId, actorId, command.requestId(), CommandType.UPDATE_TRIP, hash,
+                () -> parseUpdate(command.changes()),
+                request -> transactions.update(tripId, actorId, command.requestId(), request, hash));
     }
 
     public ApiResponse<TripEditCommandResultResponse> deleteAttachments(
             Long tripId, Long actorId, TripEditPhotoDeleteCommandRequest command
     ) {
         String hash = fingerprint(command.attachmentIds());
+        return executeCommand(tripId, actorId, command.requestId(), CommandType.DELETE_ATTACHMENTS, hash,
+                () -> parseAttachmentIds(command.attachmentIds()),
+                ids -> transactions.deleteAttachments(tripId, actorId, command.requestId(), ids, hash));
+    }
+
+    private <T> ApiResponse<TripEditCommandResultResponse> executeCommand(
+            Long tripId,
+            Long actorId,
+            String requestId,
+            CommandType type,
+            String hash,
+            Supplier<T> parse,
+            Function<T, ApiResponse<TripEditCommandResultResponse>> operation
+    ) {
+        T parsed;
         try {
-            return transactions.deleteAttachments(tripId, actorId, command.requestId(), parseAttachmentIds(command.attachmentIds()), hash);
+            parsed = parse.get();
         } catch (RuntimeException exception) {
             ErrorMessage message = TripEditRejectionMessageResolver.resolve(exception);
             if (message == null) {
                 throw exception;
             }
-            return transactions.reject(tripId, actorId, command.requestId(), CommandType.DELETE_ATTACHMENTS, hash, message);
+            return editLock.execute(tripId,
+                    () -> transactions.reject(tripId, actorId, requestId, type, hash, message));
         }
+        return editLock.execute(tripId, () -> {
+            try {
+                return operation.apply(parsed);
+            } catch (RuntimeException exception) {
+                ErrorMessage message = TripEditRejectionMessageResolver.resolve(exception);
+                if (message == null) {
+                    throw exception;
+                }
+                return transactions.reject(tripId, actorId, requestId, type, hash, message);
+            }
+        });
     }
 
     private List<Long> parseAttachmentIds(JsonNode attachmentIds) {

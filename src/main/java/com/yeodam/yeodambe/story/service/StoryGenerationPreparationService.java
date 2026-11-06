@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.SerializationFeature;
 import com.yeodam.yeodambe.common.exception.StoryAlreadyExistsException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
@@ -45,6 +46,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import tools.jackson.core.JacksonException;
 
 @Service
 @RequiredArgsConstructor
@@ -114,6 +116,7 @@ public class StoryGenerationPreparationService {
     }
 
     private Long prepareLegacy(StoryGenerationJob job, StoryGenerationAiResponse response) {
+        rejectNativeLegacyAccess(job);
         Trip trip = tripRepository.findOwnedActiveForUpdate(
                 job.getTripId(),
                 job.getUserId()
@@ -153,6 +156,7 @@ public class StoryGenerationPreparationService {
             return Optional.empty();
         }
 
+        rejectNativeLegacyAccess(job);
         if (!storyId.equals(job.getStoryId())) {
             throw new IllegalStateException(
                     StoryGenerationInternalErrorMessage
@@ -304,6 +308,7 @@ public class StoryGenerationPreparationService {
 
         blockRepository.saveAllAndFlush(blocks);
     }
+
     private StoryContentDocument prepareNative(
             StoryGenerationJob job,
             StoryGenerationAiResponse response
@@ -392,7 +397,7 @@ public class StoryGenerationPreparationService {
         StoryPreparationSnapshot snapshot;
         try {
             snapshot = objectMapper.readValue(metadata, StoryPreparationSnapshot.class);
-        } catch (tools.jackson.core.JacksonException failure) {
+        } catch (JacksonException failure) {
             throw invalidMetadata();
         }
         if (snapshot == null || snapshot.initialContentHash() == null
@@ -406,6 +411,12 @@ public class StoryGenerationPreparationService {
             throw invalidMetadata();
         }
         return snapshot;
+    }
+
+    private void rejectNativeLegacyAccess(StoryGenerationJob job) {
+        if (job.getPreparedContentMetadata() != null) {
+            throw invalidMetadata();
+        }
     }
 
     private StoryDataIntegrityException invalidMetadata() {
@@ -433,7 +444,10 @@ public class StoryGenerationPreparationService {
                 job.getMood().name(), result.storySummary(),
                 request.places().stream().map(StoryGenerationMessage.Place::tripPlaceId).toList(), sources, blocks
         );
-        byte[] bytes = objectMapper.writeValueAsString(canonical).getBytes(StandardCharsets.UTF_8);
+        byte[] bytes = objectMapper.writer()
+                .without(SerializationFeature.INDENT_OUTPUT)
+                .writeValueAsString(canonical)
+                .getBytes(StandardCharsets.UTF_8);
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         } catch (NoSuchAlgorithmException failure) {

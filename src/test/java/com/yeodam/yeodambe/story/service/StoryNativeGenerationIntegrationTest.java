@@ -37,7 +37,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.ReflectionTestUtils;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -47,6 +46,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -277,6 +277,37 @@ class StoryNativeGenerationIntegrationTest {
         assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.COMPLETED);
         assertThat(sqlBlockCount(saved.getStoryId())).isZero();
         verify(publisher).publish(any());
+    }
+
+    @Test
+    void legacy진입점은_native준비작업을_SQL본문으로_복원하지_않는다() {
+        StoryContentDocument expected = preparation.prepareContent(job.getId(), result("요약")).orElseThrow();
+
+        assertThatThrownBy(() -> preparation.prepare(job.getId(), result("다른 요약")))
+                .isInstanceOf(StoryDataIntegrityException.class);
+        assertThatThrownBy(() -> preparation.readPreparedContent(
+                job.getId(), expected.getId(), ZoneOffset.UTC
+        )).isInstanceOf(StoryDataIntegrityException.class);
+        assertThat(sqlBlockCount(expected.getId())).isZero();
+    }
+
+    @Test
+    void native해시나_SQL출처가_없으면_편집버전도_이관으로_덮어쓰지_않는다() {
+        completion.complete(job.getId(), result("요약"));
+        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        StoryContentDocument edited = contents.findById(storyId).orElseThrow();
+        edited.updateContent(Story.Mood.CALM, "편집 본문", edited.getBlocks());
+        contents.save(edited);
+        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
+                new Document("$unset", new Document("initialContentHash", "")));
+
+        assertThatThrownBy(() -> migration.migrateOne(storyId)).isInstanceOf(StoryDataIntegrityException.class);
+        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
+                new Document("$set", new Document("initialContentHash", edited.getInitialContentHash())));
+        jdbc.update("UPDATE story_generation_jobs SET prepared_content_metadata = NULL WHERE generation_id = ?", job.getId());
+
+        assertThatThrownBy(() -> migration.migrateOne(storyId)).isInstanceOf(StoryDataIntegrityException.class);
+        assertThat(contents.findById(storyId).orElseThrow().getStorySummary()).isEqualTo("편집 본문");
     }
 
     private TripAttachment savePhoto(StoredFile file) {

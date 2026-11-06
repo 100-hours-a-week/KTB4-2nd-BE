@@ -28,6 +28,8 @@ public class StoryContentDocument {
 
     private Long nextBlockId;
 
+    private String initialContentHash;
+
     @Version
     private Long version;
 
@@ -45,6 +47,19 @@ public class StoryContentDocument {
         this.selectedPlaceIds = List.copyOf(selectedPlaceIds);
         this.blocks = List.copyOf(blocks);
         this.nextBlockId = nextBlockId;
+    }
+
+    public StoryContentDocument(
+            Long id,
+            Story.Mood mood,
+            String storySummary,
+            List<Long> selectedPlaceIds,
+            List<StoryContentBlock> blocks,
+            Long nextBlockId,
+            String initialContentHash
+    ) {
+        this(id, mood, storySummary, selectedPlaceIds, blocks, nextBlockId);
+        this.initialContentHash = initialContentHash;
     }
 
     public long issueBlockId() {

@@ -48,6 +48,9 @@ public class StoryGenerationJob {
     @Column(name = "story_id")
     private Long storyId;
 
+    @Column(name = "prepared_content_metadata", columnDefinition = "JSON")
+    private String preparedContentMetadata;
+
     @Column(name = "error_code", length = 100)
     private String errorCode;
 
@@ -118,6 +121,20 @@ public class StoryGenerationJob {
         }
 
         this.storyId = storyId;
+    }
+
+    public void prepareContent(String metadata) {
+        if (metadata == null || metadata.isBlank() || storyId == null) {
+            throw new IllegalArgumentException(
+                    StoryGenerationInternalErrorMessage.PREPARATION_METADATA_INVALID.message()
+            );
+        }
+        if (preparedContentMetadata != null && !preparedContentMetadata.equals(metadata)) {
+            throw new IllegalStateException(
+                    StoryGenerationInternalErrorMessage.PREPARED_CONTENT_MISMATCH.message()
+            );
+        }
+        preparedContentMetadata = metadata;
     }
 
     public void complete(Long storyId) {

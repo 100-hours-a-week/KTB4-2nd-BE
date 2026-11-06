@@ -6,10 +6,13 @@ import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
 import org.redisson.config.SingleServerConfig;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.data.redis.autoconfigure.DataRedisProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.env.Environment;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
@@ -23,7 +26,8 @@ public class TripEditLockConfiguration {
     RedissonClient tripEditRedissonClient(
             RedisConnectionFactory factory,
             DataRedisProperties redisProperties,
-            TripEditLockProperties lockProperties
+            TripEditLockProperties lockProperties,
+            Environment environment
     ) {
         if (!(factory instanceof LettuceConnectionFactory lettuce)
                 || lettuce.getStandaloneConfiguration() == null) {
@@ -32,21 +36,15 @@ public class TripEditLockConfiguration {
         RedisStandaloneConfiguration standalone = lettuce.getStandaloneConfiguration();
         String scheme = lettuce.getClientConfiguration().isUseSsl() ? "rediss://" : "redis://";
         Config config = new Config();
-        config.setThreads(2);
-        config.setNettyThreads(2);
+        Binder binder = Binder.get(environment);
+        binder.bind("app.trip.edit-lock.client", Bindable.ofInstance(config));
         config.setLockWatchdogTimeout(lockProperties.watchdogTimeout().toMillis());
         SingleServerConfig server = config.useSingleServer()
                 .setAddress(scheme + standalone.getHostName() + ":" + standalone.getPort())
                 .setDatabase(standalone.getDatabase())
                 .setTimeout(Math.toIntExact(lettuce.getClientConfiguration().getCommandTimeout().toMillis()))
-                .setConnectTimeout(Math.toIntExact(redisProperties.getConnectTimeout() == null
-                        ? 2000 : redisProperties.getConnectTimeout().toMillis()))
-                .setSubscriptionTimeout(1000)
-                .setRetryAttempts(0)
-                .setConnectionMinimumIdleSize(1)
-                .setConnectionPoolSize(8)
-                .setSubscriptionConnectionMinimumIdleSize(1)
-                .setSubscriptionConnectionPoolSize(32);
+                .setConnectTimeout(Math.toIntExact(redisProperties.getConnectTimeout().toMillis()));
+        binder.bind("app.trip.edit-lock.client.server", Bindable.ofInstance(server));
         if (standalone.getUsername() != null) {
             server.setUsername(standalone.getUsername());
         }

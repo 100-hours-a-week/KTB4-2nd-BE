@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe;
 
+import com.yeodam.yeodambe.trip.config.TripEditLockConfiguration;
 import com.yeodam.yeodambe.trip.config.TripEditLockProperties;
 import com.yeodam.yeodambe.trip.exception.TripEditLockRejectedException;
 import com.yeodam.yeodambe.trip.service.TripEditLock;
@@ -19,6 +20,13 @@ import org.redisson.api.RLock;
 import org.redisson.client.DefaultNettyHook;
 import org.redisson.config.Config;
 import org.springframework.boot.data.redis.autoconfigure.DataRedisConnectionDetails;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisProperties;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.boot.test.util.TestPropertyValues;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -208,6 +216,44 @@ class TripEditLockRedisTest {
             owner.shutdown();
             contender.shutdown();
             meters.close();
+        }
+    }
+
+    @Test
+    void 환경설정으로_Redisson_자원과_락_정책을_주입한다() throws Exception {
+        DataRedisConnectionDetails.Standalone connection = SharedTestRedis.createDatabase().getStandalone();
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.getEnvironment().getPropertySources().addLast(new YamlPropertySourceLoader()
+                    .load("lock-test", new ClassPathResource("application.yaml")).getFirst());
+            TestPropertyValues.of("TRIP_EDIT_LOCK_NAMESPACE=staging:edit", "TRIP_EDIT_LOCK_WAIT_TIME=3s",
+                    "TRIP_EDIT_LOCK_ENABLED=true", "TRIP_EDIT_LOCK_WATCHDOG_TIMEOUT=9s",
+                    "TRIP_EDIT_LOCK_THREADS=3", "TRIP_EDIT_LOCK_NETTY_THREADS=4",
+                    "TRIP_EDIT_LOCK_SUBSCRIPTION_TIMEOUT_MS=1500", "TRIP_EDIT_LOCK_RETRY_ATTEMPTS=1",
+                    "TRIP_EDIT_LOCK_CONNECTION_MINIMUM_IDLE_SIZE=2", "TRIP_EDIT_LOCK_CONNECTION_POOL_SIZE=6",
+                    "TRIP_EDIT_LOCK_SUBSCRIPTION_CONNECTION_MINIMUM_IDLE_SIZE=2",
+                    "TRIP_EDIT_LOCK_SUBSCRIPTION_CONNECTION_POOL_SIZE=5").applyTo(context);
+            context.registerBean(RedisConnectionFactory.class,
+                    () -> new LettuceConnectionFactory(connection.getHost(), connection.getPort()));
+            context.registerBean(DataRedisProperties.class, () -> {
+                DataRedisProperties properties = new DataRedisProperties();
+                properties.setConnectTimeout(Duration.ofSeconds(2));
+                return properties;
+            });
+            context.register(TripEditLockConfiguration.class);
+            context.refresh();
+            Config config = context.getBean("tripEditRedissonClient", RedissonClient.class).getConfig();
+            assertThat(config.getThreads()).isEqualTo(3);
+            assertThat(config.getNettyThreads()).isEqualTo(4);
+            assertThat(config.useSingleServer()).extracting(server -> server.getSubscriptionTimeout(),
+                    server -> server.getRetryAttempts(), server -> server.getConnectionMinimumIdleSize(),
+                    server -> server.getConnectionPoolSize(), server -> server.getSubscriptionConnectionMinimumIdleSize(),
+                    server -> server.getSubscriptionConnectionPoolSize(), server -> server.getConnectTimeout())
+                    .containsExactly(1500, 1, 2, 6, 2, 5, 2000);
+            TripEditLockProperties properties = context.getBean(TripEditLockProperties.class);
+            assertThat(properties.enabled()).isTrue();
+            assertThat(config.getLockWatchdogTimeout()).isEqualTo(9000);
+            assertThat(properties.namespace()).isEqualTo("staging:edit");
+            assertThat(properties.waitTime()).isEqualTo(Duration.ofSeconds(3));
         }
     }
 

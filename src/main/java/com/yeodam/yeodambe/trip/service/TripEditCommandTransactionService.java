@@ -37,7 +37,6 @@ import java.util.UUID;
 @Transactional(isolation = Isolation.READ_COMMITTED)
 public class TripEditCommandTransactionService {
     private final TripRepository trips;
-    private final TripEditAuthorizationService authorization;
     private final TripService tripService;
     private final TripAttachmentDeletionService deletionService;
     private final TripEditCommandRecordService records;
@@ -48,13 +47,12 @@ public class TripEditCommandTransactionService {
     public ApiResponse<TripEditCommandResultResponse> update(
             Long tripId, Long actorId, String requestId, TripUpdateRequest changes, String hash
     ) {
-        Trip trip = requireReadableTrip(tripId, actorId);
+        Trip trip = requireActiveTrip(tripId);
         Optional<ApiResponse<TripEditCommandResultResponse>> previous = records.findResult(
                 actorId, requestId, tripId, CommandType.UPDATE_TRIP, hash, now());
         if (previous.isPresent()) {
             return enqueuePersonalResult(actorId, previous.orElseThrow());
         }
-        authorization.requireWritePermission(trip, actorId);
         long previousSequence = trip.getSequence();
         TripUpdateResponse updated = tripService.updateForSharedEditing(trip, changes);
         refresh(trip);
@@ -83,13 +81,12 @@ public class TripEditCommandTransactionService {
     public ApiResponse<TripEditCommandResultResponse> deleteAttachments(
             Long tripId, Long actorId, String requestId, List<Long> attachmentIds, String hash
     ) {
-        Trip trip = requireReadableTrip(tripId, actorId);
+        Trip trip = requireActiveTrip(tripId);
         Optional<ApiResponse<TripEditCommandResultResponse>> previous = records.findResult(
                 actorId, requestId, tripId, CommandType.DELETE_ATTACHMENTS, hash, now());
         if (previous.isPresent()) {
             return enqueuePersonalResult(actorId, previous.orElseThrow());
         }
-        authorization.requireWritePermission(trip, actorId);
         TripPhotoDeletionResult deleted = deletionService.deleteForSharedEditing(trip, attachmentIds);
         refresh(trip);
         ApiResponse<TripEditCommandResultResponse> result = success(SuccessMessage.TRIP_PHOTOS_DELETE_SUCCESS, requestId, trip);
@@ -117,9 +114,17 @@ public class TripEditCommandTransactionService {
         return result;
     }
 
-    private Trip requireReadableTrip(Long tripId, Long actorId) {
+    public Optional<ApiResponse<TripEditCommandResultResponse>> replayExistingResult(
+            Long tripId, Long actorId, String requestId, CommandType type, String hash
+    ) {
+        return records.findResult(actorId, requestId, tripId, type, hash, now())
+                .map(result -> enqueuePersonalResult(actorId, result));
+    }
+
+    private Trip requireActiveTrip(Long tripId) {
         Trip trip = trips.findActiveForUpdate(tripId).orElseThrow(TripNotFoundException::new);
-        authorization.requireReadPermission(trip, actorId);
+        // 권한 조회 때 적재된 엔티티 대신 잠금 획득 후의 여행 상태를 사용한다.
+        entityManager.refresh(trip);
         return trip;
     }
 

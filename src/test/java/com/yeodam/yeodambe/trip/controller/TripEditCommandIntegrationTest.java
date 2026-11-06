@@ -3,31 +3,29 @@ package com.yeodam.yeodambe.trip.controller;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
-import com.yeodam.yeodambe.trip.entity.TripAttachment;
-import com.yeodam.yeodambe.trip.entity.RegionOrigin;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.trip.repository.TripEditNotificationOutboxRepository;
-import com.yeodam.yeodambe.user.entity.UserStats;
-import com.yeodam.yeodambe.user.repository.UserStatsRepository;
-import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
-import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
-import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
-import jakarta.servlet.http.Cookie;
-import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.ArgumentMatchers.any;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.entity.RegionOrigin;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.TripEditCommandRecord.CommandType;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
 import com.yeodam.yeodambe.trip.entity.TripSharePermission;
 import com.yeodam.yeodambe.trip.entity.TripShareUser;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripEditNotificationOutboxRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
+import com.yeodam.yeodambe.trip.service.TripEditCommandRecordService;
+import com.yeodam.yeodambe.trip.service.TripEditLock;
 import com.yeodam.yeodambe.user.entity.User;
+import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserRepository;
+import com.yeodam.yeodambe.user.repository.UserStatsRepository;
+import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
+import com.yeodam.yeodambe.user.security.jwt.AccessTokenIssuer;
+import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -36,9 +34,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -47,16 +47,33 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = "auth.websocket.internal-service-token=edit-test-token")
+@SpringBootTest(properties = {
+        "auth.websocket.internal-service-token=edit-test-token",
+        "app.trip.edit-lock.enabled=true",
+        "app.trip.edit-lock.namespace=trip-edit-admission-test"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
@@ -74,12 +91,17 @@ class TripEditCommandIntegrationTest {
     @Autowired private TripAttachmentRepository attachments;
     @Autowired private UserStatsRepository stats;
     @MockitoSpyBean private TripEditNotificationOutboxRepository notifications;
+    @MockitoSpyBean private TripEditLock editLock;
+    @MockitoSpyBean private TripEditCommandRecordService records;
     private Long ownerId;
     private Long readerId;
     private Trip trip;
+    private String csrfContext;
 
     @BeforeEach
     void fixture() {
+        csrfContext = UUID.randomUUID().toString();
+        csrfTokens.save(csrfContext, "edit-test-csrf");
         ownerId = users.save(new User(UUID.randomUUID() + "@edit.test", "소유자")).getUserId();
         readerId = users.save(new User(UUID.randomUUID() + "@edit.test", "공유자")).getUserId();
         trip = new Trip(ownerId, "원래여행", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 3));
@@ -116,8 +138,200 @@ class TripEditCommandIntegrationTest {
     }
 
     @Test
+    void READ_수정_거절은_여행_락_없이_기록한다() throws Exception {
+        share(TripSharePermission.READ);
+
+        update(readerId, "{\"requestId\":\"before-lock-read\",\"changes\":{\"tripName\":\"금지변경\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"))
+                .andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+        verify(editLock, never()).execute(any(), any());
+        assertThat(notificationCount("COMMAND_RESULT")).isEqualTo(1);
+        assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isZero();
+    }
+
+    @Test
+    void 공유_없는_사진_삭제_거절은_여행_락_없이_기록한다() throws Exception {
+        delete(readerId, "{\"requestId\":\"before-lock-no-share\",\"attachmentIds\":[1]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
+                .andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+        verify(editLock, never()).execute(any(), any());
+        assertThat(notificationCount("COMMAND_RESULT")).isEqualTo(1);
+        assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isZero();
+    }
+
+    @Test
+    void 권한_승인_후_락_진입_시_공유가_만료되어도_수정한다() throws Exception {
+        share(TripSharePermission.WRITE);
+        doAnswer(invocation -> {
+            jdbc.update("UPDATE trip_share_users SET expires_at = ? WHERE trip_id = ?",
+                    LocalDateTime.now(ZoneId.of("Asia/Seoul")).minusMinutes(1), trip.getId());
+            return invocation.callRealMethod();
+        }).when(editLock).execute(eq(trip.getId()), any());
+
+        update(readerId, "{\"requestId\":\"admitted-expiry\",\"changes\":{\"tripName\":\"승인된수정\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"));
+
+        update(readerId, "{\"requestId\":\"next-after-expiry\",\"changes\":{\"tripName\":\"금지변경\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
+                .andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+        verify(editLock).execute(eq(trip.getId()), any());
+        assertThat(trips.findById(trip.getId()).orElseThrow().getTripName()).isEqualTo("승인된수정");
+        assertThat(notificationCount("TRIP_EVENT")).isEqualTo(1);
+    }
+
+    @Test
+    void 권한_승인_후_락_진입_시_READ로_변경되어도_사진을_삭제한다() throws Exception {
+        share(TripSharePermission.WRITE);
+        stats.saveAndFlush(new UserStats(users.findById(ownerId).orElseThrow()));
+        TripAttachment photo = photo("admitted-delete");
+        doAnswer(invocation -> {
+            jdbc.update("UPDATE trip_share_users SET permission = 'READ' WHERE trip_id = ?", trip.getId());
+            return invocation.callRealMethod();
+        }).when(editLock).execute(eq(trip.getId()), any());
+
+        String request = "{\"requestId\":\"admitted-delete\",\"attachmentIds\":[" + photo.getId() + "]}";
+        delete(readerId, request).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"));
+        delete(readerId, request).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.data.sequence").value(1));
+
+        verify(editLock).execute(eq(trip.getId()), any());
+        assertThat(attachments.findById(photo.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(notificationCount("TRIP_EVENT")).isEqualTo(1);
+    }
+
+    @Test
+    void 권한_승인_후라도_락_진입_전에_삭제된_여행은_수정하지_않는다() throws Exception {
+        doAnswer(invocation -> {
+            jdbc.update("UPDATE trips SET deleted_at = ? WHERE trip_id = ?", LocalDateTime.now(), trip.getId());
+            return invocation.callRealMethod();
+        }).when(editLock).execute(eq(trip.getId()), any());
+
+        update(ownerId, "{\"requestId\":\"deleted-after-admission\",\"changes\":{\"tripName\":\"금지변경\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
+                .andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+        assertThat(trips.findById(trip.getId()).orElseThrow().getTripName()).isEqualTo("원래여행");
+        assertThat(notificationCount("TRIP_EVENT")).isZero();
+    }
+
+    @Test
+    void 권한_승인_후_락_진입_전에_처리_상태가_바뀌면_수정을_거절한다() throws Exception {
+        doAnswer(invocation -> {
+            jdbc.update("UPDATE trips SET processing_status = 'PROCESSING' WHERE trip_id = ?", trip.getId());
+            return invocation.callRealMethod();
+        }).when(editLock).execute(eq(trip.getId()), any());
+
+        update(ownerId, "{\"requestId\":\"processing-after-admission\",\"changes\":{\"tripName\":\"금지변경\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_UPDATE_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+        assertThat(trips.findById(trip.getId()).orElseThrow().getTripName()).isEqualTo("원래여행");
+        assertThat(notificationCount("TRIP_EVENT")).isZero();
+    }
+
+    @Test
+    void 권한_승인_후_바뀐_기간은_이름만_수정할_때_보존한다() throws Exception {
+        LocalDate changedStart = LocalDate.of(2026, 10, 10);
+        LocalDate changedEnd = LocalDate.of(2026, 10, 12);
+        doAnswer(invocation -> {
+            jdbc.update("UPDATE trips SET start_date = ?, end_date = ? WHERE trip_id = ?",
+                    changedStart, changedEnd, trip.getId());
+            return invocation.callRealMethod();
+        }).when(editLock).execute(eq(trip.getId()), any());
+
+        update(ownerId, "{\"requestId\":\"preserve-latest-dates\",\"changes\":{\"tripName\":\"새이름\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"));
+
+        Trip updated = trips.findById(trip.getId()).orElseThrow();
+        assertThat(updated.getStartDate()).isEqualTo(changedStart);
+        assertThat(updated.getEndDate()).isEqualTo(changedEnd);
+    }
+
+    @Test
+    void 동일한_권한_거절이_동시에_저장되어도_확정된_결과를_반환한다() throws Exception {
+        share(TripSharePermission.READ);
+        String request = "{\"requestId\":\"concurrent-denied\",\"changes\":{\"tripName\":\"금지변경\"}}";
+        CountDownLatch checked = new CountDownLatch(2);
+        doAnswer(invocation -> {
+            Optional<?> previous = (Optional<?>) invocation.callRealMethod();
+            if (previous.isEmpty()) {
+                checked.countDown();
+                assertThat(checked.await(5, TimeUnit.SECONDS)).isTrue();
+            }
+            return previous;
+        }).when(records).findResult(eq(readerId), eq("concurrent-denied"), eq(trip.getId()),
+                eq(CommandType.UPDATE_TRIP), any(), any());
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<ResultActions> first = executor.submit(() -> update(readerId, request));
+            Future<ResultActions> second = executor.submit(() -> update(readerId, request));
+            first.get(10, TimeUnit.SECONDS).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"));
+            second.get(10, TimeUnit.SECONDS).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"));
+        }
+
+        verify(editLock, never()).execute(any(), any());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trip_edit_command_records WHERE user_id = ?",
+                Integer.class, readerId)).isEqualTo(1);
+        assertThat(notificationCount("COMMAND_RESULT")).isEqualTo(2);
+        assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isZero();
+    }
+
+    @Test
+    void 권한_거절이_승인된_동일_요청과_경합하면_확정된_결과를_반환한다() throws Exception {
+        share(TripSharePermission.WRITE);
+        String request = "{\"requestId\":\"admission-race\",\"changes\":{\"tripName\":\"금지변경\"}}";
+        CountDownLatch checked = new CountDownLatch(1);
+        CountDownLatch proceed = new CountDownLatch(1);
+        AtomicBoolean paused = new AtomicBoolean();
+        doAnswer(invocation -> {
+            Optional<?> previous = (Optional<?>) invocation.callRealMethod();
+            if (previous.isEmpty() && paused.compareAndSet(false, true)) {
+                checked.countDown();
+                assertThat(proceed.await(10, TimeUnit.SECONDS)).isTrue();
+            }
+            return previous;
+        }).when(records).findResult(eq(readerId), eq("admission-race"), eq(trip.getId()),
+                eq(CommandType.UPDATE_TRIP), any(), any());
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            Future<ResultActions> admitted = executor.submit(() -> update(readerId, request));
+            try {
+                assertThat(checked.await(5, TimeUnit.SECONDS)).isTrue();
+                jdbc.update("UPDATE trip_share_users SET permission = 'READ' WHERE trip_id = ?", trip.getId());
+                update(readerId, request).andExpect(status().isOk())
+                        .andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"));
+            } finally {
+                proceed.countDown();
+            }
+            admitted.get(10, TimeUnit.SECONDS).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"));
+        }
+
+        assertThat(trips.findById(trip.getId()).orElseThrow().getTripName()).isEqualTo("원래여행");
+        assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isZero();
+        assertThat(notificationCount("TRIP_EVENT")).isZero();
+        assertThat(notificationCount("COMMAND_RESULT")).isEqualTo(2);
+    }
+
+    @Test
     void 서비스_토큰_없이_내부_명령을_호출할_수_없다() throws Exception {
-        mvc.perform(post(path()).with(jwt().jwt(token -> token.subject(ownerId.toString()))).with(csrf())
+        mvc.perform(post(path()).with(jwt().jwt(token -> token.subject(ownerId.toString())))
+                        .cookie(new Cookie("CSRF_CONTEXT", csrfContext))
+                        .header("X-CSRF-TOKEN", "edit-test-csrf")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"requestId\":\"blocked\",\"changes\":{\"tripName\":\"변경\"}}"))
                 .andExpect(status().isForbidden());
@@ -295,13 +509,17 @@ class TripEditCommandIntegrationTest {
 
     private ResultActions delete(Long actorId, String body) throws Exception {
         return mvc.perform(post("/internal/websocket/trips/" + trip.getId() + "/attachments/delete")
-                .with(jwt().jwt(token -> token.subject(actorId.toString()))).with(csrf())
+                .with(jwt().jwt(token -> token.subject(actorId.toString())))
+                .cookie(new Cookie("CSRF_CONTEXT", csrfContext))
+                .header("X-CSRF-TOKEN", "edit-test-csrf")
                 .header("X-Internal-Service-Token", "edit-test-token")
                 .contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
     private ResultActions update(Long actorId, String body) throws Exception {
-        return mvc.perform(post(path()).with(jwt().jwt(token -> token.subject(actorId.toString()))).with(csrf())
+        return mvc.perform(post(path()).with(jwt().jwt(token -> token.subject(actorId.toString())))
+                .cookie(new Cookie("CSRF_CONTEXT", csrfContext))
+                .header("X-CSRF-TOKEN", "edit-test-csrf")
                 .header("X-Internal-Service-Token", "edit-test-token")
                 .contentType(MediaType.APPLICATION_JSON).content(body));
     }

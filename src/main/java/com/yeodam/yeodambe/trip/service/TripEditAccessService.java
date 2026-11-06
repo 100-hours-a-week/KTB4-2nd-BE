@@ -17,9 +17,19 @@ public class TripEditAccessService {
 
     @Transactional(readOnly = true)
     public TripWebSocketAccessResponse findAccess(Long tripId, Long actorId) {
-        Trip trip = trips.findByIdAndDeletedAtIsNull(tripId).orElseThrow(TripNotFoundException::new);
+        Trip trip = requireActiveTrip(tripId);
         TripEditAccess access = authorization.requireReadPermission(trip, actorId);
         return new TripWebSocketAccessResponse(tripId, actorId, access.permission(),
                 access.checkedAt(), access.accessValidUntil());
+    }
+
+    @Transactional(readOnly = true)
+    public void requireWritePermission(Long tripId, Long actorId) {
+        Trip trip = requireActiveTrip(tripId);
+        authorization.requireWritePermission(trip, actorId);
+    }
+
+    private Trip requireActiveTrip(Long tripId) {
+        return trips.findByIdAndDeletedAtIsNull(tripId).orElseThrow(TripNotFoundException::new);
     }
 }

@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
-import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
+import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.entity.TripEditCommandRecord.CommandType;
@@ -12,6 +12,7 @@ import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripEditCommandResultResponse;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -35,6 +36,7 @@ import java.util.stream.StreamSupport;
 public class TripEditCommandService {
     private static final Set<String> UPDATE_FIELDS = Set.of("tripName", "startDate", "endDate", "regionCodes");
     private final TripEditCommandTransactionService transactions;
+    private final TripEditAccessService access;
     private final ObjectMapper objectMapper;
     private final Validator validator;
     private final TripEditLock editLock;
@@ -66,6 +68,32 @@ public class TripEditCommandService {
             Supplier<T> parse,
             Function<T, ApiResponse<TripEditCommandResultResponse>> operation
     ) {
+        try {
+            return authorizeAndExecute(tripId, actorId, requestId, type, hash, parse, operation);
+        } catch (DataIntegrityViolationException exception) {
+            return transactions.replayExistingResult(tripId, actorId, requestId, type, hash)
+                    .orElseThrow(() -> exception);
+        }
+    }
+
+    private <T> ApiResponse<TripEditCommandResultResponse> authorizeAndExecute(
+            Long tripId,
+            Long actorId,
+            String requestId,
+            CommandType type,
+            String hash,
+            Supplier<T> parse,
+            Function<T, ApiResponse<TripEditCommandResultResponse>> operation
+    ) {
+        try {
+            access.requireWritePermission(tripId, actorId);
+        } catch (RuntimeException exception) {
+            ErrorMessage message = TripEditRejectionMessageResolver.resolve(exception);
+            if (message == null) {
+                throw exception;
+            }
+            return transactions.reject(tripId, actorId, requestId, type, hash, message);
+        }
         T parsed;
         try {
             parsed = parse.get();

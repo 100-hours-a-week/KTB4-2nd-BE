@@ -27,18 +27,19 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import com.yeodam.yeodambe.story.service.response.StoryReadContext;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @DataJpaTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({TestcontainersConfiguration.class, StoryReadService.class, StoryValidator.class, TripAccessService.class, StoryBlockReferenceQuery.class, org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration.class})
+@Import({TestcontainersConfiguration.class, StoryReadService.class, StoryValidator.class, TripAccessService.class, StoryBlockReferenceQuery.class, JacksonAutoConfiguration.class})
 @ActiveProfiles("test")
 class StoryRepositoryTest {
     @MockitoBean
@@ -363,7 +364,7 @@ class StoryRepositoryTest {
         Statistics statistics = em.getEntityManagerFactory().unwrap(SessionFactory.class).getStatistics();
         statistics.clear();
 
-        com.yeodam.yeodambe.story.service.response.StoryReadContext context =
+        StoryReadContext context =
                 stories.findReadContextByTripId(trip.getId()).orElseThrow();
 
         assertThat(context.tripId()).isEqualTo(trip.getId());

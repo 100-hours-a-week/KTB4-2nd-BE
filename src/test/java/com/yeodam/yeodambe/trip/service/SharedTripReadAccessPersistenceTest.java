@@ -38,7 +38,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
-
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.file.Path;
@@ -49,6 +48,10 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.UUID;
+import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
+import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -60,10 +63,10 @@ import static org.mockito.Mockito.when;
 
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @DataJpaTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true", showSql = false)
-@org.springframework.test.context.ActiveProfiles("test")
-@Import({com.yeodam.yeodambe.TestcontainersConfiguration.class,
-        com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery.class,
-        org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration.class, TripAccessService.class, TripEditAuthorizationService.class,
+@ActiveProfiles("test")
+@Import({TestcontainersConfiguration.class,
+        StoryBlockReferenceQuery.class,
+        JacksonAutoConfiguration.class, TripAccessService.class, TripEditAuthorizationService.class,
         StoryReadService.class, StoryValidator.class, TripAttachmentDownloadService.class,
         BulkAttachmentDownloadService.class, TripService.class, InvitedTripListService.class,
         SharedTripReadAccessPersistenceTest.TimeConfig.class})

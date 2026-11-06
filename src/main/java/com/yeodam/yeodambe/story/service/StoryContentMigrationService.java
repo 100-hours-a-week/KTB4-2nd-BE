@@ -13,6 +13,7 @@ import java.util.Objects;
 import com.mongodb.client.result.UpdateResult;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mapping.MappingException;
+import org.springframework.core.convert.ConversionException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery;
 import com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail;
@@ -180,8 +181,8 @@ public class StoryContentMigrationService {
             Long storyId = ((Number) raw.get("_id")).longValue();
             nextAfterStoryId = storyId;
             try {
-                StoryContentDocument content = mongoConverter.read(StoryContentDocument.class, raw);
                 long nextVersion = nextVersion(raw);
+                StoryContentDocument content = mongoConverter.read(StoryContentDocument.class, raw);
                 validateBackfillContent(content);
                 Story story = storyRepository.findById(storyId)
                         .orElseThrow(() -> new StoryDataIntegrityException(
@@ -209,7 +210,7 @@ public class StoryContentMigrationService {
                 } else {
                     conflicts.add(storyId);
                 }
-            } catch (StoryDataIntegrityException | MappingException failure) {
+            } catch (StoryDataIntegrityException | MappingException | ConversionException failure) {
                 invalid.add(storyId);
             }
         }

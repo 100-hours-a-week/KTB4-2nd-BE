@@ -54,7 +54,7 @@ class WebSocketEventPublisherRedisTest {
     }
 
     @Test
-    void twoPublisherInstancesReachBothRedisSubscribers() throws Exception {
+    void 발행자_두_인스턴스의_이벤트가_Redis_구독자_둘에게_모두_전달된다() throws Exception {
         String channel = "yeodam:test-" + UUID.randomUUID() + ":websocket:events:v1";
         ObjectMapper mapper = new ObjectMapper();
         var properties = new WebSocketEventProperties(channel);
@@ -89,7 +89,7 @@ class WebSocketEventPublisherRedisTest {
 
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"trip", "addition", "story"})
-    void businessCompletionHandlersPublishTheSharedWireContract(String kind) throws Exception {
+    void 비즈니스_완료_핸들러는_공통_전송_계약으로_이벤트를_발행한다(String kind) throws Exception {
         String channel = "yeodam:contract-" + UUID.randomUUID();
         var mapper = new ObjectMapper();
         var publisher = new WebSocketEventPublisher(redis, mapper, new WebSocketEventProperties(channel));

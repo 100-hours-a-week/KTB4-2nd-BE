@@ -45,7 +45,7 @@ class RunpodStatusServiceTest {
     }
 
     @Test
-    void reusesNullableStatusUntilTenSecondsWithoutExtendingExpiry() {
+    void 만료를_연장하지_않고_null을_포함한_상태를_10초_동안_재사용한다() {
         var unknown = new RunpodStatusResponse(null, false);
         var ready = new RunpodStatusResponse(true, true);
         when(client.getStatus()).thenReturn(unknown, ready);
@@ -61,7 +61,7 @@ class RunpodStatusServiceTest {
     }
 
     @Test
-    void startsCacheLifetimeAfterSlowLookupCompletes() {
+    void 느린_조회가_끝난_뒤_캐시_유효_시간을_시작한다() {
         var status = new RunpodStatusResponse(true, false);
         when(client.getStatus()).thenAnswer(invocation -> {
             now = now.plusSeconds(7);
@@ -76,7 +76,7 @@ class RunpodStatusServiceTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void suppressesFailedLookupForFiveSecondsAndThenRecovers(boolean emptyResponse) {
+    void 실패한_조회의_재시도를_5초_동안_억제한_뒤_복구한다(boolean emptyResponse) {
         var recovered = new RunpodStatusResponse(true, true);
         when(client.getStatus()).thenAnswer(invocation -> {
             now = now.plusSeconds(2);
@@ -98,7 +98,7 @@ class RunpodStatusServiceTest {
     }
 
     @Test
-    void doesNotReturnExpiredReadyStatusWhenRefreshFails() {
+    void 갱신에_실패하면_만료된_준비_상태를_반환하지_않는다() {
         when(client.getStatus()).thenReturn(new RunpodStatusResponse(true, true))
                 .thenThrow(new RunpodStatusUnavailableException());
 
@@ -111,7 +111,7 @@ class RunpodStatusServiceTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void concurrentRefreshCallsShareOneLookup(boolean fails) throws Exception {
+    void 동시_갱신_호출은_조회를_한_번만_수행한다(boolean fails) throws Exception {
         var status = new RunpodStatusResponse(true, true);
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);

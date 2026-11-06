@@ -59,7 +59,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void committedInsertReturnsCreated() {
+    void 추가_데이터를_커밋하면_생성_결과를_반환한다() {
         doAnswer(invocation -> {
             assertThat(appender.list).isEmpty();
             return null;
@@ -74,7 +74,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void sameHashReturnsAlreadyExistsAfterRollbackAndNewTransaction() {
+    void 같은_해시는_롤백_후_새_트랜잭션에서_기존_데이터_결과를_반환한다() {
         duplicateInsert();
         when(repository.findPayloadHash(RUN, REQUEST)).thenReturn(Optional.of(HASH));
 
@@ -94,7 +94,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void differentHashRejectsAfterReadTransactionEnds() {
+    void 다른_해시는_조회_트랜잭션을_끝낸_뒤_거부한다() {
         duplicateInsert();
         when(repository.findPayloadHash(RUN, REQUEST)).thenReturn(Optional.of("b".repeat(64)));
 
@@ -105,7 +105,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void missingRowAfterDuplicateDoesNotReturnSuccess() {
+    void 중복_오류_후_행이_없으면_성공을_반환하지_않는다() {
         duplicateInsert();
         when(repository.findPayloadHash(RUN, REQUEST)).thenReturn(Optional.empty());
 
@@ -115,7 +115,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void insertFailureIsNotRetriedAndDoesNotExposeExceptionMessage() {
+    void 추가_실패는_재시도하지_않고_예외_메시지를_노출하지_않는다() {
         doThrow(new DataAccessResourceFailureException("jdbc:mysql://secret-host?password=SECRET"))
                 .when(repository).insert(RUN, REQUEST, HASH);
 
@@ -131,7 +131,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void commitDuplicateIsNotTreatedAsInsertDuplicate() {
+    void 커밋의_중복_오류를_추가의_중복_오류로_처리하지_않는다() {
         doThrow(new DuplicateKeyException("commit failure")).when(transactions).commit(any());
 
         assertThatThrownBy(() -> service.write(RUN, REQUEST, HASH))
@@ -142,7 +142,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void ambiguousCommitDoesNotReturnCreated() {
+    void 커밋_결과가_불분명하면_생성_결과를_반환하지_않는다() {
         doThrow(new TransactionSystemException("unknown commit result"))
                 .when(transactions).commit(any());
 
@@ -153,7 +153,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void readFailureDoesNotReturnAlreadyExists() {
+    void 조회에_실패하면_기존_데이터_결과를_반환하지_않는다() {
         duplicateInsert();
         when(repository.findPayloadHash(RUN, REQUEST))
                 .thenThrow(new DataAccessResourceFailureException("unavailable"));
@@ -164,7 +164,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void readCommitFailureDoesNotReturnAlreadyExists() {
+    void 조회_커밋에_실패하면_기존_데이터_결과를_반환하지_않는다() {
         duplicateInsert();
         when(repository.findPayloadHash(RUN, REQUEST)).thenReturn(Optional.of(HASH));
         doThrow(new TransactionSystemException("unknown read commit"))
@@ -176,7 +176,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void rollbackFailureCannotExposeOriginalDatabaseExceptionThroughCallbackCause() {
+    void 롤백_실패의_콜백_원인으로_원본_DB_예외를_노출하지_않는다() {
         var transactionLogger = (Logger) LoggerFactory.getLogger(
                 "org.springframework.transaction.support.TransactionTemplate");
         var rollbackLogs = new ListAppender<ILoggingEvent>();
@@ -203,7 +203,7 @@ class MigrationProbeServiceTest {
     }
 
     @Test
-    void duplicateRollbackFailureCannotExposeOriginalDatabaseException() {
+    void 중복_오류의_롤백에_실패해도_원본_DB_예외를_노출하지_않는다() {
         var transactionLogger = (Logger) LoggerFactory.getLogger(
                 "org.springframework.transaction.support.TransactionTemplate");
         var rollbackLogs = new ListAppender<ILoggingEvent>();

@@ -70,7 +70,7 @@ class RefreshTokenBaselineLoadTest {
     private final AtomicLong sequence = new AtomicLong();
 
     @Test
-    void measureRealHttpRefreshBeforeLua() throws Exception {
+    void Lua_도입_전_실제_HTTP_토큰_갱신_성능을_측정한다() throws Exception {
         Files.createDirectories(output);
         var client = connectionFactory.getNativeClient();
         assertThat(client).isNotNull();

@@ -68,7 +68,7 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void acceptsCommittedJobWithoutWaitingForKafkaAndPreservesRequestId() throws Exception {
+    void Kafka를_기다리지_않고_커밋된_작업을_접수하며_요청_ID를_보존한다() throws Exception {
         prepareJob("request-original");
 
         mvc.perform(authenticated().header("X-Request-ID", "request-original"))
@@ -83,7 +83,7 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void generatedRequestIdIsPassedToAcceptanceWhenHeaderIsAbsent() throws Exception {
+    void 헤더가_없으면_생성한_요청_ID를_접수에_전달한다() throws Exception {
         var job = job();
         when(acceptance.accept(eq(42L), eq(100L), eq(input), anyString())).thenReturn(job);
 
@@ -94,14 +94,14 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void missingAuthenticationIsRejectedBeforeAcceptance() throws Exception {
+    void 인증이_없으면_접수_전에_거부한다() throws Exception {
         mvc.perform(base().cookie(new Cookie("CSRF_CONTEXT", "browser"))
                 .header("X-CSRF-TOKEN", "csrf-token")).andExpect(status().isUnauthorized());
         verifyNoInteractions(acceptance);
     }
 
     @Test
-    void missingCsrfIsRejectedBeforeAcceptance() throws Exception {
+    void CSRF가_없으면_접수_전에_거부한다() throws Exception {
         mvc.perform(base().cookie(new Cookie("accessToken", issuer.issue(42L, "session")),
                         new Cookie("CSRF_CONTEXT", "browser")))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
@@ -109,7 +109,7 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void databaseAcceptanceFailurePreservesUnavailableResponse() throws Exception {
+    void DB_접수_실패_시_사용_불가_응답을_유지한다() throws Exception {
         when(acceptance.accept(eq(42L), eq(100L), eq(input), anyString()))
                 .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("DB unavailable"));
         mvc.perform(authenticated()).andExpect(status().isServiceUnavailable())
@@ -123,7 +123,7 @@ class StoryGenerationControllerTest {
             "{",
             "{\"mood\":\"EMOTIONAL\",\"tripPlaceIds\":\"not-a-list\"}"
     })
-    void malformedRequestReturnsStoryContractErrorBeforeAcceptance(String body) throws Exception {
+    void 잘못된_형식의_요청은_접수_전에_스토리_계약_오류를_반환한다(String body) throws Exception {
         mvc.perform(authenticated().content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("INVALID_STORY_REQUEST"));
@@ -133,7 +133,7 @@ class StoryGenerationControllerTest {
     @ParameterizedTest
     @CsvSource({"invalid,400,INVALID_STORY_REQUEST", "missing,404,TRIP_NOT_FOUND",
             "forbidden,403,STORY_GENERATION_FORBIDDEN", "active,409,STORY_GENERATION_IN_PROGRESS"})
-    void acceptanceRejectionPreservesContractError(String kind, int code, String message) throws Exception {
+    void 접수_거부_시_계약_오류를_유지한다(String kind, int code, String message) throws Exception {
         RuntimeException failure = switch (kind) {
             case "invalid" -> new InvalidStoryRequestException();
             case "missing" -> new TripNotFoundException();
@@ -147,7 +147,7 @@ class StoryGenerationControllerTest {
 
     @ParameterizedTest
     @EnumSource(StoryGenerationJob.Status.class)
-    void statusReadUsesJwtOwnerAndReturnsStoredStateWithoutCsrf(StoryGenerationJob.Status state) throws Exception {
+    void 상태_조회는_JWT_소유자를_사용하고_CSRF_없이_저장된_상태를_반환한다(StoryGenerationJob.Status state) throws Exception {
         var saved = mock(StoryGenerationJob.class);
         when(saved.getId()).thenReturn(7L);
         when(saved.getUserId()).thenReturn(42L);
@@ -178,7 +178,7 @@ class StoryGenerationControllerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"/story-generations/7", "/story-generation/7"})
-    void bothStatusPathsReturnTheSameResponse(String path) throws Exception {
+    void 두_상태_조회_경로는_같은_응답을_반환한다(String path) throws Exception {
         var saved = mock(StoryGenerationJob.class);
         when(saved.getId()).thenReturn(7L);
         when(saved.getUserId()).thenReturn(42L);
@@ -198,7 +198,7 @@ class StoryGenerationControllerTest {
             "true,/story-generation/7", "false,/story-generation/7",
             "true,/story-generations/7", "false,/story-generations/7"
     })
-    void missingAndOtherOwnerJobsReturnSameNotFoundResponse(boolean missing, String path) throws Exception {
+    void 없는_작업과_다른_소유자의_작업은_같은_조회_실패_응답을_반환한다(boolean missing, String path) throws Exception {
         var saved = mock(StoryGenerationJob.class);
         if (missing) {
             when(jobs.findById(7L)).thenReturn(Optional.empty());
@@ -215,7 +215,7 @@ class StoryGenerationControllerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"/story-generations/7", "/story-generation/7"})
-    void unauthenticatedStatusReadStopsBeforeRepositoryLookup(String path) throws Exception {
+    void 인증_없는_상태_조회는_저장소_조회_전에_중단한다(String path) throws Exception {
         mvc.perform(statusRequest(path)).andExpect(status().isUnauthorized());
         verifyNoInteractions(jobs, acceptance);
     }
@@ -235,7 +235,7 @@ class StoryGenerationControllerTest {
             "DELETE,/story-generations/0", "DELETE,/story-generations/-1",
             "POST,/trips/0/story-generations", "POST,/trips/-1/story-generations"
     })
-    void nonPositiveIdsAreRejectedBeforeBusinessProcessing(String method, String path) throws Exception {
+    void 양수가_아닌_ID는_비즈니스_처리_전에_거부한다(String method, String path) throws Exception {
         mvc.perform(request(HttpMethod.valueOf(method), "/api" + path)
                         .contextPath("/api").servletPath(path)
                         .cookie(new Cookie("accessToken", issuer.issue(42L, "session")),
@@ -250,7 +250,7 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void cancellationReturnsNoContentAfterFinishingJob() throws Exception {
+    void 취소로_작업을_종료한_뒤_본문_없는_응답을_반환한다() throws Exception {
         var saved = prepareCancellationJob(42L);
         when(ai.cancel(100L)).thenReturn(new StoryGenerationAiResponse(100L, "execution-cancel",
                 StoryGenerationAiResponse.Status.CANCELED, null, null, null, null));
@@ -265,7 +265,7 @@ class StoryGenerationControllerTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class, names = {"COMPLETED", "FAILED", "CANCELED"})
-    void finishedCancellationReturnsConflictBeforeCallingAi(StoryGenerationJob.Status state) throws Exception {
+    void 종료된_작업의_취소는_AI_호출_전에_충돌_응답을_반환한다(StoryGenerationJob.Status state) throws Exception {
         var saved = prepareCancellationJob(42L);
         switch (state) {
             case COMPLETED -> saved.complete(99L);
@@ -281,7 +281,7 @@ class StoryGenerationControllerTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void missingOrOtherOwnerCancellationReturnsNotFound(boolean missing) throws Exception {
+    void 없거나_다른_소유자의_작업_취소는_조회_실패를_반환한다(boolean missing) throws Exception {
         if (missing) {
             when(jobs.findById(7L)).thenReturn(Optional.empty());
         } else {
@@ -294,7 +294,7 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void aiTaskNotFoundReturnsNoContentAndStatusLookupShowsCanceled() throws Exception {
+    void AI_작업이_없으면_본문_없이_응답하고_상태_조회는_취소를_반환한다() throws Exception {
         var saved = prepareCancellationJob(42L);
         when(ai.cancel(100L)).thenThrow(new StoryGenerationAiRequestException(
                 StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 404, "TASK_NOT_FOUND"));
@@ -309,7 +309,7 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void aiCancellationConflictPreservesContractError() throws Exception {
+    void AI_취소_충돌_시_계약_오류를_유지한다() throws Exception {
         prepareCancellationJob(42L);
         when(ai.cancel(100L)).thenThrow(new StoryGenerationAiRequestException(
                 StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 409, "TASK_NOT_CANCELABLE"));
@@ -319,7 +319,7 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void aiCancellationFailureReturnsInternalErrorInsteadOfNoContent() throws Exception {
+    void AI_취소_실패는_내부_오류를_반환한다() throws Exception {
         prepareCancellationJob(42L);
         when(ai.cancel(100L)).thenThrow(new StoryGenerationAiRequestException(
                 StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, null, null));
@@ -329,7 +329,7 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void unauthenticatedCancellationStopsBeforeLookupAndAiCall() throws Exception {
+    void 인증_없는_취소는_조회와_AI_호출_전에_중단한다() throws Exception {
         mvc.perform(cancellationRequest().cookie(new Cookie("CSRF_CONTEXT", "browser"))
                         .header("X-CSRF-TOKEN", "csrf-token"))
                 .andExpect(status().isUnauthorized());
@@ -337,7 +337,7 @@ class StoryGenerationControllerTest {
     }
 
     @Test
-    void cancellationWithoutCsrfStopsBeforeLookupAndAiCall() throws Exception {
+    void CSRF_없는_취소는_조회와_AI_호출_전에_중단한다() throws Exception {
         mvc.perform(cancellationRequest().cookie(new Cookie("accessToken", issuer.issue(42L, "session")),
                         new Cookie("CSRF_CONTEXT", "browser")))
                 .andExpect(status().isForbidden())

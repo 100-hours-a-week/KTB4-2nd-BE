@@ -24,20 +24,20 @@ class StoryGenerationRequestValidatorTest {
     }
 
     @Test
-    void acceptsValidRequest() {
+    void 유효한_요청을_허용한다() {
         assertThatCode(() -> validator.validate(
                 new StoryGenerationRequest(Story.Mood.PLAIN, List.of(101L, 102L))))
                 .doesNotThrowAnyException();
     }
 
     @Test
-    void convertsMissingBodyToStoryInputException() {
+    void 본문_누락을_스토리_입력_예외로_변환한다() {
         assertThatThrownBy(() -> validator.validate(null))
                 .isInstanceOf(InvalidStoryRequestException.class);
     }
 
     @Test
-    void convertsConstraintViolationsToStoryInputException() {
+    void 제약_위반을_스토리_입력_예외로_변환한다() {
         for (StoryGenerationRequest request : List.of(
                 new StoryGenerationRequest(null, List.of(101L)),
                 new StoryGenerationRequest(Story.Mood.EMOTIONAL, List.of(101L)),

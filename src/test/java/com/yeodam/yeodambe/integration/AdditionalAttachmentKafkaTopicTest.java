@@ -16,7 +16,7 @@ import static org.mockito.ArgumentMatchers.*;
 
 class AdditionalAttachmentKafkaTopicTest {
     @Test
-    void cdcListenerSubscribesToConfiguredUpdateRequestTopic() throws Exception {
+    void CDC_리스너는_설정된_추가_사진_요청_토픽을_구독한다() throws Exception {
         var annotation = OutboxReceiptConsumer.class.getMethod("consume", ConsumerRecord.class)
                 .getAnnotation(KafkaListener.class);
         assertThat(annotation.topics()).contains("${app.kafka.topics.trip-update-request}");
@@ -24,7 +24,7 @@ class AdditionalAttachmentKafkaTopicTest {
     }
 
     @Test
-    void consumesUpdateResultWithoutChangingWireFormat() {
+    void 전송_형식을_바꾸지_않고_추가_사진_결과를_소비한다() {
         var results = mock(AdditionalAttachmentKafkaResultService.class);
         var handler = new TripUpdateResultEventHandler(results, new ObjectMapper());
         String raw = """
@@ -36,7 +36,7 @@ class AdditionalAttachmentKafkaTopicTest {
     }
 
     @Test
-    void malformedUpdateResultFailsBeforeDatabaseHandling() {
+    void 잘못된_추가_사진_결과는_DB_처리_전에_실패한다() {
         var results = mock(AdditionalAttachmentKafkaResultService.class);
         var handler = new TripUpdateResultEventHandler(results, new ObjectMapper());
         assertThatIllegalArgumentException().isThrownBy(() -> handler.consume("{broken"))
@@ -49,7 +49,7 @@ class AdditionalAttachmentKafkaTopicTest {
     }
 
     @Test
-    void listenerUsesUpdateTopicAndItsOwnDeadLetterFactory() throws Exception {
+    void 리스너는_추가_사진_결과_토픽과_전용_실패_처리_팩토리를_사용한다() throws Exception {
         var annotation = TripUpdateResultEventHandler.class.getMethod("consume", String.class).getAnnotation(KafkaListener.class);
         assertThat(annotation.topics()).containsExactly("${app.kafka.topics.trip-update-result}");
         assertThat(annotation.containerFactory()).isEqualTo("tripUpdateResultKafkaListenerContainerFactory");

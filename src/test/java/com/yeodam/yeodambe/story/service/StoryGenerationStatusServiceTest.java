@@ -15,7 +15,7 @@ import static org.mockito.Mockito.when;
 class StoryGenerationStatusServiceTest {
 
     @Test
-    void returnsTheStoredVersionWithoutAdvancingItOnRepeatedReads() {
+    void 반복_조회해도_버전을_증가시키지_않고_저장된_버전을_반환한다() {
         var repository = mock(StoryGenerationJobRepository.class);
         var service = new StoryGenerationStatusService(repository);
         var job = new StoryGenerationJob("execution", 1L, 2L, Story.Mood.PLAIN);

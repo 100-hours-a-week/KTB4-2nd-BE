@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class BackendJsonLogFormatterTest {
 
     @Test
-    void probeRunAndCommitResultAreIncluded() {
+    void 시험_실행_ID와_커밋_결과를_로그에_포함한다() {
         ThrowableProxyConverter converter = new ThrowableProxyConverter();
         converter.start();
         var formatter = new BackendJsonLogFormatter(new MockEnvironment(), converter);
@@ -44,7 +44,7 @@ class BackendJsonLogFormatterTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void workflowStageFieldsAreSearchableWithNumericTimingValues() {
+    void 작업_단계_필드를_검색할_수_있고_소요_시간은_숫자로_기록한다() {
         var converter = new ThrowableProxyConverter();
         converter.start();
         var formatter = new BackendJsonLogFormatter(new MockEnvironment(), converter);

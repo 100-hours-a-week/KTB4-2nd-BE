@@ -31,7 +31,7 @@ class StoryGenerationTerminalServiceTest {
     private final StoryGenerationJob job = new StoryGenerationJob("execution-1", 241L, 2L, Story.Mood.PLAIN);
 
     @Test
-    void storesActualAiFailureCodeWithoutChangingProgressToOneHundred() {
+    void 진행률을_100으로_바꾸지_않고_실제_AI_실패_코드를_저장한다() {
         prepareJob();
         job.updateProcessing(50);
 
@@ -45,7 +45,7 @@ class StoryGenerationTerminalServiceTest {
     }
 
     @Test
-    void cancellationDoesNotRequireFailureObject() {
+    void 취소는_실패_객체를_요구하지_않는다() {
         prepareJob();
 
         service.apply(10L, response(241L, "execution-1", Status.CANCELED, null));
@@ -56,7 +56,7 @@ class StoryGenerationTerminalServiceTest {
     }
 
     @Test
-    void acceptsErrorCodeAtDatabaseLengthBoundary() {
+    void DB_길이_경계의_오류_코드를_허용한다() {
         prepareJob();
 
         service.apply(10L, response(241L, "execution-1", Status.FAILED, failure("A".repeat(100))));
@@ -66,7 +66,7 @@ class StoryGenerationTerminalServiceTest {
 
     @ParameterizedTest
     @MethodSource("invalidFailures")
-    void rejectsMissingOrOversizedErrorCodeWithoutChangingJob(Failure failure) {
+    void 누락되거나_너무_긴_오류_코드는_작업을_바꾸지_않고_거부한다(Failure failure) {
         prepareJob();
 
         assertThatThrownBy(() -> service.apply(10L, response(241L, "execution-1", Status.FAILED, failure)))
@@ -82,7 +82,7 @@ class StoryGenerationTerminalServiceTest {
 
     @ParameterizedTest
     @MethodSource("invalidIdentities")
-    void rejectsDifferentTripOrExecution(Long tripId, String executionId) {
+    void 다른_여행이나_실행_ID를_거부한다(Long tripId, String executionId) {
         prepareJob();
 
         assertThatThrownBy(() -> service.apply(10L, response(tripId, executionId, Status.CANCELED, null)))
@@ -98,7 +98,7 @@ class StoryGenerationTerminalServiceTest {
 
     @ParameterizedTest
     @MethodSource("lateTerminalResponses")
-    void doesNotReplaceAnAlreadyFinishedState(StoryGenerationJob.Status oldStatus, Status receivedStatus) {
+    void 이미_종료된_상태를_덮어쓰지_않는다(StoryGenerationJob.Status oldStatus, Status receivedStatus) {
         prepareJob();
         switch (oldStatus) {
             case COMPLETED -> job.complete(99L);
@@ -127,7 +127,7 @@ class StoryGenerationTerminalServiceTest {
 
     @ParameterizedTest
     @MethodSource("otherResponses")
-    void rejectsNonTerminalResponsesBeforeLookingUpJob(StoryGenerationAiResponse response) {
+    void 종료_상태가_아닌_응답은_작업_조회_전에_거부한다(StoryGenerationAiResponse response) {
         assertThatThrownBy(() -> service.apply(10L, response)).isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(repository, eventPublisher);
     }
@@ -140,7 +140,7 @@ class StoryGenerationTerminalServiceTest {
     }
 
     @Test
-    void rejectsMissingJob() {
+    void 없는_작업을_거부한다() {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.apply(10L, response(241L, "execution-1", Status.CANCELED, null)))
@@ -149,7 +149,7 @@ class StoryGenerationTerminalServiceTest {
     }
 
     @Test
-    void confirmsCancellationAndAcceptsLaterKafkaCancellation() {
+    void 취소를_확정하고_뒤늦은_Kafka_취소를_허용한다() {
         prepareJob();
         job.updateProcessing(50);
 
@@ -164,7 +164,7 @@ class StoryGenerationTerminalServiceTest {
     @ParameterizedTest
     @org.junit.jupiter.params.provider.EnumSource(value = StoryGenerationJob.Status.class,
             names = {"COMPLETED", "FAILED"})
-    void cancellationDoesNotReplaceCompletionOrFailure(StoryGenerationJob.Status status) {
+    void 취소는_완료나_실패를_덮어쓰지_않는다(StoryGenerationJob.Status status) {
         prepareJob();
         if (status == StoryGenerationJob.Status.COMPLETED) {
             job.complete(99L);
@@ -178,7 +178,7 @@ class StoryGenerationTerminalServiceTest {
     }
 
     @Test
-    void cancellationRejectsOtherOwnerWithoutChangingState() {
+    void 취소는_다른_소유자의_작업을_상태_변경_없이_거부한다() {
         prepareJob();
 
         assertThatThrownBy(() -> service.confirmCancellation(999L, 10L))
@@ -187,7 +187,7 @@ class StoryGenerationTerminalServiceTest {
     }
 
     @Test
-    void cancellationRejectsMissingJob() {
+    void 취소는_없는_작업을_거부한다() {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.confirmCancellation(2L, 10L))
                 .isInstanceOf(StoryGenerationNotFoundException.class);

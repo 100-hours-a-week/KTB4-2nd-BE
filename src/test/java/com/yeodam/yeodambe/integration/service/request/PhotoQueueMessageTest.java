@@ -12,7 +12,7 @@ class PhotoQueueMessageTest {
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
-    void photosReadyContainsOnlyBatchIdentityAndPhotoIdsAndKeys() {
+    void 사진_준비_메시지는_배치_식별자와_사진_ID와_저장_키만_포함한다() {
         var message = PhotosReadyMessage.create(77L, "execution-one", 2,
                 List.of(new PhotosReadyMessage.Attachment(101L, "analyze/one")));
         var body = json.readTree(json.writeValueAsString(message));
@@ -31,7 +31,7 @@ class PhotoQueueMessageTest {
     }
 
     @Test
-    void processHasFlatQueueFieldsAndCompleteOriginalMetadataIncludingNulls() {
+    void 처리_메시지는_평탄한_큐_필드와_null을_포함한_원본_메타데이터를_담는다() {
         var input = input();
         var message = PhotoProcessMessage.from(77L, "attempt-new", input);
         var body = json.readTree(json.writeValueAsString(message));
@@ -57,7 +57,7 @@ class PhotoQueueMessageTest {
     }
 
     @Test
-    void sameAttemptUsesSameExecutionIdAndRetryChangesOnlyAttemptIdentity() {
+    void 같은_시도는_실행_ID를_공유하고_재시도는_시도_식별자만_바꾼다() {
         var input = input();
         var ready = PhotosReadyMessage.create(77L, "first-attempt", 1, List.of());
         var first = PhotoProcessMessage.from(77L, "first-attempt", input);

@@ -75,7 +75,7 @@ class StoryGenerationStatusEventHandlerMysqlTest {
     }
 
     @Test
-    void publishesOnlyAfterCommitAndDoesNotRepeatPercentageChanges() {
+    void 커밋_후에만_발행하고_진행률만_바뀌면_다시_발행하지_않는다() {
         var job = fixture();
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             update(job, 1);
@@ -104,7 +104,7 @@ class StoryGenerationStatusEventHandlerMysqlTest {
     }
 
     @Test
-    void rollbackDoesNotPublishAndPreservesQueuedState() {
+    void 롤백하면_발행하지_않고_대기_상태를_보존한다() {
         var job = fixture();
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             update(job, 1);
@@ -118,7 +118,7 @@ class StoryGenerationStatusEventHandlerMysqlTest {
     }
 
     @Test
-    void redisFailureDoesNotUndoCommittedStateOrFailCaller() {
+    void Redis_실패는_커밋된_상태나_호출_성공에_영향을_주지_않는다() {
         var job = fixture();
         doThrow(new IllegalStateException("redis unavailable")).when(publisher).publish(any());
 
@@ -132,7 +132,7 @@ class StoryGenerationStatusEventHandlerMysqlTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"FAILED", "CANCELED", "USER_CANCEL"})
-    void terminalChangePublishesAfterCommitAndIgnoresRedelivery(String mode) {
+    void 종료_상태_변경은_커밋_후_발행하고_재전달은_무시한다(String mode) {
         var job = fixture();
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             terminate(job, mode);
@@ -160,7 +160,7 @@ class StoryGenerationStatusEventHandlerMysqlTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"FAILED", "CANCELED", "USER_CANCEL"})
-    void rolledBackTerminalChangeDoesNotPublish(String mode) {
+    void 종료_상태_변경을_롤백하면_발행하지_않는다(String mode) {
         var job = fixture();
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             terminate(job, mode);
@@ -173,7 +173,7 @@ class StoryGenerationStatusEventHandlerMysqlTest {
     }
 
     @Test
-    void timeoutPublishesAfterCommitOnceAndKeepsDiagnosticCodeInDatabase() {
+    void 시간_초과는_커밋_후_한_번_발행하고_진단_코드를_DB에_보관한다() {
         var job = fixture();
         var publishedAt = LocalDateTime.of(2026, 10, 29, 10, 0);
         prepareTimeout(job, publishedAt);
@@ -198,7 +198,7 @@ class StoryGenerationStatusEventHandlerMysqlTest {
     }
 
     @Test
-    void timeoutRollbackDoesNotPublishOrPersistFailure() {
+    void 시간_초과를_롤백하면_발행하거나_실패를_저장하지_않는다() {
         var job = fixture();
         var publishedAt = LocalDateTime.of(2026, 10, 29, 10, 0);
         prepareTimeout(job, publishedAt);
@@ -214,7 +214,7 @@ class StoryGenerationStatusEventHandlerMysqlTest {
     }
 
     @Test
-    void unrecoverableResultFailurePublishesOnceAfterCommit() {
+    void 복구_불가_결과_실패는_커밋_후_한_번_발행한다() {
         var job = fixture();
         String message = recoveryMessage(job);
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
@@ -233,7 +233,7 @@ class StoryGenerationStatusEventHandlerMysqlTest {
     }
 
     @Test
-    void unrecoverableResultRollbackDoesNotPublishOrFailJob() {
+    void 복구_불가_결과_처리를_롤백하면_발행하거나_작업을_실패시키지_않는다() {
         var job = fixture();
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             recovery.failIdentifiedJob(recoveryMessage(job));

@@ -66,7 +66,7 @@ class StoryContentRepositoryTest {
     }
 
     @Test
-    void storageServicePreservesExistingContentOnRepeatedInsertion() {
+    void 저장_서비스는_반복_삽입_시_기존_내용을_보존한다() {
         var storage = new com.yeodam.yeodambe.story.service.StoryContentStorageService(repository);
         storage.insertIfAbsent(new StoryContentDocument(
                 101L, Story.Mood.PLAIN, "최초 요약", List.of(7L), List.of(), 1L));
@@ -85,7 +85,7 @@ class StoryContentRepositoryTest {
     }
 
     @Test
-    void preservesNumericIdBlockOrderDatesAndDeletionHistory() {
+    void 숫자_ID와_블록_순서와_날짜와_삭제_이력을_보존한다() {
         Instant timestamp = Instant.parse("2026-11-03T03:30:00.123Z");
         StoryContentBlock deleted = block(30L, timestamp, timestamp);
         StoryContentBlock active = block(10L, timestamp, null);
@@ -111,7 +111,7 @@ class StoryContentRepositoryTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"UTC", "Asia/Seoul", "America/Los_Angeles"})
-    void preservesCalendarDateAndInstantsAcrossServerTimeZones(String readZone) {
+    void 서버_시간대가_달라도_날짜와_시점을_보존한다(String readZone) {
         TimeZone originalZone = TimeZone.getDefault();
         try {
             TimeZone.setDefault(TimeZone.getTimeZone("Asia/Seoul"));
@@ -144,7 +144,7 @@ class StoryContentRepositoryTest {
     }
 
     @Test
-    void rejectsStaleSaveWithoutOverwritingNewerContent() {
+    void 오래된_저장은_최신_내용을_덮어쓰지_않고_거부한다() {
         repository.save(new StoryContentDocument(
                 102L, Story.Mood.PLAIN, "기존 요약", List.of(7L),
                 List.of(block(1L, Instant.parse("2026-11-03T03:30:00Z"), null)), 2L
@@ -164,7 +164,7 @@ class StoryContentRepositoryTest {
     }
 
     @Test
-    void savesContentAndNextIdTogetherWithoutReusingDeletedBlockId() {
+    void 삭제된_블록_ID를_재사용하지_않고_내용과_다음_ID를_함께_저장한다() {
         Instant timestamp = Instant.parse("2026-11-03T03:30:00Z");
         StoryContentBlock deleted = block(30L, timestamp, timestamp);
         StoryContentBlock active = block(10L, timestamp, null);
@@ -189,7 +189,7 @@ class StoryContentRepositoryTest {
     }
 
     @Test
-    void rejectsStaleBlockAllocationAndPreservesWinningDocument() {
+    void 오래된_블록_할당을_거부하고_먼저_저장한_문서를_보존한다() {
         Instant timestamp = Instant.parse("2026-11-03T03:30:00Z");
         repository.save(new StoryContentDocument(105L, Story.Mood.PLAIN,
                 "기존 요약", List.of(7L), List.of(block(10L, timestamp, null)), 11L));

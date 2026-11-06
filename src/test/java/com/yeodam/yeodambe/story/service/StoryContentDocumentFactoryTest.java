@@ -21,7 +21,7 @@ class StoryContentDocumentFactoryTest {
     private final StoryContentDocumentFactory factory = new StoryContentDocumentFactory();
 
     @Test
-    void preservesIdentityOrderContentAndDeletedBlockId() {
+    void 식별자와_순서와_내용과_삭제된_블록_ID를_보존한다() {
         var first = block(30L, 101L, 201L, 1);
         var second = block(10L, 102L, 202L, 2);
         var deleted = block(90L, 103L, 201L, 3);
@@ -55,7 +55,7 @@ class StoryContentDocumentFactoryTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"UTC", "Asia/Seoul", "America/Los_Angeles"})
-    void interpretsTimestampsUsingExplicitSourceZone(String sourceZone) {
+    void 명시한_원본_시간대로_타임스탬프를_해석한다(String sourceZone) {
         var zone = ZoneId.of(sourceZone);
         var created = Instant.parse("2026-11-04T01:00:00Z");
         var updated = Instant.parse("2026-11-04T02:00:00Z");
@@ -72,7 +72,7 @@ class StoryContentDocumentFactoryTest {
     }
 
     @Test
-    void startsBlockIdAtOneForEmptyDocument() {
+    void 빈_문서의_블록_ID는_1부터_시작한다() {
         var document = factory.create(story(), List.of(), List.of(), ZoneId.of("UTC"));
 
         assertThat(document.getBlocks()).isEmpty();

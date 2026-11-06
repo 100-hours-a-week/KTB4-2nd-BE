@@ -27,7 +27,7 @@ class StoryGenerationCancelServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class, names = {"QUEUED", "PROCESSING"})
-    void cancellationAckImmediatelyFinishesJob(StoryGenerationJob.Status status) {
+    void 취소_확인_응답을_받으면_즉시_작업을_종료한다(StoryGenerationJob.Status status) {
         var job = prepare(42L);
         if (status == StoryGenerationJob.Status.PROCESSING) {
             job.updateProcessing(50);
@@ -44,7 +44,7 @@ class StoryGenerationCancelServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class, names = {"COMPLETED", "FAILED", "CANCELED"})
-    void finishedJobIsRejectedBeforeAiRequest(StoryGenerationJob.Status status) {
+    void 종료된_작업은_AI_요청_전에_거부한다(StoryGenerationJob.Status status) {
         var job = prepare(42L);
         switch (status) {
             case COMPLETED -> job.complete(99L);
@@ -60,7 +60,7 @@ class StoryGenerationCancelServiceTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void missingOrOtherOwnerJobIsRejectedBeforeAiRequest(boolean missing) {
+    void 없거나_다른_소유자의_작업은_AI_요청_전에_거부한다(boolean missing) {
         if (missing) {
             when(jobs.findById(7L)).thenReturn(Optional.empty());
         } else {
@@ -73,7 +73,7 @@ class StoryGenerationCancelServiceTest {
     }
 
     @Test
-    void aiAlreadyFinishedErrorMapsToCancellationConflict() {
+    void AI의_이미_종료된_작업_오류는_취소_충돌로_변환한다() {
         prepare(42L);
         when(ai.cancel(77L)).thenThrow(new StoryGenerationAiRequestException(
                 StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 409, "TASK_NOT_CANCELABLE"));
@@ -83,7 +83,7 @@ class StoryGenerationCancelServiceTest {
     }
 
     @Test
-    void connectionFailureRemainsAnErrorInsteadOfSuccessfulCancellation() {
+    void 연결_실패는_취소_성공으로_처리하지_않고_오류로_유지한다() {
         var job = prepare(42L);
         var failure = new StoryGenerationAiRequestException(
                 StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, null, null);
@@ -95,7 +95,7 @@ class StoryGenerationCancelServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationAiResponse.Status.class, names = {"QUEUED", "PROCESSING", "COMPLETED", "FAILED"})
-    void nonCancellationAckIsRejected(StoryGenerationAiResponse.Status status) {
+    void 취소_상태가_아닌_확인_응답은_거부한다(StoryGenerationAiResponse.Status status) {
         prepare(42L);
         when(ai.cancel(77L)).thenReturn(response(77L, "execution-1", status));
 
@@ -106,7 +106,7 @@ class StoryGenerationCancelServiceTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void differentTripOrExecutionAckIsRejected(boolean differentTrip) {
+    void 여행이나_실행_ID가_다른_확인_응답은_거부한다(boolean differentTrip) {
         prepare(42L);
         when(ai.cancel(77L)).thenReturn(response(differentTrip ? 88L : 77L,
                 differentTrip ? "execution-1" : "execution-2", StoryGenerationAiResponse.Status.CANCELED));
@@ -117,7 +117,7 @@ class StoryGenerationCancelServiceTest {
     }
 
     @Test
-    void aiTaskNotFoundAlsoFinishesJob() {
+    void AI_작업이_없어도_취소로_종료한다() {
         var job = prepare(42L);
         when(ai.cancel(77L)).thenThrow(new StoryGenerationAiRequestException(
                 StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 404, "TASK_NOT_FOUND"));
@@ -129,7 +129,7 @@ class StoryGenerationCancelServiceTest {
     }
 
     @Test
-    void unrelatedAiNotFoundDoesNotCancelJob() {
+    void 다른_AI_조회_실패_오류로는_작업을_취소하지_않는다() {
         var job = prepare(42L);
         var failure = new StoryGenerationAiRequestException(
                 StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 404, "OTHER_NOT_FOUND");
@@ -142,7 +142,7 @@ class StoryGenerationCancelServiceTest {
     }
 
     @Test
-    void completionDuringAiCallIsNotReplacedByCancellation() {
+    void AI_호출_중_완료된_작업을_취소로_덮어쓰지_않는다() {
         var job = prepare(42L);
         when(ai.cancel(77L)).thenAnswer(invocation -> {
             job.complete(99L);

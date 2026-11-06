@@ -34,7 +34,7 @@ class StoryCreateResultEventHandlerTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationAiResponse.Status.class, names = {"COMPLETED", "FAILED", "CANCELED"})
-    void looksUpGenerationByExecutionAndDispatchesTerminalResult(StoryGenerationAiResponse.Status status) {
+    void 실행_ID로_생성_작업을_조회하고_종료_결과를_전달한다(StoryGenerationAiResponse.Status status) {
         prepareJob();
         var event = event("story_result", 241L, "execution-1", status);
 
@@ -51,7 +51,7 @@ class StoryCreateResultEventHandlerTest {
     }
 
     @Test
-    void unknownExecutionIsIgnoredWithoutSavingResult() {
+    void 알_수_없는_실행은_결과_저장_없이_무시한다() {
         when(jobs.findByExecutionId("old-execution")).thenReturn(Optional.empty());
 
         handler.handle(event("story_result", 241L, "old-execution", StoryGenerationAiResponse.Status.COMPLETED));
@@ -61,7 +61,7 @@ class StoryCreateResultEventHandlerTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class, names = {"COMPLETED", "FAILED", "CANCELED"})
-    void repeatedOrOldResultForFinishedJobIsIgnored(StoryGenerationJob.Status status) {
+    void 종료된_작업의_중복되거나_오래된_결과는_무시한다(StoryGenerationJob.Status status) {
         prepareJob();
         switch (status) {
             case COMPLETED -> job.complete(99L);
@@ -77,7 +77,7 @@ class StoryCreateResultEventHandlerTest {
 
     @ParameterizedTest
     @MethodSource("invalidEvents")
-    void malformedOrNonTerminalEventDoesNotLookUpJob(StoryCreateResultEvent event) {
+    void 잘못된_이벤트나_종료_전_이벤트는_작업을_조회하지_않는다(StoryCreateResultEvent event) {
         assertThatThrownBy(() -> handler.handle(event)).isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(jobs, completion, terminal);
     }
@@ -95,7 +95,7 @@ class StoryCreateResultEventHandlerTest {
     }
 
     @Test
-    void matchingExecutionWithWrongTripIsRejected() {
+    void 실행_ID가_같아도_여행이_다르면_거부한다() {
         prepareJob();
 
         assertThatThrownBy(() -> handler.handle(event("story_result", 242L, "execution-1",
@@ -105,7 +105,7 @@ class StoryCreateResultEventHandlerTest {
     }
 
     @Test
-    void persistenceFailurePropagatesInsteadOfReturningNormally() {
+    void 저장_실패를_전파한다() {
         prepareJob();
         var event = event("story_result", 241L, "execution-1", StoryGenerationAiResponse.Status.COMPLETED);
         var failure = new IllegalStateException("database unavailable");
@@ -116,7 +116,7 @@ class StoryCreateResultEventHandlerTest {
     }
 
     @Test
-    void nullPayloadIsRejected() {
+    void null_페이로드를_거부한다() {
         assertThatThrownBy(() -> handler.handle(null)).isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(jobs, completion, terminal);
     }

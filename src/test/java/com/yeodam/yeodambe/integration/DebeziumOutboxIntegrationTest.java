@@ -33,7 +33,7 @@ class DebeziumOutboxIntegrationTest {
     private final HttpClient http = HttpClient.newHttpClient();
 
     @Test
-    void actualConnectorPreservesWireAndSkipsUpdatesRollbacksAndPollingSnapshots() throws Exception {
+    void 실제_커넥터는_전송_형식을_보존하고_수정과_롤백과_폴링_스냅샷을_건너뛴다() throws Exception {
         try (var environment = new CdcTestEnvironment()) {
             var mysql = environment.mysql();
             var kafka = environment.kafka();

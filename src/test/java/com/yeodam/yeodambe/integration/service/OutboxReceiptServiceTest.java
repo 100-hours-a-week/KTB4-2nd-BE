@@ -19,7 +19,7 @@ class OutboxReceiptServiceTest {
     private final OutboxReceipt receipt = new OutboxReceipt("requests", "7", "{}", Instant.now());
 
     @Test
-    void dispatchesToTheSourceDomainWithoutChangingReceipt() {
+    void 발행_확인_정보를_바꾸지_않고_원본_도메인에_전달한다() {
         service.observe("trip_creation_outbox", "trip-event", receipt);
         service.observe("story_generation_outbox", "12", receipt);
         service.observe("additional_attachment_upload_outbox", "12", receipt);
@@ -31,7 +31,7 @@ class OutboxReceiptServiceTest {
     }
 
     @Test
-    void rejectsUnregisteredSourcesWithoutConfirmingAnything() {
+    void 등록되지_않은_출처는_아무것도_확인_처리하지_않고_거부한다() {
         assertThatThrownBy(() -> service.observe("unregistered_source", "12", receipt))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(trips, stories, additions);

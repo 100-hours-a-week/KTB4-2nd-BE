@@ -15,7 +15,7 @@ class StoryGenerationAiResponseTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void readsProcessingProgressAndEachStep() {
+    void 처리_진행률과_각_단계를_읽는다() {
         for (String step : new String[]{"SELECTING", "CAPTIONING", "WRITING", "VERIFYING"}) {
             var response = read("""
                     {
@@ -37,7 +37,7 @@ class StoryGenerationAiResponseTest {
     }
 
     @Test
-    void readsThirtyCompletedBlocksAndIgnoresVerification() {
+    void 완료_블록_30개를_읽고_검증_필드는_무시한다() {
         String blocks = IntStream.rangeClosed(1, 30).mapToObj(i -> """
                 {"order_number": %d, "trip_place_id": %d, "trip_attachment_id": %d,
                  "day_label": "첫째 날, 장소", "detail_summary": "사진 요약", "memo": "여행 기록"}
@@ -72,7 +72,7 @@ class StoryGenerationAiResponseTest {
     }
 
     @Test
-    void readsFailureAndPreservesErrorDetail() {
+    void 실패_응답을_읽고_오류_상세를_보존한다() {
         var response = read("""
                 {
                   "trip_id": 77, "execution_id": "execution-1", "status": "FAILED",
@@ -94,7 +94,7 @@ class StoryGenerationAiResponseTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"QUEUED", "CANCELED"})
-    void readsWaitingAndCanceledStatusWithoutResult(String status) {
+    void 결과_없는_대기와_취소_상태를_읽는다(String status) {
         var response = read("""
                 {"trip_id": 77, "execution_id": "execution-1", "status": "%s",
                  "progress": {"done": 0, "total": 4}, "current_step": null,
@@ -107,7 +107,7 @@ class StoryGenerationAiResponseTest {
     }
 
     @Test
-    void rejectsUnknownStatus() {
+    void 알_수_없는_상태를_거부한다() {
         assertThatThrownBy(() -> read("""
                 {"trip_id": 77, "execution_id": "execution-1", "status": "NOT_A_STATUS"}
                 """))

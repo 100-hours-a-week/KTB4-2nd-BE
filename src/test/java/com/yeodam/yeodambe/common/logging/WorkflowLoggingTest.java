@@ -36,7 +36,7 @@ class WorkflowLoggingTest {
     }
 
     @Test
-    void nestedAndExceptionalScopesRestoreThePreviousContext() {
+    void 중첩_범위와_예외_발생_후에_이전_컨텍스트를_복원한다() {
         MDC.put("request_id", "request-1");
         try (var outer = WorkflowMdcScope.job("trip_creation", 42L, "job-a")) {
             assertThatThrownBy(() -> {
@@ -51,7 +51,7 @@ class WorkflowLoggingTest {
     }
 
     @Test
-    void committedStageCapturesContextAndDoesNotLogBeforeCommit() {
+    void 커밋_단계는_컨텍스트를_보존하고_커밋_전에_로그를_남기지_않는다() {
         TransactionSynchronizationManager.initSynchronization();
         try (var scope = WorkflowMdcScope.job("trip_creation", 42L, "job-a")) {
             WorkflowLog.stage("outbox_persistence").committed("ai_request_enqueued");
@@ -65,7 +65,7 @@ class WorkflowLoggingTest {
     }
 
     @Test
-    void rolledBackStageIsFailureAndNeverSuccess() {
+    void 롤백한_단계는_성공이_아닌_실패로_기록한다() {
         TransactionSynchronizationManager.initSynchronization();
         WorkflowLog.stage("outbox_persistence").committed("ai_request_enqueued");
         TransactionSynchronizationManager.getSynchronizations().getFirst()
@@ -79,7 +79,7 @@ class WorkflowLoggingTest {
     }
 
     @Test
-    void batchSummaryIncludesStagesEvenWhenDetailedDebugLoggingIsDisabled() {
+    void 상세_디버그_로그를_꺼도_배치_요약에_단계를_포함한다() {
         var batch = new WorkflowLog.BatchTimings();
         WorkflowLog.collect(batch, () -> {
             try (var timing = WorkflowLog.stage("image_conversion").debug()) {
@@ -121,7 +121,7 @@ class WorkflowLoggingTest {
     }
 
     @Test
-    void realTransactionRollbackDoesNotPublishTerminalSuccess() {
+    void 실제_트랜잭션이_롤백되면_최종_성공을_기록하지_않는다() {
         var dataSource = new org.springframework.jdbc.datasource.DriverManagerDataSource("jdbc:h2:mem:workflow-log");
         var template = new org.springframework.transaction.support.TransactionTemplate(
                 new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource));
@@ -139,7 +139,7 @@ class WorkflowLoggingTest {
     }
 
     @Test
-    void databaseCommitFailureDoesNotPublishTerminalSuccess() throws Exception {
+    void DB_커밋이_실패하면_최종_성공을_기록하지_않는다() throws Exception {
         var dataSource = new org.springframework.jdbc.datasource.DriverManagerDataSource("jdbc:h2:mem:workflow-commit-failure");
         try (var realConnection = dataSource.getConnection()) {
             var connection = org.mockito.Mockito.spy(realConnection);
@@ -160,7 +160,7 @@ class WorkflowLoggingTest {
     }
 
     @Test
-    void terminalEventUsesPersistedStartAndRestoresWorkerContext() {
+    void 최종_이벤트는_저장된_시작_시각을_사용하고_작업자_컨텍스트를_복원한다() {
         TransactionSynchronizationManager.initSynchronization();
         WorkflowLog.finished("story_generation", 42L, "job-a", LocalDateTime.now().minusSeconds(5), "success", null);
         TransactionSynchronizationManager.getSynchronizations().getFirst().afterCommit();

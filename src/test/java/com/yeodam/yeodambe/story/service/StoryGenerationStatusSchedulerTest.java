@@ -46,7 +46,7 @@ class StoryGenerationStatusSchedulerTest {
     }
 
     @Test
-    void queriesOnlyActiveStatesAndPassesEachOriginalRequestId() {
+    void 활성_상태만_조회하고_각_원본_요청_ID를_전달한다() {
         var preparedJobs = List.of(job(10L), job(20L));
         when(jobs.findAllByStatusIn(anyList())).thenReturn(preparedJobs);
         prepareOutbox(10L, "request-10");
@@ -68,7 +68,7 @@ class StoryGenerationStatusSchedulerTest {
     }
 
     @Test
-    void failureDoesNotStopNextJobAndRestoresPreviousRequestId() {
+    void 실패해도_다음_작업을_처리하고_이전_요청_ID를_복원한다() {
         MDC.put("request_id", "previous-request");
         var preparedJobs = List.of(job(10L), job(20L));
         when(jobs.findAllByStatusIn(anyList())).thenReturn(preparedJobs);
@@ -87,7 +87,7 @@ class StoryGenerationStatusSchedulerTest {
     }
 
     @Test
-    void missingOutboxSkipsOnlyThatJob() {
+    void Outbox가_없으면_해당_작업만_건너뛴다() {
         var preparedJobs = List.of(job(10L), job(20L));
         when(jobs.findAllByStatusIn(anyList())).thenReturn(preparedJobs);
         when(outboxes.findByGenerationId(10L)).thenReturn(Optional.empty());
@@ -100,7 +100,7 @@ class StoryGenerationStatusSchedulerTest {
     }
 
     @Test
-    void emptyListDoesNotQueryOutboxOrAi() {
+    void 빈_목록이면_Outbox나_AI를_조회하지_않는다() {
         when(jobs.findAllByStatusIn(anyList())).thenReturn(List.of());
 
         scheduler.synchronizePendingJobs();
@@ -109,7 +109,7 @@ class StoryGenerationStatusSchedulerTest {
     }
 
     @Test
-    void disabledPropertyDoesNotRegisterScheduler() {
+    void 비활성_설정이면_스케줄러를_등록하지_않는다() {
         try (var context = context(false)) {
             context.refresh();
 
@@ -119,7 +119,7 @@ class StoryGenerationStatusSchedulerTest {
     }
 
     @Test
-    void springActuallyInvokesScheduledMethodMoreThanOnce() throws Exception {
+    void Spring이_예약된_메서드를_실제로_여러_번_호출한다() throws Exception {
         var calls = new CountDownLatch(2);
         when(jobs.findAllByStatusIn(anyList())).thenAnswer(call -> {
             calls.countDown();
@@ -135,7 +135,7 @@ class StoryGenerationStatusSchedulerTest {
     }
 
     @Test
-    void overdueJobIsFailedWithoutAnotherAiStatusRequest() {
+    void 기한을_넘긴_작업은_AI_상태_재요청_없이_실패_처리한다() {
         var overdue = job(10L);
         ReflectionTestUtils.setField(overdue, "createdAt", LocalDateTime.now().minusHours(2));
         when(jobs.findAllByStatusIn(anyList())).thenReturn(List.of(overdue));

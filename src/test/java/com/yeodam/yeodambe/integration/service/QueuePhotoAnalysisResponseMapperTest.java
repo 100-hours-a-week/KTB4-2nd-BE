@@ -9,7 +9,7 @@ class QueuePhotoAnalysisResponseMapperTest {
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
-    void preservesCurrentExecutionAndExtractsCompletedResultForExistingPersistence() {
+    void 현재_실행을_유지하고_기존_저장을_위한_완료_결과를_추출한다() {
         var response = QueuePhotoAnalysisResponseMapper.parse(77L, "attempt-one", json.readTree(body("attempt-one")));
         assertThat(response.executionId()).isEqualTo("attempt-one");
         assertThat(response.status()).isEqualTo(TripPhotoAnalysisStatusResponse.Status.COMPLETED);
@@ -23,7 +23,7 @@ class QueuePhotoAnalysisResponseMapperTest {
     }
 
     @Test
-    void rejectsPreviousOrMissingExecutionAndOtherTrip() {
+    void 이전_실행이나_누락된_실행이나_다른_여행은_거부한다() {
         assertThatThrownBy(() -> QueuePhotoAnalysisResponseMapper.parse(77L, "current", json.readTree(body("previous"))))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> QueuePhotoAnalysisResponseMapper.parse(77L, "attempt-one",
@@ -34,7 +34,7 @@ class QueuePhotoAnalysisResponseMapperTest {
     }
 
     @Test
-    void queuedStatusHasNoCompletedResult() {
+    void 대기_상태에는_완료_결과가_없다() {
         var response = QueuePhotoAnalysisResponseMapper.parse(77L, "attempt-one", json.readTree("""
                 {"trip_id":77,"execution_id":"attempt-one","status":"QUEUED",
                  "progress":null,"current_step":null,"result":null,"error":null}
@@ -45,7 +45,7 @@ class QueuePhotoAnalysisResponseMapperTest {
     }
 
     @Test
-    void retainsExistingStatusValidationForInvalidProgress() {
+    void 잘못된_진행_상태에_기존_상태_검증을_유지한다() {
         assertThatThrownBy(() -> QueuePhotoAnalysisResponseMapper.parse(77L, "attempt-one",
                 json.readTree(body("attempt-one").replace("\"done\":2", "\"done\":3"))))
                 .isInstanceOf(IllegalStateException.class);

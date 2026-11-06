@@ -12,7 +12,7 @@ class StoryGenerationStatusResponseTest {
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class,
             mode = EnumSource.Mode.EXCLUDE, names = "COMPLETED")
-    void hidesPreparedIdInUnfinishedOrUnsuccessfulResponse(StoryGenerationJob.Status status) {
+    void 미완료이거나_성공하지_않은_응답은_준비된_ID를_숨긴다(StoryGenerationJob.Status status) {
         var error = new StoryGenerationStatusResponse.Failure("failure", "failed");
         var response = new StoryGenerationStatusResponse(1L, status, 2L, 10L, error);
 
@@ -24,7 +24,7 @@ class StoryGenerationStatusResponseTest {
     }
 
     @Test
-    void exposesCompletedStoryId() {
+    void 완료된_스토리_ID를_공개한다() {
         var response = new StoryGenerationStatusResponse(
                 1L, StoryGenerationJob.Status.COMPLETED, 3L, 10L, null);
 

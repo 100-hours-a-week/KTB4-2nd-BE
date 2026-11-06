@@ -72,7 +72,7 @@ class StoryGenerationAiClientTest {
     }
 
     @Test
-    void getsStatusWithAuthenticationAndRequestId() {
+    void 인증_정보와_요청_ID를_포함해_상태를_조회한다() {
         MDC.put("request_id", "request-241");
 
         var result = client.getStatus(241L);
@@ -89,7 +89,7 @@ class StoryGenerationAiClientTest {
     }
 
     @Test
-    void sendsDeleteAndReadsCancellationResponseWithoutRequestId() {
+    void 요청_ID_없이_DELETE를_전송하고_취소_응답을_읽는다() {
         response = """
                 {"trip_id":241,"execution_id":"execution-1","status":"CANCELED"}
                 """;
@@ -103,7 +103,7 @@ class StoryGenerationAiClientTest {
     }
 
     @Test
-    void readsCompletedBlocksAndIgnoresVerification() {
+    void 완료_블록을_읽고_검증_필드는_무시한다() {
         response = """
                 {"trip_id":241,"execution_id":"execution-1","status":"COMPLETED",
                  "progress":{"done":4,"total":4},"result":{
@@ -121,7 +121,7 @@ class StoryGenerationAiClientTest {
     }
 
     @Test
-    void preservesTaskNotFoundWithoutTurningItIntoFailedJob() {
+    void TASK_NOT_FOUND를_작업_실패로_바꾸지_않고_보존한다() {
         status = 404;
         response = """
                 {"error":{"code":"TASK_NOT_FOUND","message":"not registered","detail":null}}
@@ -136,7 +136,7 @@ class StoryGenerationAiClientTest {
     }
 
     @Test
-    void preservesTaskNotCancelable() {
+    void TASK_NOT_CANCELABLE을_보존한다() {
         status = 409;
         response = """
                 {"error":{"code":"TASK_NOT_CANCELABLE","message":"already completed"}}
@@ -151,7 +151,7 @@ class StoryGenerationAiClientTest {
     }
 
     @Test
-    void preservesHttpStatusWhenErrorBodyIsUnreadableWithoutExposingBody() {
+    void 오류_본문을_읽지_못해도_본문_노출_없이_HTTP_상태를_보존한다() {
         status = 500;
         response = "private-details test-api-key";
 
@@ -166,7 +166,7 @@ class StoryGenerationAiClientTest {
     }
 
     @Test
-    void rejectsEmptySuccessResponse() {
+    void 빈_성공_응답을_거부한다() {
         response = "";
 
         var failure = catchThrowableOfType(StoryGenerationAiRequestException.class,
@@ -176,7 +176,7 @@ class StoryGenerationAiClientTest {
     }
 
     @Test
-    void convertsMalformedSuccessJsonToInternalException() {
+    void 잘못된_성공_JSON을_내부_예외로_변환한다() {
         response = "not-json";
 
         var failure = catchThrowableOfType(StoryGenerationAiRequestException.class,
@@ -188,7 +188,7 @@ class StoryGenerationAiClientTest {
     }
 
     @Test
-    void convertsTimeoutAndConnectionRefusalWithoutHttpStatus() {
+    void 시간_초과와_연결_거부를_HTTP_상태_없는_예외로_변환한다() {
         client = new StoryGenerationAiClient(RestClient.builder(),
                 "http://127.0.0.1:" + server.getAddress().getPort(), "test-api-key",
                 Duration.ofSeconds(1), Duration.ofMillis(100));

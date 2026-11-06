@@ -37,7 +37,7 @@ class StoryGenerationTimeoutServiceTest {
     }
 
     @Test
-    void unpublishedJobDoesNotExpireAfterCreationDeadline() {
+    void 미발행_작업은_생성_기한이_지나도_만료되지_않는다() {
         var job = prepare();
         when(outboxes.findByGenerationId(1L)).thenReturn(Optional.of(
                 new StoryGenerationOutbox(1L, "{}", "request")));
@@ -47,7 +47,7 @@ class StoryGenerationTimeoutServiceTest {
     }
 
     @Test
-    void justBeforeOneHourKeepsQueuedJob() {
+    void 발행_후_한_시간_직전에는_대기_상태를_유지한다() {
         var job = prepare();
         assertThat(service.expire(1L, created.plusHours(3).minusNanos(1))).isFalse();
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
@@ -56,7 +56,7 @@ class StoryGenerationTimeoutServiceTest {
     }
 
     @Test
-    void cdcDeadlineUsesDatabaseTimeInsteadOfJvmTime() {
+    void CDC_기한은_JVM_시간_대신_DB_시간을_사용한다() {
         var job = prepare();
         var outbox = outboxes.findByGenerationId(1L).orElseThrow();
         outbox.enableCdc(7L, "story-requests");
@@ -69,7 +69,7 @@ class StoryGenerationTimeoutServiceTest {
     }
 
     @Test
-    void exactlyOneHourFailsQueuedJob() {
+    void 발행_후_정확히_한_시간이면_대기_작업을_실패_처리한다() {
         var job = prepare();
         assertThat(service.expire(1L, created.plusHours(3))).isTrue();
         assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
@@ -78,7 +78,7 @@ class StoryGenerationTimeoutServiceTest {
     }
 
     @Test
-    void progressDoesNotExtendOriginalDeadline() {
+    void 진행률은_원래_기한을_연장하지_않는다() {
         var job = prepare();
         job.updateProcessing(80);
         assertThat(service.expire(1L, created.plusHours(3))).isTrue();
@@ -88,7 +88,7 @@ class StoryGenerationTimeoutServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = StoryGenerationJob.Status.class, names = {"COMPLETED", "FAILED", "CANCELED"})
-    void doesNotOverwriteFinishedJob(StoryGenerationJob.Status status) {
+    void 종료된_작업을_덮어쓰지_않는다(StoryGenerationJob.Status status) {
         var job = prepare();
         switch (status) {
             case COMPLETED -> job.complete(10L);
@@ -104,7 +104,7 @@ class StoryGenerationTimeoutServiceTest {
     }
 
     @Test
-    void missingJobIsSkipped() {
+    void 없는_작업은_건너뛴다() {
         when(jobs.findByIdForUpdate(1L)).thenReturn(Optional.empty());
         assertThat(service.expire(1L, created.plusHours(2))).isTrue();
         verifyNoInteractions(eventPublisher);

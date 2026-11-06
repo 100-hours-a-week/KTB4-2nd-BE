@@ -47,7 +47,7 @@ class MigrationProbeRepositoryIntegrationTest {
     }
 
     @Test
-    void committedInsertIsVisibleFromIndependentConnection() {
+    void 커밋한_추가_데이터는_독립된_연결에서도_보인다() {
         String runId = UUID.randomUUID().toString();
         String requestId = UUID.randomUUID().toString();
 
@@ -58,7 +58,7 @@ class MigrationProbeRepositoryIntegrationTest {
     }
 
     @Test
-    void differentHashPreservesExistingRow() {
+    void 다른_해시의_요청은_기존_행을_보존한다() {
         String runId = UUID.randomUUID().toString();
         String requestId = UUID.randomUUID().toString();
         service.write(runId, requestId, "a".repeat(64));
@@ -71,7 +71,7 @@ class MigrationProbeRepositoryIntegrationTest {
     }
 
     @Test
-    void concurrentSameRequestsCreateOneRow() throws Exception {
+    void 동일한_동시_요청은_행을_하나만_생성한다() throws Exception {
         String runId = UUID.randomUUID().toString();
         String requestId = UUID.randomUUID().toString();
         CountDownLatch start = new CountDownLatch(1);
@@ -98,7 +98,7 @@ class MigrationProbeRepositoryIntegrationTest {
     }
 
     @Test
-    void missingTableDoesNotReturnSuccess() {
+    void 테이블이_없으면_성공을_반환하지_않는다() {
         jdbc.execute("DROP TABLE migration_write_probe");
 
         assertThatThrownBy(() -> service.write(UUID.randomUUID().toString(), UUID.randomUUID().toString(), "a".repeat(64)))

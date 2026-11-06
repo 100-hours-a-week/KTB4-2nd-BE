@@ -26,7 +26,7 @@ import static org.mockito.Mockito.*;
 class StoryGenerationKafkaConfigurationTest {
     @Test
     @SuppressWarnings("unchecked")
-    void failedDeadLetterPublishDoesNotRecoverOrFailJobAndCanBeRetried() {
+    void DLT_발행에_실패하면_복구나_작업_실패_처리_없이_재시도할_수_있다() {
         var kafka = (KafkaTemplate<String, String>) mock(KafkaTemplate.class);
         var recovery = mock(StoryGenerationResultRecoveryService.class);
         var dltLogs = mock(KafkaDltLogService.class);

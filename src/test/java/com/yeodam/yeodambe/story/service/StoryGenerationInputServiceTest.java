@@ -49,7 +49,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void returnsOwnedActiveTrip() {
+    void 소유한_활성_여행을_반환한다() {
         Trip trip = mock(Trip.class);
         when(trip.getUserId()).thenReturn(2L);
         when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
@@ -64,7 +64,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void rejectsMissingTrip() {
+    void 없는_여행을_거부한다() {
         when(tripRepository.findActiveForUpdate(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.validate(2L, 10L, request))
@@ -72,7 +72,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void rejectsDeletedTripBeforeOwnershipCheck() {
+    void 삭제된_여행은_소유권_확인_전에_거부한다() {
         when(tripRepository.findActiveForUpdate(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.validate(2L, 10L, request))
@@ -80,7 +80,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void rejectsOtherUsersActiveTrip() {
+    void 다른_사용자의_활성_여행을_거부한다() {
         Trip trip = mock(Trip.class);
         when(trip.getUserId()).thenReturn(3L);
         when(tripRepository.findActiveForUpdate(10L)).thenReturn(Optional.of(trip));
@@ -90,7 +90,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void rejectsInvalidRequestBeforeDatabaseLookup() {
+    void 잘못된_요청은_DB_조회_전에_거부한다() {
         assertThatThrownBy(() -> service.validate(2L, 10L,
                 new StoryGenerationRequest(Story.Mood.PLAIN, List.of(101L, 101L))))
                 .isInstanceOf(InvalidStoryRequestException.class);
@@ -98,7 +98,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void acceptsMultipleFoldersRegardlessOfQueryResultOrder() {
+    void 조회_결과_순서와_관계없이_여러_폴더를_허용한다() {
         Trip trip = ownedTrip();
         var selected = new StoryGenerationRequest(Story.Mood.PLAIN, List.of(101L, 102L));
         var folders = List.of(place(10L, null), place(10L, null));
@@ -112,7 +112,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void rejectsMissingSelectedFolderBeforeCountingPhotos() {
+    void 선택한_폴더가_없으면_사진_수_조회_전에_거부한다() {
         ownedTrip();
         when(tripDetailPlaceRepository.findAllById(request.tripPlaceIds())).thenReturn(List.of());
 
@@ -122,7 +122,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void rejectsFolderFromAnotherTripBeforeCountingPhotos() {
+    void 다른_여행의_폴더는_사진_수_조회_전에_거부한다() {
         ownedTrip();
         var folders = List.of(place(20L, null));
         when(tripDetailPlaceRepository.findAllById(request.tripPlaceIds()))
@@ -134,7 +134,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void rejectsDeletedFolderBeforeCountingPhotos() {
+    void 삭제된_폴더는_사진_수_조회_전에_거부한다() {
         ownedTrip();
         var folders = List.of(place(10L, LocalDateTime.of(2026, 10, 9, 9, 0)));
         when(tripDetailPlaceRepository.findAllById(request.tripPlaceIds()))
@@ -146,7 +146,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void rejectsSelectionWhenOneFolderHasNoActivePhotos() {
+    void 한_폴더라도_활성_사진이_없으면_선택을_거부한다() {
         ownedTrip();
         var selected = new StoryGenerationRequest(Story.Mood.PLAIN, List.of(101L, 102L));
         var folders = List.of(place(10L, null), place(10L, null));
@@ -161,7 +161,7 @@ class StoryGenerationInputServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = ProcessingStatus.class, names = {"PROCESSING", "FAILED", "CANCELED"})
-    void rejectsTripThatIsNotCompleted(ProcessingStatus status) {
+    void 처리가_완료되지_않은_여행을_거부한다(ProcessingStatus status) {
         Trip trip = ownedTrip();
         when(trip.getProcessingStatus()).thenReturn(status);
 
@@ -171,7 +171,7 @@ class StoryGenerationInputServiceTest {
     }
 
     @Test
-    void rejectsCompletedTripWithUnfinishedPhotoAddition() {
+    void 여행_처리가_완료되어도_미완료_사진_추가가_있으면_거부한다() {
         ownedTrip();
         when(additionalExecutions.existsByTripIdAndEndedAtIsNull(10L)).thenReturn(true);
 

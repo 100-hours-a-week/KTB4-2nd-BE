@@ -51,7 +51,7 @@ class StoryGenerationOutboxPersistenceTest {
     }
 
     @Test
-    void persistsLargeJsonAndInitialPublicationStateWithoutLeaseColumns() {
+    void 리스_컬럼_없이_대용량_JSON과_초기_발행_상태를_저장한다() {
         String payload = "{\"data\":\"" + "a".repeat(70000) + "\"}";
         var outbox = new StoryGenerationOutbox(job.getId(), payload, "request-original");
         outboxes.saveAndFlush(outbox);
@@ -81,7 +81,7 @@ class StoryGenerationOutboxPersistenceTest {
     }
 
     @Test
-    void persistsPublicationStartAndSuccessWithoutChangingPayload() {
+    void 페이로드를_바꾸지_않고_발행_시작과_성공을_저장한다() {
         var outbox = outboxes.saveAndFlush(new StoryGenerationOutbox(job.getId(), "{}", "request-1"));
         ReflectionTestUtils.setField(outbox, "status", StoryGenerationOutbox.Status.PUBLISHING);
         ReflectionTestUtils.setField(outbox, "attemptCount", 1);
@@ -108,7 +108,7 @@ class StoryGenerationOutboxPersistenceTest {
     }
 
     @Test
-    void persistsFailureReasonAndLeavesMessageUnpublished() {
+    void 실패_사유를_저장하고_메시지를_미발행_상태로_유지한다() {
         var outbox = outboxes.saveAndFlush(new StoryGenerationOutbox(job.getId(), "{}", "request-1"));
         ReflectionTestUtils.setField(outbox, "attemptCount", 1);
         ReflectionTestUtils.setField(outbox, "status", StoryGenerationOutbox.Status.PENDING);
@@ -126,7 +126,7 @@ class StoryGenerationOutboxPersistenceTest {
     }
 
     @Test
-    void databaseRejectsSecondMessageForSameGeneration() {
+    void DB는_같은_생성_작업의_두_번째_메시지를_거부한다() {
         outboxes.saveAndFlush(new StoryGenerationOutbox(job.getId(), "{}", "request-1"));
 
         assertThatThrownBy(() -> insert(job.getId()))
@@ -135,7 +135,7 @@ class StoryGenerationOutboxPersistenceTest {
     }
 
     @Test
-    void databaseRejectsMessageWithoutExistingGeneration() {
+    void DB는_존재하지_않는_생성_작업의_메시지를_거부한다() {
         assertThatThrownBy(() -> insert(-1L))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("fk_story_outbox_generation");

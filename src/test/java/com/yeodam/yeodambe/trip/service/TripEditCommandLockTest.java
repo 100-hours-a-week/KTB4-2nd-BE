@@ -1,6 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
-import com.yeodam.yeodambe.common.exception.WritePermissionRequiredException;
+import com.yeodam.yeodambe.common.exception.TripUpdateNotAllowedException;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.common.response.SuccessMessage;
@@ -12,14 +12,17 @@ import com.yeodam.yeodambe.trip.service.response.TripEditCommandResultResponse;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.validation.Validation;
 import jakarta.validation.ValidatorFactory;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,10 +33,19 @@ import static org.mockito.Mockito.when;
 
 class TripEditCommandLockTest {
     private final TripEditCommandTransactionService transactions = mock(TripEditCommandTransactionService.class);
+    private final TripEditAccessService access = mock(TripEditAccessService.class);
     private final RedissonClient redisson = mock(RedissonClient.class);
     private final RLock redisLock = mock(RLock.class);
     private final ObjectMapper json = new ObjectMapper();
     private final List<String> events = new ArrayList<>();
+
+    @BeforeEach
+    void authorize() {
+        doAnswer(invocation -> {
+            events.add("authorized");
+            return null;
+        }).when(access).requireWritePermission(7L, 1L);
+    }
 
     @Test
     void 락_경합이면_업무와_영속_거절을_실행하지_않는다() throws Exception {
@@ -44,7 +56,7 @@ class TripEditCommandLockTest {
         assertThatThrownBy(() -> service().update(7L, 1L,
                 new TripEditUpdateCommandRequest("same-id", json.readTree("{\"tripName\":\"변경\"}"))))
                 .isInstanceOf(TripEditLockRejectedException.class);
-        assertThat(events).isEmpty();
+        assertThat(events).containsExactly("authorized");
     }
 
     @Test
@@ -52,11 +64,11 @@ class TripEditCommandLockTest {
         acquired();
         when(transactions.update(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
             events.add("rollback");
-            throw new WritePermissionRequiredException();
+            throw new TripUpdateNotAllowedException();
         });
         when(transactions.reject(any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
             events.add("rejection-commit");
-            return new ApiResponse<>(ErrorMessage.WRITE_PERMISSION_REQUIRED,
+            return new ApiResponse<>(ErrorMessage.TRIP_UPDATE_NOT_ALLOWED,
                     new TripEditCommandResultResponse("denied", 7L, "REJECTED", null));
         });
 
@@ -64,7 +76,7 @@ class TripEditCommandLockTest {
                 new TripEditUpdateCommandRequest("denied", json.readTree("{\"tripName\":\"변경\"}")));
 
         assertThat(result.data().status()).isEqualTo("REJECTED");
-        assertThat(events).containsExactly("acquired", "rollback", "rejection-commit", "released");
+        assertThat(events).containsExactly("authorized", "acquired", "rollback", "rejection-commit", "released");
     }
 
     @Test
@@ -80,7 +92,7 @@ class TripEditCommandLockTest {
                 new TripEditUpdateCommandRequest("invalid", json.readTree("{\"unknown\":true}")));
 
         assertThat(result.message()).isEqualTo("INVALID_TRIP_REQUEST");
-        assertThat(events).containsExactly("acquired", "invalid-rejection", "released");
+        assertThat(events).containsExactly("authorized", "acquired", "invalid-rejection", "released");
     }
 
     @Test
@@ -96,7 +108,24 @@ class TripEditCommandLockTest {
                 new TripEditPhotoDeleteCommandRequest("delete", json.readTree("[11,12]")));
 
         assertThat(result.data().sequence()).isEqualTo(3);
-        assertThat(events).containsExactly("acquired", "delete-commit", "released");
+        assertThat(events).containsExactly("authorized", "acquired", "delete-commit", "released");
+    }
+
+    @Test
+    void 확정된_결과가_없는_무결성_오류는_원래_예외를_전파한다() throws Exception {
+        acquired();
+        DataIntegrityViolationException original = new DataIntegrityViolationException(
+                TripEditLockTestErrorMessage.BUSINESS_ROLLBACK.message());
+        when(transactions.update(any(), any(), any(), any(), any())).thenThrow(original);
+        when(transactions.replayExistingResult(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            events.add("result-query");
+            return Optional.empty();
+        });
+
+        assertThatThrownBy(() -> service().update(7L, 1L,
+                new TripEditUpdateCommandRequest("constraint-error", json.readTree("{\"tripName\":\"변경\"}"))))
+                .isSameAs(original);
+        assertThat(events).containsExactly("authorized", "acquired", "released", "result-query");
     }
 
     private TripEditCommandService service() {
@@ -105,7 +134,7 @@ class TripEditCommandLockTest {
                 new TripEditLockProperties(true, "test", Duration.ofMillis(500), Duration.ofSeconds(30)),
                 new SimpleMeterRegistry());
         try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
-            return new TripEditCommandService(transactions, json, factory.getValidator(), lock);
+            return new TripEditCommandService(transactions, access, json, factory.getValidator(), lock);
         }
     }
 

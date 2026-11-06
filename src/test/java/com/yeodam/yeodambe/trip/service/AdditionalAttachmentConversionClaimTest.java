@@ -61,7 +61,7 @@ class AdditionalAttachmentConversionClaimTest {
     }
 
     @Test
-    void claimsBatchAndReturnsDetachedValuesWithoutOfferingLiveClaimAgain() {
+    void 배치를_점유하고_분리된_값을_반환하며_유효한_점유를_재제공하지_않는다() {
         var claim = service.claimBatch().orElseThrow();
         assertThat(claim.batchId()).isEqualTo(batch.getId());
         assertThat(claim.executionId()).isEqualTo(execution.getExecutionId());
@@ -76,7 +76,7 @@ class AdditionalAttachmentConversionClaimTest {
     }
 
     @Test
-    void reclaimsExpiredBatchAndRejectsOldWorkerLeaseRenewal() {
+    void 만료된_배치를_재점유하고_이전_작업자의_임대_갱신을_거부한다() {
         var first = service.claimBatch().orElseThrow();
         entityManager.flush();
         jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET lease_expires_at = '2000-01-01' "
@@ -88,7 +88,7 @@ class AdditionalAttachmentConversionClaimTest {
     }
 
     @Test
-    void refusesRenewalAfterExecutionEndedOrLeaseExpired() {
+    void 실행_종료나_임대_만료_후_갱신을_거부한다() {
         var claim = service.claimBatch().orElseThrow();
         entityManager.flush();
         jdbcTemplate.update("UPDATE additional_attachment_upload_batches SET lease_expires_at = '2000-01-01' "
@@ -102,7 +102,7 @@ class AdditionalAttachmentConversionClaimTest {
     }
 
     @Test
-    void recordsPlannedKeysBeforeConversionAndSavesPhotoOnlyOnce() {
+    void 변환_전에_예정_키를_기록하고_사진을_한_번만_저장한다() {
         var claim = service.claimBatch().orElseThrow();
         Long itemId = claim.photos().getFirst().itemId();
         var keys = service.startPhotoAttempt(claim, itemId);
@@ -134,7 +134,7 @@ class AdditionalAttachmentConversionClaimTest {
     }
 
     @Test
-    void rejectsWrongOutputKeysAndStaleWorkerPhotoSave() {
+    void 잘못된_출력_키와_이전_작업자의_사진_저장을_거부한다() {
         var first = service.claimBatch().orElseThrow();
         Long itemId = first.photos().getFirst().itemId();
         service.startPhotoAttempt(first, itemId);
@@ -160,7 +160,7 @@ class AdditionalAttachmentConversionClaimTest {
     }
 
     @Test
-    void completionClosesInputAndRepeatedCompletionKeepsResultState() {
+    void 완료시_입력을_닫고_반복_완료시_결과_상태를_유지한다() {
         service.markVerified(batch.getTripId(), batch.getUserId(), batch.getUploadId());
         assertThat(execution.isInputClosed()).isTrue();
         execution.receiveResult("{}", "COMPLETED", LocalDateTime.now());
@@ -169,7 +169,7 @@ class AdditionalAttachmentConversionClaimTest {
     }
 
     @Test
-    void permanentConversionFailureDeletesOnlyNewPhotoAndReleasesReservation() {
+    void 영구_변환_실패시_새_사진만_삭제_처리하고_예약을_해제한다() {
         var claim = service.claimBatch().orElseThrow();
         var keys = service.startPhotoAttempt(claim, claim.photos().getFirst().itemId());
         service.retryBatch(claim, claim.photos().getFirst().itemId(), true);
@@ -186,7 +186,7 @@ class AdditionalAttachmentConversionClaimTest {
     }
 
     @Test
-    void capacityRejectionSchedulesRetryWithoutStartingPhotoAttempt() {
+    void 용량_거부시_사진_시도_없이_재시도를_예약한다() {
         var claim = service.claimBatch().orElseThrow();
         service.releaseSaturatedBatch(claim);
         assertThat(service.claimBatch()).isEmpty();

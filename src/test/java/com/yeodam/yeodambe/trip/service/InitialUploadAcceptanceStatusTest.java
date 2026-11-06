@@ -50,7 +50,7 @@ class InitialUploadAcceptanceStatusTest {
                     mock(AttachmentConversionEnqueueService.class), mock(AttachmentConversionTaskRepository.class));
 
     @Test
-    void returnsTheStoredDisplayStateStepAndVersion() {
+    void 저장된_표시_상태와_단계와_버전을_반환한다() {
         var execution = new TripCreationExecution("execution", 7L, 1L, 2);
         execution.updateDisplayStatus(TripDisplayStatus.PROCESSING, "EMBEDDING");
         var trip = trip();
@@ -69,7 +69,7 @@ class InitialUploadAcceptanceStatusTest {
     }
 
     @Test
-    void returnsTheStoredFailureCode() {
+    void 저장된_실패_코드를_반환한다() {
         var execution = new TripCreationExecution("execution", 7L, 1L, 2);
         execution.finish(TripCreationExecution.Status.FAILED, "AI_PROCESSING_FAILED", LocalDateTime.now());
 
@@ -81,7 +81,7 @@ class InitialUploadAcceptanceStatusTest {
     }
 
     @Test
-    void continuesToRejectCanceledUploads() {
+    void 취소된_업로드를_계속_거부한다() {
         var execution = new TripCreationExecution("execution", 7L, 1L, 2);
         execution.finish(TripCreationExecution.Status.CANCELED, null, LocalDateTime.now());
         var trip = trip();

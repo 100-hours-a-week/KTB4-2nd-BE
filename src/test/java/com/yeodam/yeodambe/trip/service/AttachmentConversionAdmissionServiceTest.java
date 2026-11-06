@@ -52,7 +52,7 @@ class AttachmentConversionAdmissionServiceTest {
     }
 
     @Test
-    void staleOrMissingSnapshotRejectsOnlyNewExecution() {
+    void 오래되거나_누락된_스냅샷은_새_실행만_거부한다() {
         assertThat(service.evaluate(null, Duration.ZERO)).isEqualTo(Decision.UNAVAILABLE);
         assertThat(service.evaluate(snapshot(70, 0, Duration.ZERO, 0), Duration.ZERO))
                 .isEqualTo(Decision.OVERLOADED);
@@ -68,7 +68,7 @@ class AttachmentConversionAdmissionServiceTest {
 
     @ParameterizedTest
     @CsvSource({"LIGHT,PHOTOS", "HEIC,PHOTOS", "LIGHT,BYTES", "HEIC,BYTES", "LIGHT,AGE", "HEIC,AGE"})
-    void eitherLaneClosesAtLimitAndReopensStrictlyBelowEveryLowerLimit(Lane lane, String metric) {
+    void 한_레인이라도_한도에_도달하면_차단하고_모든_하한_미만에서만_재개한다(Lane lane, String metric) {
         assertThat(service.evaluate(snapshot(0, 0, Duration.ZERO, 0), Duration.ZERO))
                 .isEqualTo(Decision.ALLOWED);
         assertThat(service.evaluate(metricSnapshot(lane, metric, 100), Duration.ZERO))
@@ -80,7 +80,7 @@ class AttachmentConversionAdmissionServiceTest {
     }
 
     @Test
-    void migrationPendingAndInvalidObservationsFailClosed() {
+    void 이관_미완료와_잘못된_관측은_진입을_차단한다() {
         assertThat(service.evaluate(snapshot(0, 0, Duration.ZERO, 1), Duration.ZERO))
                 .isEqualTo(Decision.MIGRATION_INCOMPLETE);
         assertThat(service.evaluate(new AttachmentConversionBacklogSnapshot(Instant.EPOCH, 0, 0,
@@ -91,7 +91,7 @@ class AttachmentConversionAdmissionServiceTest {
     }
 
     @Test
-    void legacyDbModeRemainsCompatible() {
+    void 기존_DB_모드의_호환성을_유지한다() {
         AttachmentConversionAdmissionService db = service(AttachmentConversionRoute.DB);
         assertThatCode(db::assertNewExecutionAllowed).doesNotThrowAnyException();
         db.sampleBacklog();
@@ -104,7 +104,7 @@ class AttachmentConversionAdmissionServiceTest {
     }
 
     @Test
-    void snapshotQueryFailureDoesNotRefreshAge() throws Exception {
+    void 스냅샷_조회_실패가_관측시각을_갱신하지_않는다() throws Exception {
         observeEmptyBacklog();
         service.sampleBacklog();
         assertThatCode(service::assertNewExecutionAllowed).doesNotThrowAnyException();
@@ -119,7 +119,7 @@ class AttachmentConversionAdmissionServiceTest {
     }
 
     @Test
-    void samplingDoesNotHideQueryLatency() throws Exception {
+    void 샘플링은_조회_지연을_숨기지_않는다() throws Exception {
         observeEmptyBacklog();
         when(jdbc.queryForObject(anyString(), eq(Long.class))).thenAnswer(call -> {
             nanos.set(Duration.ofSeconds(11).toNanos());
@@ -131,7 +131,7 @@ class AttachmentConversionAdmissionServiceTest {
     }
 
     @Test
-    void configurationDefaultsToDbAndRequiresExplicitKafkaAdmissionLimits() {
+    void 기본_모드는_DB이며_Kafka는_명시적_진입_한도를_요구한다() {
         ApplicationContextRunner context = new ApplicationContextRunner().withUserConfiguration(PropertiesConfig.class);
         context.run(result -> {
             assertThat(result).hasNotFailed();
@@ -159,7 +159,7 @@ class AttachmentConversionAdmissionServiceTest {
             "max-unfinished-age=0s", "snapshot-max-age=0s", "sample-interval=0s",
             "sample-interval=11s", "reopen-ratio=0", "reopen-ratio=1", "reopen-ratio=NaN"
     })
-    void rejectsInvalidOrContradictoryKafkaSettings(String setting) {
+    void 잘못되거나_모순된_Kafka_설정을_거부한다(String setting) {
         kafkaContext().withPropertyValues("app.attachment-conversion.admission." + setting)
                 .run(result -> assertThat(result).hasFailed());
     }
@@ -169,7 +169,7 @@ class AttachmentConversionAdmissionServiceTest {
             "interval=0s", "interval=-1s", "interval=", "page-size=0",
             "max-pages-per-run=0", "max-reissues-per-run=-1"
     })
-    void rejectsMissingOrInvalidRecoverySettings(String setting) {
+    void 누락되거나_잘못된_복구_설정을_거부한다(String setting) {
         kafkaContext().withPropertyValues("app.attachment-conversion.recovery." + setting)
                 .run(result -> assertThat(result).hasFailed());
     }

@@ -105,7 +105,7 @@ class AdditionalAttachmentCdcIntegrationTest {
 
 
     @Test
-    void existingOutboxCreatesProcessOnlyAfterPhotosReadyConfirmation() {
+    void 기존_Outbox는_photos_ready_확인_후에만_process를_생성한다() {
         convertBatch(1, 1, true);
         var ready = outboxes.findAll().stream().filter(value -> tripId.equals(value.getTripId())).toList();
         assertThat(ready).hasSize(1);
@@ -136,7 +136,7 @@ class AdditionalAttachmentCdcIntegrationTest {
     }
 
     @Test
-    void newAdditionPublishesAfterCommitButReissuingDoesNotRepeatIt() {
+    void 새_추가는_커밋_후_알리고_재발급시_중복_알리지_않는다() {
         transaction.executeWithoutResult(status -> {
             urls.issueUploadUrls(tripId, userId, request(1, 1, true));
             verifyNoInteractions(notificationPublisher);
@@ -158,7 +158,7 @@ class AdditionalAttachmentCdcIntegrationTest {
     }
 
     @Test
-    void newAdditionRollbackDoesNotPublishOrLeaveAnExecution() {
+    void 새_추가를_롤백하면_알림과_실행을_남기지_않는다() {
         transaction.executeWithoutResult(status -> {
             urls.issueUploadUrls(tripId, userId, request(1, 1, true));
             status.setRollbackOnly();
@@ -169,7 +169,7 @@ class AdditionalAttachmentCdcIntegrationTest {
     }
 
     @Test
-    void failurePublishesOnceAfterCommitAndKeepsExistingPhotos() {
+    void 실패는_커밋_후_한_번만_알리고_기존_사진을_유지한다() {
         urls.issueUploadUrls(tripId, userId, request(1, 1, true));
         clearInvocations(notificationPublisher);
         transaction.executeWithoutResult(status -> {
@@ -193,7 +193,7 @@ class AdditionalAttachmentCdcIntegrationTest {
     }
 
     @Test
-    void rollingBackFailureDoesNotPublishOrChangeTheExecution() {
+    void 실패를_롤백하면_알리지_않고_실행을_변경하지_않는다() {
         urls.issueUploadUrls(tripId, userId, request(1, 1, true));
         clearInvocations(notificationPublisher);
         transaction.executeWithoutResult(status -> {
@@ -209,7 +209,7 @@ class AdditionalAttachmentCdcIntegrationTest {
     }
 
     @Test
-    void waitsForAllBatchesAndConcurrentReceiptsCreateOneProcess() throws Exception {
+    void 모든_배치를_기다리고_동시_수신_확인에도_process를_하나만_생성한다() throws Exception {
         convertBatch(1, 2, false);
         convertBatch(2, 2, true);
         var ready = outboxes.findAll().stream().filter(value -> tripId.equals(value.getTripId())).toList();
@@ -238,7 +238,7 @@ class AdditionalAttachmentCdcIntegrationTest {
     }
 
     @Test
-    void oneUnconfirmedBatchPreventsProcessCreation() {
+    void 미확인_배치가_하나라도_있으면_process를_생성하지_않는다() {
         convertBatch(1, 2, false);
         convertBatch(2, 2, true);
         var ready = outboxes.findAll().stream().filter(value -> tripId.equals(value.getTripId())).toList();
@@ -252,7 +252,7 @@ class AdditionalAttachmentCdcIntegrationTest {
     }
 
     @Test
-    void databaseFailureRollsBackConfirmationAndProcessTogether() {
+    void DB_실패시_수신_확인과_process를_함께_롤백한다() {
         convertBatch(1, 1, true);
         var ready = outboxes.findAll().stream().filter(value -> tripId.equals(value.getTripId()))
                 .findFirst().orElseThrow();
@@ -273,7 +273,7 @@ class AdditionalAttachmentCdcIntegrationTest {
     }
 
     @Test
-    void invalidPayloadAndLateReceiptCannotStartTerminalExecution() {
+    void 잘못된_페이로드와_늦은_수신_확인은_종료된_실행을_시작할_수_없다() {
         convertBatch(1, 1, true);
         var ready = outboxes.findAll().stream().filter(value -> tripId.equals(value.getTripId()))
                 .findFirst().orElseThrow();

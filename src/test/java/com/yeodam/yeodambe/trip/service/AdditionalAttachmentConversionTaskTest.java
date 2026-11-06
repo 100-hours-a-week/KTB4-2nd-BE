@@ -89,7 +89,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void twoFormatsFinalizeAdditionalBatchOnce() throws Exception {
+    void 두_형식의_변환이_추가_배치를_한_번만_완료한다() throws Exception {
         var batch = accepted(true);
         var light = claim(batch, Lane.LIGHT);
         var heic = claim(batch, Lane.HEIC);
@@ -119,7 +119,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void duplicateSuccessReleasesReservationOnce() {
+    void 중복_성공은_예약량을_한_번만_해제한다() {
         var batch = accepted(false);
         var claim = claim(batch, Lane.LIGHT);
         var attempt = begin(claim);
@@ -134,7 +134,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void failureAfterOtherFormatSuccessPreservesThirtyDayCleanup() {
+    void 다른_형식_성공_후_실패해도_30일_정리_보존을_유지한다() {
         var batch = accepted(true);
         var light = claim(batch, Lane.LIGHT);
         assertThat(save(light, begin(light)).status()).isEqualTo(ACK_READY);
@@ -161,7 +161,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void staleTokenCannotOverwriteAttachment() {
+    void 만료된_토큰으로_첨부를_덮어쓸_수_없다() {
         var batch = accepted(false);
         var old = claim(batch, Lane.LIGHT);
         var first = begin(old);
@@ -187,7 +187,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void currentAttemptDbRetryDoesNotIncrementAgain() {
+    void 현재_시도의_DB_재시도는_시도_횟수를_다시_늘리지_않는다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         var first = begin(claim);
         assertThat(begin(claim)).isEqualTo(first);
@@ -197,7 +197,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void additionalRetryLimitSurvivesRestart() {
+    void 추가_변환의_재시도_한도는_재시작_후에도_유지된다() {
         var batch = accepted(false);
         var current = claim(batch, Lane.LIGHT);
         for (int number = 1; number <= 3; number++) {
@@ -219,7 +219,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void thirdBeginCrashCommitsFailureBeforeAckWithoutFourthAttempt() {
+    void 세_번째_시작_중_장애시_네_번째_시도_없이_ACK_전에_실패를_커밋한다() {
         var batch = accepted(false);
         var claim = claim(batch, Lane.LIGHT);
         for (int number = 1; number <= 3; number++) {
@@ -237,7 +237,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void alreadyStoredPhotosFinalizeParentWithoutReaccounting() {
+    void 이미_저장된_사진은_중복_정산_없이_상위_작업을_완료한다() {
         var batch = accepted(false);
         jdbc.update("UPDATE additional_attachment_upload_batches SET conversion_route = 'DB' WHERE upload_batch_id = ?", batch.getId());
         jdbc.update("UPDATE additional_attachment_upload_batches SET next_attempt_at = '2099-01-01' WHERE upload_batch_id <> ?", batch.getId());
@@ -259,7 +259,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void rollbackDoesNotPartiallyPersistPhotoAccountingTaskOrOutbox() {
+    void 롤백시_사진과_정산과_작업과_Outbox를_부분_저장하지_않는다() {
         var batch = accepted(false);
         var claim = claim(batch, Lane.LIGHT);
         transaction.executeWithoutResult(status -> {
@@ -282,7 +282,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void invalidMembershipAndExpiredControlCannotApplyOrAck() {
+    void 잘못된_소속과_만료된_제어권으로_적용하거나_ACK할_수_없다() {
         var batch = accepted(true);
         var claim = claim(batch, Lane.LIGHT);
         var attempt = begin(claim);
@@ -300,7 +300,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void anotherLiveOwnerPreventsTerminalAck() {
+    void 다른_유효_소유자가_있으면_종료_ACK를_거부한다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         var attempt = begin(claim);
         jdbc.update("UPDATE attachment_conversion_tasks SET status = 'SUCCEEDED', claim_token = 'other', lease_until = ? WHERE task_id = ?",
@@ -314,7 +314,7 @@ class AdditionalAttachmentConversionTaskTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void deletionAcknowledgmentAndFailurePreserveBothJournalUpdates(boolean deletionFirst) throws Exception {
+    void 삭제_확인과_실패가_동시에_발생해도_두_저널_갱신을_보존한다(boolean deletionFirst) throws Exception {
         var batch = accepted(false);
         var claim = claim(batch, Lane.LIGHT);
         var attempt = begin(claim);
@@ -364,7 +364,7 @@ class AdditionalAttachmentConversionTaskTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void withdrawalOrDeletionPreventsLateSuccessAndKeepsCleanup(boolean withdrawal) {
+    void 탈퇴나_삭제_후_늦은_성공을_차단하고_정리를_유지한다(boolean withdrawal) {
         var batch = accepted(false);
         var claim = claim(batch, Lane.LIGHT);
         var attempt = begin(claim);
@@ -382,7 +382,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void sourceOverloadsRequireCallerTransaction() {
+    void 소스_오버로드는_호출자의_트랜잭션을_요구한다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         assertThatThrownBy(() -> source.startPhotoAttempt(claim, itemId(claim)))
                 .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
@@ -395,7 +395,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void facadeAlsoCommitsInitialSourceWithTheSameResults() {
+    void 파사드는_초기_소스도_동일한_결과로_커밋한다() {
         var initialTrip = trips.save(new Trip(owner.getUserId(), "초기", LocalDate.now(), LocalDate.now()));
         var batch = initial.prepareBatch(initialTrip.getId(), owner.getUserId(), new InitialAttachmentUploadUrlRequest(
                 1, 1, true, List.of(new InitialAttachmentUploadUrlRequest.Attachment("one.jpg", "image/jpeg", 100L))));
@@ -414,7 +414,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void legacyPersistenceFailureJournalsDerivedObjectsAndReleasesClaimWithoutDeleting() {
+    void 기존_저장_실패시_파생_객체를_저널에_남기고_삭제_없이_제어권을_해제한다() {
         var batch = accepted(false);
         jdbc.update("UPDATE additional_attachment_upload_batches SET conversion_route = 'DB' WHERE upload_batch_id = ?", batch.getId());
         var item = items.findAllByBatch_IdOrderByFileOrderAsc(batch.getId()).getFirst();
@@ -436,7 +436,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void legacyCompensationPreservesFirstCleanupTimeAndActiveAttachmentKeys() {
+    void 기존_보상은_최초_정리시각과_활성_첨부_키를_보존한다() {
         var batch = accepted(false);
         var claim = claim(batch, Lane.LIGHT);
         var attempt = begin(claim);
@@ -453,7 +453,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void compensationRefreshesTaskLoadedBeforeAnotherTransactionStartedItsAttempt() {
+    void 보상시_다른_트랜잭션의_시도_시작_전에_읽은_작업을_새로고침한다() {
         var claim = claim(accepted(false), Lane.LIGHT);
         transaction.executeWithoutResult(status -> {
             assertThat(tasks.findById(claim.taskId()).orElseThrow().getCurrentItemId()).isNull();
@@ -469,7 +469,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void failureRefreshPreservesEarlierCleanupDecisionForEachOutput() {
+    void 실패_새로고침이_출력별_기존_정리_결정을_보존한다() {
         var batch = accepted(false);
         var claim = claim(batch, Lane.LIGHT);
         var attempt = begin(claim);
@@ -484,7 +484,7 @@ class AdditionalAttachmentConversionTaskTest {
     }
 
     @Test
-    void partialLaneDuplicateDoesNotReduceRemainingOrAccountTwice() {
+    void 일부_레인의_중복_성공이_잔여량을_줄이거나_중복_정산하지_않는다() {
         var batch = accepted(List.of("image/jpeg", "image/png", "image/heic"));
         var light = claim(batch, Lane.LIGHT);
         var first = begin(light);

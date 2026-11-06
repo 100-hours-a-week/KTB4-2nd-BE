@@ -29,7 +29,7 @@ class AdditionalAttachmentExecutionPersistenceTest {
     @Autowired private TripRepository trips;
 
     @Test
-    void reloadsExecutionIdentityInitialStateAndDatabaseTimestamps() {
+    void 실행_식별자와_초기_상태와_DB_타임스탬프를_다시_읽는다() {
         Long userId = users.saveAndFlush(new User(UUID.randomUUID() + "@yeodam.test", "execution"))
                 .getUserId();
         Long tripId = trips.saveAndFlush(new Trip(userId, "execution", LocalDate.now(), LocalDate.now()))
@@ -54,7 +54,7 @@ class AdditionalAttachmentExecutionPersistenceTest {
     }
 
     @Test
-    void persistsAcceptedUploadActivityReservationAndInputClosure() {
+    void 수락된_업로드_활동과_예약량과_입력_종료를_영속화한다() {
         Long userId = users.saveAndFlush(new User(UUID.randomUUID() + "@yeodam.test", "execution"))
                 .getUserId();
         Long tripId = trips.saveAndFlush(new Trip(userId, "execution", LocalDate.now(), LocalDate.now()))
@@ -84,7 +84,7 @@ class AdditionalAttachmentExecutionPersistenceTest {
     }
 
     @Test
-    void reloadsReceivedResultAndRetryHistoryAfterReleasingClaim() {
+    void 제어권_해제_후_수신_결과와_재시도_이력을_다시_읽는다() {
         Long userId = users.saveAndFlush(new User(UUID.randomUUID() + "@yeodam.test", "execution"))
                 .getUserId();
         Long tripId = trips.saveAndFlush(new Trip(userId, "execution", LocalDate.now(), LocalDate.now()))
@@ -121,7 +121,7 @@ class AdditionalAttachmentExecutionPersistenceTest {
     }
 
     @Test
-    void persistsFailedSettlementAndFirstEndTimeWithoutAResultClaim() {
+    void 결과_제어권_없이_실패_정산과_최초_종료시각을_영속화한다() {
         Long userId = users.saveAndFlush(new User(UUID.randomUUID() + "@yeodam.test", "execution"))
                 .getUserId();
         Long tripId = trips.saveAndFlush(new Trip(userId, "execution", LocalDate.now(), LocalDate.now()))

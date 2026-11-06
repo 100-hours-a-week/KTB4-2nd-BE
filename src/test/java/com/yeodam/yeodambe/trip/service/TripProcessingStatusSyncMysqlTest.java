@@ -66,7 +66,7 @@ class TripProcessingStatusSyncMysqlTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void concurrentResponsesBasedOnTheSameVersionCommitOnlyOneChange(boolean creation) throws Exception {
+    void 동일_버전_기반의_동시_응답은_변경을_하나만_커밋한다(boolean creation) throws Exception {
         String id = fixture(creation);
         var start = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(2)) {
@@ -91,7 +91,7 @@ class TripProcessingStatusSyncMysqlTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void refreshSeesCompletionCommittedAfterTheEntityWasAlreadyLoaded(boolean creation) throws Exception {
+    void 이미_읽은_엔티티도_새로고침하면_이후_커밋된_완료를_확인한다(boolean creation) throws Exception {
         String id = fixture(creation);
         var transaction = new TransactionTemplate(transactionManager);
         var entityManager = entityManagerFactory.createEntityManager();

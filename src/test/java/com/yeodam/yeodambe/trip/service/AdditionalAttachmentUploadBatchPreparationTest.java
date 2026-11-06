@@ -68,7 +68,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void savesPendingBatchAndOrderedFileMetadataWithDistinctKeys() {
+    void 대기_배치와_순서가_있는_파일_메타데이터를_고유_키로_저장한다() {
         when(attachmentRepository.countForEditByTripId(TRIP_ID)).thenReturn(198L);
         var request = new AdditionalAttachmentUploadUrlRequest(ADDITION_ID, 1, 2, true,
                 List.of(file(1024), file(2048)));
@@ -96,7 +96,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void rejectsMissingOrInaccessibleTripWithoutSaving() {
+    void 없거나_접근할_수_없는_여행은_저장_없이_거부한다() {
         when(tripRepository.findOwnedActiveForUpdate(TRIP_ID, USER_ID)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.prepareBatch(TRIP_ID, USER_ID, request(1, 1, true)))
                 .isInstanceOf(TripNotFoundException.class);
@@ -104,7 +104,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void rejectsTripNotCompleted() {
+    void 완료되지_않은_여행은_거부한다() {
         when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.PROCESSING);
         assertThatThrownBy(() -> service.prepareBatch(TRIP_ID, USER_ID, request(1, 1, true)))
                 .isInstanceOf(TripAttachmentAddNotAllowedException.class);
@@ -112,7 +112,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void rejectsOtherActiveAddition() {
+    void 다른_활성_추가_실행이_있으면_거부한다() {
         when(batchRepository.existsByTripIdAndAdditionIdNotAndStatusIn(eq(TRIP_ID), eq(ADDITION_ID), any()))
                 .thenReturn(true);
         assertThatThrownBy(() -> service.prepareBatch(TRIP_ID, USER_ID, request(1, 1, true)))
@@ -122,7 +122,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void reusesSameBatchWithoutCreatingRecordsAgain() {
+    void 동일_배치를_재사용하고_레코드를_중복_생성하지_않는다() {
         when(executionRepository.findForUpdate(ADDITION_ID)).thenReturn(Optional.of(
                 new AdditionalAttachmentExecution(ADDITION_ID, TRIP_ID, USER_ID, 1, LocalDateTime.now())));
         var batch = previousBatch(1, 1, true, AdditionalAttachmentUploadStatus.PENDING);
@@ -137,7 +137,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void rejectsChangedMetadataForExistingBatch() {
+    void 기존_배치의_메타데이터_변경을_거부한다() {
         var batch = previousBatch(1, 1, true, AdditionalAttachmentUploadStatus.PENDING);
         when(batchRepository.findByAdditionIdAndBatchNo(ADDITION_ID, 1)).thenReturn(Optional.of(batch));
         when(itemRepository.findAllByBatch_IdOrderByFileOrderAsc(7L))
@@ -148,7 +148,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void rejectsTotalOverTwoHundredIncludingExistingPhotos() {
+    void 기존_사진을_포함해_총_200장을_넘으면_거부한다() {
         when(attachmentRepository.countForEditByTripId(TRIP_ID)).thenReturn(200L);
         assertThatThrownBy(() -> service.prepareBatch(TRIP_ID, USER_ID, request(1, 1, true)))
                 .isInstanceOf(AttachmentUploadLimitExceededException.class);
@@ -156,7 +156,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void acceptsNextBatchAfterPreviousBatchVerified() {
+    void 이전_배치_검증_후_다음_배치를_허용한다() {
         when(executionRepository.findForUpdate(ADDITION_ID)).thenReturn(Optional.of(
                 new AdditionalAttachmentExecution(ADDITION_ID, TRIP_ID, USER_ID, 2, LocalDateTime.now())));
         var previous = previousBatch(1, 2, false, AdditionalAttachmentUploadStatus.VERIFIED);
@@ -172,7 +172,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void rejectsSkippedBatchNumberAndUnverifiedPreviousBatch() {
+    void 건너뛴_배치_번호와_미검증_이전_배치를_거부한다() {
         var previous = previousBatch(1, 3, false, AdditionalAttachmentUploadStatus.VERIFIED);
         when(batchRepository.findAllByAdditionIdOrderByBatchNoAsc(ADDITION_ID)).thenReturn(List.of(previous));
         assertThatThrownBy(() -> service.prepareBatch(TRIP_ID, USER_ID, request(3, 3, true)))
@@ -185,7 +185,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void rejectsFirstBatchStartingAtTwoAndIncorrectLastFlag() {
+    void 첫_배치가_2부터_시작하거나_마지막_여부가_잘못되면_거부한다() {
         assertThatThrownBy(() -> service.prepareBatch(TRIP_ID, USER_ID, request(2, 2, false)))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
         assertThatThrownBy(() -> service.prepareBatch(TRIP_ID, USER_ID, request(1, 2, true)))
@@ -196,7 +196,7 @@ class AdditionalAttachmentUploadBatchPreparationTest {
     }
 
     @Test
-    void rejectsAdditionIdBelongingToDifferentTrip() {
+    void 다른_여행에_속한_추가_실행_ID를_거부한다() {
         var previous = previousBatch(1, 2, false, AdditionalAttachmentUploadStatus.VERIFIED);
         when(previous.getTripId()).thenReturn(999L);
         when(batchRepository.findAllByAdditionIdOrderByBatchNoAsc(ADDITION_ID)).thenReturn(List.of(previous));

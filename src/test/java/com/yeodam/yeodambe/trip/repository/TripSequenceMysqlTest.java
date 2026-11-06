@@ -41,14 +41,14 @@ class TripSequenceMysqlTest {
         @Bean JdbcConnectionDetails mysql() throws SQLException { return SharedTestMysql.createDatabase(); }
     }
     @Test
-    void newTripStartsWithZeroSequence() {
+    void 새_여행의_시퀀스는_0으로_시작한다() {
         var user = users.save(new User(UUID.randomUUID() + "@sequence.test", "순서검증"));
         var trip = trips.saveAndFlush(new Trip(user.getUserId(), "순서 검증", LocalDate.now(), LocalDate.now()));
         assertThat(jdbc.queryForObject("SELECT change_sequence FROM trips WHERE trip_id = ?", Long.class, trip.getId())).isZero();
     }
 
     @Test
-    void incrementRollsBackTogetherWithTheMutation() {
+    void 시퀀스_증가는_변경과_함께_롤백된다() {
         Long id = fixture();
         new TransactionTemplate(manager).executeWithoutResult(status -> {
             var trip = trips.findActiveForUpdate(id).orElseThrow();
@@ -61,7 +61,7 @@ class TripSequenceMysqlTest {
     }
 
     @Test
-    void anEntityLoadedBeforeIncrementCannotOverwriteTheDatabaseSequence() {
+    void 증가_전에_읽은_엔티티가_DB_시퀀스를_덮어쓸_수_없다() {
         Long id = fixture();
         new TransactionTemplate(manager).executeWithoutResult(status -> {
             var trip = trips.findActiveForUpdate(id).orElseThrow();
@@ -74,7 +74,7 @@ class TripSequenceMysqlTest {
     }
 
     @Test
-    void concurrentIncrementsFromTwoTransactionsDoNotLoseNumbers() throws Exception {
+    void 두_트랜잭션의_동시_증가가_번호를_유실하지_않는다() throws Exception {
         Long id = fixture();
         var start = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(2)) {

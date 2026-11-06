@@ -47,7 +47,7 @@ class AdditionalAttachmentUploadOutboxPersistenceTest {
     }
 
     @Test
-    void reloadsLargePayloadAndFindsOnlyMatchingBatchAndType() {
+    void 큰_페이로드를_다시_읽고_배치와_유형이_일치하는_항목만_찾는다() {
         String payload = "{\"data\":\"" + "a".repeat(70_000) + "\"}";
         var ready = outboxes.saveAndFlush(new AdditionalAttachmentUploadOutbox(
                 batchId, "photos_ready", payload, "request-original"));
@@ -74,7 +74,7 @@ class AdditionalAttachmentUploadOutboxPersistenceTest {
     }
 
     @Test
-    void persistsPublishingThenPublishedWithoutChangingMessage() {
+    void 메시지를_변경하지_않고_게시중과_게시완료_상태를_영속화한다() {
         var outbox = outboxes.saveAndFlush(new AdditionalAttachmentUploadOutbox(
                 batchId, "photos_ready", "{}", "request-1"));
         ReflectionTestUtils.setField(outbox, "status", AdditionalAttachmentUploadOutbox.Status.PUBLISHING);
@@ -102,7 +102,7 @@ class AdditionalAttachmentUploadOutboxPersistenceTest {
     }
 
     @Test
-    void historicalFailureIsPreservedUntilSuccessfulConfirmation() {
+    void 성공_확인_전까지_과거_실패를_보존한다() {
         var outbox = outboxes.saveAndFlush(new AdditionalAttachmentUploadOutbox(
                 batchId, "photos_ready", "{}", "request-1"));
         ReflectionTestUtils.setField(outbox, "attemptCount", 1);

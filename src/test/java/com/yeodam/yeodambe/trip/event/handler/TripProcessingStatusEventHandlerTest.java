@@ -18,7 +18,7 @@ class TripProcessingStatusEventHandlerTest {
     private final TripProcessingStatusEventHandler handler = new TripProcessingStatusEventHandler(publisher, mock(com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient.class));
 
     @Test
-    void includesTheStoredFailureCodeAndTheExistingUserMessage() {
+    void 저장된_실패_코드와_기존_사용자_메시지를_포함한다() {
         var snapshot = new TripProcessingStateSnapshot(
                 7L, "execution", 3, TripDisplayStatus.FAILED, null, "AI_PROCESSING_FAILED");
 
@@ -33,7 +33,7 @@ class TripProcessingStatusEventHandlerTest {
     }
 
     @Test
-    void doesNotAttachAFailureToACanceledNotification() {
+    void 취소_알림에는_실패를_첨부하지_않는다() {
         handler.handle(new TripProcessingStatusChangedEvent(42L, new TripProcessingStateSnapshot(
                 7L, "execution", 3, TripDisplayStatus.CANCELED, null, null)));
 

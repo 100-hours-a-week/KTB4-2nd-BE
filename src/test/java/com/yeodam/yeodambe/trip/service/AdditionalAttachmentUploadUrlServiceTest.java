@@ -39,7 +39,7 @@ class AdditionalAttachmentUploadUrlServiceTest {
                     mock(AttachmentConversionAdmissionService.class));
 
     @Test
-    void acceptsSupportedFilesAndReturnsBatchBytes() {
+    void 지원_파일을_허용하고_배치_바이트_합계를_반환한다() {
         var request = request(200, List.of(
                 file("photo.jpg", "image/jpeg", 1024),
                 file("photo.png", "image/png", 2048),
@@ -49,7 +49,7 @@ class AdditionalAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void rejectsMissingRequestAndInvalidAdditionId() {
+    void 누락된_요청과_잘못된_추가_실행_ID를_거부한다() {
         assertThatThrownBy(() -> service.validateRequest(null))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
         var files = List.of(file("photo.jpg", "image/jpeg", 1024));
@@ -64,7 +64,7 @@ class AdditionalAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void acceptsTenFilesAndRejectsElevenOrTotalAboveTwoHundred() {
+    void 파일_10개는_허용하고_11개나_총_200장_초과는_거부한다() {
         var photo = file("photo.jpg", "image/jpeg", 15 * MIB);
         assertThat(service.validateRequest(request(200, Collections.nCopies(10, photo))))
                 .isEqualTo(150 * MIB);
@@ -75,7 +75,7 @@ class AdditionalAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void rejectsBatchNumberAndFileCountInconsistentWithTotal() {
+    void 총량과_일치하지_않는_배치_번호와_파일_개수를_거부한다() {
         var photo = file("photo.jpg", "image/jpeg", 1024);
         assertThatThrownBy(() -> service.validateRequest(
                 new AdditionalAttachmentUploadUrlRequest(ADDITION_ID, 2, 1, true, List.of(photo))))
@@ -85,7 +85,7 @@ class AdditionalAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void rejectsEmptyFilesAndMissingMetadata() {
+    void 빈_파일_목록과_누락된_메타데이터를_거부한다() {
         assertThatThrownBy(() -> service.validateRequest(request(1, List.of())))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
         assertThatThrownBy(() -> service.validateRequest(request(1, Collections.singletonList(null))))
@@ -96,7 +96,7 @@ class AdditionalAttachmentUploadUrlServiceTest {
     }
 
     @Test
-    void acceptsExactFileLimitAndRejectsExtraByteOrUnsupportedFormat() {
+    void 파일_한도_경계는_허용하고_1바이트_초과나_미지원_형식은_거부한다() {
         assertThat(service.validateRequest(request(1, List.of(file("photo.jpg", "image/jpeg", 15 * MIB)))))
                 .isEqualTo(15 * MIB);
         assertThatThrownBy(() -> service.validateRequest(request(1,

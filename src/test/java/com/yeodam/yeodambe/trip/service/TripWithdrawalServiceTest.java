@@ -25,7 +25,7 @@ class TripWithdrawalServiceTest {
             mock(AdditionalAttachmentUploadTransactionService.class), mapCache);
 
     @Test
-    void successfulWithdrawalSchedulesMapInvalidationAfterSoftDeletes() {
+    void 탈퇴_성공시_소프트_삭제_후_지도_캐시_무효화를_예약한다() {
         LocalDateTime at = LocalDateTime.of(2026, 10, 14, 12, 0);
         service.withdrawAll(1L, at);
         var ordered = inOrder(trips, mapCache);
@@ -37,7 +37,7 @@ class TripWithdrawalServiceTest {
     }
 
     @Test
-    void failedSoftDeleteDoesNotScheduleInvalidation() {
+    void 소프트_삭제_실패시_지도_캐시_무효화를_예약하지_않는다() {
         LocalDateTime at = LocalDateTime.of(2026, 10, 14, 12, 0);
         doThrow(new IllegalStateException("delete failed")).when(regions).softDeleteByUserId(1L, at);
         assertThatThrownBy(() -> service.withdrawAll(1L, at)).isInstanceOf(IllegalStateException.class);

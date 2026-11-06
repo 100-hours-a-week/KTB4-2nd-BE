@@ -13,7 +13,7 @@ class AdditionalAttachmentConversionStateTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 13, 12, 0);
 
     @Test
-    void refusesClaimUntilVerifiedAndKeepsExistingOwnerOnSecondClaim() {
+    void 검증_전_점유를_거부하고_재점유시_기존_소유자를_유지한다() {
         var batch = batch();
         assertThatThrownBy(() -> batch.claimConversion("first", NOW.plusMinutes(10)))
                 .isInstanceOf(TripAttachmentAddNotAllowedException.class);
@@ -28,7 +28,7 @@ class AdditionalAttachmentConversionStateTest {
     }
 
     @Test
-    void onlyCurrentOwnerCanRenewOrScheduleRetry() {
+    void 현재_소유자만_임대를_갱신하거나_재시도를_예약할_수_있다() {
         var batch = batch();
         batch.markVerified();
         batch.claimConversion("first", NOW.plusMinutes(10));
@@ -57,7 +57,7 @@ class AdditionalAttachmentConversionStateTest {
     }
 
     @Test
-    void retainsCleanupAndAttemptHistoryAfterRetrySucceeds() {
+    void 재시도_성공_후에도_정리와_시도_이력을_보존한다() {
         var item = new AdditionalAttachmentUploadItem(batch(), 1, "photo.jpg", "image/jpeg", 1024L, "original");
         item.startConversion(NOW);
         item.recordCleanup("[\"temporary-preview\"]", NOW.plusMinutes(10));

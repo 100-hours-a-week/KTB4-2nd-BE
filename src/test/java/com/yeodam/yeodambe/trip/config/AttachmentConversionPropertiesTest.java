@@ -18,7 +18,7 @@ class AttachmentConversionPropertiesTest {
             "initial-light,same,additional-light,same",
             "initial-light,initial-heic,same,same"
     })
-    void rejectsTopicNamesSharedByDifferentKindOrLane(
+    void 다른_종류나_레인이_공유하는_토픽_이름을_거부한다(
             String initialLight,
             String initialHeic,
             String additionalLight,
@@ -29,7 +29,7 @@ class AttachmentConversionPropertiesTest {
     }
 
     @Test
-    void preservesDistinctConfiguredTopicNames() {
+    void 서로_다른_설정_토픽_이름을_보존한다() {
         Topics configured = new Topics("initial-light", "initial-heic", "additional-light", "additional-heic");
         assertThat(configured.initialLight()).isEqualTo("initial-light");
         assertThat(configured.initialHeic()).isEqualTo("initial-heic");

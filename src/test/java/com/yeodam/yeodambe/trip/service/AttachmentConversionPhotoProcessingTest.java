@@ -85,7 +85,7 @@ class AttachmentConversionPhotoProcessingTest {
     @ParameterizedTest
     @CsvSource({"INITIAL,image/jpeg", "ADDITIONAL,image/jpeg", "INITIAL,image/png", "ADDITIONAL,image/png",
             "INITIAL,image/heic", "ADDITIONAL,image/heic"})
-    void initialAndAdditionalPreserveMetadataAndKeys(Kind kind, String mime) throws Exception {
+    void 초기와_추가_변환은_메타데이터와_키를_보존한다(Kind kind, String mime) throws Exception {
         byte[] original = original(mime);
         var claim = claim(kind, mime, original.length);
         var photo = claim.photos().getFirst();
@@ -135,7 +135,7 @@ class AttachmentConversionPhotoProcessingTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void putMustFinishBeforeTemporaryFileCloses(Kind kind) throws Exception {
+    void 임시_파일을_닫기_전에_PUT이_완료돼야_한다(Kind kind) throws Exception {
         var claim = claim(kind, "image/jpeg", 100);
         var photo = claim.photos().getFirst();
         when(storage.open(photo.objectKey())).thenReturn(new ByteArrayInputStream(original("image/jpeg")));
@@ -173,7 +173,7 @@ class AttachmentConversionPhotoProcessingTest {
 
     @ParameterizedTest
     @EnumSource(Kind.class)
-    void cancelledOrLostClaimDoesNotStartNextPut(Kind kind) throws Exception {
+    void 취소되거나_제어권을_잃으면_다음_PUT을_시작하지_않는다(Kind kind) throws Exception {
         var claim = claim(kind, "image/jpeg", 100);
         var photo = claim.photos().getFirst();
         when(storage.open(photo.objectKey())).thenReturn(new ByteArrayInputStream(original("image/jpeg")));
@@ -204,7 +204,7 @@ class AttachmentConversionPhotoProcessingTest {
     }
 
     @Test
-    void allPlannedKeysRemainTrackedAfterPartialFailure() throws Exception {
+    void 일부_실패_후에도_모든_예정_키를_추적한다() throws Exception {
         var user = users.save(new User(UUID.randomUUID() + "@photo.test", "사진 실행"));
         stats.save(new UserStats(user));
         var trip = trips.save(new Trip(user.getUserId(), "사진 실행", LocalDate.now(), LocalDate.now()));

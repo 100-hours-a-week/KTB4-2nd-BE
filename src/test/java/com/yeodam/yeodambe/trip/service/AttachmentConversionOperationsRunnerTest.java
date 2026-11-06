@@ -17,13 +17,13 @@ class AttachmentConversionOperationsRunnerTest {
             new AttachmentConversionOperationsRunner(migration, environment, new ObjectMapper());
 
     @Test
-    void checkIsReadOnlyAndMissingEvidenceRejectsTransfer() {
+    void 점검은_읽기_전용이며_근거가_없으면_전환을_거부한다() {
         assertThat(runner.execute(arguments("CHECK"))).isZero();
         assertThat(runner.execute(arguments("TRANSFER"))).isNotZero();
     }
 
     @Test
-    void rejectsInvalidInputWithoutReadingDatabase() {
+    void 잘못된_입력은_DB_조회_없이_거부한다() {
         assertThat(runner.execute(new DefaultApplicationArguments(
                 "--app.attachment-conversion.operations.action=TRANSFER",
                 "--app.attachment-conversion.operations.kind=INITIAL",

@@ -68,7 +68,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void fourEntryPointsPassFixedKindLaneAndRecordPosition() throws Exception {
+    void 네_진입점은_고정된_종류와_레인과_레코드_위치를_전달한다() throws Exception {
         when(worker.process(anyString(), any(), any(), anyString(), anyInt()))
                 .thenReturn(CompletableFuture.completedFuture(null));
         var topics = properties.topics();
@@ -88,7 +88,7 @@ class AttachmentConversionKafkaListenerTest {
             "{\"schemaVersion\":1,\"taskId\":\"1-1-1-1-1\"}", "{\"schemaVersion\":1,\"taskId\":\"invalid\"}",
             "{\"schemaVersion\":1.5,\"taskId\":\"00000000-0000-0000-0000-000000000001\"}",
             "{\"schemaVersion\":\"1\",\"taskId\":\"00000000-0000-0000-0000-000000000001\"}"})
-    void malformedMessageIsAckedOnlyAfterDltSuccess(String payload) throws Exception {
+    void 잘못된_메시지는_DLT_게시_성공_후에만_ACK한다(String payload) throws Exception {
         var published = new CompletableFuture<SendResult<String, String>>();
         var sent = new CountDownLatch(1);
         when(kafka.send(any(ProducerRecord.class))).thenAnswer(call -> {
@@ -112,7 +112,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void blockedDltSendDoesNotHoldAnotherTopicListenerMonitor() throws Exception {
+    void DLT_전송이_막혀도_다른_토픽_리스너의_모니터를_점유하지_않는다() throws Exception {
         var sending = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         when(kafka.send(any(ProducerRecord.class))).thenAnswer(call -> {
@@ -137,7 +137,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void dltFailureKeepsOuterFuturePendingAcrossCallbackRetries() throws Exception {
+    void DLT_실패시_콜백_재시도_중에도_외부_Future는_대기한다() throws Exception {
         var attempts = new AtomicInteger();
         var retried = new CountDownLatch(1);
         var publication = new CompletableFuture<SendResult<String, String>>();
@@ -157,7 +157,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void synchronousAndAsyncTechnicalFailuresNeverEscapeAsExceptionalAckFuture() throws Exception {
+    void 동기와_비동기_기술_실패가_ACK_Future의_예외_완료로_전파되지_않는다() throws Exception {
         var attempts = new AtomicInteger();
         var retried = new CountDownLatch(1);
         var databaseAndCleanup = new CompletableFuture<Void>();
@@ -181,7 +181,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void cancelledWorkerFutureIsRetriedWithoutCancellingAckFuture() throws Exception {
+    void 작업_Future_취소시_ACK_Future를_취소하지_않고_재시도한다() throws Exception {
         var cancelled = new CompletableFuture<Void>();
         cancelled.cancel(true);
         var pending = new CompletableFuture<Void>();
@@ -199,7 +199,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void invalidDatabaseRoutingIsTheOnlyWorkerFailureSentToDlt() throws Exception {
+    void 작업_실패_중_잘못된_DB_라우팅만_DLT로_보낸다() throws Exception {
         when(worker.process(anyString(), any(), any(), anyString(), anyInt())).thenReturn(
                 CompletableFuture.failedFuture(new InvalidAttachmentConversionMessageException()));
         when(kafka.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(null));
@@ -208,7 +208,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void partitionLostNeverAcknowledgesUnfinishedTask() {
+    void 파티션을_잃으면_미완료_작업을_ACK하지_않는다() {
         var current = new CompletableFuture<Void>();
         when(worker.process(anyString(), any(), any(), anyString(), anyInt())).thenReturn(current);
         var record = record(properties.topics().initialLight(), valid());
@@ -220,7 +220,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void reassignmentPausesOnConsumerThreadUntilMatchingCleanupGeneration() {
+    void 재할당시_해당_정리_세대가_끝날_때까지_컨슈머_스레드에서_일시정지한다() {
         var cleanup = new CompletableFuture<Void>();
         String topic = properties.topics().initialLight();
         var partitions = List.of(new TopicPartition(topic, 2));
@@ -240,7 +240,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void revocationRemovesScheduledRetryWithoutAcknowledgingOriginal() {
+    void 할당_회수시_원본을_ACK하지_않고_예약된_재시도를_제거한다() {
         var waiting = new AttachmentConversionKafkaListener(worker, JsonMapper.builder().build(), kafka,
                 properties, "conversion-dlt", Duration.ofSeconds(30), scheduler, registry);
         when(worker.process(anyString(), any(), any(), anyString(), anyInt()))
@@ -255,7 +255,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void reassignmentWaitsForRetiredDltPublicationWithoutAcknowledgingOldGeneration() throws Exception {
+    void 재할당시_이전_세대를_ACK하지_않고_회수된_DLT_게시를_기다린다() throws Exception {
         var publication = new CompletableFuture<SendResult<String, String>>();
         var sent = new CountDownLatch(1);
         when(kafka.send(any(ProducerRecord.class))).thenAnswer(call -> {
@@ -281,7 +281,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void actualProducerFailureDoesNotLogDeadLetterPayloadOrExceptionAndCanRetry() throws Exception {
+    void 실제_프로듀서_실패시_DLT_페이로드와_예외를_로그에_남기지_않고_재시도한다() throws Exception {
         var nativeProducer = new org.apache.kafka.clients.producer.MockProducer<String, String>(false, null,
                 new org.apache.kafka.common.serialization.StringSerializer(), new org.apache.kafka.common.serialization.StringSerializer());
         var producers = new org.springframework.kafka.core.DefaultKafkaProducerFactory<String, String>(java.util.Map.of("bootstrap.servers", "unused:9092")) {
@@ -325,7 +325,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void receiptSharingTopicCannotBeSelectedInsteadOfWorkGroupContainer() {
+    void 토픽을_공유하는_수신_확인_컨테이너를_작업_그룹_대신_선택하지_않는다() {
         String topic = properties.topics().initialLight();
         var partitions = List.of(new TopicPartition(topic, 2));
         var receipt = mock(MessageListenerContainer.class);
@@ -348,7 +348,7 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
-    void rejectsDeadLetterTopicThatLoopsBackIntoWork() {
+    void 작업_토픽으로_되돌아가는_DLT_토픽을_거부한다() {
         assertThatThrownBy(() -> new AttachmentConversionKafkaListener(worker, JsonMapper.builder().build(), kafka,
                 properties, properties.topics().initialLight(), Duration.ofMillis(50), scheduler, registry))
                 .isInstanceOf(IllegalArgumentException.class);

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.repository;
 
+import com.yeodam.yeodambe.trip.entity.TripSharePermission;
 import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,28 @@ import java.util.List;
 import java.util.Optional;
 
 public interface TripShareUserRepository extends JpaRepository<TripShareUser, Long> {
+    @Query("""
+            select share.granteeUserId as granteeUserId, share.permission as permission, share.expiresAt as expiresAt
+            from TripShareUser share
+            where share.tripId = :tripId
+              and share.userId = :ownerId
+              and share.deletedAt is null
+              and share.expiresAt > :checkedAt
+            """)
+    List<ReadGrantRow> findReadableGrantsByTripIdAndOwnerId(
+            @Param("tripId") Long tripId,
+            @Param("ownerId") Long ownerId,
+            @Param("checkedAt") LocalDateTime checkedAt
+    );
+
+    interface ReadGrantRow {
+        Long getGranteeUserId();
+
+        TripSharePermission getPermission();
+
+        LocalDateTime getExpiresAt();
+    }
+
     Optional<TripShareUser> findByTripIdAndGranteeUserId(Long tripId, Long granteeUserId);
 
     @Query("""

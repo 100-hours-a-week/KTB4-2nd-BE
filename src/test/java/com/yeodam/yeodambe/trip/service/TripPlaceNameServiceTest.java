@@ -105,6 +105,29 @@ class TripPlaceNameServiceTest {
     }
 
     @Test
+    void 최초_조회와_재시도를_가상_스레드에서_실행한다() {
+        TripPlaceNameService service = service(5);
+        when(executions.isCurrent(7L, "run")).thenReturn(true);
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger virtualThreadCalls = new AtomicInteger();
+        when(client.lookup(any(), any())).thenAnswer(call -> {
+            if (Thread.currentThread().isVirtual()) {
+                virtualThreadCalls.incrementAndGet();
+            }
+            if (calls.incrementAndGet() == 1) {
+                return failure(KakaoLocalClient.Failure.RETRYABLE);
+            }
+            return success("재시도 성공", "서울특별시");
+        });
+
+        Map<String, String> names = service.resolve(7L, "run", onePlace());
+
+        assertThat(names).containsExactly(Map.entry("p1", "재시도 성공"));
+        assertThat(calls).hasValue(2);
+        assertThat(virtualThreadCalls).hasValue(2);
+    }
+
+    @Test
     void 재시도_가능한_실패만_한번_더_호출한다() {
         TripPlaceNameService service = service(5);
         when(executions.isCurrent(7L, "run")).thenReturn(true);

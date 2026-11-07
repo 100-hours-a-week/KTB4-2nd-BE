@@ -91,7 +91,7 @@ public class TripPlaceNameService {
     ) {
         Map<Coordinate, KakaoLocalClient.LookupResult> results = new HashMap<>();
         Map<String, String> callerMdc = MDC.getCopyOfContextMap();
-        ExecutorService executor = Executors.newFixedThreadPool(maxConcurrency);
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
         try {
             for (int from = 0; from < coordinates.size(); from += maxConcurrency) {
                 if (!currentExecution.getAsBoolean()) {
@@ -102,8 +102,11 @@ public class TripPlaceNameService {
                         from, Math.min(from + maxConcurrency, coordinates.size()));
                 List<Future<KakaoLocalClient.LookupResult>> futures = chunk.stream()
                         .map(entry -> executor.submit(() -> {
-                            if (callerMdc == null) MDC.clear();
-                            else MDC.setContextMap(callerMdc);
+                            if (callerMdc == null) {
+                                MDC.clear();
+                            } else {
+                                MDC.setContextMap(callerMdc);
+                            }
                             try {
                                 return lookup(tripId, executionId, entry.getValue());
                             } finally {

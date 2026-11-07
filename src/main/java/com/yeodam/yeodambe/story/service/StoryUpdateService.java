@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.repository.StoryContentRepository;
+import com.yeodam.yeodambe.story.repository.StoryContentUpdateRepository;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
@@ -44,6 +45,7 @@ public class StoryUpdateService {
     private final StoryValidator storyValidator;
     private final StoryReadService storyReadService;
     private final StoryContentRepository storyContentRepository;
+    private final StoryContentUpdateRepository contentUpdateRepository;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public StoryUpdateResponse update(
@@ -64,6 +66,7 @@ public class StoryUpdateService {
 
         Story story = requireEditableStory(userId, storyId);
         StoryContentDocument content = requireContent(storyId);
+        List<StoryContentBlock> previousBlocks = content.getBlocks();
         validateContentBlockIds(content, request.blocks());
         validateContentAttachmentReuse(request.blocks(), content.getBlocks());
 
@@ -76,7 +79,7 @@ public class StoryUpdateService {
 
         StoryUpdateResponse response = StoryUpdateResponse.from(
                 storyReadService.prepareContentResponse(story.getTripId(), true, content));
-        storyContentRepository.save(content);
+        contentUpdateRepository.saveChanges(content, previousBlocks);
         return response;
     }
 

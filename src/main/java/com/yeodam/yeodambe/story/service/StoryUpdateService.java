@@ -281,20 +281,26 @@ public class StoryUpdateService {
     private Map<Long, TripDetailPlace> findPlaces(
             Map<Long, TripAttachment> attachmentsById
     ) {
-        List<Long> placeIds = attachmentsById.values().stream()
+        Map<Long, TripDetailPlace> placesById = attachmentsById.values().stream()
+                .map(TripAttachment::getTripPlace)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(
+                        TripDetailPlace::getId,
+                        place -> place,
+                        (first, duplicate) -> first
+                ));
+        List<Long> missingPlaceIds = attachmentsById.values().stream()
                 .map(TripAttachment::getTripPlaceId)
                 .filter(Objects::nonNull)
                 .distinct()
+                .filter(placeId -> !placesById.containsKey(placeId))
                 .toList();
 
-        if (placeIds.isEmpty()) {
-            return Map.of();
+        // 같은 영속성 컨텍스트에서 FK만 바뀌면 연관 객체가 이전 장소를 가리킬 수 있다.
+        if (!missingPlaceIds.isEmpty()) {
+            tripDetailPlaceRepository.findAllById(missingPlaceIds)
+                    .forEach(place -> placesById.put(place.getId(), place));
         }
-
-        return tripDetailPlaceRepository.findAllById(placeIds).stream()
-                .collect(Collectors.toMap(
-                        TripDetailPlace::getId,
-                        place -> place
-                ));
+        return placesById;
     }
 }

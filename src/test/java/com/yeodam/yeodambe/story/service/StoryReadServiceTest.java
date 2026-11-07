@@ -7,7 +7,6 @@ import com.yeodam.yeodambe.story.repository.*;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
-import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +22,7 @@ import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail;
 import com.yeodam.yeodambe.story.service.response.StoryReadContext;
+import com.yeodam.yeodambe.story.service.response.StoryReadContent;
 import com.yeodam.yeodambe.trip.service.TripEditAuthorizationService;
 import java.time.ZoneOffset;
 import java.util.stream.IntStream;
@@ -74,16 +74,16 @@ class StoryReadServiceTest {
                         documentBlocks.getLast(), row.getAttachment(), row.getFile(), row.getPlace()));
             }
         }
-        when(contents.findById(1L)).thenReturn(Optional.of(new StoryContentDocument(
-                1L, story.getMood(), story.getStorySummary(), List.of(), documentBlocks, 100L)));
+        when(contents.findActiveContentById(1L)).thenReturn(Optional.of(new StoryReadContent(
+                1L, story.getMood(), story.getStorySummary(), documentBlocks)));
         lenient().when(references.findByBlocks(anyList())).thenReturn(details);
     }
 
     @Test
     void 분위기와_요약은_MySQL이_아닌_MongoDB_본문을_사용한다() {
         found(List.of());
-        when(contents.findById(1L)).thenReturn(Optional.of(new StoryContentDocument(
-                1L, Story.Mood.CALM, "문서의 요약", List.of(), List.of(), 1L)));
+        when(contents.findActiveContentById(1L)).thenReturn(Optional.of(new StoryReadContent(
+                1L, Story.Mood.CALM, "문서의 요약", List.of())));
 
         StoryDetailResponse response = service.findStory(42L, 7L);
 
@@ -95,7 +95,7 @@ class StoryReadServiceTest {
     @Test
     void 완료된_스토리의_문서가_없으면_정합성_오류다() {
         found(List.of());
-        when(contents.findById(1L)).thenReturn(Optional.empty());
+        when(contents.findActiveContentById(1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.findStory(42L, 7L))
                 .isInstanceOf(StoryDataIntegrityException.class)

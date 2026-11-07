@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.story.service.response.StoryReadContext;
+import com.yeodam.yeodambe.story.service.response.StoryReadContent;
 import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
@@ -42,7 +43,7 @@ public class StoryReadService {
         if (context.storyId() == null) {
             throw new StoryNotFoundException();
         }
-        StoryContentDocument content = storyContentRepository.findById(context.storyId())
+        StoryReadContent content = storyContentRepository.findActiveContentById(context.storyId())
                 .orElseThrow(() -> new StoryDataIntegrityException(
                         StoryGenerationInternalErrorMessage.CONTENT_DOCUMENT_MISSING
                 ));
@@ -54,7 +55,17 @@ public class StoryReadService {
             boolean userByMe,
             StoryContentDocument content
     ) {
-        List<StoryContentBlock> blocks = content.getBlocks().stream()
+        return prepareContentResponse(tripId, userByMe, new StoryReadContent(
+                content.getId(), content.getMood(), content.getStorySummary(), content.getBlocks()
+        ));
+    }
+
+    private StoryDetailResponse prepareContentResponse(
+            Long tripId,
+            boolean userByMe,
+            StoryReadContent content
+    ) {
+        List<StoryContentBlock> blocks = content.blocks().stream()
                 .filter(block -> block.deletedAt() == null)
                 .toList();
 
@@ -72,11 +83,11 @@ public class StoryReadService {
         storyValidator.validateContentDisplayBlocks(tripId, visibleBlocks);
 
         return new StoryDetailResponse(
-                content.getId(),
+                content.id(),
                 tripId,
                 userByMe,
-                content.getMood(),
-                content.getStorySummary(),
+                content.mood(),
+                content.storySummary(),
                 buildContentDays(details)
         );
     }

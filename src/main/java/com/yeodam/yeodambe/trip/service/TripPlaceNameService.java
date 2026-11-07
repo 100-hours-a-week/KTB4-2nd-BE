@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
+import com.yeodam.yeodambe.common.validation.TextValidation;
 
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 
@@ -220,13 +221,22 @@ public class TripPlaceNameService {
     }
 
     private String firstText(String first, String second) {
-        if (first != null && !first.isBlank()) {
-            return first.trim();
+        String normalizedFirst = normalizeName(first);
+        if (TextValidation.hasVisibleContent(normalizedFirst)) {
+            return normalizedFirst;
         }
-        if (second != null && !second.isBlank()) {
-            return second.trim();
+        String normalizedSecond = normalizeName(second);
+        if (TextValidation.hasVisibleContent(normalizedSecond)) {
+            return normalizedSecond;
         }
         return null;
+    }
+
+    private String normalizeName(String name) {
+        if (name == null) {
+            return null;
+        }
+        return TextValidation.stripInvisible(name.trim());
     }
 
     private String truncate(String value, int maximum) {

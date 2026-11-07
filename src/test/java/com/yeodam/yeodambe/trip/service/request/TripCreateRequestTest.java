@@ -80,7 +80,24 @@ class TripCreateRequestTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"제주 여행", "!?", "ㄱㄴ", "e\u0301", "👨‍👩‍👧‍👦", "제주\u200B"})
+    @ValueSource(strings = {"\u00A0제주\uFEFF", "\u200B제주", "제주\u200B", "\u3164 제주 \u2800"})
+    void 여행명_앞뒤의_유니코드_특수_공백을_제거한다(String name) {
+        TripCreateRequest request = request(name, List.of("50110"));
+
+        assertThat(validator.validate(request)).isEmpty();
+        assertThat(request.tripName()).isEqualTo("제주");
+    }
+
+    @Test
+    void 여행명_길이는_특수_공백_제거_후_코드_포인트_기준이다() {
+        String name = "\u00A0\u200B" + "😀".repeat(10) + "\uFEFF\u3164";
+
+        assertThat(validator.validate(request(name, List.of("50110")))).isEmpty();
+        assertThat(validator.validate(request(name + "가", List.of("50110")))).isNotEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"제주 여행", "!?", "ㄱㄴ", "e\u0301", "👨‍👩‍👧‍👦", "제주\u200B여행"})
     void 표시할_내용이_있는_여행명은_변경하지_않는다(String name) {
         TripCreateRequest request = request(name, List.of("50110"));
 

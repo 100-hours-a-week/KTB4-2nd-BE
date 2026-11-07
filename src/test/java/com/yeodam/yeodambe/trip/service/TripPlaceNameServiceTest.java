@@ -109,6 +109,31 @@ class TripPlaceNameServiceTest {
     }
 
     @Test
+    void 보이지_않는_문자만_있는_이름은_다음_후보로_대체하고_앞뒤를_정리한다() {
+        TripPlaceNameService service = service(5);
+        when(executions.isCurrent(7L, "run")).thenReturn(true);
+        when(client.lookup(new BigDecimal("33.45"), new BigDecimal("126.94")))
+                .thenReturn(success("\u00A0\u200B", "\uFEFF서귀포시\u00A0"));
+        when(client.lookup(new BigDecimal("35.18"), new BigDecimal("129.07")))
+                .thenReturn(success("\u3164", "\u2800"));
+        when(client.lookup(new BigDecimal("37.56"), new BigDecimal("126.97")))
+                .thenReturn(success("\u200B남산타워\uFEFF", "서울특별시"));
+
+        Map<String, String> names = service.resolve(7L, "run", json.readTree("""
+                {"places":[
+                  {"place_id":"p1","latitude":33.45,"longitude":126.94},
+                  {"place_id":"p2","latitude":35.18,"longitude":129.07},
+                  {"place_id":"p3","latitude":37.56,"longitude":126.97}
+                ]}
+                """));
+
+        assertThat(names).containsExactly(
+                Map.entry("p1", "서귀포시"),
+                Map.entry("p2", "장소 2"),
+                Map.entry("p3", "남산타워"));
+    }
+
+    @Test
     void 중복_이름에_순번을_붙이고_접미사를_포함해_50자로_자른다() {
         TripPlaceNameService service = service(5);
         when(executions.isCurrent(7L, "run")).thenReturn(true);

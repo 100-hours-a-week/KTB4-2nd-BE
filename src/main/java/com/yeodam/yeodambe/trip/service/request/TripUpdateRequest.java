@@ -21,7 +21,7 @@ public record TripUpdateRequest(
     public TripUpdateRequest {
         // 제어문자는 strip으로 제거하지 않고 입력 검증에서 거부한다.
         if (tripName != null && tripName.codePoints().noneMatch(Character::isISOControl)) {
-            tripName = tripName.strip();
+            tripName = TextValidation.stripInvisible(tripName);
         }
     }
 

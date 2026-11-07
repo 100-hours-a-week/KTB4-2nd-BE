@@ -67,6 +67,23 @@ class ShareUserSearchIntegrationTest {
                 .andExpect(jsonPath("$.message").value("INVALID_EMAIL_FORMAT"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"\u200B", "\u00A0", "\uFEFF", " \u3164"})
+    void 이메일_앞뒤의_보이지_않는_문자를_제거하고_조회한다(String invisible) throws Exception {
+        mvc.perform(search(invisible + targetEmail + invisible))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(targetId))
+                .andExpect(jsonPath("$.data.email").value(targetEmail));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\u200B", "\u00A0", "\uFEFF"})
+    void 이메일_내부에_보이지_않는_문자가_있으면_전용_오류로_거절한다(String invisible) throws Exception {
+        mvc.perform(search("friend" + invisible + "@test.com"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_EMAIL_FORMAT"));
+    }
+
     @Test
     void 누락과_길이초과_이메일을_거절한다() throws Exception {
         mvc.perform(get("/users/search").with(jwt()))

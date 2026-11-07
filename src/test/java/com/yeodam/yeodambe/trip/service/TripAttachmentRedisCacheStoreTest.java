@@ -529,6 +529,57 @@ class TripAttachmentRedisCacheStoreTest {
     }
 
     @Test
+    void 중복_완료가_TTL을_늘리지_않는다() throws InterruptedException {
+        AttachmentReadRefresh refresh = begin(store, locks);
+        store.publishResponse(key, refresh, 4L, response(10L));
+        Long firstDeadline = template.execute(RedisScript.of("return redis.call('PEXPIRETIME', KEYS[1])", Long.class),
+                List.of(refresh.valueKey()));
+        assertThat(firstDeadline).isPositive();
+        Thread.sleep(30L);
+        assertThat(store.publishResponse(key, refresh, 4L, response(10L))).isEqualTo(
+                TripAttachmentRedisCacheStore.PublishOutcome.ALREADY_PUBLISHED);
+        Long remainingDeadline = template.execute(RedisScript.of("return redis.call('PEXPIRETIME', KEYS[1])", Long.class),
+                List.of(refresh.valueKey()));
+        // 재조회 전에 정상 만료될 수 있으므로 서버의 절대 만료 시각 또는 키 만료를 확인한다.
+        assertThat(remainingDeadline).isIn(firstDeadline, -2L);
+    }
+
+    @Test
+    void 이전_페이로드와_새_TTL을_섞어_조회하지_않는다() throws Exception {
+        CountDownLatch published = new CountDownLatch(1);
+        TripAttachmentRedisCacheStore receiver = new TripAttachmentRedisCacheStore(
+                template, json, properties, () -> 0L);
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<?> writer = executor.submit(() -> {
+                for (long generation = 1; generation <= 40; generation++) {
+                    clock.set(0L);
+                    AttachmentReadRefresh refresh = begin(store, locks);
+                    clock.set(generation % 2 == 0 ? 300_000_000L : 0L);
+                    assertThat(store.publishResponse(key, refresh, 4L, response(generation))).isEqualTo(
+                            TripAttachmentRedisCacheStore.PublishOutcome.PUBLISHED);
+                    locks.release(key.tripId(), store.responseLockKey(key), refresh.ownerLock());
+                    published.countDown();
+                }
+            });
+            assertThat(published.await(3, TimeUnit.SECONDS)).isTrue();
+            int validatedSnapshots = 0;
+            for (int sample = 0; sample < 100; sample++) {
+                Optional<CachedAttachmentResponse> snapshot = receiver.findResponse(key);
+                if (snapshot.isPresent()) {
+                    CachedAttachmentResponse cached = snapshot.get();
+                    long maximum = cached.response().items().getFirst().tripAttachmentId() % 2 == 0
+                            ? 200_000_000L : 495_000_000L;
+                    assertThat(cached.validUntilNanos()).isPositive().isLessThanOrEqualTo(maximum);
+                    assertThat(cached.response()).isEqualTo(response(cached.response().items().getFirst().tripAttachmentId()));
+                    validatedSnapshots++;
+                }
+            }
+            writer.get(3, TimeUnit.SECONDS);
+            assertThat(validatedSnapshots).isPositive();
+        }
+    }
+
+    @Test
     void 만료된_세대의_응답은_게시하지_않는다() {
         AttachmentReadRefresh refresh = begin(store, locks);
         clock.set(500_000_000L);
@@ -596,6 +647,29 @@ class TripAttachmentRedisCacheStoreTest {
     }
 
     @Test
+    void 권한_게시_응답을_유실하면_동일_스냅샷만_확인한다() {
+        StringRedisTemplate observed = spy(template);
+        TripAttachmentRedisCacheStore client = new TripAttachmentRedisCacheStore(
+                observed, json, properties, clock::get);
+        AttachmentReadRefresh refresh = beginAccess(client, locks);
+        AtomicBoolean lost = new AtomicBoolean();
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            if (lost.compareAndSet(false, true)) {
+                throw new org.springframework.dao.DataAccessResourceFailureException(
+                        TripAttachmentCacheErrorMessage.COMMAND_QUEUE_FAILED.message());
+            }
+            return result;
+        }).when(observed).exec();
+        assertThat(client.publishAccess(2L, refresh, accessSnapshot())).isEqualTo(
+                TripAttachmentRedisCacheStore.PublishOutcome.ALREADY_PUBLISHED);
+        long firstDeadline = client.findAccess(2L).orElseThrow().validUntilNanos();
+        assertThat(client.publishAccess(2L, refresh, accessSnapshot())).isEqualTo(
+                TripAttachmentRedisCacheStore.PublishOutcome.ALREADY_PUBLISHED);
+        assertThat(client.findAccess(2L).orElseThrow().validUntilNanos()).isLessThanOrEqualTo(firstDeadline);
+    }
+
+    @Test
     void 응답_갱신을_권한_갱신으로_게시할_수_없다() {
         AttachmentReadRefresh refresh = begin(store, locks);
         assertThatThrownBy(() -> store.publishAccess(2L, refresh, accessSnapshot()))
@@ -611,6 +685,28 @@ class TripAttachmentRedisCacheStoreTest {
         assertThat(store.publishAccess(2L, beginAccess(store, locks), snapshot)).isEqualTo(
                 TripAttachmentRedisCacheStore.PublishOutcome.PUBLISHED);
         assertThat(store.findAccess(2L).orElseThrow().snapshot()).isEqualTo(snapshot);
+    }
+
+    @Test
+    void 이전_v형식의_키를_새_스키마_캐시로_읽지_않는다() {
+        template.opsForValue().set(properties.getNamespace() + ":final-response:v3:{816ec232a6c8ae65f7646251351d09496bf2aa360f168b10be96e2f34b83484f}:value",
+                "legacy", Duration.ofSeconds(30));
+        template.opsForValue().set(properties.getNamespace() + ":page:v3:4:ad958bec16d14a6a40be3bc037be9cbc54fc3cdd17f0318d89480ed00b141720",
+                "legacy", Duration.ofSeconds(30));
+        template.opsForValue().set(properties.getNamespace()
+                        + ":access:v1:{22074227d8462b39403011e0bc4c5e7a3f1ee1bae54ae2deb0943dece537f93f}:value",
+                "legacy", Duration.ofSeconds(30));
+        template.opsForValue().set(properties.getNamespace()
+                        + ":final-response:v4:{b5f6da27fd146689fc4b3df39514956a1c1cf36059570d136eb757c20f908505}:value",
+                "legacy", Duration.ofSeconds(30));
+        template.opsForValue().set(properties.getNamespace()
+                        + ":page:v4:4:b5f6da27fd146689fc4b3df39514956a1c1cf36059570d136eb757c20f908505",
+                "legacy", Duration.ofSeconds(30));
+        assertThat(store.findAccess(2L)).isEmpty();
+        assertThat(store.findResponse(key)).isEmpty();
+        TripAttachmentPageStore pages = new TripAttachmentPageStore(template, json, properties);
+        assertThat(pages.find(key, 4L)).isEmpty();
+        assertThat(template.keys(properties.getNamespace() + "*:v*:*")).hasSize(5);
     }
 
     private ReadGrantRow readGrant(

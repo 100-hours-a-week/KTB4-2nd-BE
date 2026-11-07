@@ -115,7 +115,9 @@ class TripServiceTest {
     void 앞뒤_공백을_제거한_여행명으로_생성_중복을_검사한다() {
         givenRegion();
         givenSavedTrip();
-        when(tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNull(1L, "중복"))
+        when(tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNot(
+                1L, "중복", ProcessingStatus.FAILED
+        ))
                 .thenReturn(true);
         TripCreateRequest request = new TripCreateRequest(
                 "  중복  ", TODAY, TODAY, List.of("50110")
@@ -232,7 +234,9 @@ class TripServiceTest {
     @Test
     void 같은_사용자의_활성_여행명이_있으면_거부한다() {
         givenRegion();
-        when(tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNull(1L, "여행"))
+        when(tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNot(
+                1L, "여행", ProcessingStatus.FAILED
+        ))
                 .thenReturn(true);
 
         assertThrows(TripNameDuplicatedException.class,

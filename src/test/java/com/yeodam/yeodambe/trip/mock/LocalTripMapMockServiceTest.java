@@ -133,9 +133,10 @@ class LocalTripMapMockServiceTest {
 
     @Test
     void 기존_목업이_있어도_미분류_여행을_추가하고_사유별_사진과_복구_장소를_저장한다() {
-        when(tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNull(
+        when(tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNot(
                 eq(1L),
-                anyString()
+                anyString(),
+                eq(ProcessingStatus.FAILED)
         )).thenAnswer(invocation -> !"목업미분류".equals(invocation.getArgument(1)));
 
         service.createIfMissing(1L);
@@ -188,9 +189,10 @@ class LocalTripMapMockServiceTest {
 
     @Test
     void 같은_이름의_목업_여행이_이미_있으면_다시_저장하지_않는다() {
-        when(tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNull(
+        when(tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNot(
                 eq(1L),
-                anyString()
+                anyString(),
+                eq(ProcessingStatus.FAILED)
         )).thenReturn(true);
 
         service.createIfMissing(1L);

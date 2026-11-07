@@ -110,11 +110,16 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
             Pageable pageable
     );
 
-    boolean existsByUserIdAndTripNameAndDeletedAtIsNull(Long userId, String tripName);
-
-    boolean existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(
+    boolean existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNot(
             Long userId,
             String tripName,
+            ProcessingStatus processingStatus
+    );
+
+    boolean existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNotAndIdNot(
+            Long userId,
+            String tripName,
+            ProcessingStatus processingStatus,
             Long tripId
     );
 

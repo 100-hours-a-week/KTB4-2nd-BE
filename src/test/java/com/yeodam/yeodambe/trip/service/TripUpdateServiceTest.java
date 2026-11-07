@@ -56,7 +56,9 @@ class TripUpdateServiceTest {
         assertThat(response.tripName()).isEqualTo("공유 변경");
         assertThat(response.startDate()).isEqualTo(start);
         assertThat(response.endDate()).isEqualTo(end);
-        verify(trips).existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(1L, "공유 변경", 7L);
+        verify(trips).existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNotAndIdNot(
+                1L, "공유 변경", ProcessingStatus.FAILED, 7L
+        );
         verify(mapCache).evictAfterCommit(1L);
         verify(trips).advanceSequence(7L);
         verify(trips, never()).findOwnedActiveForUpdate(anyLong(), anyLong());
@@ -68,7 +70,9 @@ class TripUpdateServiceTest {
 
     @Test
     void 공유_편집도_소유자_이름_중복이면_변경하지_않는다() {
-        when(trips.existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(1L, "중복", 7L))
+        when(trips.existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNotAndIdNot(
+                1L, "중복", ProcessingStatus.FAILED, 7L
+        ))
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.updateForSharedEditing(
@@ -126,7 +130,9 @@ class TripUpdateServiceTest {
 
     @Test
     void 앞뒤_공백을_제거한_여행명으로_중복을_검사한다() {
-        when(trips.existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(1L, "중복", 7L))
+        when(trips.existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNotAndIdNot(
+                1L, "중복", ProcessingStatus.FAILED, 7L
+        ))
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.updateTrip(7L, 1L,
@@ -194,13 +200,17 @@ class TripUpdateServiceTest {
 
     @Test
     void 이름_중복_검사에서_현재_여행을_제외한다() {
-        when(trips.existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(1L, "중복", 7L))
+        when(trips.existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNotAndIdNot(
+                1L, "중복", ProcessingStatus.FAILED, 7L
+        ))
                 .thenReturn(true);
         assertThatThrownBy(() -> service.updateTrip(7L, 1L,
                 new TripUpdateRequest("중복", null, null, null)))
                 .isInstanceOf(TripNameDuplicatedException.class);
         assertThat(trip.getTripName()).isEqualTo("기존 여행");
-        verify(trips).existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(1L, "중복", 7L);
+        verify(trips).existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNotAndIdNot(
+                1L, "중복", ProcessingStatus.FAILED, 7L
+        );
     }
 
     @Test

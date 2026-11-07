@@ -186,8 +186,8 @@ public class TripService {
                 .map(regionCatalog::getRequired)
                 .toList();
 
-        if (tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNull(
-                userId, request.tripName()
+        if (tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNot(
+                userId, request.tripName(), ProcessingStatus.FAILED
         )) {
             throw new TripNameDuplicatedException();
         }
@@ -268,8 +268,8 @@ public class TripService {
                 .map(regionCatalog::getRequired)
                 .toList();
 
-        if (tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNullAndIdNot(
-                userId, tripName, tripId
+        if (tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNotAndIdNot(
+                userId, tripName, ProcessingStatus.FAILED, tripId
         )) {
             throw new TripNameDuplicatedException();
         }

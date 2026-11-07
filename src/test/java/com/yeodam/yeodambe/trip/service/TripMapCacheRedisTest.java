@@ -80,7 +80,7 @@ class TripMapCacheRedisTest {
         var store = store();
         String version = store.version(4L).orElseThrow();
         store.save(4L, version, sample());
-        assertThat(redis.getExpire("cache:trip-map:user:4:" + version, TimeUnit.MILLISECONDS))
+        assertThat(redis.getExpire("cache:trip-map:count-v2:user:4:" + version, TimeUnit.MILLISECONDS))
                 .isBetween(30_000L, 60_000L);
         assertThat(redis.getExpire("cache:trip-map:version:user:4", TimeUnit.MILLISECONDS))
                 .isBetween(90_000L, 120_000L);

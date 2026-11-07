@@ -167,18 +167,19 @@ class TripServiceTest {
         when(tripAccessService.requireReadableTrip(7L, 1L)).thenReturn(trip);
         when(tripRegionRepository.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L))
                 .thenReturn(List.of());
-        when(tripAttachmentRepository.countActiveByTripId(7L)).thenReturn(3L);
+        when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(7L)))
+                .thenReturn(List.of(new com.yeodam.yeodambe.trip.repository.TripAttachmentCount(7L, 9L)));
 
         var response = tripService.findTripDetail(7L, 1L);
 
-        assertThat(response.attachmentCount()).isEqualTo(3L);
+        assertThat(response.attachmentCount()).isEqualTo(9L);
         ILoggingEvent success = logAppender.list.stream()
                 .filter(event -> "trip_view".equals(keyValue(event, "event")))
                 .filter(event -> "success".equals(keyValue(event, "result")))
                 .findFirst()
                 .orElseThrow();
         assertThat(keyValue(success, "trip_id")).isEqualTo(7L);
-        assertThat(keyValue(success, "attachment_count")).isEqualTo(3L);
+        assertThat(keyValue(success, "attachment_count")).isEqualTo(9L);
     }
 
     @Test
@@ -454,7 +455,7 @@ class TripServiceTest {
         var values = mock(org.springframework.data.redis.core.ValueOperations.class);
         when(redis.opsForValue()).thenReturn(values);
         when(values.get("cache:trip-map:version:user:1")).thenReturn("v1");
-        when(values.get("cache:trip-map:user:1:v1"))
+        when(values.get("cache:trip-map:count-v2:user:1:v1"))
                 .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("redis read unavailable"));
         doThrow(new org.springframework.dao.DataAccessResourceFailureException("redis write unavailable"))
                 .when(values).set(anyString(), anyString(), any(java.time.Duration.class));
@@ -475,7 +476,7 @@ class TripServiceTest {
             assertThat(marker.thumbnailUrl()).isEqualTo("https://example.test/signed");
         });
         verify(tripAttachmentRepository).findMapRepresentatives(1L);
-        verify(values).set(eq("cache:trip-map:user:1:v1"), anyString(), eq(java.time.Duration.ofSeconds(60)));
+        verify(values).set(eq("cache:trip-map:count-v2:user:1:v1"), anyString(), eq(java.time.Duration.ofSeconds(60)));
     }
 
     @Test

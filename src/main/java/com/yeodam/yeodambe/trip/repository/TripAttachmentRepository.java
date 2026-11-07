@@ -308,15 +308,18 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
     boolean existsByDisplayStorageKeyAndDeletedAtIsNull(String displayStorageKey);
 
     @Query("""
-            select new com.yeodam.yeodambe.trip.repository.TripStorageObjectKeys(
+            select new com.yeodam.yeodambe.trip.repository.TripAttachmentUsage(
                     file.objectKey,
-                    attachment.analyzeStorageKey,
-                    attachment.previewStorageKey,
-                    attachment.displayStorageKey,
                     file.originalSizeBytes,
-                    attachment.analyzeSizeBytes,
-                    attachment.previewSizeBytes,
-                    attachment.displaySizeBytes
+                    case when attachment.classificationStatus in (
+                        com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE,
+                        com.yeodam.yeodambe.trip.entity.ClassificationStatus.UNCLASSIFIED
+                    ) and not exists (
+                        select item.id from AdditionalAttachmentUploadItem item
+                        join item.batch batch
+                        where item.tripAttachmentId = attachment.id
+                          and batch.status <> com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus.COMPLETED
+                    ) then true else false end
             )
             from TripAttachment attachment
             join attachment.file file
@@ -327,7 +330,7 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
               and attachment.deletedAt is null
               and file.deletedAt is null
             """)
-    List<TripStorageObjectKeys> findAllForStats(
+    List<TripAttachmentUsage> findAllForStats(
             @Param("userId") Long userId,
             @Param("status") com.yeodam.yeodambe.trip.entity.ProcessingStatus status
     );
@@ -372,8 +375,14 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
                 COUNT(attachment)
         )
         FROM TripAttachment attachment
+        JOIN attachment.file file
         WHERE attachment.tripId IN :tripIds
           AND attachment.deletedAt IS NULL
+          AND file.deletedAt IS NULL
+          AND attachment.classificationStatus IN (
+              com.yeodam.yeodambe.trip.entity.ClassificationStatus.ACTIVE,
+              com.yeodam.yeodambe.trip.entity.ClassificationStatus.UNCLASSIFIED
+          )
           and not exists (
               select item.id from AdditionalAttachmentUploadItem item
               join item.batch batch

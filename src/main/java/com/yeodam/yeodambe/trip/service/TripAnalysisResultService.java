@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
@@ -175,11 +176,41 @@ public class TripAnalysisResultService {
 
     @Transactional
     public void replaceCompleted(Long tripId, Long userId, JsonNode result, Map<String, String> placeNames) {
+        requireCompletedTrip(tripId, userId);
+        List<TripAttachment> attachments = attachmentRepository.findAllForReanalysis(tripId);
+        replaceClassification(tripId, userId, attachments, result, placeNames);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    void replaceCompleted(
+            Long tripId,
+            Long userId,
+            List<TripAttachment> attachments,
+            JsonNode result,
+            Map<String, String> placeNames
+    ) {
+        requireCompletedTrip(tripId, userId);
+        if (attachments.stream().anyMatch(attachment -> !tripId.equals(attachment.getTripId())
+                || attachment.getDeletedAt() != null || attachment.getFile().getDeletedAt() != null)) {
+            throw new IllegalStateException(TripInternalErrorMessage.AI_RESULT_ATTACHMENT_LIST_MISMATCH.message());
+        }
+        replaceClassification(tripId, userId, attachments, result, placeNames);
+    }
+
+    private void requireCompletedTrip(Long tripId, Long userId) {
         Trip trip = trips.findOwnedActiveForUpdate(tripId, userId).orElseThrow(TripNotFoundException::new);
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
             throw new com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException();
         }
-        List<TripAttachment> attachments = attachmentRepository.findAllForReanalysis(tripId);
+    }
+
+    private void replaceClassification(
+            Long tripId,
+            Long userId,
+            List<TripAttachment> attachments,
+            JsonNode result,
+            Map<String, String> placeNames
+    ) {
         validateCompletedResult(attachments, result, placeNames);
         placeRepository.softDeleteByTripId(tripId, LocalDateTime.now());
         applyClassification(tripId, userId, attachments, result, placeNames);
@@ -195,7 +226,6 @@ public class TripAnalysisResultService {
         saveUnclassifiedAttachments(result.path("unclassified"), savedPlaceIds, byId);
         updateTripThumbnail(tripId, userId, attachments);
         attachmentRepository.saveAll(attachments);
-        userStats.refreshFromActiveTrips(userId);
         tripMapCacheStore.evictAfterCommit(userId);
         trips.advanceSequence(tripId);
     }

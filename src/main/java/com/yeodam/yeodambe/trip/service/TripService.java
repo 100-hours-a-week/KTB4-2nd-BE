@@ -413,7 +413,9 @@ public class TripService {
                     ))
                     .toList();
 
-            long attachmentCount = tripAttachmentRepository.countActiveByTripId(tripId);
+            long attachmentCount = tripAttachmentRepository.countNotDeletedByTripIds(List.of(tripId)).stream()
+                    .mapToLong(TripAttachmentCount::attachmentCount)
+                    .sum();
             long unclassifiedAttachmentCount = tripAttachmentRepository
                     .countUnclassifiedByIssue(tripId).stream()
                     .mapToLong(UnclassifiedFolderAttachmentCount::attachmentCount)

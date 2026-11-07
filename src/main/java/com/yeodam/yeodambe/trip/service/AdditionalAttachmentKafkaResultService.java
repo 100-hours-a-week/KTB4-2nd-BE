@@ -4,6 +4,8 @@ import com.yeodam.yeodambe.common.logging.WorkflowLog;
 
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
+import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.service.response.TripCompletionSnapshot;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
 import com.yeodam.yeodambe.trip.event.TripProcessingStatusChangedEvent;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStateSnapshot;
@@ -23,7 +25,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -125,38 +129,52 @@ public class AdditionalAttachmentKafkaResultService {
 
     @Transactional(readOnly = true)
     public JsonNode validate(TripAnalysisResultClaim claim) {
-        var execution = executionRepository.findById(claim.executionId()).orElseThrow();
-        var payload = outboxRepository.findById(execution.getProcessOutboxId()).orElseThrow().getPayload();
-        var expected = new HashSet<Long>();
-        json.readTree(payload).path("attachments").forEach(photo -> expected.add(photo.path("trip_attachment_id").asLong()));
-        var photos = attachmentRepository.findAllForReanalysis(claim.tripId());
-        if (!expected.equals(new HashSet<>(photos.stream().map(value -> value.getId()).toList())))
-            throw new IllegalStateException(ErrorMessage.AI_RESULT_INTEGRITY_FAILED.name());
-        JsonNode root = json.readerFor(JsonNode.class).with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
-                .readValue(claim.rawPayload());
-        JsonNode result = root.path("result");
+        List<TripAttachment> photos = loadExpectedPhotos(claim);
+        JsonNode result = readResult(claim.rawPayload());
         results.validateResult(photos, result);
         return result;
     }
 
+    private JsonNode readResult(String rawPayload) {
+        return json.readerFor(JsonNode.class).with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                .<JsonNode>readValue(rawPayload).path("result");
+    }
+
+    private List<TripAttachment> loadExpectedPhotos(TripAnalysisResultClaim claim) {
+        AdditionalAttachmentExecution execution = executionRepository.findById(claim.executionId()).orElseThrow();
+        String payload = outboxRepository.findById(execution.getProcessOutboxId()).orElseThrow().getPayload();
+        Set<Long> expected = new HashSet<>();
+        json.readTree(payload).path("attachments").forEach(photo -> expected.add(photo.path("trip_attachment_id").asLong()));
+        List<TripAttachment> photos = attachmentRepository.findAllForReanalysis(claim.tripId());
+        if (!expected.equals(new HashSet<>(photos.stream().map(TripAttachment::getId).toList()))) {
+            throw new IllegalStateException(ErrorMessage.AI_RESULT_INTEGRITY_FAILED.name());
+        }
+        return photos;
+    }
+
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void complete(TripAnalysisResultClaim claim, JsonNode result, Map<String, String> names) {
-        if (!renew(claim)) throw new java.util.concurrent.CancellationException();
-        var execution = executionRepository.findById(claim.executionId()).orElseThrow();
-        if (!Objects.equals(execution.getResultRawPayload(), claim.rawPayload()))
+        if (!renew(claim)) {
+            throw new java.util.concurrent.CancellationException();
+        }
+        AdditionalAttachmentExecution execution = executionRepository.findById(claim.executionId()).orElseThrow();
+        if (!Objects.equals(execution.getResultRawPayload(), claim.rawPayload())) {
             throw new IllegalStateException(ErrorMessage.AI_RESULT_INTEGRITY_FAILED.name());
-        validate(claim);
-        results.replaceCompleted(claim.tripId(), claim.userId(), result, names);
+        }
+        List<TripAttachment> photos = loadExpectedPhotos(claim);
+        results.validateResult(photos, readResult(claim.rawPayload()));
+        results.replaceCompleted(claim.tripId(), claim.userId(), photos, result, names);
         batchRepository.findAllByAdditionIdOrderByBatchNoAsc(claim.executionId()).forEach(value -> value.completeAddition());
         if (!execution.isReservationReleased()) {
             stats.releaseInitialUploadReservation(claim.userId(), execution.getReservedBytes());
             execution.releaseReservation(execution.getAccountedBytes());
         }
         execution.finish(AdditionalAttachmentExecution.Status.COMPLETED, null, transactions.databaseTime());
-        var completion = completionSnapshots.capture(claim.tripId(), claim.userId(),
+        stats.refreshFromActiveTrips(claim.userId());
+        TripCompletionSnapshot completion = completionSnapshots.capture(claim.tripId(), claim.userId(),
                 com.yeodam.yeodambe.common.websocket.service.request.AiTaskCompletionType.TRIP_ANALYSIS_APPLIED,
                 execution.getResultRawPayload());
-        var snapshot = new TripProcessingStateSnapshot(
+        TripProcessingStateSnapshot snapshot = new TripProcessingStateSnapshot(
                 execution.getTripId(), execution.getExecutionId(), execution.getStatusVersion(),
                 execution.getDisplayStatus(), execution.getCurrentStep(), execution.getErrorCode(), execution.getResultRawPayload());
         eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(execution.getUserId(), snapshot, completion));

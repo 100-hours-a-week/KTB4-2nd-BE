@@ -10,6 +10,7 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentCount;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.response.TripPhotoDeletionResult;
 import com.yeodam.yeodambe.user.service.UserStatsService;
@@ -110,8 +111,11 @@ public class TripAttachmentDeletionService {
                         place.getThumbnailKey()
                 ))
                 .toList();
+        long attachmentCount = tripAttachmentRepository.countNotDeletedByTripIds(List.of(trip.getId())).stream()
+                .mapToLong(TripAttachmentCount::attachmentCount)
+                .sum();
         return new TripPhotoDeletionResult(
-                List.copyOf(attachmentIds), remaining.size(), updatedTrip.getThumbnailKey(), places);
+                List.copyOf(attachmentIds), attachmentCount, updatedTrip.getThumbnailKey(), places);
     }
 
     private void validateIds(List<Long> tripAttachmentIds) {

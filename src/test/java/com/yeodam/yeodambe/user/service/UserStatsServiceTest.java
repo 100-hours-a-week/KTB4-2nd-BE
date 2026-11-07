@@ -3,7 +3,7 @@ package com.yeodam.yeodambe.user.service;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.repository.TripStorageObjectKeys;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentUsage;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
@@ -36,8 +36,8 @@ class UserStatsServiceTest {
 
     @Test
     void 원본만_사용자_용량으로_집계한다() {
-        TripStorageObjectKeys active = keys("original-1", "analyze-1", "preview-1", "display-1");
-        TripStorageObjectKeys unclassified = keys("original-2", "analyze-2", "preview-2", null);
+        TripAttachmentUsage active = usage("original-1");
+        TripAttachmentUsage unclassified = usage("original-2");
         when(trips.countByUserIdAndProcessingStatusAndDeletedAtIsNull(
                 1L, ProcessingStatus.COMPLETED)).thenReturn(2L);
         when(attachments.findAllForStats(1L, ProcessingStatus.COMPLETED))
@@ -52,8 +52,8 @@ class UserStatsServiceTest {
 
     @Test
     void 중복_객체키는_한번만_합산한다() {
-        TripStorageObjectKeys first = keys("shared", "shared", "preview-1", "shared");
-        TripStorageObjectKeys second = keys("shared", "analyze-2", "preview-2", null);
+        TripAttachmentUsage first = usage("shared");
+        TripAttachmentUsage second = usage("shared");
         when(attachments.findAllForStats(1L, ProcessingStatus.COMPLETED))
                 .thenReturn(List.of(first, second));
 
@@ -75,8 +75,7 @@ class UserStatsServiceTest {
         sizes[missingIndex] = null;
         stats.replaceActiveTripUsage(3L, 5L, 500L);
         when(attachments.findAllForStats(1L, ProcessingStatus.COMPLETED)).thenReturn(List.of(
-                new TripStorageObjectKeys("original", "analyze", "preview", "display",
-                        sizes[0], sizes[1], sizes[2], sizes[3])));
+                new TripAttachmentUsage("original", sizes[0], true)));
 
         assertThatThrownBy(() -> service.refreshFromActiveTrips(1L))
                 .isInstanceOf(IllegalStateException.class)
@@ -102,18 +101,14 @@ class UserStatsServiceTest {
     @Test
     void 서로_다른_용량을_BIGINT_범위로_합산한다() {
         when(attachments.findAllForStats(1L, ProcessingStatus.COMPLETED)).thenReturn(List.of(
-                new TripStorageObjectKeys("original", "analyze", "preview", null,
-                        3_000_000_000L, 200L, 50L, null)));
+                new TripAttachmentUsage("original", 3_000_000_000L, true)));
 
         service.refreshFromActiveTrips(1L);
 
         assertThat(stats.getStorageUsedBytes()).isEqualTo(3_000_000_000L);
     }
 
-    private TripStorageObjectKeys keys(
-            String originalKey, String analyzeKey, String previewKey, String displayKey
-    ) {
-        return new TripStorageObjectKeys(originalKey, analyzeKey, previewKey, displayKey,
-                10L, 10L, 10L, displayKey == null ? null : 10L);
+    private TripAttachmentUsage usage(String originalKey) {
+        return new TripAttachmentUsage(originalKey, 10L, true);
     }
 }

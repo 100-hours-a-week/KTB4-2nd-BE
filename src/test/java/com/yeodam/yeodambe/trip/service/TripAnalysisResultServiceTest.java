@@ -122,8 +122,27 @@ class TripAnalysisResultServiceTest {
         service.replaceCompleted(7L, 1L, result, Map.of());
 
         verify(attachments).saveAll(List.of(photo));
-        verify(userStats).refreshFromActiveTrips(1L);
+        verifyNoInteractions(userStats);
         verify(mapCache).evictAfterCommit(1L);
+    }
+
+    @Test
+    void 다른_여행에서_읽은_사진_목록으로_결과를_적용하지_않는다() {
+        Trip trip = new Trip(1L, "trip", java.time.LocalDate.now(), java.time.LocalDate.now());
+        ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
+        when(trips.findOwnedActiveForUpdate(7L, 1L)).thenReturn(java.util.Optional.of(trip));
+        TripAttachment other = TripAttachment.initial(8L, 20L, "analyze", "preview");
+        ReflectionTestUtils.setField(other, "id", 30L);
+        JsonNode result = json.readTree("""
+                {"places":[],"unclassified":[{"trip_attachment_id":30,"issue":"BLURRY",
+                "region_origin":"UNKNOWN","taken_at":null,"latitude":null,
+                "longitude":null,"evaluation":31}]}
+                """);
+
+        assertThrows(IllegalStateException.class,
+                () -> service.replaceCompleted(7L, 1L, List.of(other), result, Map.of()));
+
+        verifyNoInteractions(attachments, places, userStats, mapCache);
     }
 
     @Test

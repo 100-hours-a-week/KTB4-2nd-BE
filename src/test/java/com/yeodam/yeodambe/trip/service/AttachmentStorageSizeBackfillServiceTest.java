@@ -158,9 +158,9 @@ class AttachmentStorageSizeBackfillServiceTest {
         assertThat(attachment.getDisplaySizeBytes()).isEqualTo(60L);
         var projection = attachments.findAllForStats(fixture.userId(), ProcessingStatus.COMPLETED).getFirst();
         assertThat(projection.originalSizeBytes()).isEqualTo(100L);
-        assertThat(projection.analyzeSizeBytes()).isEqualTo(40L);
-        assertThat(projection.previewSizeBytes()).isEqualTo(20L);
-        assertThat(projection.displaySizeBytes()).isEqualTo(60L);
+        assertThat(attachment.getAnalyzeSizeBytes()).isEqualTo(40L);
+        assertThat(attachment.getPreviewSizeBytes()).isEqualTo(20L);
+        assertThat(attachment.getDisplaySizeBytes()).isEqualTo(60L);
 
         clearInvocations(storage);
         backfill.backfillOne(fixture.attachmentId());

@@ -93,18 +93,21 @@ class TripAttachmentDeletionPersistenceTest {
         TripAttachment old = saveAttachment(owner.getUserId(), trip.getId(), retained.getId(), "old", 100);
         TripAttachment remaining = saveAttachment(owner.getUserId(), trip.getId(), retained.getId(), "remaining", 80);
         TripAttachment last = saveAttachment(owner.getUserId(), trip.getId(), removed.getId(), "last", 90);
+        TripAttachment unclassified = saveAttachment(owner.getUserId(), trip.getId(), null, "unclassified", 70);
+        ReflectionTestUtils.setField(unclassified, "classificationStatus", ClassificationStatus.UNCLASSIFIED);
+        attachments.saveAndFlush(unclassified);
 
         TripPhotoDeletionResult result = service.deleteForSharedEditing(trip, List.of(old.getId(), last.getId()));
 
         assertThat(result.attachmentIds()).containsExactly(old.getId(), last.getId());
-        assertThat(result.attachmentCount()).isEqualTo(1);
+        assertThat(result.attachmentCount()).isEqualTo(2);
         assertThat(result.thumbnailKey()).isEqualTo(remaining.getPreviewStorageKey());
         assertThat(result.places()).containsExactlyInAnyOrder(
                 new TripPhotoDeletionResult.PlaceChange(
                         retained.getId(), false, 1, remaining.getPreviewStorageKey()),
                 new TripPhotoDeletionResult.PlaceChange(
                         removed.getId(), true, 0, null));
-        assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getStorageUsedBytes()).isEqualTo(10);
+        assertThat(stats.findByUser_UserId(owner.getUserId()).orElseThrow().getStorageUsedBytes()).isEqualTo(20);
         assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isEqualTo(1);
         assertThat(attachments.findById(old.getId()).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(files.findById(old.getFileId()).orElseThrow().getDeletedAt()).isNotNull();

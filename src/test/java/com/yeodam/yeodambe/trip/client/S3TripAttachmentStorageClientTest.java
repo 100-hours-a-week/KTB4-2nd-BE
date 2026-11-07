@@ -1,5 +1,23 @@
 package com.yeodam.yeodambe.trip.client;
 
+import java.io.IOException;
+
+import java.util.concurrent.CompletableFuture;
+
+import java.nio.file.Files;
+
+import java.nio.file.Path;
+
+import org.junit.jupiter.api.io.TempDir;
+
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
+
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.mockito.ArgumentCaptor;
@@ -207,6 +226,58 @@ class S3TripAttachmentStorageClientTest {
                 .tags("stage", "original_s3_upload", "outcome", "failure")
                 .timer()
                 .count()).isEqualTo(1);
+    }
+
+    @Test
+    void 비동기_파생본은_전송_완료까지_대기하고_실패한_키를_보존한다(
+            @TempDir Path directory
+    ) throws Exception {
+        S3AsyncClient async =
+                mock(S3AsyncClient.class);
+        CompletableFuture<PutObjectResponse> upload =
+                new CompletableFuture<>();
+        when(async.putObject(any(PutObjectRequest.class),
+                any(AsyncRequestBody.class))).thenReturn(upload);
+        Path file = Files.write(directory.resolve("analyze.jpg"), new byte[]{1, 2});
+        S3TripAttachmentStorageClient client = new S3TripAttachmentStorageClient(
+                mock(S3Client.class), async, "test-bucket", mock(S3Presigner.class),
+                Duration.ofMinutes(10), meterRegistry);
+
+        CompletableFuture<String> result =
+                client.storeDerivedToAsync("planned/analyze.jpg", file, "image/jpeg");
+
+        assertThat(result).isNotDone();
+        ArgumentCaptor<PutObjectRequest> request =
+                ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(async).putObject(request.capture(),
+                any(AsyncRequestBody.class));
+        assertThat(request.getValue().key()).isEqualTo("planned/analyze.jpg");
+        assertThat(request.getValue().tagging()).isEqualTo("status=retained");
+        upload.completeExceptionally(new IOException("network"));
+        assertThatThrownBy(result::join).hasCauseInstanceOf(AttachmentStorageException.class);
+        assertThat(((AttachmentStorageException) result.handle((key, error) -> error.getCause()).join())
+                .getObjectKey()).isEqualTo("planned/analyze.jpg");
+    }
+
+    @Test
+    void 비동기_파생본_성공은_예정한_키를_반환한다(
+            @TempDir Path directory
+    ) throws Exception {
+        S3AsyncClient async =
+                mock(S3AsyncClient.class);
+        when(async.putObject(any(PutObjectRequest.class),
+                any(AsyncRequestBody.class)))
+                .thenReturn(CompletableFuture.completedFuture(
+                        PutObjectResponse.builder().build()));
+        S3TripAttachmentStorageClient client = new S3TripAttachmentStorageClient(
+                mock(S3Client.class), async, "test-bucket", mock(S3Presigner.class),
+                Duration.ofMinutes(10), meterRegistry);
+        Path file = Files.write(directory.resolve("preview.webp"), new byte[]{1});
+
+        assertThat(client.storeDerivedToAsync("planned/preview.webp", file, "image/webp").join())
+                .isEqualTo("planned/preview.webp");
+        assertThatThrownBy(() -> client.storeDerivedToAsync("planned/file", file, "text/plain"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private void restoreSystemProperty(String name, String previousValue) {

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.service.response.PreparedPhotoDerivative;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Counter;
@@ -23,11 +24,19 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 
 @Slf4j
 @Component
 public class TripDerivativeScheduler {
     public record PhotoTask(int index, String mimeType, Callable<DerivedPhotoKeys> action) {}
+
+    private record Work(
+            int index,
+            String mimeType,
+            Callable<?> action
+    ) {
+    }
 
     // ponytail: 한 잠금과 한도 내 사진 순회; 접수 경합이 측정되면 포맷별 상태 분리 검토.
     private final Object lock = new Object();
@@ -57,12 +66,47 @@ public class TripDerivativeScheduler {
     public CompletableFuture<List<DerivedPhotoKeys>> submit(
             String executionId, List<PhotoTask> tasks, BooleanSupplier active
     ) {
+        return mapResult(submitWork(executionId, tasks.stream()
+                .map(task -> new Work(task.index(), task.mimeType(), task.action())).toList(), active),
+                results -> results.stream().map(DerivedPhotoKeys.class::cast).toList());
+    }
+
+    public CompletableFuture<PreparedPhotoDerivative> submitPrepared(
+            String executionId,
+            String mimeType,
+            Callable<PreparedPhotoDerivative> action,
+            BooleanSupplier active
+    ) {
+        return mapResult(submitWork(executionId, List.of(new Work(0, mimeType, action)), active),
+                results -> (PreparedPhotoDerivative) results.getFirst());
+    }
+
+    private <T> CompletableFuture<T> mapResult(
+            CompletableFuture<List<Object>> source,
+            Function<List<Object>, T> mapper
+    ) {
+        CompletableFuture<T> result = new CompletableFuture<>();
+        source.whenComplete((values, failure) -> {
+            if (failure != null) {
+                result.completeExceptionally(failure);
+            } else {
+                result.complete(mapper.apply(values));
+            }
+        });
+        return result;
+    }
+
+    private CompletableFuture<List<Object>> submitWork(
+            String executionId,
+            List<Work> tasks,
+            BooleanSupplier active
+    ) {
         Objects.requireNonNull(executionId);
         Objects.requireNonNull(active);
         tasks = List.copyOf(tasks);
         boolean[] indices = new boolean[tasks.size()];
         int heavyCount = 0;
-        for (PhotoTask task : tasks) {
+        for (Work task : tasks) {
             Objects.requireNonNull(task.action());
             if (task.index() < 0 || task.index() >= tasks.size() || indices[task.index()]) {
                 throw new IllegalArgumentException("사진 index는 중복 없이 0부터 연속해야 합니다.");
@@ -168,8 +212,13 @@ public class TripDerivativeScheduler {
 
     private void publish(List<Batch> ready) {
         for (Batch batch : ready) {
-            if (batch.failure == null) batch.future.complete(List.copyOf(Arrays.asList(batch.results)));
-            else batch.future.completeExceptionally(batch.failure);
+            if (batch.failure == null) {
+                batch.future.complete(List.copyOf(Arrays.asList(batch.results)));
+            } else {
+                Arrays.stream(batch.results).filter(PreparedPhotoDerivative.class::isInstance)
+                        .map(PreparedPhotoDerivative.class::cast).forEach(PreparedPhotoDerivative::close);
+                batch.future.completeExceptionally(batch.failure);
+            }
         }
     }
 
@@ -242,28 +291,36 @@ public class TripDerivativeScheduler {
         final String executionId;
         final BooleanSupplier active;
         final List<Job> jobs;
-        final DerivedPhotoKeys[] results;
-        final CompletableFuture<List<DerivedPhotoKeys>> future = new CompletableFuture<>();
+        final Object[] results;
+        final CompletableFuture<List<Object>> future = new CompletableFuture<>();
         final long admittedAt = meters.config().clock().monotonicTime();
         int remaining;
         Throwable failure;
-        Batch(String executionId, List<PhotoTask> tasks, BooleanSupplier active) {
+        Batch(String executionId, List<Work> tasks, BooleanSupplier active) {
             this.executionId = executionId;
             this.active = active;
             this.remaining = tasks.size();
-            this.results = new DerivedPhotoKeys[tasks.size()];
-            this.jobs = tasks.stream().sorted(java.util.Comparator.comparingInt(PhotoTask::index))
+            this.results = new Object[tasks.size()];
+            this.jobs = tasks.stream().sorted(java.util.Comparator.comparingInt(Work::index))
                     .map(task -> new Job(this, task, lane(task.mimeType()))).toList();
         }
     }
 
     private class Job implements Runnable {
         final Batch batch;
-        final PhotoTask task;
+        final Work task;
         final Lane lane;
         State state = State.NEW;
         long waitNanos;
-        Job(Batch batch, PhotoTask task, Lane lane) { this.batch = batch; this.task = task; this.lane = lane; }
+        Job(
+                Batch batch,
+                Work task,
+                Lane lane
+        ) {
+            this.batch = batch;
+            this.task = task;
+            this.lane = lane;
+        }
 
         @Override
         public void run() {
@@ -279,13 +336,15 @@ public class TripDerivativeScheduler {
                 else { finish(this, "canceled"); collectReady(batch, ready); }
             }
             if (!execute) { publish(ready); return; }
-            DerivedPhotoKeys result = null;
+            Object result = null;
             Throwable failure = null;
             try {
                 if (!batch.active.getAsBoolean()) throw new CancellationException("사진 변환이 취소됐습니다.");
                 result = Objects.requireNonNull(task.action().call());
                 if (!batch.active.getAsBoolean()) throw new CancellationException("사진 변환이 취소됐습니다.");
-            } catch (Throwable cause) { failure = cause; }
+            } catch (Throwable cause) {
+                failure = cause;
+            }
             synchronized (lock) {
                 batch.results[task.index()] = result;
                 finish(this, failure == null ? "success" : failure instanceof CancellationException ? "canceled" : "failure");

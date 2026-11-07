@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 public interface TripAttachmentStorageClient {
     String store(String executionId, MultipartFile file);
@@ -21,6 +22,8 @@ public interface TripAttachmentStorageClient {
     String storeDerived(String executionId, Path file, String mimeType);
 
     String storeDerivedTo(String objectKey, Path file, String mimeType);
+
+    CompletableFuture<String> storeDerivedToAsync(String objectKey, Path file, String mimeType);
 
     void retain(List<String> objectKeys);
 

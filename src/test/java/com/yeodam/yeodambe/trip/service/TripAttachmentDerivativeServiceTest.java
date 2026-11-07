@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
@@ -67,6 +68,7 @@ class TripAttachmentDerivativeServiceTest {
     private InitialAttachmentUploadTransactionService transactions;
     private SimpleMeterRegistry meterRegistry;
     private TripDerivativeScheduler scheduler;
+    private InitialAttachmentStoragePipeline pipeline;
 
     @BeforeEach
     void setUp() {
@@ -74,14 +76,15 @@ class TripAttachmentDerivativeServiceTest {
         meterRegistry = new SimpleMeterRegistry();
         scheduler = new TripDerivativeScheduler(1, 1, 10, 20, meterRegistry);
         transactions = mock(InitialAttachmentUploadTransactionService.class);
+        pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meterRegistry, 134217728L);
         service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler,
-                transactions);
+                transactions, pipeline);
     }
 
     @AfterEach
     void tearDown() {
+        pipeline.close();
         scheduler.stop();
-        service.stopLeaseScheduler();
     }
 
     @Test
@@ -97,7 +100,7 @@ class TripAttachmentDerivativeServiceTest {
 
         service.processPendingBatches();
 
-        verify(transactions).retryBatch(claim, photo.itemId(), false);
+        verify(transactions, Mockito.timeout(5000)).retryBatch(claim, photo.itemId(), false);
         verifyNoInteractions(storage);
     }
 
@@ -141,20 +144,22 @@ class TripAttachmentDerivativeServiceTest {
                 1L, "upload", "execution", 7L, 1L, 1, 1, true,
                 InitialAttachmentUploadStatus.CONVERTING, "token", List.of(photo));
         var saturatedScheduler = mock(TripDerivativeScheduler.class);
+        var saturatedPipeline = new InitialAttachmentStoragePipeline(
+                storage, transactions, saturatedScheduler, meterRegistry, 134217728L);
         var immediate = new TripAttachmentDerivativeService(
-                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions);
+                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline);
         when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
-        when(saturatedScheduler.submit(eq("execution"), any(), any()))
+        when(saturatedScheduler.submitPrepared(eq("execution"), any(), any(), any()))
                 .thenThrow(new RejectedExecutionException("queue full"));
 
         try {
             immediate.processAcceptedBatch(7L, 1L, "upload");
 
-            verify(transactions).releaseSaturatedBatch(claim);
+            verify(transactions, Mockito.timeout(5000)).releaseSaturatedBatch(claim);
             verify(transactions, never()).startPhotoAttempt(any(), any());
             verifyNoInteractions(storage);
         } finally {
-            immediate.stopLeaseScheduler();
+            saturatedPipeline.close();
         }
     }
 
@@ -167,6 +172,53 @@ class TripAttachmentDerivativeServiceTest {
                 () -> service.processAcceptedBatch(7L, 1L, "upload"));
 
         verifyNoInteractions(storage);
+    }
+
+    @Test
+    void 초기_업로드도_A_저장_중_B를_변환하고_전체_저장_후_배치를_완료한다() throws Exception {
+        byte[] original = jpeg();
+        InitialAttachmentUploadBatchSnapshot.Photo first = new InitialAttachmentUploadBatchSnapshot.Photo(
+                1L, "a.jpg", "image/jpeg", original.length, "original/1", 0, null, null);
+        InitialAttachmentUploadBatchSnapshot.Photo second = new InitialAttachmentUploadBatchSnapshot.Photo(
+                2L, "b.jpg", "image/jpeg", original.length, "original/2", 0, null, null);
+        InitialAttachmentUploadBatchSnapshot claim = new InitialAttachmentUploadBatchSnapshot(
+                1L, "upload", "execution", 7L, 1L, 1, 2, true,
+                InitialAttachmentUploadStatus.CONVERTING, "token", List.of(first, second));
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        CountDownLatch uploadStarted = new CountDownLatch(1);
+        CompletableFuture<String> upload = new CompletableFuture<>();
+        when(transactions.claimBatch(7L, 1L, "upload")).thenReturn(Optional.of(claim));
+        when(transactions.renewLease(claim)).thenReturn(true);
+        when(transactions.startPhotoAttempt(eq(claim), any())).thenAnswer(call -> {
+            Long id = call.getArgument(1);
+            return List.of(id + "/analyze", id + "/preview");
+        });
+        when(storage.open("original/1")).thenAnswer(call -> new ByteArrayInputStream(original));
+        when(storage.open("original/2")).thenAnswer(call -> {
+            secondStarted.countDown();
+            return new ByteArrayInputStream(original);
+        });
+        when(storage.storeDerivedToAsync(any(), any(), any())).thenAnswer(call -> {
+            String key = call.getArgument(0);
+            if (key.equals("1/analyze")) {
+                uploadStarted.countDown();
+                return upload;
+            }
+            return CompletableFuture.completedFuture(key);
+        });
+        try {
+            service.processAcceptedBatch(7L, 1L, "upload");
+            assertTrue(uploadStarted.await(5, TimeUnit.SECONDS));
+            assertTrue(secondStarted.await(5, TimeUnit.SECONDS));
+            verify(transactions, never()).completeBatch(claim);
+            upload.complete("1/analyze");
+            verify(transactions, Mockito.timeout(5000)).completeBatch(claim);
+            verify(transactions).savePhotoSuccess(eq(claim), eq(1L), any());
+            verify(transactions).savePhotoSuccess(eq(claim), eq(2L), any());
+            verify(storage, never()).storeDerivedTo(any(), any(), any());
+        } finally {
+            upload.complete("1/analyze");
+        }
     }
 
     @Test

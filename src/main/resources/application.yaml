@@ -112,6 +112,7 @@ aws:
 
 attachment:
   derivative:
+    storage-max-staged-bytes: ${ATTACHMENT_DERIVATIVE_STORAGE_MAX_STAGED_BYTES:134217728}
     heic-workers: ${ATTACHMENT_DERIVATIVE_HEIC_WORKERS:1}
     light-workers: ${ATTACHMENT_DERIVATIVE_LIGHT_WORKERS:1}
     heic-max-inflight-photos: ${ATTACHMENT_DERIVATIVE_HEIC_MAX_INFLIGHT_PHOTOS:50}

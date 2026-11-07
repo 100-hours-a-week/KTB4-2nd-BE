@@ -18,8 +18,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import com.yeodam.yeodambe.story.repository.StoryContentRepository;
+import com.yeodam.yeodambe.story.repository.StoryContentUpdateRepository;
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import org.mockito.InOrder;
 import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
@@ -31,12 +36,23 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import org.bson.BsonDocument;
+import com.mongodb.event.CommandListener;
+import com.mongodb.event.CommandStartedEvent;
+import org.springframework.boot.mongodb.autoconfigure.MongoClientSettingsBuilderCustomizer;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.time.ZoneOffset;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -49,8 +65,24 @@ import static org.mockito.Mockito.*;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class StoryUpdateServiceIntegrationTest {
 
+    private static final Queue<BsonDocument> MONGO_UPDATES = new ConcurrentLinkedQueue<>();
+
     @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
     static class MongoConfig {
+
+        @org.springframework.context.annotation.Bean
+        MongoClientSettingsBuilderCustomizer captureStoryUpdates() {
+            return settings -> settings.addCommandListener(new CommandListener() {
+                @Override
+                public void commandStarted(CommandStartedEvent event) {
+                    if ("update".equals(event.getCommandName())
+                            && "story_contents".equals(event.getCommand().getString("update").getValue())) {
+                        MONGO_UPDATES.add(event.getCommand().clone());
+                    }
+                }
+            });
+        }
+
         @org.springframework.context.annotation.Bean
         @org.springframework.context.annotation.Primary
         org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails isolatedMongo() {
@@ -63,6 +95,7 @@ class StoryUpdateServiceIntegrationTest {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired StoryUpdateService service;
     @MockitoSpyBean StoryContentRepository contents;
+    @MockitoSpyBean StoryContentUpdateRepository contentUpdates;
     @Autowired com.yeodam.yeodambe.story.repository.StoryBlockRepository sqlBlocks;
     @Autowired com.yeodam.yeodambe.story.repository.StorySelectedPlaceRepository selectedPlaces;
     @Autowired com.yeodam.yeodambe.story.repository.StoryRepository stories;
@@ -110,12 +143,14 @@ class StoryUpdateServiceIntegrationTest {
 
     @Test
     void 읽은뒤_문서버전이_변하면_최신본문을_덮어쓰지_않는다() {
+        service.update(fixture.userId(), fixture.storyId(),
+                request(block(fixture.blockId(), fixture.photoId(), 1)));
         doAnswer(invocation -> {
-            var newer = contents.findById(fixture.storyId()).orElseThrow();
+            StoryContentDocument newer = contents.findById(fixture.storyId()).orElseThrow();
             newer.updateContent(Story.Mood.PLAIN, "먼저 저장한 요약", newer.getBlocks());
             mongoTemplate.save(newer);
-            return mongoTemplate.save((StoryContentDocument) invocation.getArgument(0));
-        }).when(contents).save(any(StoryContentDocument.class));
+            return invocation.callRealMethod();
+        }).when(contentUpdates).saveChanges(any(StoryContentDocument.class), anyList());
 
         assertThatThrownBy(() -> service.update(fixture.userId(), fixture.storyId(),
                 request(block(fixture.blockId(), fixture.photoId(), 1))))
@@ -127,31 +162,35 @@ class StoryUpdateServiceIntegrationTest {
 
     @Test
     void 응답URL_준비가_실패하면_본문과_버전을_저장하지_않는다() {
-        var before = contents.findById(fixture.storyId()).orElseThrow();
-        when(storage.createReadUrl(anyString())).thenThrow(new IllegalStateException("URL failure"));
+        StoryContentDocument before = contents.findById(fixture.storyId()).orElseThrow();
+        when(storage.createReadUrl(anyString())).thenThrow(new IllegalStateException(
+                StoryGenerationInternalErrorMessage.READ_DATA_INTEGRITY_FAILED.message()
+        ));
 
         assertThatThrownBy(() -> service.update(fixture.userId(), fixture.storyId(),
                 request(block(fixture.blockId(), fixture.photoId(), 1))))
                 .isInstanceOf(IllegalStateException.class);
 
-        var after = contents.findById(fixture.storyId()).orElseThrow();
+        StoryContentDocument after = contents.findById(fixture.storyId()).orElseThrow();
         assertThat(after.getVersion()).isEqualTo(before.getVersion());
         assertThat(after.getBlocks()).isEqualTo(before.getBlocks());
         assertThat(after.getStorySummary()).isEqualTo(before.getStorySummary());
         verify(contents, never()).save(any(StoryContentDocument.class));
+        verify(contentUpdates, never()).saveChanges(any(StoryContentDocument.class), anyList());
     }
 
     @Test
     void 저장호출이_실행전_실패하면_기존문서를_유지한다() {
-        var before = contents.findById(fixture.storyId()).orElseThrow();
-        doThrow(new org.springframework.dao.DataAccessResourceFailureException("Mongo failure"))
-                .when(contents).save(any(StoryContentDocument.class));
+        StoryContentDocument before = contents.findById(fixture.storyId()).orElseThrow();
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException(
+                StoryGenerationInternalErrorMessage.CONTENT_UPDATE_UNACKNOWLEDGED.message()
+        )).when(contentUpdates).saveChanges(any(StoryContentDocument.class), anyList());
 
         assertThatThrownBy(() -> service.update(fixture.userId(), fixture.storyId(),
                 request(block(fixture.blockId(), fixture.photoId(), 1))))
                 .isInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
 
-        var after = contents.findById(fixture.storyId()).orElseThrow();
+        StoryContentDocument after = contents.findById(fixture.storyId()).orElseThrow();
         assertThat(after.getVersion()).isEqualTo(before.getVersion());
         assertThat(after.getBlocks()).isEqualTo(before.getBlocks());
     }
@@ -159,7 +198,7 @@ class StoryUpdateServiceIntegrationTest {
     @Test
     void 응답준비후에_저장하고_SQL롤백이_저장한_Mongo본문을_되돌리지_않는다() {
         tx.executeWithoutResult(status -> {
-            var response = service.update(fixture.userId(), fixture.storyId(),
+            StoryUpdateResponse response = service.update(fixture.userId(), fixture.storyId(),
                     request(block(fixture.blockId(), fixture.photoId(), 1)));
             assertThat(response.storySummary()).isEqualTo("수정 요약");
             status.setRollbackOnly();
@@ -169,9 +208,9 @@ class StoryUpdateServiceIntegrationTest {
                 .isEqualTo("수정 요약");
         tx.executeWithoutResult(status -> assertThat(em.find(Story.class, fixture.storyId())
                 .getStorySummary()).isEqualTo("기존 요약"));
-        var order = inOrder(storage, contents);
+        InOrder order = inOrder(storage, contentUpdates);
         order.verify(storage).createReadUrl(anyString());
-        order.verify(contents).save(any(StoryContentDocument.class));
+        order.verify(contentUpdates).saveChanges(any(StoryContentDocument.class), anyList());
     }
 
     @Test
@@ -343,6 +382,143 @@ class StoryUpdateServiceIntegrationTest {
             assertThat(response.days().getFirst().blocks().getFirst().tripPlaceId())
                     .isEqualTo(movedPlace.getId());
         });
+    }
+
+    @Test
+    void 메모_부분수정은_전체배열_전송없이_다른블록의_수정시각과_이력을_보존한다() {
+        Long addedPhotoId = newPhoto(true);
+        service.update(fixture.userId(), fixture.storyId(), request(
+                block(fixture.blockId(), fixture.photoId(), 1), block(null, addedPhotoId, 2)
+        ));
+        Long deletedPhotoId = newPhoto(true);
+        StoryContentDocument prepared = contents.findById(fixture.storyId()).orElseThrow();
+        Instant previousTime = Instant.parse("2026-10-01T00:00:00Z");
+        List<StoryContentBlock> blocks = new ArrayList<>(prepared.getBlocks().stream()
+                .map(block -> withUpdatedAt(block, previousTime))
+                .toList());
+        StoryContentBlock deleted = new StoryContentBlock(
+                prepared.issueBlockId(), deletedPhotoId, fixture.placeId(),
+                LocalDate.of(2026, 10, 1), "삭제 날짜", "삭제 설명", "삭제 메모",
+                previousTime, previousTime, previousTime, "deleted-preview"
+        );
+        blocks.add(deleted);
+        prepared.updateContent(prepared.getMood(), prepared.getStorySummary(), blocks);
+        ReflectionTestUtils.setField(prepared, "initialContentHash", "a".repeat(64));
+        contents.save(prepared);
+        StoryContentDocument before = contents.findById(fixture.storyId()).orElseThrow();
+        List<StoryUpdateRequest.Block> requested = List.of(
+                new StoryUpdateRequest.Block(
+                        blocks.getFirst().id(), fixture.photoId(), "요청 날짜", "요청 설명", "변경 메모", 1
+                ),
+                block(blocks.get(1).id(), addedPhotoId, 2)
+        );
+        MONGO_UPDATES.clear();
+
+        service.update(fixture.userId(), fixture.storyId(), new StoryUpdateRequest(
+                before.getMood(), before.getStorySummary(), requested
+        ));
+
+        List<BsonDocument> commands = List.copyOf(MONGO_UPDATES);
+        assertThat(commands).hasSize(1);
+        BsonDocument operation = commands.getFirst().getArray("updates").getFirst().asDocument();
+        BsonDocument update = operation.getDocument("u");
+        assertThat(update).containsKey("$set");
+        assertThat(update.getDocument("$set"))
+                .containsKeys("blocks.0.memo", "blocks.0.updatedAt", "blocks.1.updatedAt")
+                .doesNotContainKeys("blocks", "blocks.1.memo", "blocks.2.updatedAt");
+        assertThat(operation.getDocument("q").getNumber("version").longValue())
+                .isEqualTo(before.getVersion());
+        assertThat(update.getDocument("$inc").getNumber("version").longValue()).isEqualTo(1L);
+        StoryContentDocument after = contents.findById(fixture.storyId()).orElseThrow();
+        assertThat(after.getBlocks().getFirst().memo()).isEqualTo("변경 메모");
+        assertThat(after.getBlocks().getFirst().updatedAt()).isAfter(previousTime);
+        assertThat(after.getBlocks().get(1).updatedAt()).isAfter(previousTime);
+        assertThat(after.getBlocks().get(2)).isEqualTo(deleted);
+        assertThat(after.getVersion()).isEqualTo(before.getVersion() + 1);
+        assertThat(after.getInitialContentHash()).isEqualTo("a".repeat(64));
+        assertThat(after.getSelectedPlaceIds()).isEqualTo(before.getSelectedPlaceIds());
+        assertThat(after.getNextBlockId()).isEqualTo(before.getNextBlockId());
+    }
+
+    @Test
+    void 블록_재정렬은_전체저장으로_순서와_버전을_함께_변경한다() {
+        Long addedPhotoId = newPhoto(true);
+        StoryUpdateResponse first = service.update(fixture.userId(), fixture.storyId(), request(
+                block(fixture.blockId(), fixture.photoId(), 1), block(null, addedPhotoId, 2)
+        ));
+        Long addedBlockId = first.days().getLast().blocks().getFirst().storyBlockId();
+        StoryContentDocument before = contents.findById(fixture.storyId()).orElseThrow();
+        MONGO_UPDATES.clear();
+
+        service.update(fixture.userId(), fixture.storyId(), request(
+                block(addedBlockId, addedPhotoId, 1), block(fixture.blockId(), fixture.photoId(), 2)
+        ));
+
+        List<BsonDocument> commands = List.copyOf(MONGO_UPDATES);
+        assertThat(commands).hasSize(1);
+        BsonDocument update = commands.getFirst().getArray("updates").getFirst()
+                .asDocument().getDocument("u");
+        assertThat(update).doesNotContainKey("$set").containsKey("blocks");
+        StoryContentDocument after = contents.findById(fixture.storyId()).orElseThrow();
+        assertThat(after.getBlocks()).extracting(StoryContentBlock::id)
+                .containsExactly(addedBlockId, fixture.blockId());
+        assertThat(after.getVersion()).isEqualTo(before.getVersion() + 1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 동일요청과_null메모도_부분갱신으로_버전을_한번_증가시킨다(boolean clearMemo) {
+        service.update(fixture.userId(), fixture.storyId(),
+                request(block(fixture.blockId(), fixture.photoId(), 1)));
+        StoryContentDocument before = contents.findById(fixture.storyId()).orElseThrow();
+        StoryContentBlock existing = before.getBlocks().getFirst();
+        String memo = clearMemo ? null : existing.memo();
+        StoryUpdateRequest input = new StoryUpdateRequest(
+                before.getMood(), before.getStorySummary(), List.of(new StoryUpdateRequest.Block(
+                        existing.id(), existing.tripAttachmentId(), existing.dayLabel(),
+                        existing.detailSummary(), memo, 1
+                ))
+        );
+        MONGO_UPDATES.clear();
+
+        service.update(fixture.userId(), fixture.storyId(), input);
+
+        StoryContentDocument after = contents.findById(fixture.storyId()).orElseThrow();
+        assertThat(after.getVersion()).isEqualTo(before.getVersion() + 1);
+        assertThat(after.getBlocks().getFirst().memo()).isEqualTo(memo);
+        assertThat(after.getBlocks().getFirst().createdAt()).isEqualTo(existing.createdAt());
+        List<BsonDocument> commands = List.copyOf(MONGO_UPDATES);
+        assertThat(commands).hasSize(1);
+        assertThat(commands.getFirst().getArray("updates").getFirst().asDocument().getDocument("u"))
+                .containsKey("$set").doesNotContainKey("blocks");
+    }
+
+    @Test
+    void 부분갱신_직전에_문서가_삭제되면_다시_생성하지_않는다() {
+        service.update(fixture.userId(), fixture.storyId(),
+                request(block(fixture.blockId(), fixture.photoId(), 1)));
+        doAnswer(invocation -> {
+            mongoTemplate.remove(
+                    Query.query(
+                            Criteria.where("_id").is(fixture.storyId())
+                    ), StoryContentDocument.class
+            );
+            return invocation.callRealMethod();
+        }).when(contentUpdates).saveChanges(any(StoryContentDocument.class), anyList());
+
+        assertThatThrownBy(() -> service.update(
+                fixture.userId(), fixture.storyId(),
+                request(block(fixture.blockId(), fixture.photoId(), 1))
+        )).isInstanceOf(OptimisticLockingFailureException.class);
+        assertThat(contents.findById(fixture.storyId())).isEmpty();
+    }
+
+    private StoryContentBlock withUpdatedAt(StoryContentBlock block, Instant updatedAt) {
+        return new StoryContentBlock(
+                block.id(), block.tripAttachmentId(), block.sourceTripPlaceId(), block.sourceDate(),
+                block.dayLabel(), block.detailSummary(), block.memo(), block.createdAt(),
+                updatedAt, block.deletedAt(), block.previewStorageKey()
+        );
     }
 
     private StoryUpdateRequest request(StoryUpdateRequest.Block... blocks) {

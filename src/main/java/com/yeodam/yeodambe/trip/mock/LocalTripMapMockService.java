@@ -126,9 +126,10 @@ public class LocalTripMapMockService {
     }
 
     private void createIfMissing(Long userId, MockTrip mockTrip, boolean includeUnclassified) {
-        if (tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNull(
+        if (tripRepository.existsByUserIdAndTripNameAndDeletedAtIsNullAndProcessingStatusNot(
                 userId,
-                mockTrip.tripName()
+                mockTrip.tripName(),
+                ProcessingStatus.FAILED
         )) {
             return;
         }

@@ -125,6 +125,65 @@ class TripUpdateIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void 실패한_여행은_보존하고_같은_이름으로_새_여행을_생성한다() {
+        jdbc.update("UPDATE trips SET processing_status = 'FAILED' WHERE trip_id = ?", tripId);
+
+        Long recreatedTripId = create("원래 여행", List.of("11000"));
+
+        assertThat(recreatedTripId).isNotEqualTo(tripId);
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM trips WHERE trip_id = ?", String.class, tripId
+        )).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject(
+                "SELECT deleted_at IS NULL FROM trips WHERE trip_id = ?", Boolean.class, tripId
+        )).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT trip_name FROM trips WHERE trip_id = ?", String.class, recreatedTripId
+        )).isEqualTo("원래 여행");
+    }
+
+    @Test
+    void 삭제된_여행과_같은_이름으로_새_여행을_생성한다() {
+        jdbc.update("UPDATE trips SET deleted_at = CURRENT_TIMESTAMP WHERE trip_id = ?", tripId);
+
+        Long recreatedTripId = create("원래 여행", List.of("11000"));
+
+        assertThat(recreatedTripId).isNotEqualTo(tripId);
+        assertThat(jdbc.queryForObject(
+                "SELECT deleted_at IS NOT NULL FROM trips WHERE trip_id = ?", Boolean.class, tripId
+        )).isTrue();
+    }
+
+    @Test
+    void 실패한_여행의_이름으로_정상_여행을_수정한다() throws Exception {
+        Long failedTripId = create("실패 여행", List.of("11000"));
+        jdbc.update("UPDATE trips SET processing_status = 'FAILED' WHERE trip_id = ?", failedTripId);
+
+        mvc.perform(request("{\"tripName\":\"실패 여행\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tripName").value("실패 여행"));
+
+        assertThat(name()).isEqualTo("실패 여행");
+    }
+
+    @Test
+    void 실패한_여행의_이름을_재사용한_새_여행의_기간을_수정한다() throws Exception {
+        Long failedTripId = tripId;
+        jdbc.update("UPDATE trips SET processing_status = 'FAILED' WHERE trip_id = ?", failedTripId);
+        tripId = create("원래 여행", List.of("11000"));
+        jdbc.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", tripId);
+
+        mvc.perform(request("{\"endDate\":\"2026-09-02\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tripName").value("원래 여행"))
+                .andExpect(jsonPath("$.data.endDate").value("2026-09-02"));
+
+        assertThat(jdbc.queryForObject(
+                "SELECT processing_status FROM trips WHERE trip_id = ?", String.class, failedTripId
+        )).isEqualTo("FAILED");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
             "\u3164", "\u2800", "\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF",

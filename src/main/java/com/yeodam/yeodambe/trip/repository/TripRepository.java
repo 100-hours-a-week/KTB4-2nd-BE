@@ -18,6 +18,24 @@ import java.util.Optional;
 public interface TripRepository extends JpaRepository<Trip, Long> {
     Optional<Trip> findByIdAndDeletedAtIsNull(Long tripId);
 
+    @Query("""
+            select trip.id as tripId, trip.userId as ownerId,
+                   trip.processingStatus as processingStatus, trip.sequence as sequence
+            from Trip trip
+            where trip.id = :tripId and trip.deletedAt is null
+            """)
+    Optional<PhotoReadState> findPhotoReadStateById(@Param("tripId") Long tripId);
+
+    interface PhotoReadState {
+        Long getTripId();
+
+        Long getOwnerId();
+
+        ProcessingStatus getProcessingStatus();
+
+        long getSequence();
+    }
+
     @Modifying(flushAutomatically = true)
     @Query(value = "UPDATE trips SET change_sequence = change_sequence + 1 WHERE trip_id = :tripId", nativeQuery = true)
     int advanceSequence(@Param("tripId") Long tripId);

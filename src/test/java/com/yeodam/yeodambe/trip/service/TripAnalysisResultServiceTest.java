@@ -266,6 +266,8 @@ class TripAnalysisResultServiceTest {
         for (Map<String, String> names : List.of(
                 Map.<String, String>of(),
                 Map.of("p1", " "),
+                Map.of("p1", "\u00A0"),
+                Map.of("p1", "\u200B\uFEFF"),
                 Map.of("p1", "가".repeat(51)),
                 Map.of("p1", "제주", "p2", "서울")
         )) {

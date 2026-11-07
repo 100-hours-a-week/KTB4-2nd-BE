@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.common.validation.TextValidation;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
@@ -388,7 +389,7 @@ public class TripAnalysisResultService {
             throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_NAME_RESULT_INVALID.message());
         }
         for (String name : placeNames.values()) {
-            if (name == null || name.isBlank() || name.codePointCount(0, name.length()) > 50) {
+            if (!TextValidation.hasVisibleContent(name) || name.codePointCount(0, name.length()) > 50) {
                 throw new IllegalStateException(TripInternalErrorMessage.AI_PLACE_NAME_RESULT_INVALID.message());
             }
         }

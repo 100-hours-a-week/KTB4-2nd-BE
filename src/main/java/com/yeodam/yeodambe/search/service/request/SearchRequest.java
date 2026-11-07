@@ -12,7 +12,7 @@ public record SearchRequest(
 ) {
     public SearchRequest {
         if (query != null) {
-            query = query.strip();
+            query = TextValidation.stripInvisible(query);
         }
     }
 

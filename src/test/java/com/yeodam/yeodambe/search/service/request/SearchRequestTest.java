@@ -38,7 +38,7 @@ class SearchRequestTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"제주 여행", "!?", "ㄱㄴ", "e\u0301", "👨‍👩‍👧‍👦", "제주\u200B"})
+    @ValueSource(strings = {"제주 여행", "!?", "ㄱㄴ", "e\u0301", "👨‍👩‍👧‍👦", "제주\u200B여행"})
     void 표시할_내용이_있는_검색어는_변경하지_않는다(String query) {
         SearchRequest request = new SearchRequest("  " + query + "  ");
 
@@ -53,5 +53,20 @@ class SearchRequestTest {
         assertThat(validator.validate(new SearchRequest("  " + "😀".repeat(100) + "  ")))
                 .isEmpty();
         assertThat(validator.validate(new SearchRequest("😀".repeat(101)))).isNotEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\u00A0제주\uFEFF", "\u200B제주", "제주\u200B", "\u3164 제주 \u2800"})
+    void 검색어_앞뒤의_유니코드_특수_공백을_제거한다(String query) {
+        SearchRequest request = new SearchRequest(query);
+
+        assertThat(validator.validate(request)).isEmpty();
+        assertThat(request.query()).isEqualTo("제주");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"가\u200B", "\uFEFF가", "\u00A0가\u3164"})
+    void 특수_공백을_제외하고_한_글자인_검색어는_거부한다(String query) {
+        assertThat(validator.validate(new SearchRequest(query))).isNotEmpty();
     }
 }

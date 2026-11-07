@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
+import com.yeodam.yeodambe.story.service.response.StoryUpdateResponse;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.service.TripEditAuthorizationService;
@@ -42,7 +43,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @org.springframework.boot.test.context.SpringBootTest
-@Import({TestcontainersConfiguration.class, StoryUpdateServiceIntegrationTest.MongoConfig.class})
+@Import({TestcontainersConfiguration.class, StoryUpdateServiceIntegrationTest.MongoConfig.class,
+        StorySqlCounterConfiguration.class})
 @ActiveProfiles("test")
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class StoryUpdateServiceIntegrationTest {
@@ -296,6 +298,51 @@ class StoryUpdateServiceIntegrationTest {
                     assertThat(item.deletedAt()).isNotNull();
                     assertThat(item.previewStorageKey()).isEqualTo(originalKey);
                 });
+    }
+
+    @Test
+    void 정상_전체수정은_중복_장소조회없이_SQL_다섯번을_사용한다() {
+        StorySqlCounterConfiguration.begin();
+        try {
+            StoryUpdateResponse response = service.update(
+                    fixture.userId(), fixture.storyId(),
+                    request(block(fixture.blockId(), fixture.photoId(), 1))
+            );
+            List<String> queries = StorySqlCounterConfiguration.finish();
+
+            assertThat(response.storySummary()).isEqualTo("수정 요약");
+            assertThat(contents.findById(fixture.storyId()).orElseThrow().getStorySummary())
+                    .isEqualTo("수정 요약");
+            assertThat(queries).hasSize(5);
+            assertThat(queries).noneMatch(sql -> sql.contains("from trip_detail_places"));
+        } finally {
+            StorySqlCounterConfiguration.clear();
+        }
+    }
+
+    @Test
+    void 같은_트랜잭션에서_사진의_FK만_바뀌어도_새_장소와_날짜를_사용한다() {
+        Long replacementId = newPhoto(true);
+        tx.executeWithoutResult(status -> {
+            TripAttachment replacement = em.find(TripAttachment.class, replacementId);
+            Long previousPlaceId = replacement.getTripPlace().getId();
+            TripDetailPlace movedPlace = place(fixture.tripId(), 5);
+            replacement.classify(
+                    movedPlace.getId(), RegionOrigin.EXIF, movedPlace.getStartedAt(),
+                    BigDecimal.ZERO, BigDecimal.ZERO, 1
+            );
+            em.flush();
+            assertThat(replacement.getTripPlace().getId()).isEqualTo(previousPlaceId);
+
+            StoryUpdateResponse response = service.update(
+                    fixture.userId(), fixture.storyId(),
+                    request(block(fixture.blockId(), replacementId, 1))
+            );
+
+            assertThat(response.days().getFirst().date()).isEqualTo(LocalDate.of(2026, 10, 5));
+            assertThat(response.days().getFirst().blocks().getFirst().tripPlaceId())
+                    .isEqualTo(movedPlace.getId());
+        });
     }
 
     private StoryUpdateRequest request(StoryUpdateRequest.Block... blocks) {

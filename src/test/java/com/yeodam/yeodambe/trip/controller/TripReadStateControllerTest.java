@@ -5,11 +5,12 @@ import com.yeodam.yeodambe.story.controller.StorySourceFolderController;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.story.service.StorySourceFolderListService;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.config.TripAttachmentCacheProperties;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
-import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
-import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
@@ -28,11 +29,13 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.LongStream;
 
@@ -70,7 +73,11 @@ class TripReadStateControllerTest {
                 mock(TripDeletionService.class), mapper, mock(ShareTripService.class), mock(InvitedTripListService.class)
         );
         TripAttachmentController attachmentController = new TripAttachmentController(
-                new TripAttachmentListService(places, attachments, storage, mapper, access),
+                new TripAttachmentListService(
+                        new TripAttachmentPageReader(access, trips, places, attachments,
+                                mock(TripAttachmentPageStore.class), new TripAttachmentCacheProperties(), mapper),
+                        storage, new TripAttachmentCacheProperties(),
+                        mock(TripAttachmentResponseCacheService.class)),
                 mock(TripAttachmentDetailService.class), mock(TripAttachmentDeletionService.class),
                 mock(TripAttachmentDownloadService.class), mock(BulkAttachmentDownloadService.class),
                 mock(InitialAttachmentUploadUrlService.class),
@@ -240,7 +247,7 @@ class TripReadStateControllerTest {
             "/trips/7/unclassified-folders/BLURRY/attachments, /trips/8/unclassified-folders/BLURRY/attachments"
     })
     void 다른_여행이나_폴더에_커서를_사용하면_400이다(String sourcePath, String path) throws Exception {
-        var photos = LongStream.rangeClosed(1, 19).mapToObj(id -> {
+        List<TripAttachment> photos = LongStream.rangeClosed(1, 19).mapToObj(id -> {
             TripAttachment photo = mock(TripAttachment.class);
             when(photo.getId()).thenReturn(id);
             when(photo.getCreatedAt()).thenReturn(LocalDateTime.of(2026, 10, 1, 12, 0));
@@ -262,8 +269,8 @@ class TripReadStateControllerTest {
         String body = mvc.perform(get(sourcePath))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        var data = new ObjectMapper().readTree(body).path("data");
-        var page = sourcePath.endsWith("/edit") ? data.path("attachments") : data;
+        JsonNode data = new ObjectMapper().readTree(body).path("data");
+        JsonNode page = sourcePath.endsWith("/edit") ? data.path("attachments") : data;
         String cursor = page.path("nextCursor").asString();
 
         clearInvocations(attachments);

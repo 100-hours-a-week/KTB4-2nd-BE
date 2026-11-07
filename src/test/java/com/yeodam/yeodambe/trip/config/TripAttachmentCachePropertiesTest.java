@@ -41,6 +41,14 @@ class TripAttachmentCachePropertiesTest {
     }
 
     @Test
+    void V3_배포_환경변수로_사진_목록_캐시를_활성화한다() throws IOException {
+        context().withPropertyValues("PHOTO_LIST_CACHE_ENABLED=true").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(TripAttachmentCacheProperties.class).isEnabled()).isTrue();
+        });
+    }
+
+    @Test
     void 배포_설정으로_주입한_스키마를_키와_payload에_함께_사용한다() throws IOException {
         context().withPropertyValues(
                 "PHOTO_LIST_CACHE_NAMESPACE=photo-list-staging",

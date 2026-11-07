@@ -1,39 +1,23 @@
 package com.yeodam.yeodambe.trip.service;
 
-
-import tools.jackson.databind.ObjectMapper;
-import com.yeodam.yeodambe.common.exception.PlaceFolderNotFoundException;
-import com.yeodam.yeodambe.common.exception.TripNotFoundException;
-import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
-import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
-import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
-import com.yeodam.yeodambe.trip.entity.Trip;
-import com.yeodam.yeodambe.trip.entity.TripAttachment;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
+import com.yeodam.yeodambe.trip.config.TripAttachmentCacheProperties;
+import com.yeodam.yeodambe.trip.service.request.AttachmentPageQuery;
+import com.yeodam.yeodambe.trip.service.response.AttachmentPageData;
 import com.yeodam.yeodambe.trip.service.response.TripAttachmentListResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import com.yeodam.yeodambe.trip.service.request.cursor.AttachmentCursor;
 
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class TripAttachmentListService {
 
-    private static final int PAGE_SIZE = 18;
-    private static final int QUERY_SIZE = PAGE_SIZE + 1;
-
-    private final TripDetailPlaceRepository tripDetailPlaceRepository;
-    private final TripAttachmentRepository tripAttachmentRepository;
-    private final TripAttachmentStorageClient tripAttachmentStorageClient;
-    private final ObjectMapper objectMapper;
-    private final TripAccessService tripAccessService;
+    private final TripAttachmentPageReader reader;
+    private final TripAttachmentStorageClient storage;
+    private final TripAttachmentCacheProperties properties;
+    private final TripAttachmentResponseCacheService responseCache;
 
     public TripAttachmentListResponse findByPlaceFolder(
             Long userId,
@@ -41,75 +25,18 @@ public class TripAttachmentListService {
             Long tripPlaceId,
             String cursor
     ) {
-        Trip trip;
-        try {
-            trip = tripAccessService.requireReadableTrip(tripId, userId);
-        } catch (TripNotFoundException e) {
-            throw new PlaceFolderNotFoundException();
+        AttachmentPageQuery query = new AttachmentPageQuery(userId, tripId, tripPlaceId, cursor);
+        if (properties.isEnabled()) {
+            return responseCache.read(query, this::toResponse);
         }
-        if (!tripDetailPlaceRepository.existsByIdAndTripIdAndDeletedAtIsNull(
-                tripPlaceId,
-                tripId
-        )) {
-            throw new PlaceFolderNotFoundException();
-        }
+        return toResponse(reader.read(query));
+    }
 
-        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
-            throw new TripDetailNotAvailableException();
-        }
-
-        AttachmentCursor attachmentCursor = AttachmentCursor.decode(
-                cursor,
-                tripId,
-                tripPlaceId,
-                null,
-                objectMapper
-        );
-
-        List<TripAttachment> attachments =
-                tripAttachmentRepository.findByPlaceFolderWithCursor(
-                        tripId,
-                        tripPlaceId,
-                        ClassificationStatus.ACTIVE,
-                        attachmentCursor == null
-                                ? null
-                                : attachmentCursor.createdAt(),
-                        attachmentCursor == null
-                                ? null
-                                : attachmentCursor.tripAttachmentId(),
-                        PageRequest.of(0, QUERY_SIZE)
-                );
-
-        boolean hasNext = attachments.size() > PAGE_SIZE;
-
-        List<TripAttachmentListResponse.Item> items = attachments.stream()
-                .limit(PAGE_SIZE)
-                .map(attachment -> new TripAttachmentListResponse.Item(
-                        attachment.getId(),
-                        tripAttachmentStorageClient.createReadUrl(
-                                attachment.getPreviewStorageKey()
-                        )
-                ))
+    private TripAttachmentListResponse toResponse(AttachmentPageData page) {
+        List<TripAttachmentListResponse.Item> items = page.items().stream()
+                .map(item -> new TripAttachmentListResponse.Item(
+                        item.tripAttachmentId(), storage.createReadUrl(item.previewStorageKey())))
                 .toList();
-
-        String nextCursor = null;
-
-        if (hasNext) {
-            TripAttachment lastAttachment = attachments.get(PAGE_SIZE - 1);
-            nextCursor = new AttachmentCursor(
-                    lastAttachment.getCreatedAt(),
-                    lastAttachment.getId(),
-                    tripId,
-                    tripPlaceId,
-                    null
-            ).encode(objectMapper);
-        }
-
-        return new TripAttachmentListResponse(
-                items,
-                hasNext,
-                nextCursor,
-                trip.getSequence()
-        );
+        return new TripAttachmentListResponse(items, page.hasNext(), page.nextCursor(), page.sequence());
     }
 }

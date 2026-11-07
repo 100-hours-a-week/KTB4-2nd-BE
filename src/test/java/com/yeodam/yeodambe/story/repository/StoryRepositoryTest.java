@@ -3,7 +3,8 @@ package com.yeodam.yeodambe.story.repository;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.story.entity.*;
-import com.yeodam.yeodambe.story.document.StoryContentDocument;
+import com.yeodam.yeodambe.story.service.response.StoryReadContent;
+import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
@@ -77,17 +78,19 @@ class StoryRepositoryTest {
         em.find(TripAttachment.class, deleted.getTripAttachmentId()).softDelete(LocalDateTime.now());
         em.flush();
         em.clear();
-        var mongoBlocks = List.of(deleted, earlier, later).stream()
+        List<StoryContentBlock> mongoBlocks = List.of(deleted, earlier, later).stream()
                 .map(block -> new StoryContentBlock(
                         block.getId(), block.getTripAttachmentId(), block.getSourceTripPlaceId(),
                         block.getSourceDate(), block.getDayLabel(), block.getDetailSummary(),
                         block.getMemo(), null, null, null))
                 .toList();
-        when(contents.findById(story.getId())).thenReturn(java.util.Optional.of(
-                new StoryContentDocument(story.getId(), story.getMood(), story.getStorySummary(),
-                        List.of(place.getId()), mongoBlocks, later.getId() + 100L)));
+        when(contents.findActiveContentById(story.getId())).thenReturn(java.util.Optional.of(
+                new StoryReadContent(
+                        story.getId(), story.getMood(), story.getStorySummary(), mongoBlocks
+                )
+        ));
         when(storage.createReadUrl("미리보기")).thenReturn("https://image.test/preview");
-        var response = service.findStory(trip.getUserId(), trip.getId());
+        StoryDetailResponse response = service.findStory(trip.getUserId(), trip.getId());
         assertThat(response.days()).hasSize(1);
         assertThat(response.days().getFirst().date()).isEqualTo(LocalDate.of(2026, 10, 7));
         assertThat(response.days().getFirst().blocks()).extracting(b -> b.storyBlockId()).containsExactly(earlier.getId(), later.getId());

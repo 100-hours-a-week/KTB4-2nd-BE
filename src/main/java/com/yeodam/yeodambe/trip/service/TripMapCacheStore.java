@@ -20,7 +20,7 @@ import java.util.UUID;
 @Slf4j
 public class TripMapCacheStore {
 
-    private static final String KEY_PREFIX = "cache:trip-map:user:";
+    private static final String KEY_PREFIX = "cache:trip-map:count-v2:user:";
     private static final Duration TTL = Duration.ofSeconds(60);
     private static final String VERSION_KEY_PREFIX = "cache:trip-map:version:user:";
     private static final Duration VERSION_TTL = Duration.ofMinutes(2);

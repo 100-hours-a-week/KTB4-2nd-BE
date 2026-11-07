@@ -3,7 +3,7 @@ package com.yeodam.yeodambe.user.service;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.repository.TripStorageObjectKeys;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentUsage;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
@@ -32,12 +32,12 @@ public class UserStatsService {
             Long userId,
             UserStats stats
     ) {
-        List<TripStorageObjectKeys> active = attachments.findAllForStats(
+        List<TripAttachmentUsage> usages = attachments.findAllForStats(
                 userId, ProcessingStatus.COMPLETED);
 
         Map<String, Long> sizesByKey = new HashMap<>();
-        for (TripStorageObjectKeys keys : active) {
-            addStorageSize(sizesByKey, keys.originalKey(), keys.originalSizeBytes());
+        for (TripAttachmentUsage usage : usages) {
+            addStorageSize(sizesByKey, usage.originalKey(), usage.originalSizeBytes());
         }
 
         long storageUsedBytes = sizesByKey.values().stream()
@@ -47,7 +47,7 @@ public class UserStatsService {
         stats.replaceActiveTripUsage(
                 trips.countByUserIdAndProcessingStatusAndDeletedAtIsNull(
                         userId, ProcessingStatus.COMPLETED),
-                active.size(),
+                usages.stream().filter(TripAttachmentUsage::counted).count(),
                 storageUsedBytes);
     }
 

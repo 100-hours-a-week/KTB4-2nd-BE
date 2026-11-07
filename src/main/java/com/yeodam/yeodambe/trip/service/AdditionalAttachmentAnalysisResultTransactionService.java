@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+import com.yeodam.yeodambe.user.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,7 @@ public class AdditionalAttachmentAnalysisResultTransactionService {
     private final AdditionalAttachmentUploadBatchRepository uploadBatchRepository;
     private final AdditionalAttachmentAnalysisPreparationService preparationService;
     private final TripAnalysisResultService tripAnalysisResultService;
+    private final UserStatsService userStats;
 
     @Transactional
     public void saveResult(Long tripId, Long userId, String additionId, JsonNode result, Map<String, String> names) {
@@ -33,6 +35,7 @@ public class AdditionalAttachmentAnalysisResultTransactionService {
         validateIdentity(tripId, additionId, result);
         tripAnalysisResultService.replaceCompleted(tripId, userId, result, names);
         batches.forEach(AdditionalAttachmentUploadBatch::completeAddition);
+        userStats.refreshFromActiveTrips(userId);
     }
 
     @Transactional

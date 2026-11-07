@@ -40,27 +40,27 @@ class TripMapCacheStoreTest {
     void 회원_키와_60초_만료로_JSON을_저장한다() {
         var data = sample();
         store.save(1L, "v1", data);
-        verify(values).set("cache:trip-map:user:1:v1", mapper.writeValueAsString(data), Duration.ofSeconds(60));
+        verify(values).set("cache:trip-map:count-v2:user:1:v1", mapper.writeValueAsString(data), Duration.ofSeconds(60));
     }
 
     @Test
     void 요청한_회원만_조회하고_좌표를_복원한다() {
         var data = sample();
-        when(values.get("cache:trip-map:user:1:v1")).thenReturn(mapper.writeValueAsString(data));
+        when(values.get("cache:trip-map:count-v2:user:1:v1")).thenReturn(mapper.writeValueAsString(data));
         assertThat(store.find(1L, "v1")).contains(data);
         assertThat(store.find(2L, "v1")).isEmpty();
     }
 
     @Test
     void Redis_읽기_실패는_캐시_미스로_처리한다() {
-        when(values.get("cache:trip-map:user:1:v1"))
+        when(values.get("cache:trip-map:count-v2:user:1:v1"))
                 .thenThrow(new DataAccessResourceFailureException("unavailable"));
         assertThat(store.find(1L, "v1")).isEmpty();
     }
 
     @Test
     void 손상된_JSON은_캐시_미스로_처리한다() {
-        when(values.get("cache:trip-map:user:1:v1")).thenReturn("broken-json");
+        when(values.get("cache:trip-map:count-v2:user:1:v1")).thenReturn("broken-json");
         assertThat(store.find(1L, "v1")).isEmpty();
     }
 
@@ -68,7 +68,7 @@ class TripMapCacheStoreTest {
     void Redis_쓰기_실패를_전파하지_않는다() {
         var data = sample();
         doThrow(new DataAccessResourceFailureException("unavailable"))
-                .when(values).set("cache:trip-map:user:1:v1", mapper.writeValueAsString(data), Duration.ofSeconds(60));
+                .when(values).set("cache:trip-map:count-v2:user:1:v1", mapper.writeValueAsString(data), Duration.ofSeconds(60));
         assertThatCode(() -> store.save(1L, "v1", data)).doesNotThrowAnyException();
     }
 

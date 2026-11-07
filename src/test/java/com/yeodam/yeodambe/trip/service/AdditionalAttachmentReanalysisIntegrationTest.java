@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-@SpringBootTest
+@SpringBootTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true")
 @ActiveProfiles("test")
 @Import({TestcontainersConfiguration.class, AdditionalAttachmentReanalysisIntegrationTest.MongoConfig.class})
 class AdditionalAttachmentReanalysisIntegrationTest {
@@ -84,6 +84,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     @Autowired private StoredFileRepository files;
     @Autowired private UserRepository users;
     @Autowired private UserStatsRepository stats;
+    @Autowired private jakarta.persistence.EntityManagerFactory entityManagerFactory;
     @Autowired private InitialAttachmentUploadBatchRepository initialBatches;
     @Autowired private InitialAttachmentUploadItemRepository initialItems;
     @Autowired private JdbcTemplate jdbc;
@@ -274,7 +275,17 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(kafkaResults.start(claim)).isTrue();
         var validated = kafkaResults.validate(claim);
         clearInvocations(notificationPublisher);
+        org.hibernate.stat.Statistics queryStatistics = entityManagerFactory
+                .unwrap(org.hibernate.SessionFactory.class).getStatistics();
+        queryStatistics.clear();
         kafkaResults.complete(claim, validated, Map.of("place-one", "new place"));
+        long reanalysisQueries = Arrays.stream(queryStatistics.getQueries())
+                .filter(query -> query.contains("join fetch attachment.file file"))
+                .filter(query -> query.contains("order by attachment.id"))
+                .mapToLong(query -> queryStatistics.getQueryStatistics(query).getExecutionCount())
+                .sum();
+        assertThat(reanalysisQueries).isEqualTo(1L);
+        assertThat(stats.findByUser_UserId(userId).orElseThrow().getAttachmentCount()).isEqualTo(2L);
         var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
         verify(notificationPublisher).publish(captor.capture());
         verifyNoMoreInteractions(notificationPublisher);
@@ -293,6 +304,28 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(stats.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isZero();
         assertThat(processingStatus.findStatus(tripId, userId).status())
                 .isEqualTo(com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status.COMPLETED);
+    }
+
+    @Test
+    void 완료_반영은_실패_사진이_남은_원문을_거절한다() {
+        prepareAsync();
+        publishBoth();
+        tools.jackson.databind.node.ObjectNode root = (tools.jackson.databind.node.ObjectNode)
+                applicationMapper.readTree(successfulPayload());
+        tools.jackson.databind.node.ObjectNode result = (tools.jackson.databind.node.ObjectNode) root.path("result");
+        result.putArray("failed").addObject().put("trip_attachment_id", oldPhotoId);
+        String raw = applicationMapper.writeValueAsString(root);
+        kafkaResults.receive(applicationMapper.readValue(raw,
+                com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class), raw);
+        jdbc.update("UPDATE additional_attachment_executions SET result_next_attempt_at = '2099-01-01' WHERE execution_id <> ?", additionId);
+        com.yeodam.yeodambe.trip.service.response.TripAnalysisResultClaim claim = kafkaResults.claim().orElseThrow();
+        assertThat(kafkaResults.start(claim)).isTrue();
+
+        assertThatThrownBy(() -> kafkaResults.complete(claim, result, Map.of("place-one", "new place")))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(batchStatus()).isNotEqualTo("COMPLETED");
+        assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
     }
 
     @Test

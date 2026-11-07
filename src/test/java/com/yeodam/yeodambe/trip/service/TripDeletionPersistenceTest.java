@@ -15,7 +15,7 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
-import com.yeodam.yeodambe.trip.repository.TripStorageObjectKeys;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentUsage;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserRepository;
@@ -199,12 +199,11 @@ class TripDeletionPersistenceTest {
         deletedFile.softDelete(LocalDateTime.now());
         files.saveAndFlush(deletedFile);
 
-        List<TripStorageObjectKeys> result = attachments.findAllForStats(
+        List<TripAttachmentUsage> result = attachments.findAllForStats(
                 owner.getUserId(), ProcessingStatus.COMPLETED);
 
-        assertThat(result).containsExactly(new TripStorageObjectKeys(
-                "original/included", "analyze/included", "preview/included", "display/included",
-                10L, 10L, 10L, 10L));
+        assertThat(result).containsExactly(new TripAttachmentUsage(
+                "original/included", 10L, true));
     }
 
     @Test

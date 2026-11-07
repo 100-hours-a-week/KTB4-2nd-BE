@@ -69,7 +69,8 @@ import static org.mockito.Mockito.when;
 }, showSql = false)
 @Import({TripAccessService.class, TripEditAuthorizationService.class,
         StoryReadService.class, StoryValidator.class, TripAttachmentDownloadService.class,
-        BulkAttachmentDownloadService.class, SharedTripReadAccessPersistenceTest.TimeConfig.class})
+        BulkAttachmentDownloadService.class, TripService.class, InvitedTripListService.class,
+        SharedTripReadAccessPersistenceTest.TimeConfig.class})
 class SharedTripReadAccessPersistenceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 2, 12, 0);
 
@@ -77,11 +78,21 @@ class SharedTripReadAccessPersistenceTest {
     @Autowired private StoryReadService stories;
     @Autowired private TripAttachmentDownloadService downloads;
     @Autowired private BulkAttachmentDownloadService bulkDownloads;
+    @Autowired private TripService tripService;
+    @Autowired private InvitedTripListService invitedTrips;
+    @MockitoBean private AdditionalAttachmentModificationGuard modificationGuard;
+    @MockitoBean private RegionCatalog regionCatalog;
+    @MockitoBean private TripMapCacheStore mapCache;
     @MockitoBean private TripAttachmentStorageClient storage;
     @MockitoBean private StoryContentRepository contents;
 
     @TestConfiguration(proxyBeanMethods = false)
     static class TimeConfig {
+        @Bean
+        tools.jackson.databind.ObjectMapper objectMapper() {
+            return new tools.jackson.databind.ObjectMapper();
+        }
+
         @Bean
         Clock clock() {
             return Clock.fixed(Instant.parse("2026-11-02T03:00:00Z"), ZoneOffset.UTC);
@@ -275,6 +286,20 @@ class SharedTripReadAccessPersistenceTest {
         assertThatThrownBy(() -> stories.findStory(actorId, fixture.trip().getId()))
                 .isInstanceOf(StoryNotFoundException.class);
         assertDownloadsDenied(fixture, actorId);
+        Statistics statistics = resetStatistics();
+        assertThatThrownBy(() -> tripService.findTripDetail(fixture.trip().getId(), actorId))
+                .isInstanceOf(com.yeodam.yeodambe.common.exception.TripNotFoundException.class);
+        assertThatThrownBy(() -> tripService.findTripDetailMap(fixture.trip().getId(), actorId))
+                .isInstanceOf(com.yeodam.yeodambe.common.exception.TripNotFoundException.class);
+        assertThat(invitedTrips.findInvitedTrips(actorId, null).items()).isEmpty();
+        long countQueries = java.util.Arrays.stream(statistics.getQueries())
+                .filter(query -> query.contains("TripAttachmentCount")
+                        || query.contains("TripDetailMapMarker")
+                        || query.contains("UnclassifiedFolderAttachmentCount"))
+                .mapToLong(query -> statistics.getQueryStatistics(query).getExecutionCount())
+                .sum();
+        assertThat(countQueries).isZero();
+        verifyNoInteractions(storage);
     }
 
     private void assertDownloadsDenied(Fixture fixture, Long actorId) {

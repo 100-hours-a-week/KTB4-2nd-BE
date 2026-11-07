@@ -73,7 +73,8 @@ class TripDetailServiceTest {
         when(tripAccessService.requireReadableTrip(7L, 1L)).thenReturn(trip);
         when(tripRegionRepository.findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(7L))
                 .thenReturn(List.of(first, second));
-        when(tripAttachmentRepository.countActiveByTripId(7L)).thenReturn(3L);
+        when(tripAttachmentRepository.countNotDeletedByTripIds(List.of(7L)))
+                .thenReturn(List.of(new com.yeodam.yeodambe.trip.repository.TripAttachmentCount(7L, 9L)));
         when(tripAttachmentRepository.countUnclassifiedByIssue(7L)).thenReturn(List.of(
                 new UnclassifiedFolderAttachmentCount(AttachmentIssue.UNCLEAR_LOCATION, 1L),
                 new UnclassifiedFolderAttachmentCount(AttachmentIssue.BLURRY, 2L),
@@ -93,7 +94,7 @@ class TripDetailServiceTest {
                 .containsExactly("50110", "50130");
         assertThat(response.regions()).extracting(region -> region.regionName())
                 .containsExactly("제주특별자치도 제주시", "제주특별자치도 서귀포시");
-        assertThat(response.attachmentCount()).isEqualTo(3L);
+        assertThat(response.attachmentCount()).isEqualTo(9L);
         assertThat(response.unclassifiedAttachmentCount()).isEqualTo(6L);
         assertThat(response.hasStory()).isFalse();
         assertThat(response.isFavorite()).isTrue();

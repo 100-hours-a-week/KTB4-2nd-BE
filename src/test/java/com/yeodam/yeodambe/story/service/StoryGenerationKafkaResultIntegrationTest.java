@@ -64,6 +64,7 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.any;
 
 @SpringBootTest(properties = {
+        "app.story.mongo-native-generation-enabled=false",
         "spring.kafka.consumer.auto-offset-reset=earliest",
         "app.story.result-listener-enabled=true"
 })

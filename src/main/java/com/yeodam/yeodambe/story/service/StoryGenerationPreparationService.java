@@ -65,7 +65,7 @@ public class StoryGenerationPreparationService {
     private final StoryContentDocumentFactory documentFactory;
     private final TripAttachmentRepository tripAttachmentRepository;
 
-    @Value("${app.story.mongo-native-generation-enabled:false}")
+    @Value("${app.story.mongo-native-generation-enabled:true}")
     private boolean nativeGenerationEnabled;
 
     @Transactional

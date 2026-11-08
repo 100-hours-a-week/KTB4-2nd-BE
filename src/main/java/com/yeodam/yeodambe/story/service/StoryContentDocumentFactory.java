@@ -3,11 +3,15 @@ package com.yeodam.yeodambe.story.service;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.entity.StorySelectedPlace;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Comparator;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -67,6 +71,33 @@ public class StoryContentDocumentFactory {
                 selectedPlaceIds,
                 documentBlocks,
                 nextBlockId
+        );
+    }
+
+    public StoryContentDocument createFromResult(
+            Story story,
+            StoryGenerationAiResponse.Result result,
+            List<Long> selectedPlaceIds,
+            Map<Long, LocalDate> sourceDates,
+            Map<Long, String> previewKeys,
+            String initialContentHash
+    ) {
+        List<StoryContentBlock> blocks = new ArrayList<>();
+        Instant createdAt = toInstant(story.getCreatedAt(), ZoneOffset.UTC);
+        long nextBlockId = 1;
+        List<StoryGenerationAiResponse.Block> orderedBlocks = result.blocks().stream()
+                .sorted(Comparator.comparing(StoryGenerationAiResponse.Block::orderNumber))
+                .toList();
+        for (StoryGenerationAiResponse.Block block : orderedBlocks) {
+            blocks.add(new StoryContentBlock(
+                    nextBlockId++, block.tripAttachmentId(), block.tripPlaceId(),
+                    sourceDates.get(block.tripPlaceId()), block.dayLabel(), block.detailSummary(),
+                    block.memo(), createdAt, createdAt, null, previewKeys.get(block.tripAttachmentId())
+            ));
+        }
+        return new StoryContentDocument(
+                story.getId(), story.getMood(), result.storySummary(), selectedPlaceIds,
+                blocks, nextBlockId, initialContentHash
         );
     }
 

@@ -14,12 +14,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.mongodb.core.convert.MongoConverter;
 import org.springframework.test.util.ReflectionTestUtils;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery;
+import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
+import org.springframework.data.mongodb.core.MongoTemplate;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -34,8 +36,8 @@ class StoryContentMigrationServiceTest {
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final StoryContentMigrationService service = new StoryContentMigrationService(
             stories, blocks, places, contents, new StoryContentDocumentFactory(), storage, converter, attachments,
-            mock(org.springframework.data.mongodb.core.MongoTemplate.class),
-            mock(com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery.class), new StoryValidator());
+            mock(MongoTemplate.class),
+            mock(StoryBlockReferenceQuery.class), new StoryValidator(), mock(StoryGenerationJobRepository.class));
     private Story story;
     private Trip trip;
 

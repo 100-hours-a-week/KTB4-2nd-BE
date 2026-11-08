@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.story.repository;
 
 import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.story.service.response.StoryReadContext;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,20 @@ import java.util.List;
 import java.util.Optional;
 
 public interface StoryRepository extends JpaRepository<Story, Long> {
+    @Query("""
+            select new com.yeodam.yeodambe.story.service.response.StoryReadContext(
+                trip.id, trip.userId, story.id
+            )
+            from Trip trip
+            left join Story story on story.id = trip.currentStoryId
+                and story.tripId = trip.id
+                and story.deletedAt is null
+                and story.processingStatus = 'COMPLETED'
+            where trip.id = :tripId
+                and trip.deletedAt is null
+            """)
+    Optional<StoryReadContext> findReadContextByTripId(Long tripId);
+
     @Query("""
             SELECT s FROM Story s JOIN Trip t ON t.currentStoryId = s.id
             WHERE t.id = :tripId AND s.tripId = :tripId

@@ -277,6 +277,28 @@ class StoryUpdateServiceIntegrationTest {
                 .isInstanceOf(StoryOrAttachmentNotFoundException.class);
     }
 
+    @Test
+    void 유지와_교체와_삭제이력에_프리뷰키를_보존한다() {
+        service.update(fixture.userId(), fixture.storyId(),
+                request(block(fixture.blockId(), fixture.photoId(), 1)));
+        StoryContentDocument retained = contents.findById(fixture.storyId()).orElseThrow();
+        String originalKey = tx.execute(status ->
+                em.find(TripAttachment.class, fixture.photoId()).getPreviewStorageKey());
+        assertThat(retained.getBlocks().getFirst().previewStorageKey()).isEqualTo(originalKey);
+
+        Long addedPhoto = newPhoto(true);
+        service.update(fixture.userId(), fixture.storyId(), request(block(null, addedPhoto, 1)));
+        StoryContentDocument changed = contents.findById(fixture.storyId()).orElseThrow();
+        String addedKey = tx.execute(status ->
+                em.find(TripAttachment.class, addedPhoto).getPreviewStorageKey());
+        assertThat(changed.getBlocks().getFirst().previewStorageKey()).isEqualTo(addedKey);
+        assertThat(changed.getBlocks()).filteredOn(item -> item.id().equals(fixture.blockId()))
+                .allSatisfy(item -> {
+                    assertThat(item.deletedAt()).isNotNull();
+                    assertThat(item.previewStorageKey()).isEqualTo(originalKey);
+                });
+    }
+
     private StoryUpdateRequest request(StoryUpdateRequest.Block... blocks) {
         return new StoryUpdateRequest(Story.Mood.CALM, "수정 요약", List.of(blocks));
     }

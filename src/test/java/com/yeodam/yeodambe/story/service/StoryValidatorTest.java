@@ -27,30 +27,31 @@ class StoryValidatorTest {
     @Test
     void 문서형_표시블록의_장소_날짜_미리보기경로를_검증한다() {
         Row row = row(1, 7, "날", null);
-        var block = new com.yeodam.yeodambe.story.document.StoryContentBlock(
+        com.yeodam.yeodambe.story.document.StoryContentBlock block = new com.yeodam.yeodambe.story.document.StoryContentBlock(
                 1L, 1L, row.place().getId(), row.block().getSourceDate(),
                 "날", "문구", null, null, null, null);
-        var detail = new com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail(
+        com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail detail = contentDetail(
                 block, row.attachment(), row.file(), row.place());
         validator.validateContentDisplayBlocks(7L, List.of(detail));
         assertThatThrownBy(() -> validator.validateContentDisplayBlocks(7L, List.of(
-                new com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail(
+                contentDetail(
                         block, row.attachment(), row.file(), null))))
                 .isInstanceOf(StoryDataIntegrityException.class)
                 .hasMessage("표시 조건: 장소가 없습니다.");
         assertThatThrownBy(() -> validator.validateContentDisplayBlocks(8L, List.of(detail)))
                 .isInstanceOf(StoryDataIntegrityException.class)
                 .hasMessage("표시 조건: 다른 여행의 장소입니다.");
-        var noDate = new com.yeodam.yeodambe.story.document.StoryContentBlock(
+        com.yeodam.yeodambe.story.document.StoryContentBlock noDate = new com.yeodam.yeodambe.story.document.StoryContentBlock(
                 1L, 1L, row.place().getId(), null, "날", "문구", null, null, null, null);
         assertThatThrownBy(() -> validator.validateContentDisplayBlocks(7L, List.of(
-                new com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail(
+                contentDetail(
                         noDate, row.attachment(), row.file(), row.place()))))
                 .isInstanceOf(StoryDataIntegrityException.class)
                 .hasMessage("표시 조건: 스토리 날짜가 없습니다.");
         for (String key : new String[]{null, "", " "}) {
             ReflectionTestUtils.setField(row.attachment(), "previewStorageKey", key);
-            assertThatThrownBy(() -> validator.validateContentDisplayBlocks(7L, List.of(detail)))
+            assertThatThrownBy(() -> validator.validateContentDisplayBlocks(7L, List.of(
+                    contentDetail(block, row.attachment(), row.file(), row.place()))))
                     .isInstanceOf(StoryDataIntegrityException.class)
                     .hasMessage("표시 조건: 미리보기 키가 없습니다.");
         }
@@ -59,17 +60,17 @@ class StoryValidatorTest {
     @Test
     void 문서형_블록의_개수와_사진_파일_연결도_기존_기준으로_검증한다() {
         Row row = row(1, 7, "날", null);
-        var block = new com.yeodam.yeodambe.story.document.StoryContentBlock(
+        com.yeodam.yeodambe.story.document.StoryContentBlock block = new com.yeodam.yeodambe.story.document.StoryContentBlock(
                 1L, 1L, row.place().getId(), row.block().getSourceDate(),
                 "날", "문구", null, null, null, null);
-        var valid = new com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail(
+        com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail valid = contentDetail(
                 block, row.attachment(), row.file(), row.place());
         validator.validateContentBlockRelations(7L, List.of(valid));
         validator.validateBlockCount(Collections.nCopies(30, valid));
         assertThatThrownBy(() -> validator.validateBlockCount(Collections.nCopies(31, valid)))
                 .isInstanceOf(StoryDataIntegrityException.class);
         assertThatThrownBy(() -> validator.validateContentBlockRelations(7L, List.of(
-                new com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail(
+                contentDetail(
                         block, null, row.file(), row.place()))))
                 .isInstanceOf(StoryDataIntegrityException.class)
                 .hasMessage("블록 관계: 첨부가 없습니다.");
@@ -77,7 +78,7 @@ class StoryValidatorTest {
                 .isInstanceOf(StoryDataIntegrityException.class)
                 .hasMessage("블록 관계: 다른 여행의 첨부입니다.");
         assertThatThrownBy(() -> validator.validateContentBlockRelations(7L, List.of(
-                new com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail(
+                contentDetail(
                         block, row.attachment(), null, row.place()))))
                 .isInstanceOf(StoryDataIntegrityException.class)
                 .hasMessage("블록 관계: 파일이 없습니다.");
@@ -109,6 +110,25 @@ class StoryValidatorTest {
         }
     }
 
+    static com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail contentDetail(
+            com.yeodam.yeodambe.story.document.StoryContentBlock block,
+            TripAttachment attachment,
+            StoredFile file,
+            TripDetailPlace place
+    ) {
+        return new com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail(
+                block,
+                attachment == null ? null : attachment.getId(),
+                attachment == null ? null : attachment.getTripId(),
+                attachment == null ? null : attachment.getDeletedAt(),
+                file == null ? null : file.getId(),
+                file == null ? null : file.getDeletedAt(),
+                place == null ? null : place.getId(),
+                place == null ? null : place.getTripId(),
+                attachment == null ? null : attachment.getPreviewStorageKey()
+        );
+    }
+
     static Row row(int order, int day, String label, String memo) {
         TripDetailPlace place = TripDetailPlace.fromAnalysis(
                 7L, order, "장소", BigDecimal.ZERO, BigDecimal.ZERO,
@@ -119,6 +139,7 @@ class StoryValidatorTest {
         attachment.classify((long)day, RegionOrigin.EXIF, place.getStartedAt(), BigDecimal.ZERO, BigDecimal.ZERO, 1);
         ReflectionTestUtils.setField(attachment, "id", (long)order);
         StoredFile file = StoredFile.uploaded(42L, "사진.jpg", "원본", "image/jpeg");
+        ReflectionTestUtils.setField(file, "id", (long) order);
         StoryBlock block = new StoryBlock(1L, (long)order, place.getId(), place.getStartedAt().toLocalDate(),
                 order, label, "문구"+order, memo);
         ReflectionTestUtils.setField(block, "id", (long)order);
@@ -222,7 +243,7 @@ class StoryValidatorTest {
 
     @Test
     void 미리보기는_한장이라도_촬영시각이_없으면_전체를_거절한다() {
-        var valid = row(1, 7, "날", null).attachment();
+        TripAttachment valid = row(1, 7, "날", null).attachment();
         var missing = row(2, 7, "날", null).attachment();
         ReflectionTestUtils.setField(missing, "takenAt", null);
         assertThatThrownBy(() -> validator.validatePreviewAttachments(7L, 2, List.of(valid, missing)))

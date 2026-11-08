@@ -176,7 +176,8 @@ public class StoryUpdateService {
                 requested.memo(),
                 createdAt,
                 now,
-                null
+                null,
+                attachment.getPreviewStorageKey()
         );
     }
 
@@ -233,7 +234,8 @@ public class StoryUpdateService {
                     existing.id(), existing.tripAttachmentId(),
                     existing.sourceTripPlaceId(), existing.sourceDate(),
                     existing.dayLabel(), existing.detailSummary(), existing.memo(),
-                    existing.createdAt(), now, now
+                    existing.createdAt(), now, now,
+                    existing.previewStorageKey()
             ));
         }
 

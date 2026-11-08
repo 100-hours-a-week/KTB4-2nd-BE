@@ -1,15 +1,14 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
-import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.story.service.response.StoryReadContext;
 import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse.Block;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse.Day;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
-import com.yeodam.yeodambe.trip.entity.Trip;
-import com.yeodam.yeodambe.trip.service.TripAccessService;
+import com.yeodam.yeodambe.trip.service.TripEditAuthorizationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,13 +18,8 @@ import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail;
-import com.yeodam.yeodambe.trip.entity.TripAttachment;
-import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
+import com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,26 +28,25 @@ import java.util.List;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class StoryReadService {
-    private final TripAccessService tripAccessService;
+    private final TripEditAuthorizationService authorizationService;
     private final StoryRepository storyRepository;
     private final StoryValidator storyValidator;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
     private final StoryContentRepository storyContentRepository;
-    private final TripAttachmentRepository tripAttachmentRepository;
-    private final TripDetailPlaceRepository tripDetailPlaceRepository;
+    private final StoryBlockReferenceQuery referenceQuery;
 
     public StoryDetailResponse findStory(Long userId, Long tripId) {
-        Trip trip = requireAccess(tripId, userId);
-
-        Story story = storyRepository.findCurrentCompletedByTripId(tripId)
+        StoryReadContext context = storyRepository.findReadContextByTripId(tripId)
                 .orElseThrow(StoryNotFoundException::new);
-
-        var content = storyContentRepository.findById(story.getId())
+        requireAccess(context, userId);
+        if (context.storyId() == null) {
+            throw new StoryNotFoundException();
+        }
+        StoryContentDocument content = storyContentRepository.findById(context.storyId())
                 .orElseThrow(() -> new StoryDataIntegrityException(
                         StoryGenerationInternalErrorMessage.CONTENT_DOCUMENT_MISSING
                 ));
-
-        return prepareContentResponse(tripId, trip.getUserId().equals(userId), content);
+        return prepareContentResponse(tripId, context.ownerId().equals(userId), content);
     }
 
     StoryDetailResponse prepareContentResponse(
@@ -94,57 +87,20 @@ public class StoryReadService {
         if (blocks.isEmpty()) {
             return List.of();
         }
-
-        List<Long> attachmentIds = new ArrayList<>();
-        List<Long> placeIds = new ArrayList<>();
-
-        for (StoryContentBlock block : blocks) {
-            attachmentIds.add(block.tripAttachmentId());
-            placeIds.add(block.sourceTripPlaceId());
-        }
-
-        Map<Long, TripAttachment> attachmentsById = new HashMap<>();
-
-        for (TripAttachment attachment :
-                tripAttachmentRepository.findAllWithFileByIds(attachmentIds)) {
-            attachmentsById.put(attachment.getId(), attachment);
-        }
-
-        Map<Long, TripDetailPlace> placesById = new HashMap<>();
-
-        for (TripDetailPlace place :
-                tripDetailPlaceRepository.findAllById(placeIds)) {
-            placesById.put(place.getId(), place);
-        }
-
-        List<StoryContentBlockDetail> details = new ArrayList<>();
-
-        for (StoryContentBlock block : blocks) {
-            TripAttachment attachment =
-                    attachmentsById.get(block.tripAttachmentId());
-
-            details.add(new StoryContentBlockDetail(
-                    block,
-                    attachment,
-                    attachment == null ? null : attachment.getFile(),
-                    placesById.get(block.sourceTripPlaceId())
-            ));
-        }
-
-        return details;
+        return referenceQuery.findByBlocks(blocks);
     }
 
-    private Trip requireAccess(Long tripId, Long userId) {
+    private void requireAccess(StoryReadContext context, Long userId) {
         try {
-            return tripAccessService.requireReadableTrip(tripId, userId);
-        } catch (TripNotFoundException e) {
+            authorizationService.requireReadPermission(context.tripId(), context.ownerId(), userId);
+        } catch (TripNotFoundException exception) {
             throw new StoryNotFoundException();
         }
     }
 
     private boolean isDeletedContentPhoto(StoryContentBlockDetail detail) {
-        return detail.attachment().getDeletedAt() != null
-                || detail.file().getDeletedAt() != null;
+        return detail.attachmentDeletedAt() != null
+                || detail.fileDeletedAt() != null;
     }
 
     private List<Day> buildContentDays(
@@ -189,14 +145,14 @@ public class StoryReadService {
         StoryContentBlock block = detail.block();
 
         String thumbnailUrl = tripAttachmentStorageClient.createReadUrl(
-                detail.attachment().getPreviewStorageKey()
+                detail.currentPreviewStorageKey()
         );
 
         return new Block(
                 block.id(),
                 orderNumber,
                 block.sourceTripPlaceId(),
-                detail.attachment().getId(),
+                detail.attachmentId(),
                 thumbnailUrl,
                 block.detailSummary(),
                 block.memo() == null ? "" : block.memo()

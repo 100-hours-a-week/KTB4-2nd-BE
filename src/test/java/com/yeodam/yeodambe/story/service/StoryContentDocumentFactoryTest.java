@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
+import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.entity.StorySelectedPlace;
@@ -13,6 +14,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,12 +25,12 @@ class StoryContentDocumentFactoryTest {
 
     @Test
     void 식별자와_순서와_내용과_삭제된_블록_ID를_보존한다() {
-        var first = block(30L, 101L, 201L, 1);
-        var second = block(10L, 102L, 202L, 2);
-        var deleted = block(90L, 103L, 201L, 3);
+        StoryBlock first = block(30L, 101L, 201L, 1);
+        StoryBlock second = block(10L, 102L, 202L, 2);
+        StoryBlock deleted = block(90L, 103L, 201L, 3);
         deleted.softDelete(LocalDateTime.of(2026, 11, 4, 11, 0));
 
-        var document = factory.create(story(), List.of(
+        StoryContentDocument document = factory.create(story(), List.of(
                 new StorySelectedPlace(7L, 202L),
                 new StorySelectedPlace(7L, 201L)
         ), List.of(first, second, deleted), ZoneId.of("Asia/Seoul"));
@@ -40,7 +43,7 @@ class StoryContentDocumentFactoryTest {
                 .containsExactly(30L, 10L, 90L);
         assertThat(document.getNextBlockId()).isEqualTo(91L);
         assertThat(document.getVersion()).isNull();
-        var copied = document.getBlocks().getFirst();
+        StoryContentBlock copied = document.getBlocks().getFirst();
         assertThat(copied.tripAttachmentId()).isEqualTo(101L);
         assertThat(copied.sourceTripPlaceId()).isEqualTo(201L);
         assertThat(copied.sourceDate()).isEqualTo(LocalDate.of(2026, 11, 3));
@@ -56,14 +59,14 @@ class StoryContentDocumentFactoryTest {
     @ParameterizedTest
     @ValueSource(strings = {"UTC", "Asia/Seoul", "America/Los_Angeles"})
     void 명시한_원본_시간대로_타임스탬프를_해석한다(String sourceZone) {
-        var zone = ZoneId.of(sourceZone);
-        var created = Instant.parse("2026-11-04T01:00:00Z");
-        var updated = Instant.parse("2026-11-04T02:00:00Z");
-        var source = block(10L, 101L, 201L, 1);
+        ZoneId zone = ZoneId.of(sourceZone);
+        Instant created = Instant.parse("2026-11-04T01:00:00Z");
+        Instant updated = Instant.parse("2026-11-04T02:00:00Z");
+        StoryBlock source = block(10L, 101L, 201L, 1);
         ReflectionTestUtils.setField(source, "createdAt", LocalDateTime.ofInstant(created, zone));
         ReflectionTestUtils.setField(source, "updatedAt", LocalDateTime.ofInstant(updated, zone));
 
-        var document = factory.create(story(), List.of(), List.of(source), zone);
+        StoryContentDocument document = factory.create(story(), List.of(), List.of(source), zone);
 
         assertThat(document.getBlocks().getFirst().createdAt()).isEqualTo(created);
         assertThat(document.getBlocks().getFirst().updatedAt()).isEqualTo(updated);
@@ -73,20 +76,35 @@ class StoryContentDocumentFactoryTest {
 
     @Test
     void 빈_문서의_블록_ID는_1부터_시작한다() {
-        var document = factory.create(story(), List.of(), List.of(), ZoneId.of("UTC"));
+        StoryContentDocument document = factory.create(story(), List.of(), List.of(), ZoneId.of("UTC"));
 
         assertThat(document.getBlocks()).isEmpty();
         assertThat(document.getNextBlockId()).isEqualTo(1L);
     }
 
+    @Test
+    void 기존_SQL블록의_ID와_순서를_보존하며_프리뷰키를_저장한다() {
+        Story story = new Story(7L, Story.Mood.PLAIN, "요약");
+        ReflectionTestUtils.setField(story, "id", 10L);
+        StoryBlock source = block(91L, 91L, 7L, 1);
+
+        StoryContentDocument result = new StoryContentDocumentFactory().create(
+                story, List.of(), List.of(source), ZoneOffset.UTC, Map.of(91L, "preview/new")
+        );
+
+        assertThat(result.getBlocks().getFirst().id()).isEqualTo(91L);
+        assertThat(result.getBlocks().getFirst().previewStorageKey()).isEqualTo("preview/new");
+        assertThat(result.getNextBlockId()).isEqualTo(92L);
+    }
+
     private Story story() {
-        var story = new Story(1L, Story.Mood.PLAIN, "여행 요약");
+        Story story = new Story(1L, Story.Mood.PLAIN, "여행 요약");
         ReflectionTestUtils.setField(story, "id", 7L);
         return story;
     }
 
     private StoryBlock block(Long id, Long photoId, Long placeId, int order) {
-        var block = new StoryBlock(7L, photoId, placeId,
+        StoryBlock block = new StoryBlock(7L, photoId, placeId,
                 LocalDate.of(2026, 11, 3), order, "첫날", "사진 설명", "산책");
         ReflectionTestUtils.setField(block, "id", id);
         ReflectionTestUtils.setField(block, "createdAt", LocalDateTime.of(2026, 11, 4, 10, 0));

@@ -42,17 +42,17 @@ public class StoryValidator {
             List<StoryContentBlockDetail> blocks
     ) {
         for (StoryContentBlockDetail detail : blocks) {
-            if (detail.attachment() == null) {
+            if (detail.attachmentId() == null) {
                 throw new StoryDataIntegrityException(
                         StoryGenerationInternalErrorMessage.BLOCK_ATTACHMENT_MISSING
                 );
             }
-            if (!tripId.equals(detail.attachment().getTripId())) {
+            if (!tripId.equals(detail.attachmentTripId())) {
                 throw new StoryDataIntegrityException(
                         StoryGenerationInternalErrorMessage.BLOCK_ATTACHMENT_TRIP_MISMATCH
                 );
             }
-            if (detail.file() == null) {
+            if (detail.fileId() == null) {
                 throw new StoryDataIntegrityException(
                         StoryGenerationInternalErrorMessage.BLOCK_FILE_MISSING
                 );
@@ -65,12 +65,12 @@ public class StoryValidator {
             List<StoryContentBlockDetail> blocks
     ) {
         for (StoryContentBlockDetail detail : blocks) {
-            if (detail.place() == null) {
+            if (detail.placeId() == null) {
                 throw new StoryDataIntegrityException(
                         StoryGenerationInternalErrorMessage.DISPLAY_PLACE_MISSING
                 );
             }
-            if (!tripId.equals(detail.place().getTripId())) {
+            if (!tripId.equals(detail.placeTripId())) {
                 throw new StoryDataIntegrityException(
                         StoryGenerationInternalErrorMessage.DISPLAY_PLACE_TRIP_MISMATCH
                 );
@@ -80,7 +80,7 @@ public class StoryValidator {
                         StoryGenerationInternalErrorMessage.DISPLAY_DATE_MISSING
                 );
             }
-            String key = detail.attachment().getPreviewStorageKey();
+            String key = detail.currentPreviewStorageKey();
             if (key == null || key.isBlank()) {
                 throw new StoryDataIntegrityException(
                         StoryGenerationInternalErrorMessage.DISPLAY_PREVIEW_KEY_MISSING

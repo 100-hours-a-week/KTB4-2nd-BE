@@ -2,6 +2,10 @@ package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.common.exception.StoryNotFoundException;
 import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.story.entity.StoryBlock;
+import com.yeodam.yeodambe.story.entity.StorySelectedPlace;
+import com.yeodam.yeodambe.trip.entity.Trip;
+import java.util.List;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository;
 import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
@@ -16,6 +20,10 @@ import org.bson.Document;
 import org.springframework.data.mongodb.core.convert.MongoConverter;
 
 import java.time.ZoneOffset;
+import java.util.Map;
+import java.util.stream.Collectors;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.entity.TripAttachment;
 
 @Service
 @RequiredArgsConstructor
@@ -28,10 +36,11 @@ public class StoryContentMigrationService {
     private final StoryContentDocumentFactory documentFactory;
     private final StoryContentStorageService storageService;
     private final MongoConverter mongoConverter;
+    private final TripAttachmentRepository tripAttachmentRepository;
 
     @Transactional(readOnly = true)
     public void migrateOne(Long storyId) {
-        var existing = storyContentRepository.findById(storyId)
+        StoryContentDocument existing = storyContentRepository.findById(storyId)
                 .orElse(null);
 
         if (existing != null
@@ -43,7 +52,7 @@ public class StoryContentMigrationService {
         Story story = storyRepository.findById(storyId)
                 .orElseThrow(StoryNotFoundException::new);
 
-        var trip = story.getTrip();
+        Trip trip = story.getTrip();
 
         if (story.getDeletedAt() != null
                 || story.getProcessingStatus() != Story.Status.COMPLETED
@@ -52,17 +61,18 @@ public class StoryContentMigrationService {
             return;
         }
 
-        var selectedPlaces = selectedPlaceRepository
+        List<StorySelectedPlace> selectedPlaces = selectedPlaceRepository
                 .findAllByStoryIdOrderByIdAsc(storyId);
 
-        var blocks = storyBlockRepository
+        List<StoryBlock> blocks = storyBlockRepository
                 .findAllByStoryIdOrderByOrderNumberAscIdAsc(storyId);
 
-        var document = documentFactory.create(
+        StoryContentDocument document = documentFactory.create(
                 story,
                 selectedPlaces,
                 blocks,
-                ZoneOffset.UTC
+                ZoneOffset.UTC,
+                loadPreviewKeys(blocks)
         );
 
         storageService.insertIfAbsent(document);
@@ -88,10 +98,34 @@ public class StoryContentMigrationService {
         expectedData.remove("version");
         savedData.remove("version");
 
+        removePreviewKeys(expectedData);
+        removePreviewKeys(savedData);
         if (!expectedData.equals(savedData)) {
             throw new StoryDataIntegrityException(
                     StoryGenerationInternalErrorMessage.MIGRATION_CONTENT_MISMATCH
             );
         }
     }
+    private Map<Long, String> loadPreviewKeys(List<StoryBlock> blocks) {
+        if (blocks.isEmpty()) {
+            return Map.of();
+        }
+        return tripAttachmentRepository.findAllWithFileByIds(blocks.stream()
+                        .map(StoryBlock::getTripAttachmentId)
+                        .distinct()
+                        .toList()).stream()
+                .filter(attachment -> attachment.getPreviewStorageKey() != null)
+                .collect(Collectors.toMap(
+                        TripAttachment::getId,
+                        TripAttachment::getPreviewStorageKey
+                ));
+    }
+
+    private void removePreviewKeys(Document data) {
+        List<Document> blocks = data.getList("blocks", Document.class);
+        if (blocks != null) {
+            blocks.forEach(block -> block.remove("previewStorageKey"));
+        }
+    }
+
 }

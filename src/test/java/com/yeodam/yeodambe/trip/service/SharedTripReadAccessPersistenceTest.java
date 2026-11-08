@@ -26,7 +26,6 @@ import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.EntityManager;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -60,14 +59,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@DataJpaTest(properties = {
-        "spring.datasource.url=jdbc:h2:mem:${random.uuid};MODE=MySQL",
-        "spring.flyway.enabled=false",
-        "spring.jpa.hibernate.ddl-auto=create-drop",
-        "spring.jpa.show-sql=false",
-        "spring.jpa.properties.hibernate.generate_statistics=true"
-}, showSql = false)
-@Import({TripAccessService.class, TripEditAuthorizationService.class,
+@DataJpaTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true", showSql = false)
+@org.springframework.test.context.ActiveProfiles("test")
+@Import({com.yeodam.yeodambe.TestcontainersConfiguration.class,
+        com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery.class,
+        org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration.class, TripAccessService.class, TripEditAuthorizationService.class,
         StoryReadService.class, StoryValidator.class, TripAttachmentDownloadService.class,
         BulkAttachmentDownloadService.class, TripService.class, InvitedTripListService.class,
         SharedTripReadAccessPersistenceTest.TimeConfig.class})
@@ -97,17 +93,6 @@ class SharedTripReadAccessPersistenceTest {
         Clock clock() {
             return Clock.fixed(Instant.parse("2026-11-02T03:00:00Z"), ZoneOffset.UTC);
         }
-    }
-
-    @BeforeEach
-    void configureDatabaseTimestampDefaults() {
-        // create-drop 스키마에 Flyway가 제공하는 DB 생성 시각 기본값을 맞춘다.
-        em.createNativeQuery("alter table additional_attachment_upload_batches alter column created_at set default current_timestamp")
-                .executeUpdate();
-        em.createNativeQuery("alter table additional_attachment_upload_batches alter column updated_at set default current_timestamp")
-                .executeUpdate();
-        em.createNativeQuery("alter table additional_attachment_upload_items alter column created_at set default current_timestamp")
-                .executeUpdate();
     }
 
     @ParameterizedTest

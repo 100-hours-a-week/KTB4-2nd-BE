@@ -19,6 +19,22 @@ public record StoryContentBlock(
 
         Instant createdAt,
         Instant updatedAt,
-        Instant deletedAt
+        Instant deletedAt,
+        String previewStorageKey
 ) {
+    public StoryContentBlock(
+            Long id,
+            Long tripAttachmentId,
+            Long sourceTripPlaceId,
+            LocalDate sourceDate,
+            String dayLabel,
+            String detailSummary,
+            String memo,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant deletedAt
+    ) {
+        this(id, tripAttachmentId, sourceTripPlaceId, sourceDate,
+                dayLabel, detailSummary, memo, createdAt, updatedAt, deletedAt, null);
+    }
 }

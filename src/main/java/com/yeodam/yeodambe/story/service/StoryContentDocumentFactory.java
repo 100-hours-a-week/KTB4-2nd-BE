@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class StoryContentDocumentFactory {
@@ -21,6 +22,16 @@ public class StoryContentDocumentFactory {
             List<StorySelectedPlace> selectedPlaces,
             List<StoryBlock> blocks,
             ZoneId sourceZone
+    ) {
+        return create(story, selectedPlaces, blocks, sourceZone, Map.of());
+    }
+
+    public StoryContentDocument create(
+            Story story,
+            List<StorySelectedPlace> selectedPlaces,
+            List<StoryBlock> blocks,
+            ZoneId sourceZone,
+            Map<Long, String> previewKeys
     ) {
         List<Long> selectedPlaceIds = new ArrayList<>();
 
@@ -42,7 +53,8 @@ public class StoryContentDocumentFactory {
                     block.getMemo(),
                     toInstant(block.getCreatedAt(), sourceZone),
                     toInstant(block.getUpdatedAt(), sourceZone),
-                    toInstant(block.getDeletedAt(), sourceZone)
+                    toInstant(block.getDeletedAt(), sourceZone),
+                    previewKeys.get(block.getTripAttachmentId())
             ));
 
             nextBlockId = Math.max(nextBlockId, block.getId() + 1);

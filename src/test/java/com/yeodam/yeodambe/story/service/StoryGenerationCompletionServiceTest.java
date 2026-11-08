@@ -54,7 +54,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.story.mongo-native-generation-enabled=false")
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration.class)
 class StoryGenerationCompletionServiceTest {

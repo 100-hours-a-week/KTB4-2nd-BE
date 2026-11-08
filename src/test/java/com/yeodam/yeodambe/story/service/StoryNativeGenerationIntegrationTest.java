@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails;
@@ -59,7 +60,7 @@ import java.time.ZoneOffset;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-@SpringBootTest(properties = "app.story.mongo-native-generation-enabled=true")
+@SpringBootTest
 @ActiveProfiles("test")
 @Import({TestcontainersConfiguration.class, StoryNativeGenerationIntegrationTest.MongoConfig.class})
 class StoryNativeGenerationIntegrationTest {
@@ -90,6 +91,9 @@ class StoryNativeGenerationIntegrationTest {
     @Autowired private MongoTemplate mongo;
     @MockitoBean private WebSocketEventPublisher publisher;
 
+    @Value("${app.story.mongo-native-generation-enabled}")
+    private boolean configuredNativeGenerationEnabled;
+
     private User owner;
     private Trip trip;
     private TripDetailPlace place;
@@ -100,7 +104,6 @@ class StoryNativeGenerationIntegrationTest {
 
     @BeforeEach
     void prepare() {
-        ReflectionTestUtils.setField(preparation, "nativeGenerationEnabled", true);
         owner = users.save(new User(UUID.randomUUID() + "@native.test", "생성"));
         trip = trips.save(new Trip(owner.getUserId(), "여행", LocalDate.of(2026, 10, 11), LocalDate.of(2026, 10, 12)));
         jdbc.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", trip.getId());
@@ -119,7 +122,7 @@ class StoryNativeGenerationIntegrationTest {
 
     @AfterEach
     void clean() {
-        ReflectionTestUtils.setField(preparation, "nativeGenerationEnabled", true);
+        ReflectionTestUtils.setField(preparation, "nativeGenerationEnabled", configuredNativeGenerationEnabled);
         if (trip == null) {
             return;
         }
@@ -139,7 +142,7 @@ class StoryNativeGenerationIntegrationTest {
     }
 
     @Test
-    void SQL블록없이_최초날짜와_결과해시를_준비한다() {
+    void 기본설정은_SQL블록없이_최초날짜와_결과해시를_준비한다() {
         StoryContentDocument prepared = preparation.prepareContent(job.getId(), result("요약")).orElseThrow();
 
         assertThat(sqlBlockCount(prepared.getId())).isZero();
@@ -150,6 +153,22 @@ class StoryNativeGenerationIntegrationTest {
         assertThat(jobs.findById(job.getId()).orElseThrow().getPreparedContentMetadata())
                 .contains(prepared.getInitialContentHash()).contains("2026-10-11");
         assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
+    }
+
+    @Test
+    void 기본설정의_신규스토리는_SQL블록없이_Mongo본문으로_완료한다() {
+        completion.complete(job.getId(), result("요약"));
+
+        StoryGenerationJob completed = jobs.findById(job.getId()).orElseThrow();
+        StoryContentDocument content = contents.findById(completed.getStoryId()).orElseThrow();
+        assertThat(completed.getStatus()).isEqualTo(StoryGenerationJob.Status.COMPLETED);
+        assertThat(sqlBlockCount(content.getId())).isZero();
+        assertThat(content.getStorySummary()).isEqualTo("요약");
+        assertThat(content.getBlocks()).hasSize(1);
+        assertThat(content.getBlocks().getFirst().tripAttachmentId()).isEqualTo(photo.getId());
+        assertThat(content.getInitialContentHash()).matches("[0-9a-f]{64}");
+        assertThat(completed.getPreparedContentMetadata()).contains(content.getInitialContentHash());
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isEqualTo(content.getId());
     }
 
     @Test
@@ -239,6 +258,34 @@ class StoryNativeGenerationIntegrationTest {
     }
 
     @Test
+    void Mongo저장후_시간이_초과되면_늦은결과도_공개하지_않는다() {
+        doAnswer(invocation -> {
+            Object saved = invocation.callRealMethod();
+            jdbc.update("""
+                    UPDATE story_generation_outbox
+                    SET published_at = CURRENT_TIMESTAMP(6) - INTERVAL 2 HOUR
+                    WHERE generation_id = ?
+                    """, job.getId());
+            return saved;
+        }).when(storage).insertPreparedIfAbsent(any());
+
+        completion.complete(job.getId(), result("요약"));
+        StoryGenerationJob expired = jobs.findById(job.getId()).orElseThrow();
+        StoryContentDocument preserved = contents.findById(expired.getStoryId()).orElseThrow();
+        completion.complete(job.getId(), result("늦은 결과"));
+
+        assertThat(expired.getStatus()).isEqualTo(StoryGenerationJob.Status.FAILED);
+        assertThat(expired.getErrorCode()).isEqualTo("STORY_GENERATION_TIMEOUT");
+        assertThat(sqlBlockCount(expired.getStoryId())).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT deleted_at FROM stories WHERE story_id = ?", LocalDateTime.class, expired.getStoryId()
+        )).isNotNull();
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
+        assertThat(contents.findById(expired.getStoryId()).orElseThrow().getVersion()).isEqualTo(preserved.getVersion());
+        assertThat(contents.findById(expired.getStoryId()).orElseThrow().getStorySummary()).isEqualTo("요약");
+    }
+
+    @Test
     void native완료문서는_기동검증과_키보정을_SQL블록없이_통과한다() {
         completion.complete(job.getId(), result("요약"));
         Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
@@ -270,11 +317,24 @@ class StoryNativeGenerationIntegrationTest {
     }
 
     @Test
-    void legacy준비가_끝난작업은_설정이_true여도_SQL블록으로_완료한다() {
-        Long storyId = preparation.prepare(job.getId(), result("요약")).orElseThrow();
+    void false설정의_legacy저장실패는_true전환후에도_SQL블록으로_복구한다() {
+        ReflectionTestUtils.setField(preparation, "nativeGenerationEnabled", false);
+        doThrow(new DataAccessResourceFailureException(StoryGenerationInternalErrorMessage.READ_DATA_INTEGRITY_FAILED.message()))
+                .doCallRealMethod().when(storage).insertIfAbsent(any());
+
+        assertThatThrownBy(() -> completion.complete(job.getId(), result("요약")))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+        StoryGenerationJob prepared = jobs.findById(job.getId()).orElseThrow();
+        Long storyId = prepared.getStoryId();
+        assertThat(prepared.getPreparedContentMetadata()).isNull();
+        assertThat(sqlBlockCount(storyId)).isEqualTo(1);
+        assertThat(contents.existsById(storyId)).isFalse();
+        ReflectionTestUtils.setField(preparation, "nativeGenerationEnabled", configuredNativeGenerationEnabled);
 
         completion.complete(job.getId(), result("요약"));
 
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStoryId()).isEqualTo(storyId);
+        assertThat(jobs.findById(job.getId()).orElseThrow().getStatus()).isEqualTo(StoryGenerationJob.Status.COMPLETED);
         assertThat(sqlBlockCount(storyId)).isEqualTo(1);
         assertThat(contents.findById(storyId).orElseThrow().getInitialContentHash()).isNull();
     }

@@ -7,12 +7,8 @@ import com.yeodam.yeodambe.story.repository.*;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
-import com.yeodam.yeodambe.trip.entity.Trip;
-import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
-import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
-import com.yeodam.yeodambe.trip.service.TripAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,10 +16,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.entity.StoryBlock;
+import com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail;
+import com.yeodam.yeodambe.story.service.response.StoryReadContext;
+import com.yeodam.yeodambe.trip.service.TripEditAuthorizationService;
+import java.time.ZoneOffset;
+import java.util.stream.IntStream;
 
 import static com.yeodam.yeodambe.story.service.StoryValidatorTest.row;
 import static org.assertj.core.api.Assertions.*;
@@ -32,14 +34,13 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class StoryReadServiceTest {
     @Mock
-    com.yeodam.yeodambe.trip.service.TripEditAuthorizationService access;
+    TripEditAuthorizationService access;
 
     @Mock
     StoryRepository stories;
 
     @Mock
     StoryBlockReferenceQuery references;
-
 
     @Mock
     TripAttachmentStorageClient storage;
@@ -51,7 +52,7 @@ class StoryReadServiceTest {
     void setup() {
         service = new StoryReadService(access, stories, new StoryValidator(), storage, contents, references);
         lenient().when(stories.findReadContextByTripId(7L)).thenReturn(Optional.of(
-                new com.yeodam.yeodambe.story.service.response.StoryReadContext(7L, 42L, 1L)));
+                new StoryReadContext(7L, 42L, 1L)));
 
     }
 
@@ -60,14 +61,14 @@ class StoryReadServiceTest {
         ReflectionTestUtils.setField(story, "id", 1L);
 
         List<StoryContentBlock> documentBlocks = new ArrayList<>();
-        List<com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail> details = new ArrayList<>();
+        List<StoryContentBlockDetail> details = new ArrayList<>();
         for (BlockDetail row : rows) {
-            com.yeodam.yeodambe.story.entity.StoryBlock block = row.getBlock();
+            StoryBlock block = row.getBlock();
             documentBlocks.add(new StoryContentBlock(
                     block.getId(), block.getTripAttachmentId(), block.getSourceTripPlaceId(),
                     block.getSourceDate(), block.getDayLabel(), block.getDetailSummary(), block.getMemo(),
                     null, null, block.getDeletedAt() == null ? null
-                            : block.getDeletedAt().toInstant(java.time.ZoneOffset.UTC)));
+                            : block.getDeletedAt().toInstant(ZoneOffset.UTC)));
             if (block.getDeletedAt() == null) {
                 details.add(StoryValidatorTest.contentDetail(
                         documentBlocks.getLast(), row.getAttachment(), row.getFile(), row.getPlace()));
@@ -192,7 +193,7 @@ class StoryReadServiceTest {
     @Test
     void 공유_사용자는_스토리를_조회하되_소유자로_표시하지_않는다() {
         when(stories.findReadContextByTripId(7L)).thenReturn(Optional.of(
-                new com.yeodam.yeodambe.story.service.response.StoryReadContext(7L, 1L, 1L)));
+                new StoryReadContext(7L, 1L, 1L)));
         found(List.of());
 
         assertThat(service.findStory(42L, 7L).userByMe()).isFalse();
@@ -226,7 +227,7 @@ class StoryReadServiceTest {
 
     @Test
     void 생성_계약의_최대_30개_블록을_상세_응답으로_반환한다() {
-        List<BlockDetail> rows = java.util.stream.IntStream.rangeClosed(1, 30)
+        List<BlockDetail> rows = IntStream.rangeClosed(1, 30)
                 .<BlockDetail>mapToObj(index -> row(index, 7, "날", null))
                 .toList();
         found(rows);
@@ -259,7 +260,7 @@ class StoryReadServiceTest {
     @Test
     void 현재_완료_스토리가_없으면_404다() {
         when(stories.findReadContextByTripId(7L)).thenReturn(Optional.of(
-                new com.yeodam.yeodambe.story.service.response.StoryReadContext(7L, 42L, null)));
+                new StoryReadContext(7L, 42L, null)));
         assertThatThrownBy(() -> service.findStory(42L, 7L)).isInstanceOf(StoryNotFoundException.class);
         verifyNoInteractions(contents, references, storage);
     }
@@ -267,9 +268,13 @@ class StoryReadServiceTest {
     @Test
     void 스토리지와_DB_오류를_404로_변환하지_않는다() {
         found(List.of(row(1, 7, "날", null)));
-        when(storage.createReadUrl("preview/1")).thenThrow(new IllegalStateException("발급 실패"));
+        when(storage.createReadUrl("preview/1")).thenThrow(new IllegalStateException(
+                StoryGenerationInternalErrorMessage.READ_DATA_INTEGRITY_FAILED.message()
+        ));
         assertThatThrownBy(() -> service.findStory(42L, 7L)).isInstanceOf(IllegalStateException.class);
-        doThrow(new DataAccessResourceFailureException("DB 실패")).when(access).requireReadPermission(7L, 42L, 42L);
+        doThrow(new DataAccessResourceFailureException(
+                StoryGenerationInternalErrorMessage.READ_DATA_INTEGRITY_FAILED.message()
+        )).when(access).requireReadPermission(7L, 42L, 42L);
         assertThatThrownBy(() -> service.findStory(42L, 7L)).isInstanceOf(DataAccessResourceFailureException.class);
     }
 }

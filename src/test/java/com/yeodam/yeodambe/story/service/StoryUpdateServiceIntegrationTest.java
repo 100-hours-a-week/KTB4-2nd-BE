@@ -10,7 +10,6 @@ import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
-import com.yeodam.yeodambe.trip.service.TripAccessService;
 import com.yeodam.yeodambe.trip.service.TripEditAuthorizationService;
 import com.yeodam.yeodambe.user.entity.User;
 import jakarta.persistence.EntityManager;
@@ -21,8 +20,6 @@ import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -31,12 +28,14 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.time.ZoneOffset;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.mongodb.core.MongoTemplate;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -66,7 +65,7 @@ class StoryUpdateServiceIntegrationTest {
     @Autowired com.yeodam.yeodambe.story.repository.StorySelectedPlaceRepository selectedPlaces;
     @Autowired com.yeodam.yeodambe.story.repository.StoryRepository stories;
     @Autowired StoryContentDocumentFactory factory;
-    @Autowired org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
+    @Autowired MongoTemplate mongoTemplate;
     @MockitoBean TripAttachmentStorageClient storage;
     @MockitoBean TripEditAuthorizationService authorizationService;
     private TransactionTemplate tx;
@@ -98,7 +97,7 @@ class StoryUpdateServiceIntegrationTest {
                 stories.findById(fixture.storyId()).orElseThrow(),
                 selectedPlaces.findAllByStoryIdOrderByIdAsc(fixture.storyId()),
                 sqlBlocks.findAllByStoryIdOrderByOrderNumberAscIdAsc(fixture.storyId()),
-                java.time.ZoneOffset.UTC)));
+                ZoneOffset.UTC)));
         when(storage.createReadUrl(anyString())).thenAnswer(invocation -> "https://image.test/" + invocation.getArgument(0));
     }
 
@@ -118,7 +117,7 @@ class StoryUpdateServiceIntegrationTest {
 
         assertThatThrownBy(() -> service.update(fixture.userId(), fixture.storyId(),
                 request(block(fixture.blockId(), fixture.photoId(), 1))))
-                .isInstanceOf(org.springframework.dao.OptimisticLockingFailureException.class);
+                .isInstanceOf(OptimisticLockingFailureException.class);
 
         assertThat(contents.findById(fixture.storyId()).orElseThrow().getStorySummary())
                 .isEqualTo("먼저 저장한 요약");

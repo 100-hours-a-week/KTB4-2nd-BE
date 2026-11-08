@@ -13,11 +13,12 @@ import com.yeodam.yeodambe.story.repository.StoryBlockRepository.BlockDetail;
 import com.yeodam.yeodambe.trip.entity.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
+import com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -27,10 +28,10 @@ class StoryValidatorTest {
     @Test
     void 문서형_표시블록의_장소_날짜_미리보기경로를_검증한다() {
         Row row = row(1, 7, "날", null);
-        com.yeodam.yeodambe.story.document.StoryContentBlock block = new com.yeodam.yeodambe.story.document.StoryContentBlock(
+        StoryContentBlock block = new StoryContentBlock(
                 1L, 1L, row.place().getId(), row.block().getSourceDate(),
                 "날", "문구", null, null, null, null);
-        com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail detail = contentDetail(
+        StoryContentBlockDetail detail = contentDetail(
                 block, row.attachment(), row.file(), row.place());
         validator.validateContentDisplayBlocks(7L, List.of(detail));
         assertThatThrownBy(() -> validator.validateContentDisplayBlocks(7L, List.of(
@@ -41,7 +42,7 @@ class StoryValidatorTest {
         assertThatThrownBy(() -> validator.validateContentDisplayBlocks(8L, List.of(detail)))
                 .isInstanceOf(StoryDataIntegrityException.class)
                 .hasMessage("표시 조건: 다른 여행의 장소입니다.");
-        com.yeodam.yeodambe.story.document.StoryContentBlock noDate = new com.yeodam.yeodambe.story.document.StoryContentBlock(
+        StoryContentBlock noDate = new StoryContentBlock(
                 1L, 1L, row.place().getId(), null, "날", "문구", null, null, null, null);
         assertThatThrownBy(() -> validator.validateContentDisplayBlocks(7L, List.of(
                 contentDetail(
@@ -60,10 +61,10 @@ class StoryValidatorTest {
     @Test
     void 문서형_블록의_개수와_사진_파일_연결도_기존_기준으로_검증한다() {
         Row row = row(1, 7, "날", null);
-        com.yeodam.yeodambe.story.document.StoryContentBlock block = new com.yeodam.yeodambe.story.document.StoryContentBlock(
+        StoryContentBlock block = new StoryContentBlock(
                 1L, 1L, row.place().getId(), row.block().getSourceDate(),
                 "날", "문구", null, null, null, null);
-        com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail valid = contentDetail(
+        StoryContentBlockDetail valid = contentDetail(
                 block, row.attachment(), row.file(), row.place());
         validator.validateContentBlockRelations(7L, List.of(valid));
         validator.validateBlockCount(Collections.nCopies(30, valid));
@@ -110,13 +111,13 @@ class StoryValidatorTest {
         }
     }
 
-    static com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail contentDetail(
-            com.yeodam.yeodambe.story.document.StoryContentBlock block,
+    static StoryContentBlockDetail contentDetail(
+            StoryContentBlock block,
             TripAttachment attachment,
             StoredFile file,
             TripDetailPlace place
     ) {
-        return new com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail(
+        return new StoryContentBlockDetail(
                 block,
                 attachment == null ? null : attachment.getId(),
                 attachment == null ? null : attachment.getTripId(),
@@ -244,7 +245,7 @@ class StoryValidatorTest {
     @Test
     void 미리보기는_한장이라도_촬영시각이_없으면_전체를_거절한다() {
         TripAttachment valid = row(1, 7, "날", null).attachment();
-        var missing = row(2, 7, "날", null).attachment();
+        TripAttachment missing = row(2, 7, "날", null).attachment();
         ReflectionTestUtils.setField(missing, "takenAt", null);
         assertThatThrownBy(() -> validator.validatePreviewAttachments(7L, 2, List.of(valid, missing)))
                 .isInstanceOf(StoryTonePreviewTakenAtMissingException.class);

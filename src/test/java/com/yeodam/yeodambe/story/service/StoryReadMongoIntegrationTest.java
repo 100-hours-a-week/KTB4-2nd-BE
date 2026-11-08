@@ -26,12 +26,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -56,7 +58,7 @@ class StoryReadMongoIntegrationTest {
     @Autowired private UserRepository users;
     @Autowired private TripRepository trips;
     @Autowired private StoryRepository stories;
-    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    @MockitoSpyBean
     private StoryContentRepository contents;
     @Autowired private TripAttachmentRepository attachments;
     @Autowired private TripDetailPlaceRepository places;
@@ -132,8 +134,8 @@ class StoryReadMongoIntegrationTest {
                 .hasMessage("완료된 스토리의 MongoDB 본문이 없습니다.");
         verifyNoInteractions(storage);
     }
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
     void 정상사진_GET은_소유자2회_공유자3회_SQL을_사용한다(boolean shared) {
         Long actorId = userId;
         if (shared) {

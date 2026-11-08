@@ -29,13 +29,23 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery;
+import com.yeodam.yeodambe.story.service.response.StoryPreviewKeyBackfillBatch;
+import org.bson.Document;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -59,9 +69,9 @@ class StoryContentMigrationIntegrationTest {
     @Autowired StoryContentRepository contents;
     @Autowired EntityManager em;
     @Autowired JdbcTemplate jdbc;
-    @Autowired org.springframework.data.mongodb.core.MongoTemplate mongo;
-    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
-    com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery referenceQuery;
+    @Autowired MongoTemplate mongo;
+    @MockitoSpyBean
+    StoryBlockReferenceQuery referenceQuery;
     private Long storyId;
     private Long tripId;
     private Long placeId;
@@ -211,21 +221,21 @@ class StoryContentMigrationIntegrationTest {
         return photo.getId();
     }
 
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"missing", "null", "zero"})
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "null", "zero"})
     void 키보정은_본문과_삭제이력을_보존하고_누락버전도_안전하게_갱신한다(String version) {
         service.migrateOne(storyId);
         removeKeys();
         if (version.equals("missing")) {
-            mongo.getCollection("story_contents").updateOne(new org.bson.Document("_id", storyId),
-                    new org.bson.Document("$unset", new org.bson.Document("version", "")));
+            mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
+                    new Document("$unset", new Document("version", "")));
         } else if (version.equals("null")) {
-            mongo.getCollection("story_contents").updateOne(new org.bson.Document("_id", storyId),
-                    new org.bson.Document("$set", new org.bson.Document("version", null)));
+            mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
+                    new Document("$set", new Document("version", null)));
         }
         StoryContentDocument before = contents.findById(storyId).orElseThrow();
 
-        com.yeodam.yeodambe.story.service.response.StoryPreviewKeyBackfillBatch result =
+        StoryPreviewKeyBackfillBatch result =
                 service.backfillPreviewKeys(0L, 100);
 
         assertThat(result.updated()).isEqualTo(1);
@@ -251,7 +261,7 @@ class StoryContentMigrationIntegrationTest {
         stale.updateContent(Story.Mood.CALM, "오래된 편집", stale.getBlocks());
 
         assertThatThrownBy(() -> contents.save(stale))
-                .isInstanceOf(org.springframework.dao.OptimisticLockingFailureException.class);
+                .isInstanceOf(OptimisticLockingFailureException.class);
         assertThat(contents.findById(storyId).orElseThrow().getStorySummary()).isEqualTo("이관 본문");
     }
 
@@ -259,15 +269,15 @@ class StoryContentMigrationIntegrationTest {
     void 보정중_편집이_먼저_저장되면_충돌ID를_남기고_최신본문을_보존한다() {
         service.migrateOne(storyId);
         removeKeys();
-        org.mockito.Mockito.doAnswer(invocation -> {
+        Mockito.doAnswer(invocation -> {
             Object details = invocation.callRealMethod();
             StoryContentDocument edited = contents.findById(storyId).orElseThrow();
             edited.updateContent(Story.Mood.CALM, "먼저 저장한 편집", edited.getBlocks());
             contents.save(edited);
             return details;
-        }).when(referenceQuery).findByBlocks(org.mockito.ArgumentMatchers.anyList());
+        }).when(referenceQuery).findByBlocks(ArgumentMatchers.anyList());
 
-        com.yeodam.yeodambe.story.service.response.StoryPreviewKeyBackfillBatch result =
+        StoryPreviewKeyBackfillBatch result =
                 service.backfillPreviewKeys(0L, 100);
 
         assertThat(result.updated()).isZero();
@@ -292,9 +302,64 @@ class StoryContentMigrationIntegrationTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "null"})
+    void 누락버전의_오래된_PUT도_보정후_삽입으로_덮어쓰지_못한다(String version) {
+        service.migrateOne(storyId);
+        removeKeys();
+        Document versionChange = version.equals("missing")
+                ? new Document("$unset", new Document("version", ""))
+                : new Document("$set", new Document("version", null));
+        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId), versionChange);
+        StoryContentDocument stale = contents.findById(storyId).orElseThrow();
+        assertThat(service.backfillPreviewKeys(0L, 100).updated()).isEqualTo(1);
+        stale.updateContent(Story.Mood.CALM, "오래된 편집", stale.getBlocks());
+
+        assertThatThrownBy(() -> contents.save(stale)).isInstanceOf(DuplicateKeyException.class);
+        assertThat(contents.findById(storyId).orElseThrow().getStorySummary()).isEqualTo("이관 본문");
+    }
+
+    @Test
+    void 제한배치의_다음커서와_실패ID를_함께_반환한다() {
+        service.migrateOne(storyId);
+        removeKeys();
+        Long orphanId = storyId + 10000000;
+        contents.insert(new StoryContentDocument(orphanId, Story.Mood.PLAIN, "고아 문서", List.of(), List.of(), 1L));
+        try {
+            StoryPreviewKeyBackfillBatch first =
+                    service.backfillPreviewKeys(0L, 1);
+            StoryPreviewKeyBackfillBatch second =
+                    service.backfillPreviewKeys(first.nextAfterStoryId(), 1);
+
+            assertThat(first.nextAfterStoryId()).isEqualTo(storyId);
+            assertThat(first.scanned()).isEqualTo(1);
+            assertThat(first.updated()).isEqualTo(1);
+            assertThat(second.nextAfterStoryId()).isEqualTo(orphanId);
+            assertThat(second.invalidStoryIds()).containsExactly(orphanId);
+            assertThat(service.backfillPreviewKeys(second.nextAfterStoryId(), 1).scanned()).isZero();
+        } finally {
+            contents.deleteById(orphanId);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"version", "blocks.0._id"})
+    void 변환할_수_없는_버전이나_블록ID는_해당문서만_실패로_남긴다(String field) {
+        service.migrateOne(storyId);
+        removeKeys();
+        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
+                new Document("$set", new Document(field, "손상값")));
+
+        StoryPreviewKeyBackfillBatch result = service.backfillPreviewKeys(0L, 100);
+
+        assertThat(result.updated()).isZero();
+        assertThat(result.invalidStoryIds()).containsExactly(storyId);
+        assertThat(result.nextAfterStoryId()).isEqualTo(storyId);
+    }
+
     private void removeKeys() {
-        mongo.getCollection("story_contents").updateOne(new org.bson.Document("_id", storyId),
-                new org.bson.Document("$unset", new org.bson.Document()
+        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
+                new Document("$unset", new Document()
                         .append("blocks.0.previewStorageKey", "")
                         .append("blocks.1.previewStorageKey", "")
                         .append("blocks.2.previewStorageKey", "")));

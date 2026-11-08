@@ -7,7 +7,7 @@ import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.repository.StoryContentRepository;
-import com.yeodam.yeodambe.story.document.StoryContentDocument;
+import com.yeodam.yeodambe.story.service.response.StoryReadContent;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.story.service.StoryReadService;
 import com.yeodam.yeodambe.story.service.StoryValidator;
@@ -328,14 +328,18 @@ class SharedTripReadAccessPersistenceTest {
         story.complete();
         em.persist(story);
         trip.changeCurrentStory(story.getId());
-        var block = new StoryBlock(story.getId(), first.getId(), place.getId(),
+        StoryBlock block = new StoryBlock(story.getId(), first.getId(), place.getId(),
                 NOW.toLocalDate(), 1, "첫째 날", "사진 요약", null);
         em.persist(block);
-        when(contents.findById(story.getId())).thenReturn(java.util.Optional.of(
-                new StoryContentDocument(story.getId(), Story.Mood.CALM, "공유 여행 요약",
-                        List.of(place.getId()), List.of(new StoryContentBlock(
-                        block.getId(), first.getId(), place.getId(), NOW.toLocalDate(),
-                        "첫째 날", "사진 요약", null, null, null, null)), block.getId() + 1)));
+        when(contents.findActiveContentById(story.getId())).thenReturn(java.util.Optional.of(
+                new StoryReadContent(
+                        story.getId(), Story.Mood.CALM, "공유 여행 요약",
+                        List.of(new StoryContentBlock(
+                                block.getId(), first.getId(), place.getId(), NOW.toLocalDate(),
+                                "첫째 날", "사진 요약", null, null, null, null
+                        ))
+                )
+        ));
 
         return new Fixture(owner, reader, trip, first, second);
     }

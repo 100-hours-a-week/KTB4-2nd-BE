@@ -10,12 +10,14 @@ import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
+import com.yeodam.yeodambe.story.service.response.StoryReadContent;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
+import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,14 +25,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -65,6 +70,7 @@ class StoryReadMongoIntegrationTest {
     @Autowired private StoredFileRepository files;
     @Autowired private EntityManager entityManager;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private MongoTemplate mongo;
     @MockitoBean private TripAttachmentStorageClient storage;
 
     private Long userId;
@@ -163,11 +169,68 @@ class StoryReadMongoIntegrationTest {
             assertThat(queries).hasSize(shared ? 3 : 2);
             assertThat(queries).anyMatch(sql -> sql.contains("JSON_TABLE"));
             assertThat(queries).noneMatch(sql -> sql.contains("story_blocks"));
-            verify(contents).findById(storyId);
+            verify(contents, never()).findById(storyId);
             verify(contents, never()).save(any());
         } finally {
             StorySqlCounterConfiguration.clear();
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void GET은_활성블록만_읽고_삭제이력과_문서버전은_보존한다(boolean explicitNull) {
+        Instant deletedAt = Instant.parse("2026-10-01T00:00:00Z");
+        StoryContentBlock deleted = new StoryContentBlock(
+                90L, photoId, placeId, LocalDate.of(2026, 10, 1),
+                "첫째 날", "삭제한 문구", "삭제 메모", deletedAt, deletedAt, deletedAt
+        );
+        StoryContentBlock active = new StoryContentBlock(
+                91L, photoId, placeId, LocalDate.of(2026, 10, 3),
+                "셋째 날", "활성 문구", "활성 메모", null, null, null
+        );
+        StoryContentDocument saved = contents.insert(new StoryContentDocument(
+                storyId, Story.Mood.CALM, "활성 조회", List.of(placeId),
+                List.of(deleted, active), 92L
+        ));
+        if (explicitNull) {
+            mongo.getCollection("story_contents").updateOne(
+                    new Document("_id", storyId),
+                    new Document("$set", new Document("blocks.1.deletedAt", null))
+            );
+        }
+        clearInvocations(contents);
+        when(storage.createReadUrl("preview/mongo-read")).thenReturn("signed-url");
+
+        StoryDetailResponse response = service.findStory(userId, tripId);
+
+        assertThat(response.days()).hasSize(1);
+        assertThat(response.days().getFirst().date()).isEqualTo(LocalDate.of(2026, 10, 3));
+        assertThat(response.days().getFirst().blocks())
+                .extracting(StoryDetailResponse.Block::storyBlockId).containsExactly(91L);
+        verify(contents, never()).findById(storyId);
+        verify(contents, never()).save(any());
+        StoryReadContent projected = contents.findActiveContentById(storyId).orElseThrow();
+        assertThat(projected.id()).isEqualTo(storyId);
+        assertThat(projected.blocks()).containsExactly(active);
+        StoryContentDocument unchanged = contents.findById(storyId).orElseThrow();
+        assertThat(unchanged.getBlocks()).containsExactly(deleted, active);
+        assertThat(unchanged.getVersion()).isEqualTo(saved.getVersion());
+    }
+
+    @Test
+    void 활성블록_서른한개를_잘라서_정상_응답하지_않는다() {
+        List<StoryContentBlock> blocks = IntStream.rangeClosed(1, 31)
+                .mapToObj(index -> new StoryContentBlock(
+                        (long) index, photoId, placeId, LocalDate.of(2026, 10, 3),
+                        "셋째 날", "문구", null, null, null, null
+                ))
+                .toList();
+        contents.insert(new StoryContentDocument(
+                storyId, Story.Mood.PLAIN, "손상 문서", List.of(placeId), blocks, 32L
+        ));
+
+        assertThatThrownBy(() -> service.findStory(userId, tripId))
+                .isInstanceOf(StoryDataIntegrityException.class);
+        verifyNoInteractions(storage);
+    }
 }

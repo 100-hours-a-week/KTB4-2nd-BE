@@ -36,6 +36,8 @@ public enum StoryGenerationInternalErrorMessage {
     CONTENT_DOCUMENT_MISSING("완료된 스토리의 MongoDB 본문이 없습니다."),
     MIGRATION_CONTENT_MISMATCH("스토리 본문의 MongoDB 이관 결과가 원본과 일치하지 않습니다."),
     BACKFILL_RANGE_INVALID("프리뷰 키 보정 커서는 0 이상이며 배치 크기는 1부터 500 사이여야 합니다."),
+    CONTENT_UPDATE_CONFLICT("다른 요청이 스토리 본문을 먼저 변경했습니다."),
+    CONTENT_UPDATE_UNACKNOWLEDGED("스토리 본문 수정 결과를 확인하지 못했습니다."),
     CONTENT_VERSION_INVALID("스토리 본문의 버전 또는 블록 식별자가 올바르지 않습니다."),
     PREPARED_CONTENT_MISMATCH("최초 준비한 스토리 결과와 재처리 결과가 일치하지 않습니다."),
     PREPARATION_METADATA_INVALID("스토리 생성 준비 메타데이터가 올바르지 않습니다."),

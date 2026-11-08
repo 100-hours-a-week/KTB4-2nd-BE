@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.repository.StoryContentRepository;
+import com.yeodam.yeodambe.story.repository.StoryContentUpdateRepository;
 import com.yeodam.yeodambe.story.entity.Story;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
@@ -44,6 +45,7 @@ public class StoryUpdateService {
     private final StoryValidator storyValidator;
     private final StoryReadService storyReadService;
     private final StoryContentRepository storyContentRepository;
+    private final StoryContentUpdateRepository contentUpdateRepository;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public StoryUpdateResponse update(
@@ -64,6 +66,7 @@ public class StoryUpdateService {
 
         Story story = requireEditableStory(userId, storyId);
         StoryContentDocument content = requireContent(storyId);
+        List<StoryContentBlock> previousBlocks = content.getBlocks();
         validateContentBlockIds(content, request.blocks());
         validateContentAttachmentReuse(request.blocks(), content.getBlocks());
 
@@ -76,7 +79,7 @@ public class StoryUpdateService {
 
         StoryUpdateResponse response = StoryUpdateResponse.from(
                 storyReadService.prepareContentResponse(story.getTripId(), true, content));
-        storyContentRepository.save(content);
+        contentUpdateRepository.saveChanges(content, previousBlocks);
         return response;
     }
 
@@ -281,20 +284,26 @@ public class StoryUpdateService {
     private Map<Long, TripDetailPlace> findPlaces(
             Map<Long, TripAttachment> attachmentsById
     ) {
-        List<Long> placeIds = attachmentsById.values().stream()
+        Map<Long, TripDetailPlace> placesById = attachmentsById.values().stream()
+                .map(TripAttachment::getTripPlace)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(
+                        TripDetailPlace::getId,
+                        place -> place,
+                        (first, duplicate) -> first
+                ));
+        List<Long> missingPlaceIds = attachmentsById.values().stream()
                 .map(TripAttachment::getTripPlaceId)
                 .filter(Objects::nonNull)
                 .distinct()
+                .filter(placeId -> !placesById.containsKey(placeId))
                 .toList();
 
-        if (placeIds.isEmpty()) {
-            return Map.of();
+        // 같은 영속성 컨텍스트에서 FK만 바뀌면 연관 객체가 이전 장소를 가리킬 수 있다.
+        if (!missingPlaceIds.isEmpty()) {
+            tripDetailPlaceRepository.findAllById(missingPlaceIds)
+                    .forEach(place -> placesById.put(place.getId(), place));
         }
-
-        return tripDetailPlaceRepository.findAllById(placeIds).stream()
-                .collect(Collectors.toMap(
-                        TripDetailPlace::getId,
-                        place -> place
-                ));
+        return placesById;
     }
 }

@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.story.document.StoryContentDocument;
 import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.story.service.response.StoryDetailResponse;
 import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
@@ -107,7 +108,7 @@ class StoryReadMongoIntegrationTest {
                         "셋째 날", "문서 본문", "메모", null, null, null)), 92L));
         when(storage.createReadUrl("preview/mongo-read")).thenReturn("https://image.test/photo");
 
-        var response = service.findStory(userId, tripId);
+        StoryDetailResponse response = service.findStory(userId, tripId);
 
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM story_blocks WHERE story_id = ?",
                 Integer.class, storyId)).isZero();
@@ -116,7 +117,7 @@ class StoryReadMongoIntegrationTest {
         assertThat(response.storySummary()).isEqualTo("MongoDB 요약");
         assertThat(response.days()).hasSize(1);
         assertThat(response.days().getFirst().date()).isEqualTo(LocalDate.of(2026, 10, 3));
-        var block = response.days().getFirst().blocks().getFirst();
+        StoryDetailResponse.Block block = response.days().getFirst().blocks().getFirst();
         assertThat(block.storyBlockId()).isEqualTo(91L);
         assertThat(block.tripAttachmentId()).isEqualTo(photoId);
         assertThat(block.tripPlaceId()).isEqualTo(placeId);

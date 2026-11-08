@@ -110,7 +110,7 @@ public class StoryGenerationPreparationService {
             Long storyId,
             ZoneId sourceZone
     ) {
-        var job = jobRepository.findById(generationId)
+        StoryGenerationJob job = jobRepository.findById(generationId)
                 .orElseThrow(() -> new IllegalStateException(
                         StoryGenerationInternalErrorMessage.JOB_NOT_FOUND.message()
                 ));
@@ -141,13 +141,13 @@ public class StoryGenerationPreparationService {
             );
         }
 
-        var selectedPlaces =
+        List<StorySelectedPlace> selectedPlaces =
                 selectedPlaceRepository.findAllByStoryIdOrderByIdAsc(storyId);
 
-        var blocks =
+        List<StoryBlock> blocks =
                 blockRepository.findAllByStoryIdOrderByOrderNumberAscIdAsc(storyId);
 
-        var document = documentFactory.create(
+        StoryContentDocument document = documentFactory.create(
                 story,
                 selectedPlaces,
                 blocks,

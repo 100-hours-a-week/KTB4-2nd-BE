@@ -145,7 +145,7 @@ public class StoryReadService {
         StoryContentBlock block = detail.block();
 
         String thumbnailUrl = tripAttachmentStorageClient.createReadUrl(
-                resolvePreviewStorageKey(detail)
+                detail.currentPreviewStorageKey()
         );
 
         return new Block(
@@ -157,12 +157,6 @@ public class StoryReadService {
                 block.detailSummary(),
                 block.memo() == null ? "" : block.memo()
         );
-    }
-
-    private String resolvePreviewStorageKey(StoryContentBlockDetail detail) {
-        String currentKey = detail.currentPreviewStorageKey();
-        String storedKey = detail.block().previewStorageKey();
-        return currentKey.equals(storedKey) ? storedKey : currentKey;
     }
 
 }

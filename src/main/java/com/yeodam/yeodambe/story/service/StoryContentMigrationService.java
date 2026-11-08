@@ -6,6 +6,17 @@ import com.yeodam.yeodambe.story.entity.StoryBlock;
 import com.yeodam.yeodambe.story.entity.StorySelectedPlace;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Objects;
+import com.mongodb.client.result.UpdateResult;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mapping.MappingException;
+import org.springframework.core.convert.ConversionException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import com.yeodam.yeodambe.story.repository.StoryBlockReferenceQuery;
+import com.yeodam.yeodambe.story.service.response.StoryContentBlockDetail;
+import com.yeodam.yeodambe.story.service.response.StoryPreviewKeyBackfillBatch;
+import com.yeodam.yeodambe.story.document.StoryContentBlock;
 import com.yeodam.yeodambe.story.repository.StoryBlockRepository;
 import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.repository.StoryRepository;
@@ -37,6 +48,9 @@ public class StoryContentMigrationService {
     private final StoryContentStorageService storageService;
     private final MongoConverter mongoConverter;
     private final TripAttachmentRepository tripAttachmentRepository;
+    private final MongoTemplate mongo;
+    private final StoryBlockReferenceQuery referenceQuery;
+    private final StoryValidator validator;
 
     @Transactional(readOnly = true)
     public void migrateOne(Long storyId) {
@@ -89,6 +103,10 @@ public class StoryContentMigrationService {
             return;
         }
 
+        validateInitialContent(expected, saved);
+    }
+
+    private void validateInitialContent(StoryContentDocument expected, StoryContentDocument saved) {
         Document expectedData = new Document();
         Document savedData = new Document();
 
@@ -126,6 +144,130 @@ public class StoryContentMigrationService {
         if (blocks != null) {
             blocks.forEach(block -> block.remove("previewStorageKey"));
         }
+    }
+
+    @Transactional(readOnly = true)
+    public StoryPreviewKeyBackfillBatch backfillPreviewKeys(Long afterStoryId, int batchSize) {
+        if (afterStoryId == null || afterStoryId < 0 || batchSize < 1 || batchSize > 500) {
+            throw new IllegalArgumentException(StoryGenerationInternalErrorMessage.BACKFILL_RANGE_INVALID.message());
+        }
+        Document idRange = new Document("$gt", afterStoryId)
+                .append("$type", List.of("long", "int"));
+        List<Document> documents = mongo.getCollection("story_contents")
+                .find(new Document("_id", idRange))
+                .sort(new Document("_id", 1))
+                .limit(batchSize)
+                .into(new ArrayList<>());
+        List<Long> conflicts = new ArrayList<>();
+        List<Long> invalid = new ArrayList<>();
+        int updated = 0;
+        int unchanged = 0;
+        Long nextAfterStoryId = afterStoryId;
+        for (Document raw : documents) {
+            Long storyId = ((Number) raw.get("_id")).longValue();
+            nextAfterStoryId = storyId;
+            try {
+                long nextVersion = nextVersion(raw);
+                StoryContentDocument content = mongoConverter.read(StoryContentDocument.class, raw);
+                validateBackfillContent(content);
+                Story story = storyRepository.findById(storyId)
+                        .orElseThrow(() -> new StoryDataIntegrityException(
+                                StoryGenerationInternalErrorMessage.READ_DATA_INTEGRITY_FAILED));
+                if (content.getVersion() == null || content.getVersion() == 0) {
+                    StoryContentDocument expected = documentFactory.create(
+                            story, selectedPlaceRepository.findAllByStoryIdOrderByIdAsc(storyId),
+                            storyBlockRepository.findAllByStoryIdOrderByOrderNumberAscIdAsc(storyId),
+                            ZoneOffset.UTC
+                    );
+                    validateInitialContent(expected, content);
+                }
+                Document updates = previewKeyUpdates(story.getTripId(), content);
+                if (updates.isEmpty()) {
+                    unchanged++;
+                } else if (updatePreviewKeys(raw, updates, nextVersion)) {
+                    updated++;
+                } else {
+                    conflicts.add(storyId);
+                }
+            } catch (StoryDataIntegrityException | MappingException | ConversionException failure) {
+                invalid.add(storyId);
+            }
+        }
+        return new StoryPreviewKeyBackfillBatch(
+                nextAfterStoryId, documents.size(), updated, unchanged,
+                List.copyOf(conflicts), List.copyOf(invalid)
+        );
+    }
+
+    private void validateBackfillContent(StoryContentDocument content) {
+        if (content.getBlocks() == null || content.getNextBlockId() == null
+                || content.getNextBlockId() < 1 || content.getMood() == null
+                || content.getStorySummary() == null || content.getSelectedPlaceIds() == null
+                || content.getBlocks().stream().anyMatch(block -> block == null
+                || block.id() == null || block.id() < 1 || block.id() >= content.getNextBlockId())
+                || content.getBlocks().stream().map(StoryContentBlock::id).distinct().count()
+                != content.getBlocks().size()) {
+            throw new StoryDataIntegrityException(StoryGenerationInternalErrorMessage.CONTENT_VERSION_INVALID);
+        }
+    }
+
+    private long nextVersion(Document raw) {
+        Object value = raw.get("version");
+        if (value == null) {
+            return 0L;
+        }
+        if (!(value instanceof Long) && !(value instanceof Integer)) {
+            throw new StoryDataIntegrityException(StoryGenerationInternalErrorMessage.CONTENT_VERSION_INVALID);
+        }
+        long version = ((Number) value).longValue();
+        if (version < 0 || version == Long.MAX_VALUE) {
+            throw new StoryDataIntegrityException(StoryGenerationInternalErrorMessage.CONTENT_VERSION_INVALID);
+        }
+        return version + 1;
+    }
+
+    private Document previewKeyUpdates(Long tripId, StoryContentDocument content) {
+        List<StoryContentBlock> active = content.getBlocks().stream()
+                .filter(block -> block.deletedAt() == null)
+                .toList();
+        validator.validateBlockCount(active);
+        List<StoryContentBlockDetail> details = referenceQuery.findByBlocks(active);
+        validator.validateContentBlockRelations(tripId, details);
+        List<StoryContentBlockDetail> visible = details.stream()
+                .filter(detail -> detail.attachmentDeletedAt() == null && detail.fileDeletedAt() == null)
+                .toList();
+        validator.validateContentDisplayBlocks(tripId, visible);
+        Map<Long, String> keys = visible.stream().collect(Collectors.toMap(
+                detail -> detail.block().id(), StoryContentBlockDetail::currentPreviewStorageKey));
+        Document updates = new Document();
+        for (int index = 0; index < content.getBlocks().size(); index++) {
+            StoryContentBlock block = content.getBlocks().get(index);
+            String key = keys.get(block.id());
+            if (key != null && !Objects.equals(key, block.previewStorageKey())) {
+                updates.put("blocks." + index + ".previewStorageKey", key);
+            }
+        }
+        return updates;
+    }
+
+    private boolean updatePreviewKeys(Document raw, Document updates, long nextVersion) {
+        Document filter = new Document("_id", raw.get("_id"))
+                .append("blocks", raw.get("blocks"));
+        if (!raw.containsKey("version")) {
+            filter.put("version", new Document("$exists", false));
+        } else if (raw.get("version") == null) {
+            filter.put("version", new Document("$type", "null"));
+        } else {
+            filter.put("version", raw.get("version"));
+        }
+        updates.put("version", nextVersion);
+        UpdateResult result = mongo.getCollection("story_contents")
+                .updateOne(filter, new Document("$set", updates));
+        if (!result.wasAcknowledged()) {
+            throw new DataAccessResourceFailureException(
+                    StoryGenerationInternalErrorMessage.READ_DATA_INTEGRITY_FAILED.message());
+        }
+        return result.getMatchedCount() == 1 && result.getModifiedCount() == 1;
     }
 
 }

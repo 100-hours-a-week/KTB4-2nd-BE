@@ -15,18 +15,18 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({TestcontainersConfiguration.class, StoryBlockReferenceQuery.class, org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration.class})
+@Import({TestcontainersConfiguration.class, StoryBlockReferenceQuery.class, JacksonAutoConfiguration.class})
 @ActiveProfiles("test")
 class StoryBlockReferenceQueryIntegrationTest {
     @Autowired

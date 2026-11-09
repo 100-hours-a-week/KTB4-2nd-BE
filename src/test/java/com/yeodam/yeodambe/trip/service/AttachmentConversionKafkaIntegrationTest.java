@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.SharedTestKafka;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.trip.client.AttachmentConversionKafkaListener;
@@ -269,20 +272,21 @@ class AttachmentConversionKafkaIntegrationTest {
 
     @Test
     void 동기_치명적_실패와_Future_취소는_민감한_로그_없이_오프셋을_대기시킨다() throws Exception {
-        var worker = mockWorker();
-        var cancelled = new CompletableFuture<Void>();
+        AttachmentConversionWorker worker = mockWorker();
+        CompletableFuture<Void> cancelled = new CompletableFuture<>();
         cancelled.cancel(true);
-        var ready = new AtomicBoolean(false);
+        AtomicBoolean ready = new AtomicBoolean(false);
         when(worker.process(anyString(), any(), any(), anyString(), anyInt())).thenAnswer(call ->
                 ready.get() ? CompletableFuture.completedFuture(null) : cancelled);
-        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.list = new CopyOnWriteArrayList<>();
         logs.start();
-        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
         logger.addAppender(logs);
-        try (var h = new Harness(worker, kafka)) {
+        try (Harness h = new Harness(worker, kafka)) {
             h.synchronousFailure.set(true);
             h.start();
-            var record = h.send(h.topics.initialLight(), message(UUID.randomUUID().toString()));
+            ConsumerRecord<String, String> record = h.send(h.topics.initialLight(), message(UUID.randomUUID().toString()));
             await().atMost(Duration.ofSeconds(5)).until(() -> h.synchronousAttempts.get() >= 3);
             h.uncommitted(record);
             verify(worker, never()).process(anyString(), any(), any(), anyString(), anyInt());

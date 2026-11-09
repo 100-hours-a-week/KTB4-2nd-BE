@@ -87,21 +87,31 @@ public class TripAttachmentDeletionService {
             Trip trip,
             List<Long> attachmentIds
     ) {
+        return deleteForSharedEditing(trip, attachmentIds, false);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public TripPhotoDeletionResult applyReserved(Trip trip, List<Long> attachmentIds) {
+        return deleteForSharedEditing(trip, attachmentIds, true);
+    }
+
+    private TripPhotoDeletionResult deleteForSharedEditing(Trip trip, List<Long> attachmentIds, boolean reserved) {
         validateIds(attachmentIds);
-        List<TripAttachment> attachments = tripAttachmentRepository
-                .findAllActiveWithTripAndFileByIds(attachmentIds);
+        List<TripAttachment> attachments = reserved
+                ? tripAttachmentRepository.findAllUndeletedForDeletion(attachmentIds)
+                : tripAttachmentRepository.findAllActiveWithTripAndFileByIds(attachmentIds);
         if (attachments.size() != attachmentIds.size()
                 || attachments.stream().anyMatch(attachment -> !trip.getId().equals(attachment.getTripId()))) {
             throw new InvalidAttachmentIdsException();
         }
 
+        List<TripAttachment> remaining = softDelete(attachments, trip.getUserId(), reserved)
+                .get(trip.getId());
         List<TripDetailPlace> affectedPlaces = attachments.stream()
                 .map(TripAttachment::getTripPlace)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        List<TripAttachment> remaining = softDelete(attachments, trip.getUserId())
-                .get(trip.getId());
         Trip updatedTrip = attachments.getFirst().getTrip();
         List<TripPhotoDeletionResult.PlaceChange> places = affectedPlaces.stream()
                 .map(place -> new TripPhotoDeletionResult.PlaceChange(
@@ -118,7 +128,7 @@ public class TripAttachmentDeletionService {
                 List.copyOf(attachmentIds), attachmentCount, updatedTrip.getThumbnailKey(), places);
     }
 
-    private void validateIds(List<Long> tripAttachmentIds) {
+    static void validateIds(List<Long> tripAttachmentIds) {
         if (tripAttachmentIds == null
                 || tripAttachmentIds.isEmpty()
                 || tripAttachmentIds.size() > MAX_DELETE_COUNT
@@ -129,8 +139,14 @@ public class TripAttachmentDeletionService {
     }
 
     private Map<Long, List<TripAttachment>> softDelete(List<TripAttachment> attachments, Long userId) {
-        attachments.stream().map(TripAttachment::getTripId).distinct().sorted()
-                .forEach(tripId -> additionalAttachmentModificationGuard.check(tripId, userId));
+        return softDelete(attachments, userId, false);
+    }
+
+    private Map<Long, List<TripAttachment>> softDelete(List<TripAttachment> attachments, Long userId, boolean reserved) {
+        if (!reserved) {
+            attachments.stream().map(TripAttachment::getTripId).distinct().sorted()
+                    .forEach(tripId -> additionalAttachmentModificationGuard.check(tripId, userId));
+        }
         attachments.stream()
                 .map(TripAttachment::getTrip)
                 .distinct()

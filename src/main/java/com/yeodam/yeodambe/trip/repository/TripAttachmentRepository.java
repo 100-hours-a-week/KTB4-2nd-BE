@@ -17,6 +17,40 @@ import java.util.Optional;
 
 public interface TripAttachmentRepository extends JpaRepository<TripAttachment, Long> {
     @Query("""
+            select reservation.attachmentId from TripPhotoDeletionReservation reservation
+            where reservation.status = 'PENDING' and reservation.attachmentId in :ids
+            """)
+    List<Long> findPendingDeletionIds(@Param("ids") Collection<Long> ids);
+
+    @Query("""
+            select count(attachment) from TripAttachment attachment
+            join attachment.file file
+            where attachment.tripId = :tripId and attachment.deletedAt is null and file.deletedAt is null
+              and attachment.classificationStatus = :classification
+              and not exists (
+                  select item.id from AdditionalAttachmentUploadItem item join item.batch batch
+                  where item.tripAttachmentId = attachment.id and batch.status <> 'COMPLETED'
+              )
+            """)
+    long countVisibleByClassification(
+            @Param("tripId") Long tripId,
+            @Param("classification") ClassificationStatus classification
+    );
+
+    @Query("""
+            select attachment from TripAttachment attachment
+            join fetch attachment.file file
+            join fetch attachment.trip trip
+            left join fetch attachment.tripPlace place
+            where attachment.id in :ids and attachment.deletedAt is null
+              and file.deletedAt is null and trip.deletedAt is null
+            """)
+    List<TripAttachment> findAllUndeletedForDeletion(@Param("ids") Collection<Long> ids);
+
+    @Query("select distinct attachment.tripId from TripAttachment attachment where attachment.id in :ids")
+    List<Long> findDeletionTripIds(@Param("ids") Collection<Long> ids);
+
+    @Query("""
             select new com.yeodam.yeodambe.trip.repository.TripMapRepresentative(
                 trip.id, trip.tripName, attachment.latitude, attachment.longitude,
                 attachment.previewStorageKey
@@ -360,7 +394,6 @@ public interface TripAttachmentRepository extends JpaRepository<TripAttachment, 
             @Param("afterId") Long afterId,
             Pageable pageable
     );
-
 
     @Modifying
     @Query("""

@@ -8,6 +8,8 @@ import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.common.ratelimit.RequestRateLimitExceededException;
+import com.yeodam.yeodambe.common.ratelimit.RequestRateLimitUnavailableException;
 import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
@@ -45,6 +47,47 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(RequestRateLimitExceededException.class)
+    ResponseEntity<ApiResponse<Void>> handleRequestRateLimitExceeded(
+            RequestRateLimitExceededException exception
+    ) {
+        var logEvent = log.atWarn()
+                .addKeyValue("event", "request_rate_limit_rejected")
+                .addKeyValue("result", "rejected")
+                .addKeyValue("error_code", ErrorMessage.REQUEST_RATE_LIMIT_EXCEEDED.name())
+                .addKeyValue("limit_group", exception.group().key())
+                .addKeyValue("retry_after_seconds", exception.retryAfterSeconds());
+        String requestId = MDC.get("request_id");
+        if (requestId != null) {
+            logEvent.addKeyValue("request_id", requestId);
+        }
+        logEvent.log("사용자별 요청 제한을 초과했습니다.");
+
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", Long.toString(exception.retryAfterSeconds()))
+                .body(new ApiResponse<>(ErrorMessage.REQUEST_RATE_LIMIT_EXCEEDED, null));
+    }
+
+    @ExceptionHandler(RequestRateLimitUnavailableException.class)
+    ResponseEntity<ApiResponse<Void>> handleRequestRateLimitUnavailable(
+            RequestRateLimitUnavailableException exception
+    ) {
+        var logEvent = log.atError()
+                .addKeyValue("event", "request_rate_limit_unavailable")
+                .addKeyValue("result", "failure")
+                .addKeyValue("error_code", ErrorMessage.REQUEST_RATE_LIMIT_UNAVAILABLE.name())
+                .addKeyValue("limit_group", exception.group().key())
+                .addKeyValue("failure_type", exception.failureType());
+        String requestId = MDC.get("request_id");
+        if (requestId != null) {
+            logEvent.addKeyValue("request_id", requestId);
+        }
+        logEvent.log("요청 제한 저장소를 사용할 수 없습니다.");
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ApiResponse<>(ErrorMessage.REQUEST_RATE_LIMIT_UNAVAILABLE, null));
+    }
+
     @ExceptionHandler(TripEditLockRejectedException.class)
     ResponseEntity<ApiResponse<Void>> handleTripEditLockRejected(TripEditLockRejectedException exception) {
         boolean contended = exception.reason() == TripEditLockRejectedException.Reason.CONTENDED;

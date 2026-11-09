@@ -15,6 +15,8 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -56,12 +58,54 @@ public class TripEditLock {
         }
     }
 
+    public <T> T executeAll(List<Long> tripIds, Supplier<T> operation) {
+        if (!properties.enabled()) {
+            return operation.get();
+        }
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException(TripInternalErrorMessage.EDIT_LOCK_REQUIRES_NEW_TRANSACTION.message());
+        }
+        List<Long> orderedIds = tripIds.stream().distinct().sorted().toList();
+        List<RLock> acquiredLocks = new ArrayList<>(orderedIds.size());
+        long startedAt = System.nanoTime();
+        long budget = properties.waitTime().toNanos();
+        Timer.Sample held = null;
+        String outcome = "failed";
+        try {
+            for (Long tripId : orderedIds) {
+                long remaining = budget - (System.nanoTime() - startedAt);
+                if (remaining <= 0) {
+                    throw new TripEditLockRejectedException(TripEditLockRejectedException.Reason.CONTENDED);
+                }
+                acquiredLocks.add(acquire(tripId, remaining, TimeUnit.NANOSECONDS));
+                if (held == null) {
+                    held = Timer.start(meters);
+                }
+            }
+            T result = operation.get();
+            outcome = "completed";
+            return result;
+        } finally {
+            for (int index = acquiredLocks.size() - 1; index >= 0; index--) {
+                release(acquiredLocks.get(index));
+            }
+            if (held != null) {
+                held.stop(Timer.builder("yeodam.trip.edit.lock.hold")
+                        .tag("outcome", outcome).register(meters));
+            }
+        }
+    }
+
     private RLock acquire(Long tripId) {
+        return acquire(tripId, properties.waitTime().toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    private RLock acquire(Long tripId, long waitTime, TimeUnit unit) {
         Timer.Sample wait = Timer.start(meters);
         String outcome = "unavailable";
         try {
             RLock lock = redisson.getLock(properties.namespace() + ":lock:trip:mutation:" + tripId);
-            boolean acquired = lock.tryLock(properties.waitTime().toMillis(), TimeUnit.MILLISECONDS);
+            boolean acquired = lock.tryLock(waitTime, unit);
             outcome = acquired ? "acquired" : "contended";
             if (!acquired) {
                 throw new TripEditLockRejectedException(TripEditLockRejectedException.Reason.CONTENDED);

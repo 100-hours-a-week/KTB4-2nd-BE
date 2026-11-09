@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.exception;
 
 public enum UserInternalErrorMessage {
+    WITHDRAWAL_TRIP_SET_CHANGED("탈퇴 처리 중 여행 목록이 변경되어 다시 확인해야 합니다."),
     LOGIN_SESSION_USER_ID_MISSING("로그인 세션의 사용자 ID가 필요합니다."),
     LOGIN_SESSION_INPUT_INVALID("로그인 세션 입력이 유효하지 않습니다."),
     LOGIN_SESSION_DUPLICATE("로그인 세션 식별자가 중복되었습니다."),

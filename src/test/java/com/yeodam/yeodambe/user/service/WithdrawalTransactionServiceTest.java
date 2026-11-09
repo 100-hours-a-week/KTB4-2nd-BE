@@ -1,25 +1,27 @@
 package com.yeodam.yeodambe.user.service;
 
+import com.yeodam.yeodambe.common.exception.WithdrawalFailedException;
+import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.TripWithdrawalService;
 import com.yeodam.yeodambe.user.entity.Consent;
 import com.yeodam.yeodambe.user.entity.OAuthAccount;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
-import com.yeodam.yeodambe.common.exception.WithdrawalFailedException;
 import com.yeodam.yeodambe.user.repository.ConsentRepository;
-import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
 import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
-import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,10 +32,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
-class WithdrawalServiceTest {
+class WithdrawalTransactionServiceTest {
 
     private static final Long USER_ID = 42L;
-    private static final String CSRF_CONTEXT = "withdrawal-browser";
 
     @Mock
     private UserRepository userRepository;
@@ -44,23 +45,21 @@ class WithdrawalServiceTest {
     @Mock
     private UserStatsRepository userStatsRepository;
     @Mock
-    private LoginSessionStore loginSessionStore;
-    @Mock
     private TripWithdrawalService tripWithdrawalService;
+
     @Mock
-    private CsrfTokenStore csrfTokenStore;
+    private TripRepository trips;
 
     @InjectMocks
-    private WithdrawalService service;
+    private WithdrawalTransactionService service;
 
     @Test
-    void 회원_데이터와_여행과_모든_로그인_세션을_탈퇴_처리한다() {
-        User user = org.mockito.Mockito.mock(User.class);
-        OAuthAccount oauthAccount = org.mockito.Mockito.mock(OAuthAccount.class);
-        Consent consent = org.mockito.Mockito.mock(Consent.class);
-        UserStats userStats = org.mockito.Mockito.mock(UserStats.class);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
-        given(user.getDeletedAt()).willReturn(null);
+    void 회원_데이터와_여행을_같은_탈퇴_시각으로_처리한다() {
+        User user = Mockito.mock(User.class);
+        OAuthAccount oauthAccount = Mockito.mock(OAuthAccount.class);
+        Consent consent = Mockito.mock(Consent.class);
+        UserStats userStats = Mockito.mock(UserStats.class);
+        given(userRepository.findActiveForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(oauthAccountRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .willReturn(Optional.of(oauthAccount));
         given(consentRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
@@ -68,7 +67,7 @@ class WithdrawalServiceTest {
         given(userStatsRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .willReturn(Optional.of(userStats));
 
-        service.withdraw(USER_ID, CSRF_CONTEXT);
+        service.withdraw(USER_ID, List.of());
 
         ArgumentCaptor<LocalDateTime> withdrawnAt =
                 ArgumentCaptor.forClass(LocalDateTime.class);
@@ -77,25 +76,22 @@ class WithdrawalServiceTest {
         then(consent).should().withdraw(withdrawnAt.getValue());
         then(userStats).should().withdraw(withdrawnAt.getValue());
         then(user).should().withdraw(withdrawnAt.getValue());
-        then(loginSessionStore).should().deleteByUserId(USER_ID);
-        then(csrfTokenStore).should().delete(CSRF_CONTEXT);
     }
 
     @Test
     void 활성_동의가_없으면_여행을_삭제하기_전에_실패한다() {
-        User user = org.mockito.Mockito.mock(User.class);
-        OAuthAccount oauthAccount = org.mockito.Mockito.mock(OAuthAccount.class);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
-        given(user.getDeletedAt()).willReturn(null);
+        User user = Mockito.mock(User.class);
+        OAuthAccount oauthAccount = Mockito.mock(OAuthAccount.class);
+        given(userRepository.findActiveForUpdate(USER_ID)).willReturn(Optional.of(user));
         given(oauthAccountRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .willReturn(Optional.of(oauthAccount));
         given(consentRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.withdraw(USER_ID, CSRF_CONTEXT))
+        assertThatThrownBy(() -> service.withdraw(USER_ID, List.of()))
                 .isInstanceOf(WithdrawalFailedException.class);
 
-        then(oauthAccount).should(never()).withdraw(org.mockito.ArgumentMatchers.any());
-        verifyNoInteractions(tripWithdrawalService, loginSessionStore, csrfTokenStore);
+        then(oauthAccount).should(never()).withdraw(ArgumentMatchers.any());
+        verifyNoInteractions(tripWithdrawalService);
     }
 }

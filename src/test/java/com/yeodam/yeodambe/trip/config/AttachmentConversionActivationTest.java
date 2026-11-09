@@ -3,7 +3,7 @@ package com.yeodam.yeodambe.trip.config;
 import com.yeodam.yeodambe.trip.client.AttachmentConversionKafkaListener;
 import com.yeodam.yeodambe.trip.client.AttachmentConversionReceiptListener;
 import com.yeodam.yeodambe.trip.service.AttachmentConversionRecoveryService;
-import com.yeodam.yeodambe.trip.service.AttachmentConversionTransactionService;
+import com.yeodam.yeodambe.trip.service.AttachmentConversionService;
 import com.yeodam.yeodambe.trip.service.AttachmentConversionWorker;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDerivativeService;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -40,7 +40,7 @@ class AttachmentConversionActivationTest {
             .withBean(ObjectMapper.class, ObjectMapper::new)
             .withBean(KafkaListenerEndpointRegistry.class, KafkaListenerEndpointRegistry::new)
             .withBean(KafkaTemplate.class, () -> mock(KafkaTemplate.class))
-            .withBean(AttachmentConversionTransactionService.class, () -> mock(AttachmentConversionTransactionService.class))
+            .withBean(AttachmentConversionService.class, () -> mock(AttachmentConversionService.class))
             .withBean(TripAttachmentDerivativeService.class, () -> mock(TripAttachmentDerivativeService.class))
             .withBean(ConsumerFactory.class, () -> new DefaultKafkaConsumerFactory<>(Map.of(
                     "bootstrap.servers", "localhost:9092",
@@ -134,7 +134,7 @@ class AttachmentConversionActivationTest {
             recovery.reconcilePendingRequests();
             assertThat(registrar.getFixedDelayTaskList()).isEmpty();
             assertThat(result.getBean(AttachmentConversionProperties.class).kafkaEnabled()).isTrue();
-            verifyNoInteractions(result.getBean(AttachmentConversionTransactionService.class));
+            verifyNoInteractions(result.getBean(AttachmentConversionService.class));
         });
     }
 

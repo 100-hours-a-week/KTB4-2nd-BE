@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.client.InvalidAttachmentConversionMessageException;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
@@ -24,7 +25,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.Assert;
 import tools.jackson.core.JacksonException;
@@ -69,16 +69,16 @@ public class AttachmentConversionTransactionService {
                 }).toList();
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public boolean renotifyIfEligible(AttachmentConversionRecoveryCandidate expected, Duration minInterval) {
         requireRecoveryInterval(minInterval);
-        Assert.notNull(expected, "재알림 후보가 필요합니다.");
-        var hint = tasks.findById(expected.taskId()).orElse(null);
+        Assert.notNull(expected, TripInternalErrorMessage.CONVERSION_RECOVERY_CANDIDATE_MISSING.message());
+        AttachmentConversionTask hint = tasks.findById(expected.taskId()).orElse(null);
         if (hint == null) {
             return false;
         }
-        var source = lockSource(hint);
-        var task = lockTask(expected.taskId());
+        Source source = lockSource(hint);
+        AttachmentConversionTask task = lockTask(expected.taskId());
         LocalDateTime now = databaseTime();
         if (source == null || !matchesSource(task, source) || source.route() != AttachmentConversionRoute.KAFKA
                 || !source.processable() || source.terminalStatus() != null || task.isTerminal()
@@ -87,7 +87,7 @@ public class AttachmentConversionTransactionService {
                 || !Objects.equals(task.getCreatedAt(), expected.createdAt()) || expected.publication() == null) {
             return false;
         }
-        var box = outboxes.findByIdForUpdate(expected.publication().outboxId()).orElse(null);
+        AttachmentConversionOutbox box = outboxes.findByIdForUpdate(expected.publication().outboxId()).orElse(null);
         if (box == null) {
             return false;
         }
@@ -112,7 +112,8 @@ public class AttachmentConversionTransactionService {
     }
 
     private void requireRecoveryInterval(Duration minInterval) {
-        Assert.isTrue(minInterval != null && minInterval.isPositive(), "재알림 간격은 양수여야 합니다.");
+        Assert.isTrue(minInterval != null && minInterval.isPositive(),
+                TripInternalErrorMessage.CONVERSION_RECOVERY_INTERVAL_INVALID.message());
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

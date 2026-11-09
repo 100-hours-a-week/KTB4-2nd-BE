@@ -71,7 +71,8 @@ class AttachmentConversionKafkaIntegrationTest {
     private static final Duration BACKOFF = Duration.ofMillis(100);
     @Autowired private KafkaTemplate<String, String> kafka;
     @Autowired private ConcurrentKafkaListenerContainerFactoryConfigurer configurer;
-    @Autowired private AttachmentConversionTransactionService database;
+    @Autowired
+    private AttachmentConversionService database;
     @Autowired private InitialAttachmentUploadTransactionService source;
     @Autowired private AttachmentConversionEnqueueService enqueue;
     @Autowired private AttachmentConversionTaskRepository tasks;
@@ -88,7 +89,7 @@ class AttachmentConversionKafkaIntegrationTest {
 
     @Test
     void 커밋은_작업_DB_반영과_정리를_기다린다() throws Exception {
-        var db = mock(AttachmentConversionTransactionService.class, org.mockito.AdditionalAnswers.delegatesTo(database));
+        AttachmentConversionService db = mock(AttachmentConversionService.class, org.mockito.AdditionalAnswers.delegatesTo(database));
         var photos = mock(TripAttachmentDerivativeService.class);
         var cleanup = new CompletableFuture<DerivedPhotoKeys>();
         var planned = new AtomicReference<DerivedPhotoKeys>();
@@ -398,7 +399,7 @@ class AttachmentConversionKafkaIntegrationTest {
         when(photos.processConversionPhoto(any(), any(), any(), any())).thenReturn(
                 CompletableFuture.failedFuture(new IllegalStateException("temporary native failure")));
         when(photos.isTransientConversionFailure(any())).thenReturn(true);
-        var db = mock(AttachmentConversionTransactionService.class, org.mockito.AdditionalAnswers.delegatesTo(database));
+        AttachmentConversionService db = mock(AttachmentConversionService.class, org.mockito.AdditionalAnswers.delegatesTo(database));
         doAnswer(call -> {
             var result = database.recordPhotoFailure(call.getArgument(0), call.getArgument(1), call.getArgument(2));
             if (result.status() == com.yeodam.yeodambe.trip.service.response.AttachmentConversionStepResult.Status.RETRY_LATER) {

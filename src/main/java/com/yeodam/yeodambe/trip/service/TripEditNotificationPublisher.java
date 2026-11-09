@@ -8,6 +8,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -24,6 +28,8 @@ public class TripEditNotificationPublisher {
     private final TripEditNotificationPersistenceService persistence;
     private final WebSocketEventPublisher eventPublisher;
     private final Clock clock;
+    private final TripAttachmentStorageClient storage;
+    private final ObjectMapper json;
 
     @Scheduled(fixedDelay = 1_000)
     public void retryPending() {
@@ -52,7 +58,7 @@ public class TripEditNotificationPublisher {
         }
         TripEditNotificationOutbox notification = pending.orElseThrow();
         try {
-            eventPublisher.publishSerialized(notification.getEventJson());
+            eventPublisher.publishSerialized(prepareForDelivery(notification));
         } catch (RuntimeException exception) {
             logFailure("publish", id, exception);
             recordFailure(notification);
@@ -63,6 +69,18 @@ public class TripEditNotificationPublisher {
         } catch (RuntimeException exception) {
             logFailure("record_success", id, exception);
         }
+    }
+
+    private String prepareForDelivery(TripEditNotificationOutbox notification) {
+        if (notification.getThumbnailKey() == null) {
+            return notification.getEventJson();
+        }
+        JsonNode message = json.readTree(notification.getEventJson());
+        JsonNode item = message.path("payload").path("data").path("listItem");
+        if (item instanceof ObjectNode listItem) {
+            listItem.put("thumbnailUrl", storage.createReadUrl(notification.getThumbnailKey()));
+        }
+        return json.writeValueAsString(message);
     }
 
     private void recordFailure(TripEditNotificationOutbox notification) {

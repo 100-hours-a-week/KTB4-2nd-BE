@@ -249,6 +249,55 @@ class TripAnalysisResultApplicationIntegrationTest {
         assertThat(state(executionId)).isEqualTo("COMPLETED");
     }
 
+    @Test
+    void 완료_알림_저장이_실패하면_결과와_예약과_정산과_사용자_참여자_알림을_모두_롤백한다() throws SQLException {
+        Addition addition = fixture.prepareAddition(tripId, ownerId);
+        String executionId = scheduling.startNext(tripId).orElseThrow();
+        receiveSuccess(executionId);
+        deletion.deleteOne(ownerId, normalPhoto);
+        TripAnalysisResultClaim claim = results.claim().orElseThrow();
+        assertThat(results.start(claim)).isTrue();
+        JsonNode validated = results.validate(claim);
+        Map<String, Object> previousStats = jdbc.queryForMap("SELECT * FROM user_stats WHERE user_id = ?", ownerId);
+        int userNotifications = notificationCount("USER", ownerId);
+        int tripNotifications = notificationCount("TRIP", tripId);
+        String trigger = "reject_completion_notification_" + tripId;
+        createFailureTrigger("CREATE TRIGGER " + trigger + " BEFORE INSERT ON trip_edit_notification_outbox FOR EACH ROW "
+                + "BEGIN IF NEW.target_type = 'TRIP' AND NEW.target_id = " + tripId
+                + " AND JSON_UNQUOTE(JSON_EXTRACT(NEW.event_json, '$.payload.data.status')) = 'COMPLETED' THEN "
+                + "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '"
+                + TripUploadTestErrorMessage.NOTIFICATION_OUTBOX_FAILURE.message() + "'; END IF; END");
+        try {
+            assertThatThrownBy(() -> results.complete(claim, validated, Map.of()))
+                    .isInstanceOf(RuntimeException.class).hasRootCauseInstanceOf(SQLException.class);
+            assertThat(state(executionId)).isEqualTo("RESULT_APPLYING");
+            assertThat(issue(normalPhoto)).isEqualTo("NONE");
+            assertThat(issue(addition.photoId())).isEqualTo("NONE");
+            assertThat(jdbc.queryForObject("SELECT deleted_at IS NULL FROM trip_attachments WHERE trip_attachment_id = ?",
+                    Boolean.class, normalPhoto)).isTrue();
+            assertThat(jdbc.queryForObject("SELECT status FROM trip_photo_deletion_reservations WHERE attachment_id = ?",
+                    String.class, normalPhoto)).isEqualTo("PENDING");
+            assertThat(jdbc.queryForMap("SELECT * FROM user_stats WHERE user_id = ?", ownerId)).isEqualTo(previousStats);
+            assertThat(jdbc.queryForObject("SELECT reservation_released FROM additional_attachment_executions WHERE execution_id = ?",
+                    Boolean.class, addition.additionId())).isFalse();
+            assertThat(jdbc.queryForObject("SELECT result_raw_payload FROM trip_analysis_executions WHERE execution_id = ?",
+                    String.class, executionId)).isEqualTo(claim.rawPayload());
+            assertThat(notificationCount("USER", ownerId)).isEqualTo(userNotifications);
+            assertThat(notificationCount("TRIP", tripId)).isEqualTo(tripNotifications);
+        } finally {
+            jdbc.execute("DROP TRIGGER " + trigger);
+        }
+        results.complete(claim, validated, Map.of());
+        assertThat(state(executionId)).isEqualTo("COMPLETED");
+        assertThat(notificationCount("USER", ownerId)).isEqualTo(userNotifications + 1);
+        assertThat(notificationCount("TRIP", tripId)).isEqualTo(tripNotifications + 2);
+    }
+
+    private int notificationCount(String targetType, Long targetId) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM trip_edit_notification_outbox WHERE target_type = ? AND target_id = ?",
+                Integer.class, targetType, targetId);
+    }
+
     private void createFailureTrigger(String statement) throws SQLException {
         try (Connection connection = DriverManager.getConnection(database.getJdbcUrl(), "root", database.getPassword());
              Statement ddl = connection.createStatement()) {

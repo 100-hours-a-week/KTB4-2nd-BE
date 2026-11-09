@@ -79,6 +79,16 @@ auth:
     internal-service-token: ${WEBSOCKET_INTERNAL_SERVICE_TOKEN:}
 
 app:
+  request-rate-limit:
+    enabled: ${REQUEST_RATE_LIMIT_ENABLED:false}
+    key-prefix: yeodam:v3:local
+    idle-ttl: 60s
+    trip-read:
+      refill-per-second: 5
+      capacity: 30
+    trip-create:
+      refill-per-second: 1
+      capacity: 5
   photo-list-cache:
     enabled: ${PHOTO_LIST_CACHE_ENABLED:false}
     namespace: ${PHOTO_LIST_CACHE_NAMESPACE:photo-list}
@@ -287,6 +297,8 @@ auth:
 app:
   cors:
     allowed-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
+  request-rate-limit:
+    key-prefix: yeodam:v3:performance
 ---
 spring:
   config:
@@ -326,6 +338,8 @@ app:
   outbox:
     receipt-consumer-group: ${KAFKA_OUTBOX_RECEIPT_CONSUMER_GROUP:yeodam-outbox-receipts}
   public-api-prefix: /api
+  request-rate-limit:
+    key-prefix: yeodam:v3:prod
   cors:
     allowed-origin: ${FRONTEND_ORIGIN}
 ---
@@ -368,6 +382,8 @@ app:
     receipt-listener-enabled: false
   cors:
     allowed-origin: https://app.yeodam.test
+  request-rate-limit:
+    key-prefix: yeodam:v3:test
   trip:
     status-polling-enabled: false
     worker-initial-delay-ms: 3600000

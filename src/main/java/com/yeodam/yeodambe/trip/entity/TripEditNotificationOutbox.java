@@ -48,6 +48,9 @@ public class TripEditNotificationOutbox {
     @Column(name = "event_json", nullable = false, updatable = false, columnDefinition = "LONGTEXT")
     private String eventJson;
 
+    @Column(name = "thumbnail_key", updatable = false, length = 500)
+    private String thumbnailKey;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 10)
     private Status status;
@@ -65,6 +68,16 @@ public class TripEditNotificationOutbox {
     private LocalDateTime publishedAt;
 
     public TripEditNotificationOutbox(WebSocketEvent event, String eventJson, LocalDateTime createdAt) {
+        this(event, eventJson, createdAt, null);
+    }
+
+    public TripEditNotificationOutbox(
+            WebSocketEvent event,
+            String eventJson,
+            LocalDateTime createdAt,
+            String thumbnailKey
+    ) {
+        this.thumbnailKey = thumbnailKey;
         this.eventId = event.eventId().toString();
         this.eventType = event.type();
         this.targetType = event.target().type();

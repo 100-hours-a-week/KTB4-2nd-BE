@@ -47,6 +47,12 @@ public class TripCreationExecution {
     @Column(name = "last_upload_activity_at", nullable = false)
     private LocalDateTime lastUploadActivityAt;
 
+    @Column(name = "requires_remote_termination_confirmation", nullable = false)
+    private boolean requiresRemoteTerminationConfirmation;
+
+    @Column(name = "remote_terminal_confirmed_at")
+    private LocalDateTime remoteTerminalConfirmedAt;
+
     @Column(name = "process_published_at")
     private LocalDateTime processPublishedAt;
 
@@ -251,8 +257,14 @@ public class TripCreationExecution {
         changeStatus(status);
         this.errorCode = errorCode;
         this.endedAt = now;
+        requiresRemoteTerminationConfirmation = status != Status.COMPLETED
+                && processPayload != null && resultRawPayload == null;
         resultClaimToken = null;
         resultLeaseUntil = null;
+    }
+
+    public void confirmRemoteTermination(LocalDateTime now) {
+        remoteTerminalConfirmedAt = now;
     }
 
     public void requestCancellation() {

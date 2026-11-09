@@ -6,5 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 public interface TripAnalysisExecutionUploadRepository extends JpaRepository<TripAnalysisExecutionUpload, Long> {
+    boolean existsByExecutionIdAndAdditionId(String executionId, String additionId);
+
     List<TripAnalysisExecutionUpload> findAllByExecutionIdOrderById(String executionId);
 }

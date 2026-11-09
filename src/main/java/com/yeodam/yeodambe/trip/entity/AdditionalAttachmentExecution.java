@@ -1,7 +1,6 @@
 package com.yeodam.yeodambe.trip.entity;
 
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -43,6 +42,9 @@ public class AdditionalAttachmentExecution {
 
     @Column(name = "quarantined_at")
     private LocalDateTime quarantinedAt;
+
+    @Column(name = "remote_terminal_confirmed_at")
+    private LocalDateTime remoteTerminalConfirmedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 24)
@@ -156,6 +158,45 @@ public class AdditionalAttachmentExecution {
 
     public boolean isTerminal() {
         return endedAt != null;
+    }
+
+    public void acceptV3(Long actorId) {
+        processingMode = ProcessingMode.V3;
+        acceptedActorId = actorId;
+    }
+
+    public boolean acceptedBy(Long actorId) {
+        return Objects.equals(acceptedActorId == null ? userId : acceptedActorId, actorId);
+    }
+
+    public void analysisRequested() {
+        changeStatus(Status.AI_QUEUED);
+        updateDisplayStatus(TripDisplayStatus.PROCESSING, null);
+    }
+
+    public void analysisApplying() {
+        changeStatus(Status.RESULT_APPLYING);
+    }
+
+    public void analysisBlocked() {
+        statusVersion = Math.incrementExact(statusVersion);
+    }
+
+    public boolean recordAnalysisFailure(LocalDateTime now) {
+        analysisFailureCount++;
+        if (analysisFailureCount >= 2) {
+            quarantinedAt = now;
+            return true;
+        }
+        changeStatus(Status.IMAGE_PROCESSING);
+        displayStatus = TripDisplayStatus.PROCESSING;
+        currentStep = null;
+        statusVersion = Math.incrementExact(statusVersion);
+        return false;
+    }
+
+    public void confirmRemoteTermination(LocalDateTime now) {
+        remoteTerminalConfirmedAt = now;
     }
 
     public void recordUploadActivity(LocalDateTime now) {

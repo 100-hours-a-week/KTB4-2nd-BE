@@ -15,6 +15,13 @@ import java.util.Optional;
 public interface TripCreationExecutionRepository extends JpaRepository<TripCreationExecution, String> {
     Optional<TripCreationExecution> findByTripId(Long tripId);
 
+    @Query("""
+            select execution from TripCreationExecution execution
+            where execution.tripId = :tripId and execution.requiresRemoteTerminationConfirmation = true
+              and execution.remoteTerminalConfirmedAt is null
+            """)
+    List<TripCreationExecution> findUnconfirmedRemoteTerminations(@Param("tripId") Long tripId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select execution from TripCreationExecution execution where execution.executionId = :id")
     Optional<TripCreationExecution> findForUpdate(@Param("id") String id);

@@ -1,9 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
-import com.yeodam.yeodambe.common.exception.TripDeletionNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
-import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
@@ -18,6 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,7 +25,9 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class TripDeletionService {
-    private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
+    private final TripEditLock editLock;
+    private final TripWorkflowCancellationService cancellations;
+    private final EntityManager entityManager;
     private final TripRepository trips;
     private final TripRegionRepository regions;
     private final TripDetailPlaceRepository places;
@@ -46,7 +48,10 @@ public class TripDeletionService {
         TransactionTemplate transactions = new TransactionTemplate(transactionManager);
         transactions.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
         try {
-            transactions.executeWithoutResult(status -> deleteInTransaction(tripId, userId));
+            editLock.execute(tripId, () -> {
+                transactions.executeWithoutResult(status -> deleteInTransaction(tripId, userId));
+                return null;
+            });
         } catch (RuntimeException failure) {
             outcome = "failure";
             throw failure;
@@ -64,17 +69,9 @@ public class TripDeletionService {
         Trip trip = trips.findOwnedActiveForUpdate(tripId, userId)
                 .orElseThrow(TripNotFoundException::new);
 
-        if (trip.getProcessingStatus() == ProcessingStatus.PROCESSING) {
-            throw new TripDeletionNotAllowedException();
-        }
-
-        try {
-            additionalAttachmentModificationGuard.check(tripId, userId);
-        } catch (com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException e) {
-            throw new TripDeletionNotAllowedException();
-        }
-
+        entityManager.refresh(trip, LockModeType.PESSIMISTIC_WRITE);
         LocalDateTime deletedAt = LocalDateTime.now();
+        cancellations.cancel(trip, deletedAt);
         List<TripAttachment> tripAttachments =
                 attachments.findAllByTripIdAndDeletedAtIsNull(tripId);
         List<Long> fileIds = tripAttachments.stream()

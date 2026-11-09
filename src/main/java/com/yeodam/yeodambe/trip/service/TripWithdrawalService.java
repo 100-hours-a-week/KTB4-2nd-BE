@@ -8,6 +8,8 @@ import com.yeodam.yeodambe.trip.repository.TripRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
 
@@ -20,8 +22,8 @@ public class TripWithdrawalService {
     private final TripDetailPlaceRepository tripDetailPlaceRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final StoredFileRepository storedFileRepository;
-    private final InitialAttachmentUploadTransactionService uploadTransactions;
-    private final AdditionalAttachmentUploadTransactionService additionalTransactions;
+    private final TripWorkflowCancellationService cancellations;
+    private final EntityManager entityManager;
     private final TripMapCacheStore tripMapCacheStore;
 
     @Transactional
@@ -31,8 +33,8 @@ public class TripWithdrawalService {
     ) {
         tripRepository.findAllOwnedActiveForUpdate(userId)
                 .forEach(trip -> {
-                    uploadTransactions.cancelExecution(trip.getId(), userId);
-                    additionalTransactions.cancelForWithdrawal(trip.getId(), userId);
+                    entityManager.refresh(trip, LockModeType.PESSIMISTIC_WRITE);
+                    cancellations.cancelForWithdrawal(trip, withdrawnAt);
                 });
         tripRegionRepository.softDeleteByUserId(userId, withdrawnAt);
         tripDetailPlaceRepository.softDeleteByUserId(userId, withdrawnAt);

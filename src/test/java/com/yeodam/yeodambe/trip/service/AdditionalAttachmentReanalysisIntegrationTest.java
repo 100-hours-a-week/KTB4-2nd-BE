@@ -92,6 +92,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     @MockitoBean private TripAttachmentDerivativeService derivatives;
     @MockitoBean private KakaoLocalClient kakao;
     @MockitoBean private WebSocketEventPublisher notificationPublisher;
+    @MockitoBean
+    private TripEditNotificationPublisher notificationDelivery;
     @Autowired private TransactionTemplate transaction;
     private Long userId;
     private Long tripId;
@@ -103,15 +105,19 @@ class AdditionalAttachmentReanalysisIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        when(notificationPublisher.serialize(any()))
+                .thenAnswer(call -> applicationMapper.writeValueAsString(call.getArgument(0)));
         User owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "재분석회원"));
-        userId = owner.getUserId(); stats.save(new UserStats(owner));
+        userId = owner.getUserId();
+        stats.save(new UserStats(owner));
         Trip trip = trips.save(new Trip(userId, "재분석 여행", LocalDate.now(), LocalDate.now()));
         tripId = trip.getId();
         jdbc.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", tripId);
         regions.save(new TripRegion(trip, "11000", "서울특별시", BigDecimal.ONE, BigDecimal.TEN));
         StoredFile file = StoredFile.uploaded(userId, "old.jpg", "old/" + UUID.randomUUID(), "image/jpeg");
-        file.storageSize(12L); file = files.save(file);
-        var place = places.save(TripDetailPlace.fromAnalysis(tripId, 1, "기존 장소", BigDecimal.ONE,
+        file.storageSize(12L);
+        file = files.save(file);
+        TripDetailPlace place = places.save(TripDetailPlace.fromAnalysis(tripId, 1, "기존 장소", BigDecimal.ONE,
                 BigDecimal.TEN, LocalDateTime.now(), LocalDateTime.now(), "old-preview"));
         oldPlaceId = place.getId();
         TripAttachment old = TripAttachment.initial(tripId, file.getId(), "old-analyze", "old-preview");
@@ -191,7 +197,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
             transaction.executeWithoutResult(status -> executionRepository.findForUpdate(additionId).orElseThrow()
                     .updateDisplayStatus(TripDisplayStatus.FINALIZING, null));
         }
-        var event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
+        com.yeodam.yeodambe.trip.event.TripCreateResultEvent event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
         transaction.executeWithoutResult(status -> {
             assertThat(kafkaResults.receive(event, raw)).isTrue();
             verifyNoInteractions(notificationPublisher);
@@ -201,11 +207,11 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         if (alreadyFinalizing) {
             verifyNoInteractions(notificationPublisher);
         } else {
-            var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-            verify(notificationPublisher).publish(captor.capture());
+            ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(notificationPublisher).serialize(captor.capture());
             verifyNoMoreInteractions(notificationPublisher);
-            var message = captor.getValue();
-            var notification = (TripProcessingStatusNotification) message.payload().data();
+            WebSocketEvent message = captor.getValue();
+            TripProcessingStatusNotification notification = (TripProcessingStatusNotification) message.payload().data();
             assertThat(message.target().id()).isEqualTo(userId);
             assertThat(notification.executionId()).isEqualTo(additionId);
             assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.FINALIZING);
@@ -266,14 +272,14 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
         publishBoth();
         String raw = successfulPayload();
-        var event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
+        com.yeodam.yeodambe.trip.event.TripCreateResultEvent event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
         assertThat(kafkaResults.receive(event, raw)).isTrue();
         assertThat(kafkaResults.receive(event, raw)).isTrue();
         jdbc.update("UPDATE additional_attachment_executions SET result_next_attempt_at = '2099-01-01' WHERE execution_id <> ?", additionId);
-        var claim = kafkaResults.claim().orElseThrow();
+        com.yeodam.yeodambe.trip.service.response.TripAnalysisResultClaim claim = kafkaResults.claim().orElseThrow();
         assertThat(kafkaResults.claim()).isEmpty();
         assertThat(kafkaResults.start(claim)).isTrue();
-        var validated = kafkaResults.validate(claim);
+        JsonNode validated = kafkaResults.validate(claim);
         clearInvocations(notificationPublisher);
         org.hibernate.stat.Statistics queryStatistics = entityManagerFactory
                 .unwrap(org.hibernate.SessionFactory.class).getStatistics();
@@ -286,10 +292,10 @@ class AdditionalAttachmentReanalysisIntegrationTest {
                 .sum();
         assertThat(reanalysisQueries).isEqualTo(1L);
         assertThat(stats.findByUser_UserId(userId).orElseThrow().getAttachmentCount()).isEqualTo(2L);
-        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-        verify(notificationPublisher).publish(captor.capture());
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).serialize(captor.capture());
         verifyNoMoreInteractions(notificationPublisher);
-        var data = applicationMapper.valueToTree(captor.getValue().payload()).path("data");
+        JsonNode data = applicationMapper.valueToTree(captor.getValue().payload()).path("data");
         assertThat(data.path("eventType").asString()).isEqualTo("TRIP_ANALYSIS_APPLIED");
         assertThat(data.path("result").path("classifiedAttachmentCount").asInt()).isEqualTo(2);
         assertThat(data.path("listItem").path("sequence").asLong()).isEqualTo(1);

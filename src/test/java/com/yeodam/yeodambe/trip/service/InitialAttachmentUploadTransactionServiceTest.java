@@ -36,6 +36,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.ByteArrayInputStream;
 import java.time.LocalDate;
@@ -83,11 +84,17 @@ class InitialAttachmentUploadTransactionServiceTest {
     private TripAttachmentStorageClient storage;
     @MockitoBean
     private WebSocketEventPublisher notificationPublisher;
+    @MockitoBean
+    private TripEditNotificationPublisher notificationDelivery;
+    @Autowired
+    private ObjectMapper notificationJson;
     private User owner;
     private Trip trip;
 
     @BeforeEach
     void prepareUser() {
+        Mockito.when(notificationPublisher.serialize(Mockito.any()))
+                .thenAnswer(call -> notificationJson.writeValueAsString(call.getArgument(0)));
         owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "접수회원"));
         stats.save(new UserStats(owner));
         trip = trips.save(new Trip(owner.getUserId(), "접수 여행", LocalDate.now(), LocalDate.now()));
@@ -101,18 +108,18 @@ class InitialAttachmentUploadTransactionServiceTest {
 
     @Test
     void 최초_접수는_커밋_후_한번_발행하고_재발급은_추가_발행하지_않는다() {
-        var batch = new TransactionTemplate(transactionManager).execute(status -> {
-            var prepared = prepare(true);
+        InitialAttachmentUploadBatchSnapshot batch = new TransactionTemplate(transactionManager).execute(status -> {
+            InitialAttachmentUploadBatchSnapshot prepared = prepare(true);
             Mockito.verifyNoInteractions(notificationPublisher);
             return prepared;
         });
-        var reissued = prepare(true);
+        InitialAttachmentUploadBatchSnapshot reissued = prepare(true);
         assertThat(reissued.executionId()).isEqualTo(batch.executionId());
-        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-        Mockito.verify(notificationPublisher).publish(captor.capture());
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        Mockito.verify(notificationPublisher).serialize(captor.capture());
         Mockito.verifyNoMoreInteractions(notificationPublisher);
-        var message = captor.getValue();
-        var notification = (TripProcessingStatusNotification) message.payload().data();
+        WebSocketEvent message = captor.getValue();
+        TripProcessingStatusNotification notification = (TripProcessingStatusNotification) message.payload().data();
         assertThat(message.target().id()).isEqualTo(owner.getUserId());
         assertThat(message.payload().message()).isEqualTo("TRIP_PROCESSING_STATUS_FOUND");
         assertThat(notification.tripId()).isEqualTo(trip.getId());
@@ -137,7 +144,7 @@ class InitialAttachmentUploadTransactionServiceTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void 실패와_취소는_커밋_후_한번만_개인_알림을_발행한다(boolean failed) {
-        var batch = prepare(true);
+        InitialAttachmentUploadBatchSnapshot batch = prepare(true);
         Mockito.clearInvocations(notificationPublisher);
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             finishForNotification(batch.executionId(), failed);
@@ -145,11 +152,11 @@ class InitialAttachmentUploadTransactionServiceTest {
         });
         finishForNotification(batch.executionId(), failed);
 
-        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-        Mockito.verify(notificationPublisher).publish(captor.capture());
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        Mockito.verify(notificationPublisher).serialize(captor.capture());
         Mockito.verifyNoMoreInteractions(notificationPublisher);
-        var message = captor.getValue();
-        var notification = (TripProcessingStatusNotification) message.payload().data();
+        WebSocketEvent message = captor.getValue();
+        TripProcessingStatusNotification notification = (TripProcessingStatusNotification) message.payload().data();
         assertThat(message.target().id()).isEqualTo(owner.getUserId());
         assertThat(notification.tripId()).isEqualTo(trip.getId());
         assertThat(notification.executionId()).isEqualTo(batch.executionId());

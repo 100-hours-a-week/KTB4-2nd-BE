@@ -17,6 +17,18 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.ObjectMapper;
+import com.yeodam.yeodambe.story.event.handler.StoryGenerationStatusEventHandler;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.entity.TripEditNotificationOutbox;
+import com.yeodam.yeodambe.trip.event.handler.TripProcessingStatusEventHandler;
+import com.yeodam.yeodambe.trip.service.TripEditNotificationOutboxService;
+import com.yeodam.yeodambe.trip.service.TripEditNotificationPersistenceService;
+import com.yeodam.yeodambe.trip.service.TripEditNotificationPublisher;
+import com.yeodam.yeodambe.trip.service.response.TripCompletionSnapshot;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -27,6 +39,9 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -91,25 +106,25 @@ class WebSocketEventPublisherRedisTest {
     @org.junit.jupiter.params.provider.ValueSource(strings = {"trip", "addition", "story"})
     void 비즈니스_완료_핸들러는_공통_전송_계약으로_이벤트를_발행한다(String kind) throws Exception {
         String channel = "yeodam:contract-" + UUID.randomUUID();
-        var mapper = new ObjectMapper();
-        var publisher = new WebSocketEventPublisher(redis, mapper, new WebSocketEventProperties(channel));
-        var receiver = new Receiver();
-        var subscriber = subscriber(channel, receiver);
+        ObjectMapper mapper = new ObjectMapper();
+        WebSocketEventPublisher publisher = new WebSocketEventPublisher(redis, mapper, new WebSocketEventProperties(channel));
+        Receiver receiver = new Receiver();
+        RedisMessageListenerContainer subscriber = subscriber(channel, receiver);
         try {
             subscriber.start();
             assertThat(receiver.subscribed.await(5, TimeUnit.SECONDS)).isTrue();
             if (kind.equals("story")) {
-                var handler = new com.yeodam.yeodambe.story.event.handler.StoryGenerationStatusEventHandler(publisher);
+                StoryGenerationStatusEventHandler handler = new StoryGenerationStatusEventHandler(publisher);
                 handler.handle(new com.yeodam.yeodambe.story.event.StoryGenerationStatusChangedEvent(42L, 7L,
                         new com.yeodam.yeodambe.story.service.response.StoryGenerationStatusResponse(9L,
                                 com.yeodam.yeodambe.story.entity.StoryGenerationJob.Status.COMPLETED, 3, 11L, null),
                         new com.yeodam.yeodambe.story.service.response.StoryCompletionListItem(11L, 7L, 5,
                                 com.yeodam.yeodambe.story.entity.Story.Mood.EMOTIONAL, "여행 이야기")));
             } else {
-                var storage = org.mockito.Mockito.mock(com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient.class);
-                org.mockito.Mockito.when(storage.createReadUrl("preview")).thenReturn("https://storage.test/preview");
-                var handler = new com.yeodam.yeodambe.trip.event.handler.TripProcessingStatusEventHandler(publisher, storage);
-                var completion = new com.yeodam.yeodambe.trip.service.response.TripCompletionSnapshot(
+                TripAttachmentStorageClient storage = Mockito.mock(TripAttachmentStorageClient.class);
+                Mockito.when(storage.createReadUrl("preview")).thenReturn("https://storage.test/preview");
+                TripProcessingStatusEventHandler handler = processingHandler(publisher, storage, mapper);
+                TripCompletionSnapshot completion = new TripCompletionSnapshot(
                         kind.equals("trip") ? AiTaskCompletionType.TRIP_CREATION_COMPLETED : AiTaskCompletionType.TRIP_ANALYSIS_APPLIED,
                         new com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Result(7L, 1, 2, 1),
                         new com.yeodam.yeodambe.trip.service.response.TripListItemResponse(7L,
@@ -120,18 +135,46 @@ class WebSocketEventPublisherRedisTest {
                         new com.yeodam.yeodambe.trip.service.response.TripProcessingStateSnapshot(7L, "execution", 3,
                                 com.yeodam.yeodambe.trip.entity.TripDisplayStatus.COMPLETED, null, null), completion));
             }
-            var received = (tools.jackson.databind.node.ObjectNode) mapper.readTree(receiver.next());
-            var expected = mapper.readTree(getClass().getResourceAsStream("/websocket/" + kind + "-completed.json"));
+            ObjectNode received = (ObjectNode) mapper.readTree(receiver.next());
+            JsonNode expected = mapper.readTree(getClass().getResourceAsStream("/websocket/" + kind + "-completed.json"));
             assertThat(received.path("eventId").asString()).isEqualTo(received.path("payload").path("data").path("eventId").asString());
             assertThat(received.path("occurredAt").asString()).isEqualTo(received.path("payload").path("data").path("occurredAt").asString());
             received.put("eventId", expected.path("eventId").asString());
             received.put("occurredAt", expected.path("occurredAt").asString());
-            var data = (tools.jackson.databind.node.ObjectNode) received.path("payload").path("data");
+            ObjectNode data = (ObjectNode) received.path("payload").path("data");
             data.put("eventId", expected.path("eventId").asString());
             data.put("occurredAt", expected.path("occurredAt").asString());
             assertThat(received).isEqualTo(expected);
             assertThat(data.has("progress")).isFalse();
-        } finally { subscriber.destroy(); }
+        } finally {
+            subscriber.destroy();
+        }
+    }
+
+    private TripProcessingStatusEventHandler processingHandler(
+            WebSocketEventPublisher publisher,
+            TripAttachmentStorageClient storage,
+            ObjectMapper mapper
+    ) {
+        TripEditNotificationOutboxService outbox = Mockito.mock(
+                TripEditNotificationOutboxService.class);
+        TripEditNotificationPersistenceService persistence = Mockito.mock(
+                TripEditNotificationPersistenceService.class);
+        Clock clock = Clock.systemUTC();
+        TripEditNotificationPublisher delivery =
+                new TripEditNotificationPublisher(persistence, publisher, clock, storage, mapper);
+        Mockito.doAnswer(call -> {
+            WebSocketEvent event = call.getArgument(0);
+            String thumbnailKey = call.getArgument(1);
+            TripEditNotificationOutbox record =
+                    new TripEditNotificationOutbox(event, publisher.serialize(event),
+                            LocalDateTime.now(clock), thumbnailKey);
+            Mockito.when(persistence.findDue(ArgumentMatchers.eq(1L), ArgumentMatchers.any()))
+                    .thenReturn(Optional.of(record));
+            delivery.publish(1L);
+            return null;
+        }).when(outbox).enqueue(ArgumentMatchers.any(), ArgumentMatchers.nullable(String.class));
+        return new TripProcessingStatusEventHandler(outbox, clock);
     }
 
     private RedisMessageListenerContainer subscriber(String channel, Receiver receiver) {

@@ -35,6 +35,7 @@ import com.yeodam.yeodambe.story.service.response.StoryGenerationStatusNotificat
 import static org.mockito.Mockito.*;
 import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
+import com.yeodam.yeodambe.trip.service.TripEditNotificationPublisher;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
@@ -83,6 +84,8 @@ class StoryGenerationAcceptanceServiceTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
     @MockitoBean private WebSocketEventPublisher publisher;
+    @MockitoBean
+    private TripEditNotificationPublisher notificationDelivery;
 
     private User owner;
     private Trip trip;
@@ -92,6 +95,8 @@ class StoryGenerationAcceptanceServiceTest {
 
     @BeforeEach
     void prepare() {
+        when(publisher.serialize(any()))
+                .thenAnswer(call -> objectMapper.writeValueAsString(call.getArgument(0)));
         owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "스토리회원"));
         trip = trips.save(new Trip(owner.getUserId(), "여행",
                 LocalDate.of(2026, 10, 11), LocalDate.of(2026, 10, 12)));
@@ -277,7 +282,7 @@ class StoryGenerationAcceptanceServiceTest {
     @Test
     void 스토리_접수는_동시_사진_추가를_커밋까지_대기시킨_뒤_거부한다() throws Exception {
         photo(takenAt);
-        var addition = additionRequest();
+        AdditionalAttachmentUploadUrlRequest addition = additionRequest();
         assertSecondRequestRejectedAfterCommit(
                 () -> service.accept(owner.getUserId(), trip.getId(), request(), "request-original"),
                 () -> additionalUpload.prepareBatch(trip.getId(), owner.getUserId(), addition),
@@ -292,7 +297,7 @@ class StoryGenerationAcceptanceServiceTest {
     void 사진_추가는_동시_스토리_접수를_커밋까지_대기시킨_뒤_거부한다() throws Exception {
         photo(takenAt);
         stats.saveAndFlush(new UserStats(owner));
-        var addition = additionRequest();
+        AdditionalAttachmentUploadUrlRequest addition = additionRequest();
         assertSecondRequestRejectedAfterCommit(
                 () -> additionalUpload.prepareBatch(trip.getId(), owner.getUserId(), addition),
                 () -> service.accept(owner.getUserId(), trip.getId(), request(), "request-original"),

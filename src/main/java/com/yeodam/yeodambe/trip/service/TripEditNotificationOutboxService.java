@@ -48,11 +48,16 @@ public class TripEditNotificationOutboxService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void enqueue(WebSocketEvent event) {
+        enqueue(event, null);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void enqueue(WebSocketEvent event, String thumbnailKey) {
         TripEditNotificationOutbox notification;
         try {
             String eventJson = eventPublisher.serialize(event);
             LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
-            notification = records.saveAndFlush(new TripEditNotificationOutbox(event, eventJson, now));
+            notification = records.saveAndFlush(new TripEditNotificationOutbox(event, eventJson, now, thumbnailKey));
         } catch (RuntimeException exception) {
             log.error("공유 편집 알림 기록 실패: failure={}", exception.getClass().getSimpleName());
             throw exception;

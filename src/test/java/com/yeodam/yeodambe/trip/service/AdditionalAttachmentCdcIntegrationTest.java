@@ -63,6 +63,10 @@ class AdditionalAttachmentCdcIntegrationTest {
     @MockitoBean private TripAttachmentDerivativeService derivatives;
     @MockitoBean private KakaoLocalClient kakao;
     @MockitoBean private WebSocketEventPublisher notificationPublisher;
+    @MockitoBean
+    private TripEditNotificationPublisher notificationDelivery;
+    @Autowired
+    private ObjectMapper notificationJson;
     private Long userId;
     private Long tripId;
     private Long oldPhotoId;
@@ -71,6 +75,8 @@ class AdditionalAttachmentCdcIntegrationTest {
     private String uploadId;
     @BeforeEach
     void setUp() {
+        when(notificationPublisher.serialize(any()))
+                .thenAnswer(call -> notificationJson.writeValueAsString(call.getArgument(0)));
         User owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "재분석회원"));
         userId = owner.getUserId();
         stats.save(new UserStats(owner));
@@ -81,7 +87,7 @@ class AdditionalAttachmentCdcIntegrationTest {
         StoredFile file = StoredFile.uploaded(userId, "old.jpg", "old/" + UUID.randomUUID(), "image/jpeg");
         file.storageSize(12L);
         file = files.save(file);
-        var place = places.save(TripDetailPlace.fromAnalysis(tripId, 1, "기존 장소", BigDecimal.ONE,
+        TripDetailPlace place = places.save(TripDetailPlace.fromAnalysis(tripId, 1, "기존 장소", BigDecimal.ONE,
                 BigDecimal.TEN, LocalDateTime.now(), LocalDateTime.now(), "old-preview"));
         oldPlaceId = place.getId();
         TripAttachment old = TripAttachment.initial(tripId, file.getId(), "old-analyze", "old-preview");
@@ -142,11 +148,11 @@ class AdditionalAttachmentCdcIntegrationTest {
             verifyNoInteractions(notificationPublisher);
         });
         urls.issueUploadUrls(tripId, userId, request(1, 1, true));
-        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-        verify(notificationPublisher).publish(captor.capture());
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).serialize(captor.capture());
         verifyNoMoreInteractions(notificationPublisher);
-        var message = captor.getValue();
-        var notification = (TripProcessingStatusNotification) message.payload().data();
+        WebSocketEvent message = captor.getValue();
+        TripProcessingStatusNotification notification = (TripProcessingStatusNotification) message.payload().data();
         assertThat(message.target().id()).isEqualTo(userId);
         assertThat(notification.tripId()).isEqualTo(tripId);
         assertThat(notification.executionId()).isEqualTo(additionId);
@@ -178,11 +184,11 @@ class AdditionalAttachmentCdcIntegrationTest {
         });
         transactions.failExecution(additionId, "REPEATED_FAILURE");
 
-        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-        verify(notificationPublisher).publish(captor.capture());
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).serialize(captor.capture());
         verifyNoMoreInteractions(notificationPublisher);
-        var message = captor.getValue();
-        var notification = (TripProcessingStatusNotification) message.payload().data();
+        WebSocketEvent message = captor.getValue();
+        TripProcessingStatusNotification notification = (TripProcessingStatusNotification) message.payload().data();
         assertThat(message.target().id()).isEqualTo(userId);
         assertThat(notification.executionId()).isEqualTo(additionId);
         assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.FAILED);

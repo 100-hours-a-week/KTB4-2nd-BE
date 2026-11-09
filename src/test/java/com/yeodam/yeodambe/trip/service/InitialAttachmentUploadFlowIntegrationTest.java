@@ -79,6 +79,8 @@ class InitialAttachmentUploadFlowIntegrationTest {
     private TripWithdrawalService withdrawal;
     @Autowired private TripCreationOutboxRepository outboxes;
     @MockitoBean private WebSocketEventPublisher notificationPublisher;
+    @MockitoBean
+    private TripEditNotificationPublisher notificationDelivery;
     @Autowired private TransactionTemplate transaction;
     @Autowired private TripProcessingStatusService processingStatus;
     private User owner;
@@ -86,6 +88,8 @@ class InitialAttachmentUploadFlowIntegrationTest {
 
     @BeforeEach
     void prepareUser() {
+        when(notificationPublisher.serialize(any()))
+                .thenAnswer(call -> json.writeValueAsString(call.getArgument(0)));
         owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "업로드회원"));
         stats.save(new UserStats(owner));
         trip = trips.save(new Trip(owner.getUserId(), "직접 업로드", LocalDate.now(), LocalDate.now()));
@@ -108,7 +112,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
             transaction.executeWithoutResult(status -> executions.findForUpdate(execution().getExecutionId())
                     .orElseThrow().updateDisplayStatus(TripDisplayStatus.FINALIZING, null));
         }
-        var event = json.readValue(raw, TripCreateResultEvent.class);
+        TripCreateResultEvent event = json.readValue(raw, TripCreateResultEvent.class);
         transaction.executeWithoutResult(status -> {
             results.receiveKafkaResult(event, raw);
             verifyNoInteractions(notificationPublisher);
@@ -118,10 +122,10 @@ class InitialAttachmentUploadFlowIntegrationTest {
         if (alreadyFinalizing) {
             verifyNoInteractions(notificationPublisher);
         } else {
-            var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-            verify(notificationPublisher).publish(captor.capture());
+            ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(notificationPublisher).serialize(captor.capture());
             verifyNoMoreInteractions(notificationPublisher);
-            var notification = (TripProcessingStatusNotification) captor.getValue().payload().data();
+            TripProcessingStatusNotification notification = (TripProcessingStatusNotification) captor.getValue().payload().data();
             assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.FINALIZING);
             assertThat(notification.statusVersion()).isEqualTo(execution().getStatusVersion());
             assertThat(notification.currentStep()).isNull();
@@ -163,10 +167,10 @@ class InitialAttachmentUploadFlowIntegrationTest {
         worker.applyPendingResults();
         results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
         worker.applyPendingResults();
-        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-        verify(notificationPublisher).publish(captor.capture());
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).serialize(captor.capture());
         verifyNoMoreInteractions(notificationPublisher);
-        var data = json.valueToTree(captor.getValue().payload()).path("data");
+        JsonNode data = json.valueToTree(captor.getValue().payload()).path("data");
         assertThat(data.path("eventType").asString()).isEqualTo("TRIP_CREATION_COMPLETED");
         assertThat(data.path("status").asString()).isEqualTo("COMPLETED");
         assertThat(data.path("result").path("unclassifiedAttachmentCount").asInt()).isEqualTo(1);

@@ -367,9 +367,10 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     void 회원_탈퇴는_대기_중인_추가를_중단하고_미변환_예약량을_해제한다() {
         completion.complete(tripId, userId, completeRequest());
         tripWithdrawal.withdrawAll(userId, LocalDateTime.now());
-        var ended = executionRepository.findById(additionId).orElseThrow();
+        AdditionalAttachmentExecution ended = executionRepository.findById(additionId).orElseThrow();
         assertThat(ended.isTerminal()).isTrue();
         assertThat(ended.getErrorCode()).isEqualTo("USER_WITHDRAWN");
+        assertThat(ended.getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.CANCELED);
         assertThat(stats.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isZero();
         assertThat(trips.findById(tripId).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(jdbc.queryForObject("SELECT cleanup_started_at FROM additional_attachment_upload_items WHERE upload_batch_id = "
@@ -706,15 +707,17 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void 추가_중에는_사진과_여행_변경을_막고_조회는_허용한다() {
+    void 추가_중에는_사진과_정보_변경을_막고_여행_삭제는_작업을_취소한다() {
         assertThatThrownBy(() -> deletion.deleteOne(userId, oldPhotoId))
                 .isInstanceOf(TripAttachmentAddNotAllowedException.class);
         assertThatThrownBy(() -> tripService.updateTrip(tripId, userId, new TripUpdateRequest("수정 이름", null, null, null)))
                 .isInstanceOf(TripUpdateNotAllowedException.class);
-        assertThatThrownBy(() -> tripDeletion.delete(tripId, userId))
-                .isInstanceOf(TripDeletionNotAllowedException.class);
         assertThat(attachments.findAccessibleById(oldPhotoId, userId)).isPresent();
         assertThat(places.countByTripIdAndDeletedAtIsNull(tripId)).isEqualTo(1);
+        tripDeletion.delete(tripId, userId);
+        assertThat(trips.findById(tripId).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(executionRepository.findById(additionId).orElseThrow().getStatus())
+                .isEqualTo(AdditionalAttachmentExecution.Status.CANCELED);
     }
 
     @Test

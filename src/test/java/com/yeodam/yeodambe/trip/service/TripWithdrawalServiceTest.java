@@ -6,6 +6,9 @@ import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import org.junit.jupiter.api.Test;
+import com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage;
+import jakarta.persistence.EntityManager;
+import org.mockito.InOrder;
 
 import java.time.LocalDateTime;
 
@@ -21,14 +24,13 @@ class TripWithdrawalServiceTest {
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private final TripWithdrawalService service = new TripWithdrawalService(
             trips, regions, places, attachments, files,
-            mock(InitialAttachmentUploadTransactionService.class),
-            mock(AdditionalAttachmentUploadTransactionService.class), mapCache);
+            mock(TripWorkflowCancellationService.class), mock(EntityManager.class), mapCache);
 
     @Test
     void 탈퇴_성공시_소프트_삭제_후_지도_캐시_무효화를_예약한다() {
         LocalDateTime at = LocalDateTime.of(2026, 10, 14, 12, 0);
         service.withdrawAll(1L, at);
-        var ordered = inOrder(trips, mapCache);
+        InOrder ordered = inOrder(trips, mapCache);
         ordered.verify(trips).findAllOwnedActiveForUpdate(1L);
         ordered.verify(trips).softDeleteByUserId(1L, at);
         ordered.verify(mapCache).evictAfterCommit(1L);
@@ -39,7 +41,7 @@ class TripWithdrawalServiceTest {
     @Test
     void 소프트_삭제_실패시_지도_캐시_무효화를_예약하지_않는다() {
         LocalDateTime at = LocalDateTime.of(2026, 10, 14, 12, 0);
-        doThrow(new IllegalStateException("delete failed")).when(regions).softDeleteByUserId(1L, at);
+        doThrow(new IllegalStateException(TripUploadTestErrorMessage.ANALYSIS_OUTBOX_FAILURE.message())).when(regions).softDeleteByUserId(1L, at);
         assertThatThrownBy(() -> service.withdrawAll(1L, at)).isInstanceOf(IllegalStateException.class);
         verifyNoInteractions(mapCache);
     }

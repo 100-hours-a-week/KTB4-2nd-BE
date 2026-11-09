@@ -1,6 +1,5 @@
 package com.yeodam.yeodambe.trip.service;
 
-import com.yeodam.yeodambe.common.exception.TripDeletionNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -17,10 +16,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
+import com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage;
+import jakarta.persistence.EntityManager;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -38,12 +40,18 @@ class TripDeletionServiceTest {
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private TripDeletionService service;
+    private final TripWorkflowCancellationService cancellations = mock(TripWorkflowCancellationService.class);
 
     @BeforeEach
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
+        TripEditLock editLock = mock(TripEditLock.class);
+        when(editLock.execute(anyLong(), any())).thenAnswer(invocation -> {
+            Supplier<?> action = invocation.getArgument(1);
+            return action.get();
+        });
         service = new TripDeletionService(
-                mock(AdditionalAttachmentModificationGuard.class),
+                editLock, cancellations, mock(EntityManager.class),
                 trips, regions, places, attachments, files, userStats, transactionManager, meterRegistry, mapCache);
     }
 
@@ -60,13 +68,14 @@ class TripDeletionServiceTest {
     }
 
     @Test
-    void PROCESSING_여행은_409다() {
+    void PROCESSING_여행도_작업을_취소하고_삭제한다() {
         when(trips.findOwnedActiveForUpdate(7L, 1L))
                 .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)));
 
-        assertThrows(TripDeletionNotAllowedException.class, () -> service.delete(7L, 1L));
-        verifyNoInteractions(userStats);
-        verifyNoInteractions(mapCache);
+        service.delete(7L, 1L);
+        verify(cancellations).cancel(any(Trip.class), any());
+        verify(userStats).refreshFromActiveTrips(1L);
+        verify(mapCache).evictAfterCommit(1L);
     }
 
     @Test
@@ -124,7 +133,7 @@ class TripDeletionServiceTest {
         when(trips.findOwnedActiveForUpdate(7L, 1L))
                 .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
         when(attachments.findAllByTripIdAndDeletedAtIsNull(7L)).thenReturn(List.of());
-        doThrow(new IllegalStateException("stats failed"))
+        doThrow(new IllegalStateException(TripUploadTestErrorMessage.ANALYSIS_OUTBOX_FAILURE.message()))
                 .when(userStats).refreshFromActiveTrips(1L);
 
         assertThrows(IllegalStateException.class, () -> service.delete(7L, 1L));

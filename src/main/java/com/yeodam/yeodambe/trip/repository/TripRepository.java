@@ -202,6 +202,10 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
     Optional<Trip> findByIdAndUserId(Long id, Long userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select trip from Trip trip where trip.id = :tripId")
+    Optional<Trip> findAnyForUpdate(@Param("tripId") Long tripId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select trip from Trip trip
         where trip.id = :tripId

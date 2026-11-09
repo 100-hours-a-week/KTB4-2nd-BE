@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.common.ratelimit;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 @Component
+@ConditionalOnProperty(prefix = "app.request-rate-limit", name = "enabled", havingValue = "true")
 public class RequestRateLimitInterceptor implements HandlerInterceptor {
 
     private final RequestRateLimitProperties properties;

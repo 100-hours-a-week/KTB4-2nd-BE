@@ -24,7 +24,7 @@ public class TripUploadTimeoutService {
     private final InitialAttachmentUploadTransactionService uploadTransactions;
     private final TripPhotoAnalysisService analysis;
 
-    @Scheduled(initialDelayString = "${app.trip.worker-initial-delay-ms:0}", fixedDelay = 30_000)
+    @Scheduled(initialDelayString = "${app.trip.worker-initial-delay-ms:0}", fixedDelay = 300_000)
     void failExpiredUploads() {
         LocalDateTime now = uploadTransactions.databaseTime();
         PageRequest page = PageRequest.of(0, 100);

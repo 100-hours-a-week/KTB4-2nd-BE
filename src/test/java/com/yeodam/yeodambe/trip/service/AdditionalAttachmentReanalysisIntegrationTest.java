@@ -46,6 +46,10 @@ import static org.mockito.Mockito.*;
 @ActiveProfiles("test")
 @Import({TestcontainersConfiguration.class, AdditionalAttachmentReanalysisIntegrationTest.MongoConfig.class})
 class AdditionalAttachmentReanalysisIntegrationTest {
+    @Autowired
+    private TripPhotoDeletionReservationService deletionReservations;
+    @Autowired
+    private TripMutationCoordinator mutations;
     @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
     static class MongoConfig {
         @org.springframework.context.annotation.Bean
@@ -264,6 +268,85 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
+    void 기존_결과의_삭제_예약도_분류와_정산과_알림을_함께_롤백하고_재적용한다() {
+        prepareAsync();
+        publishBoth();
+        String raw = successfulPayload();
+        kafkaResults.receive(applicationMapper.readValue(raw,
+                com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class), raw);
+        jdbc.update("UPDATE additional_attachment_executions SET result_next_attempt_at = '2099-01-01' WHERE execution_id <> ?", additionId);
+        com.yeodam.yeodambe.trip.service.response.TripAnalysisResultClaim claim = kafkaResults.claim().orElseThrow();
+        assertThat(kafkaResults.start(claim)).isTrue();
+        JsonNode validated = kafkaResults.validate(claim);
+        mutations.run(tripId, () -> deletionReservations.reserve(
+                tripId, userId, UUID.randomUUID().toString(), List.of(oldPhotoId)));
+        Long laterPhoto = new com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture(jdbc).createPhoto(tripId, userId);
+        Map<String, Object> laterBefore = jdbc.queryForMap("SELECT * FROM trip_attachments WHERE trip_attachment_id = ?", laterPhoto);
+        Map<String, Object> statsBefore = jdbc.queryForMap("SELECT * FROM user_stats WHERE user_id = ?", userId);
+        int notifications = tripNotificationCount();
+
+        transaction.executeWithoutResult(status -> {
+            kafkaResults.complete(claim, validated, Map.of("place-one", "새 장소"));
+            status.setRollbackOnly();
+        });
+
+        assertThat(jdbc.queryForObject("SELECT status FROM trip_photo_deletion_reservations WHERE attachment_id = ?",
+                String.class, oldPhotoId)).isEqualTo("PENDING");
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(jdbc.queryForMap("SELECT * FROM user_stats WHERE user_id = ?", userId)).isEqualTo(statsBefore);
+        assertThat(tripNotificationCount()).isEqualTo(notifications);
+
+        kafkaResults.complete(claim, validated, Map.of("place-one", "새 장소"));
+
+        assertThat(jdbc.queryForObject("SELECT status FROM trip_photo_deletion_reservations WHERE attachment_id = ?",
+                String.class, oldPhotoId)).isEqualTo("APPLIED");
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(jdbc.queryForMap("SELECT * FROM trip_attachments WHERE trip_attachment_id = ?", laterPhoto)).isEqualTo(laterBefore);
+        assertThat(attachments.countVisibleForEditByTripId(tripId)).isEqualTo(2);
+        assertThat(stats.findByUser_UserId(userId).orElseThrow().getAttachmentCount()).isEqualTo(2);
+        assertThat(tripNotificationCount()).isEqualTo(notifications + 2);
+    }
+
+    private int tripNotificationCount() {
+        return jdbc.queryForObject("""
+                SELECT COUNT(*) FROM trip_edit_notification_outbox
+                WHERE (target_type = 'TRIP' AND target_id = ?) OR (target_type = 'USER' AND target_id = ?)
+                """, Integer.class, tripId, userId);
+    }
+
+    @Test
+    void 기존_결과는_고정된_입력만_분류하고_나중_사진과_현재_집계를_보존한다() {
+        prepareAsync();
+        publishBoth();
+        String raw = successfulPayload();
+        kafkaResults.receive(applicationMapper.readValue(raw,
+                com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class), raw);
+        jdbc.update("UPDATE additional_attachment_executions SET result_next_attempt_at = '2099-01-01' WHERE execution_id <> ?", additionId);
+        com.yeodam.yeodambe.trip.service.response.TripAnalysisResultClaim claim = kafkaResults.claim().orElseThrow();
+        assertThat(kafkaResults.start(claim)).isTrue();
+        JsonNode validated = kafkaResults.validate(claim);
+        Long laterPhoto = new com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture(jdbc).createPhoto(tripId, userId);
+        Map<String, Object> before = jdbc.queryForMap("SELECT * FROM trip_attachments WHERE trip_attachment_id = ?", laterPhoto);
+        clearInvocations(notificationPublisher);
+
+        kafkaResults.complete(claim, validated, Map.of("place-one", "새 장소"));
+
+        assertThat(jdbc.queryForMap("SELECT * FROM trip_attachments WHERE trip_attachment_id = ?", laterPhoto)).isEqualTo(before);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getStatus())
+                .isEqualTo(AdditionalAttachmentExecution.Status.COMPLETED);
+        assertThat(attachments.countVisibleForEditByTripId(tripId)).isEqualTo(3);
+        assertThat(stats.findByUser_UserId(userId).orElseThrow().getAttachmentCount()).isEqualTo(3);
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).serialize(captor.capture());
+        JsonNode data = applicationMapper.valueToTree(captor.getValue().payload()).path("data");
+        JsonNode completionResult = data.path("result");
+        assertThat(completionResult.path("classifiedAttachmentCount").asInt()
+                + completionResult.path("unclassifiedAttachmentCount").asInt()).isEqualTo(3);
+        assertThat(data.path("listItem").path("attachmentCount").asInt()).isEqualTo(3);
+    }
+
+    @Test
     void 비동기_파이프라인은_순서대로_발행하고_스토리를_유지하며_모든_사진을_한_번_적용한다() {
         Long storyId = createExistingStory();
         prepareAsync();
@@ -301,6 +384,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(data.path("listItem").path("sequence").asLong()).isEqualTo(1);
         assertThat(data.path("listItem").path("attachmentCount").asLong()).isEqualTo(2);
         kafkaResults.receive(event, raw);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getResultConflicts()).isNull();
         assertThat(executionRepository.findById(additionId).orElseThrow().getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.COMPLETED);
         assertThat(attachments.countVisibleForEditByTripId(tripId)).isEqualTo(2);
         assertThat(batchStatus()).isEqualTo("COMPLETED");
@@ -352,7 +436,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         publishBoth();
         String raw = json.writeValueAsString(Map.of("type", "process_result", "trip_id", tripId,
                 "execution_id", additionId, "status", "FAILED", "error", Map.of("code", "AI_FAILED")));
-        var event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
+        com.yeodam.yeodambe.trip.event.TripCreateResultEvent event = applicationMapper.readValue(raw,
+                com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
         kafkaResults.receive(event, raw);
         assertThat(executionRepository.findById(additionId).orElseThrow().getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.FAILED);
         assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
@@ -360,6 +445,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(executionRepository.findById(additionId).orElseThrow().isTerminal()).isTrue();
         assertThat(attachments.countForEditByTripId(tripId)).isEqualTo(1);
         assertThat(trips.findById(tripId).orElseThrow().getCurrentStoryId()).isEqualTo(storyId);
+        kafkaResults.receive(event, raw);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getResultConflicts()).isNull();
         verify(storage, never()).delete(anyString());
     }
 

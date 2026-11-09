@@ -205,6 +205,9 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
     @Query("select trip from Trip trip where trip.id = :tripId")
     Optional<Trip> findAnyForUpdate(@Param("tripId") Long tripId);
 
+    @Query("select trip.id from Trip trip where trip.userId = :userId and trip.deletedAt is null order by trip.id")
+    List<Long> findActiveOwnedIds(@Param("userId") Long userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select trip from Trip trip

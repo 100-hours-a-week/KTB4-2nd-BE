@@ -47,6 +47,8 @@ class TripServiceTest {
     );
     private static final LocalDate TODAY = LocalDate.of(2030, 10, 22);
 
+    private final com.yeodam.yeodambe.user.repository.UserRepository userRepository =
+            mock(com.yeodam.yeodambe.user.repository.UserRepository.class);
     private TripRepository tripRepository;
     private TripRegionRepository tripRegionRepository;
     private TripAttachmentRepository tripAttachmentRepository;
@@ -68,6 +70,8 @@ class TripServiceTest {
 
     @BeforeEach
     void setUp() {
+        when(userRepository.findActiveForUpdate(1L))
+                .thenReturn(Optional.of(mock(com.yeodam.yeodambe.user.entity.User.class)));
         tripRepository = mock(TripRepository.class);
         tripRegionRepository = mock(TripRegionRepository.class);
         tripAttachmentRepository = mock(TripAttachmentRepository.class);
@@ -77,6 +81,16 @@ class TripServiceTest {
         mapCache = mock(TripMapCacheStore.class);
         when(mapCache.version(1L)).thenReturn(Optional.of("v1"));
         tripService = createService(FIXED_CLOCK);
+    }
+
+    @Test
+    void 활성_회원이_아니면_여행을_저장하지_않는다() {
+        when(userRepository.findActiveForUpdate(1L)).thenReturn(Optional.empty());
+
+        assertThrows(com.yeodam.yeodambe.common.exception.UserNotFoundException.class,
+                () -> tripService.createTrip(1L, request(TODAY, TODAY, List.of("50110"))));
+
+        verifyNoInteractions(tripRepository, tripRegionRepository);
     }
 
     @Test
@@ -495,7 +509,9 @@ class TripServiceTest {
     }
 
     private TripService createService(Clock clock) {
-        return new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
+        return new TripService(
+                mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
+                userRepository,
                 tripRepository,
                 tripRegionRepository,
                 mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class),

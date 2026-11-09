@@ -50,7 +50,9 @@ class TripListServiceTest {
         tripAttachmentRepository = mock(TripAttachmentRepository.class);
         storageClient = mock(TripAttachmentStorageClient.class);
         executions = mock(AdditionalAttachmentExecutionRepository.class);
-        tripService = new TripService(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
+        tripService = new TripService(
+                mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
+                mock(com.yeodam.yeodambe.user.repository.UserRepository.class),
                 tripRepository,
                 tripRegionRepository,
                 executions,
@@ -59,7 +61,8 @@ class TripListServiceTest {
                 storageClient,
                 mock(TripAccessService.class),
                 objectMapper,
-                mock(StoryRepository.class), mock(TripMapCacheStore.class),
+                mock(StoryRepository.class),
+                mock(TripMapCacheStore.class),
                 Clock.systemUTC(),
                 mock(com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository.class)
         );

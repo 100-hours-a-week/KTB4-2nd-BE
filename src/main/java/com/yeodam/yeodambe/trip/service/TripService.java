@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.common.exception.UserNotFoundException;
+import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
@@ -82,6 +84,7 @@ public class TripService {
     // 후보 400개를 넘으면 이후 사진은 검색하지 않으며, 부하 측정 후 상한을 재검토한다.
     private static final int SEARCH_CANDIDATE_LIMIT = 400;
 
+    private final UserRepository userRepository;
     private final TripRepository tripRepository;
     private final TripRegionRepository tripRegionRepository;
     private final AdditionalAttachmentExecutionRepository additionalAttachmentExecutionRepository;
@@ -176,6 +179,8 @@ public class TripService {
             Long userId,
             TripCreateRequest request
     ) {
+        userRepository.findActiveForUpdate(userId)
+                .orElseThrow(UserNotFoundException::new);
         validateTrip(
                 request.startDate(),
                 request.endDate(),

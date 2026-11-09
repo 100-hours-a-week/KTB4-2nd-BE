@@ -4,11 +4,13 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(prefix = "app.request-rate-limit", name = "enabled", havingValue = "true")
 public class RedisTokenBucketRateLimiter {
 
     private static final RedisScript<Long> SCRIPT = RedisScript.of(

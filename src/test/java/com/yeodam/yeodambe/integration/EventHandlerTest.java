@@ -18,6 +18,7 @@ import com.yeodam.yeodambe.trip.event.handler.TripUpdateRequestEventHandler;
 import com.yeodam.yeodambe.trip.event.handler.TripUpdateResultEventHandler;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadTransactionService;
 import com.yeodam.yeodambe.trip.service.TripAnalysisResultService;
+import com.yeodam.yeodambe.trip.service.TripAnalysisResultApplicationService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -61,8 +62,8 @@ class EventHandlerTest {
         new ApplicationContextRunner()
                 .withBean(InitialAttachmentUploadTransactionService.class, () -> mock(InitialAttachmentUploadTransactionService.class))
                 .withBean(TripAnalysisResultService.class, () -> mock(TripAnalysisResultService.class))
-                .withBean(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class,
-                        () -> mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class))
+                .withBean(TripAnalysisResultApplicationService.class,
+                        () -> mock(TripAnalysisResultApplicationService.class))
                 .withBean(ObjectMapper.class, ObjectMapper::new)
                 .withBean(StoryGenerationJobRepository.class, () -> mock(StoryGenerationJobRepository.class))
                 .withBean(StoryGenerationCompletionService.class, () -> mock(StoryGenerationCompletionService.class))
@@ -86,7 +87,9 @@ class EventHandlerTest {
     @Test
     void 미구현_핸들러는_이벤트를_처리한_것처럼_정상_종료하지_않는다() {
         assertNotImplemented(new TripUpdateRequestEventHandler(), new TripUpdateRequestEvent());
-        assertNotImplemented(new TripUpdateResultEventHandler(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class), new ObjectMapper()), new TripUpdateResultEvent());
+        assertNotImplemented(
+                new TripUpdateResultEventHandler(mock(TripAnalysisResultApplicationService.class), new ObjectMapper()),
+                new TripUpdateResultEvent());
         assertNotImplemented(new StoryCreateRequestEventHandler(), new StoryCreateRequestEvent());
     }
 
@@ -119,7 +122,7 @@ class EventHandlerTest {
         직접_호출시_null_거절_검증(requestHandler());
         직접_호출시_null_거절_검증(resultHandler());
         직접_호출시_null_거절_검증(new TripUpdateRequestEventHandler());
-        직접_호출시_null_거절_검증(new TripUpdateResultEventHandler(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class), new ObjectMapper()));
+        직접_호출시_null_거절_검증(new TripUpdateResultEventHandler(mock(TripAnalysisResultApplicationService.class), new ObjectMapper()));
         직접_호출시_null_거절_검증(new StoryCreateRequestEventHandler());
         직접_호출시_null_거절_검증(storyResultHandler());
     }

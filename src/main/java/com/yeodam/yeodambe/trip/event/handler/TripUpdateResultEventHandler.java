@@ -5,10 +5,11 @@ import com.yeodam.yeodambe.common.event.EventHandler;
 import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.trip.event.TripUpdateResultEvent;
+import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
 import org.springframework.stereotype.Component;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.annotation.KafkaListener;
-import com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService;
+import com.yeodam.yeodambe.trip.service.TripAnalysisResultApplicationService;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.util.Assert;
 
@@ -16,7 +17,7 @@ import org.springframework.util.Assert;
 @RequiredArgsConstructor
 @ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
 public class TripUpdateResultEventHandler implements EventHandler<TripUpdateResultEvent> {
-    private final AdditionalAttachmentKafkaResultService additionalResults;
+    private final TripAnalysisResultApplicationService additionalResults;
     private final ObjectMapper json;
 
     @KafkaListener(
@@ -26,8 +27,10 @@ public class TripUpdateResultEventHandler implements EventHandler<TripUpdateResu
             containerFactory = "tripUpdateResultKafkaListenerContainerFactory"
     )
     public void consume(String rawPayload) {
-        var event = TripProcessResultDecoder.decode(json, rawPayload);
-        if (event != null) additionalResults.receive(event, rawPayload);
+        TripCreateResultEvent event = TripProcessResultDecoder.decode(json, rawPayload);
+        if (event != null) {
+            additionalResults.receive(event, rawPayload);
+        }
     }
 
 

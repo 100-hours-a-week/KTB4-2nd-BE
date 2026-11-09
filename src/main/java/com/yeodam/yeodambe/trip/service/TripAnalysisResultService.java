@@ -504,28 +504,41 @@ public class TripAnalysisResultService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<TripCreationExecution> findResultClaimCandidates() {
+        return creationExecutions.findResultsToApply(uploadTransactions.databaseTime(), PageRequest.of(0, 20));
+    }
+
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Optional<TripAnalysisResultClaim> claimResult() {
-        var now = uploadTransactions.databaseTime();
-        for (var candidate : creationExecutions.findResultsToApply(now, PageRequest.of(0, 20))) {
-            Trip trip = trips.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId()).orElse(null);
-            var execution = lockExecution(candidate.getExecutionId());
-            if (trip == null || execution.isTerminal()
-                    || execution.getStatus() != TripCreationExecution.Status.RESULT_APPLYING
-                    || (execution.getResultLeaseUntil() != null && execution.getResultLeaseUntil().isAfter(now))
-                    || (execution.getResultNextAttemptAt() != null && execution.getResultNextAttemptAt().isAfter(now))) {
-                continue;
+        for (TripCreationExecution candidate : findResultClaimCandidates()) {
+            Optional<TripAnalysisResultClaim> claim = claimResult(candidate.getExecutionId());
+            if (claim.isPresent()) {
+                return claim;
             }
-            if (execution.getResultAttempts() >= 3) {
-                uploadTransactions.failExecution(execution.getExecutionId(), ErrorMessage.RESULT_APPLY_RETRY_EXHAUSTED.name());
-                continue;
-            }
-            execution.claimResult(UUID.randomUUID().toString(), now.plusMinutes(5));
-            return Optional.of(new TripAnalysisResultClaim(
-                    execution.getExecutionId(), trip.getId(), trip.getUserId(), execution.getResultClaimToken(),
-                    execution.getResultRawPayload(), execution.getResultAttempts() + 1));
         }
         return Optional.empty();
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Optional<TripAnalysisResultClaim> claimResult(String executionId) {
+        TripCreationExecution candidate = creationExecutions.findById(executionId).orElseThrow();
+        Trip trip = trips.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId()).orElse(null);
+        TripCreationExecution execution = lockExecution(executionId);
+        LocalDateTime now = uploadTransactions.databaseTime();
+        if (trip == null || execution.isTerminal()
+                || execution.getStatus() != TripCreationExecution.Status.RESULT_APPLYING
+                || execution.getResultLeaseUntil() != null && execution.getResultLeaseUntil().isAfter(now)
+                || execution.getResultNextAttemptAt() != null && execution.getResultNextAttemptAt().isAfter(now)) {
+            return Optional.empty();
+        }
+        if (execution.getResultAttempts() >= 3) {
+            uploadTransactions.failExecution(executionId, ErrorMessage.RESULT_APPLY_RETRY_EXHAUSTED.name());
+            return Optional.empty();
+        }
+        execution.claimResult(UUID.randomUUID().toString(), now.plusMinutes(5));
+        return Optional.of(new TripAnalysisResultClaim(executionId, trip.getId(), trip.getUserId(),
+                execution.getResultClaimToken(), execution.getResultRawPayload(), execution.getResultAttempts() + 1));
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

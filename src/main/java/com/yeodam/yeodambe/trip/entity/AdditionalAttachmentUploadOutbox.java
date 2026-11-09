@@ -22,8 +22,14 @@ public class AdditionalAttachmentUploadOutbox {
     @Column(name = "outbox_id")
     private Long id;
 
-    @Column(name = "upload_batch_id", nullable = false)
+    @Column(name = "upload_batch_id")
     private Long uploadBatchId;
+
+    @Column(name = "analysis_execution_id", updatable = false, length = 36)
+    private String analysisExecutionId;
+
+    @Column(name = "execution_batch_no", updatable = false)
+    private Integer executionBatchNo;
 
     @Column(name = "message_type", nullable = false, length = 20)
     private String messageType;

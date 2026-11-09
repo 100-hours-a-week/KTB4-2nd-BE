@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
@@ -17,7 +18,13 @@ class TripUploadTimeoutServiceTest {
     private final InitialAttachmentUploadTransactionService transactions = mock(InitialAttachmentUploadTransactionService.class);
     private final TripPhotoAnalysisService analysis = mock(TripPhotoAnalysisService.class);
     private final TripRepository trips = mock(TripRepository.class);
-    private final TripUploadTimeoutService service = new TripUploadTimeoutService(executions, trips, transactions, analysis);
+    private final TripUploadTimeoutService service = new TripUploadTimeoutService(
+            executions,
+            trips,
+            transactions,
+            analysis,
+            TripMutationTestFixture.direct()
+    );
     private final LocalDateTime now = LocalDateTime.of(2026, 10, 16, 12, 0);
     private final PageRequest page = PageRequest.of(0, 100);
 

@@ -23,20 +23,24 @@ public class TripUploadTimeoutService {
     private final TripRepository trips;
     private final InitialAttachmentUploadTransactionService uploadTransactions;
     private final TripPhotoAnalysisService analysis;
+    private final TripMutationCoordinator mutations;
 
     @Scheduled(initialDelayString = "${app.trip.worker-initial-delay-ms:0}", fixedDelay = 300_000)
     void failExpiredUploads() {
         LocalDateTime now = uploadTransactions.databaseTime();
         PageRequest page = PageRequest.of(0, 100);
         creationExecutions.findUploadExpired(now.minusMinutes(10), page)
-                .forEach(execution -> uploadTransactions.failExpiredExecution(execution.getExecutionId(), false));
+                .forEach(execution -> mutations.run(execution.getTripId(),
+                        () -> uploadTransactions.failExpiredExecution(execution.getExecutionId(), false)));
         creationExecutions.findResultExpired(now.minusHours(1), page)
-                .forEach(execution -> uploadTransactions.failExpiredExecution(execution.getExecutionId(), true));
+                .forEach(execution -> mutations.run(execution.getTripId(),
+                        () -> uploadTransactions.failExpiredExecution(execution.getExecutionId(), true)));
         failUnstartedTrips(now, page);
         for (TripCreationExecution execution : creationExecutions.findByCancelPendingTrue(page)) {
             try {
                 analysis.cancel(execution.getTripId());
-                uploadTransactions.recordCancellationDelivered(execution.getExecutionId());
+                mutations.run(execution.getTripId(),
+                        () -> uploadTransactions.recordCancellationDelivered(execution.getExecutionId()));
             } catch (RuntimeException failure) {
                 log.warn(TripInternalErrorMessage.AI_CANCELLATION_DELIVERY_RETRY.message(), execution.getExecutionId(),
                         failure.getClass().getSimpleName());
@@ -47,7 +51,7 @@ public class TripUploadTimeoutService {
     private void failUnstartedTrips(LocalDateTime now, PageRequest page) {
         for (Long tripId : trips.findUnstartedUploadExpired(now.minusMinutes(10), page)) {
             try {
-                uploadTransactions.failUnstartedTrip(tripId);
+                mutations.run(tripId, () -> uploadTransactions.failUnstartedTrip(tripId));
             } catch (RuntimeException failure) {
                 log.warn(TripInternalErrorMessage.UNSTARTED_UPLOAD_EXPIRATION_RETRY.message(),
                         tripId, failure.getClass().getSimpleName());

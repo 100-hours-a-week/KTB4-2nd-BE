@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
+import com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
@@ -13,6 +15,7 @@ import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+import com.yeodam.yeodambe.trip.exception.TripEditLockRejectedException;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import javax.imageio.ImageIO;
@@ -76,6 +79,7 @@ class TripAttachmentDerivativeServiceTest {
     private TripDerivativeScheduler scheduler;
     private InitialAttachmentStoragePipeline pipeline;
     private ExifToolProcess exifTool;
+    private TripMutationCoordinator mutations;
 
     @BeforeEach
     void setUp() {
@@ -83,10 +87,11 @@ class TripAttachmentDerivativeServiceTest {
         meterRegistry = new SimpleMeterRegistry();
         scheduler = new TripDerivativeScheduler(1, 1, 10, 20, meterRegistry);
         transactions = mock(InitialAttachmentUploadTransactionService.class);
-        pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meterRegistry, 134217728L);
+        mutations = TripMutationTestFixture.direct();
+        pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meterRegistry, 134217728L, TripMutationTestFixture.direct());
         exifTool = new ExifToolProcess();
         service = new TripAttachmentDerivativeService(storage, new ObjectMapper(), meterRegistry, scheduler,
-                transactions, pipeline, exifTool, new AttachmentConversionProperties(
+                transactions, mutations, pipeline, exifTool, new AttachmentConversionProperties(
                         null,
                         null,
                         null,
@@ -134,6 +139,13 @@ class TripAttachmentDerivativeServiceTest {
     }
 
     @Test
+    void 여행_락_장애는_사진_손상이_아닌_일시적인_제어_실패다() {
+        TripEditLockRejectedException failure = new TripEditLockRejectedException(
+                TripEditLockRejectedException.Reason.STORE_UNAVAILABLE);
+        assertTrue(service.isTransientConversionFailure(failure));
+    }
+
+    @Test
     void 실제_포맷과_요청_MIME이_다르면_파생본을_저장하지_않는다() throws Exception {
         when(storage.open("disguised")).thenReturn(new ByteArrayInputStream(jpeg()));
 
@@ -166,7 +178,12 @@ class TripAttachmentDerivativeServiceTest {
         var claim = new InitialAttachmentUploadBatchSnapshot(
                 1L, "upload", "execution", 7L, 1L, 1, 1, true,
                 InitialAttachmentUploadStatus.CONVERTING, "token", List.of(photo));
-        when(transactions.claimBatch()).thenReturn(Optional.of(claim));
+        com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadBatch candidate =
+                mock(com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadBatch.class);
+        when(candidate.getId()).thenReturn(claim.batchId());
+        when(candidate.getTripId()).thenReturn(claim.tripId());
+        when(transactions.findPendingBatches()).thenReturn(List.of(candidate));
+        when(transactions.claimBatch(claim.batchId())).thenReturn(Optional.of(claim));
         when(transactions.renewLease(claim))
                 .thenThrow(new TransientDataAccessResourceException("DB 일시 장애"));
 
@@ -216,10 +233,10 @@ class TripAttachmentDerivativeServiceTest {
                 1L, "upload", "execution", 7L, 1L, 1, 1, true,
                 InitialAttachmentUploadStatus.CONVERTING, "token", List.of(photo));
         var saturatedScheduler = mock(TripDerivativeScheduler.class);
-        var saturatedPipeline = new InitialAttachmentStoragePipeline(
-                storage, transactions, saturatedScheduler, meterRegistry, 134217728L);
-        var immediate = new TripAttachmentDerivativeService(
-                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, saturatedPipeline, exifTool, new AttachmentConversionProperties(
+        InitialAttachmentStoragePipeline saturatedPipeline = new InitialAttachmentStoragePipeline(
+                storage, transactions, saturatedScheduler, meterRegistry, 134217728L, TripMutationTestFixture.direct());
+        TripAttachmentDerivativeService immediate = new TripAttachmentDerivativeService(
+                storage, new ObjectMapper(), meterRegistry, saturatedScheduler, transactions, TripMutationTestFixture.direct(), saturatedPipeline, exifTool, new AttachmentConversionProperties(
                         null,
                         null,
                         null,
@@ -565,8 +582,13 @@ class TripAttachmentDerivativeServiceTest {
         verifyNoInteractions(storage);
     }
 
-    @Test
-    void 표시본_저장에_실패하면_파생객체의_정리_의도를_기록한다() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 표시본_저장에_실패하면_파생객체의_정리_의도를_기록한다(boolean redisUnavailable) throws Exception {
+        if (redisUnavailable) {
+            Mockito.doThrow(new TripEditLockRejectedException(TripEditLockRejectedException.Reason.STORE_UNAVAILABLE))
+                    .when(mutations).runAll(ArgumentMatchers.anyList(), ArgumentMatchers.any(Runnable.class));
+        }
         byte[] heic = Files.readAllBytes(Path.of(
                 "src/test/resources/images/heic/oriented-with-exif.heic"));
         when(storage.open("original/heic")).thenReturn(new ByteArrayInputStream(heic));
@@ -575,7 +597,7 @@ class TripAttachmentDerivativeServiceTest {
                     case "analyze.jpg" -> "derived/analyze.jpg";
                     case "preview.webp" -> "derived/preview.webp";
                     default -> throw new AttachmentStorageException(
-                            "derived/display-failed.jpg", new RuntimeException("S3 failure"));
+                            "derived/display-failed.jpg", new RuntimeException(TripUploadTestErrorMessage.S3_FAILURE.message()));
                 });
 
         assertThrows(RuntimeException.class, () -> service.createAll(

@@ -1,9 +1,9 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripEditLockRejectedException;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
-
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
@@ -26,6 +26,7 @@ import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadBatch;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,6 +42,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -51,6 +53,7 @@ public class TripAttachmentDerivativeService {
     private final MeterRegistry meterRegistry;
     private final TripDerivativeScheduler scheduler;
     private final InitialAttachmentUploadTransactionService transactions;
+    private final TripMutationCoordinator mutations;
     private final InitialAttachmentStoragePipeline pipeline;
     private final ExifToolProcess exifTool;
     private final AttachmentConversionProperties conversionProperties;
@@ -160,7 +163,14 @@ public class TripAttachmentDerivativeService {
         if (conversionProperties.mode() != AttachmentConversionRoute.DB) {
             return;
         }
-        transactions.claimBatch().ifPresent(this::startPipeline);
+        for (InitialAttachmentUploadBatch candidate : transactions.findPendingBatches()) {
+            Optional<InitialAttachmentUploadBatchSnapshot> claim = mutations.execute(candidate.getTripId(),
+                    () -> transactions.claimBatch(candidate.getId()));
+            if (claim.isPresent()) {
+                startPipeline(claim.get());
+                return;
+            }
+        }
     }
 
     public void processAcceptedBatch(
@@ -172,7 +182,7 @@ public class TripAttachmentDerivativeService {
             return;
         }
         try {
-            transactions.claimBatch(tripId, userId, uploadId)
+            mutations.execute(tripId, () -> transactions.claimBatch(tripId, userId, uploadId))
                     .ifPresent(this::startPipeline);
         } catch (RuntimeException failure) {
             logConversionSubmissionFailure(tripId, uploadId, failure);
@@ -214,7 +224,8 @@ public class TripAttachmentDerivativeService {
                     || cause instanceof TimeoutException
                     || cause instanceof InterruptedException
                     || cause instanceof CancellationException
-                    || cause instanceof DataAccessException) {
+                    || cause instanceof DataAccessException
+                    || cause instanceof TripEditLockRejectedException) {
                 return true;
             }
         }

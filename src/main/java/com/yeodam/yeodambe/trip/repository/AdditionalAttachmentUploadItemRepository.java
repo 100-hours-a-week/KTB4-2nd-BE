@@ -18,7 +18,7 @@ public interface AdditionalAttachmentUploadItemRepository
     findAllByBatch_IdOrderByFileOrderAsc(Long batchId);
 
     @Query("""
-            select item from AdditionalAttachmentUploadItem item
+            select item from AdditionalAttachmentUploadItem item join fetch item.batch
             where item.cleanupStartedAt <= :before order by item.cleanupStartedAt, item.id
             """)
     List<AdditionalAttachmentUploadItem> findPendingCleanup(

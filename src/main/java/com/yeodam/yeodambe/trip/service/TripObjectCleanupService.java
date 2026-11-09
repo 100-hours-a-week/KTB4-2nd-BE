@@ -1,14 +1,15 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemRepository;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import org.slf4j.MDC;
-
-
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadItem;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadItem;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
@@ -23,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -41,6 +43,8 @@ public class TripObjectCleanupService {
     private final InitialAttachmentUploadTransactionService uploadTransactions;
     private final AdditionalAttachmentUploadItemRepository additionalItems;
     private final AdditionalAttachmentUploadTransactionService additionalTransactions;
+    private final TripAnalysisExecutionRepository analyses;
+    private final TripMutationCoordinator mutations;
 
     public void retryPending() {
         try (WorkflowMdcScope scope = openCleanupLoggingContext();
@@ -67,21 +71,23 @@ public class TripObjectCleanupService {
                 LocalDateTime.now().minusDays(30),
                 PageRequest.of(0, RETRY_BATCH_SIZE)
         ), before);
-        for (var item : additionalItems.findPendingCleanup(before, PageRequest.of(0, RETRY_BATCH_SIZE))) {
-            for (var object : additionalTransactions.cleanupObjects(item)) {
+        for (AdditionalAttachmentUploadItem item : additionalItems.findPendingCleanup(before, PageRequest.of(0, RETRY_BATCH_SIZE))) {
+            for (AdditionalAttachmentUploadTransactionService.CleanupObject object : additionalTransactions.cleanupObjects(item)) {
                 if (!object.deleted() && object.startedAt() != null && !object.startedAt().isAfter(before)
                         && cleanupKey(object.key())) {
-                    additionalTransactions.recordObjectDeleted(item.getId(), object.key());
+                    mutations.run(item.getBatch().getTripId(),
+                            () -> additionalTransactions.recordObjectDeleted(item.getId(), object.key()));
                 }
             }
         }
-        for (var item : uploadItems.findPendingCleanup(before, PageRequest.of(0, RETRY_BATCH_SIZE))) {
-            for (var object : uploadTransactions.cleanupObjects(item)) {
+        for (InitialAttachmentUploadItem item : uploadItems.findPendingCleanup(before, PageRequest.of(0, RETRY_BATCH_SIZE))) {
+            for (InitialAttachmentUploadTransactionService.CleanupObject object : uploadTransactions.cleanupObjects(item)) {
                 if (object.deleted() || object.startedAt() == null || object.startedAt().isAfter(before)) {
                     continue;
                 }
                 if (cleanupKey(object.key())) {
-                    uploadTransactions.recordObjectDeleted(item.getId(), object.key());
+                    mutations.run(item.getBatch().getTripId(),
+                            () -> uploadTransactions.recordObjectDeleted(item.getId(), object.key()));
                 }
             }
         }
@@ -103,11 +109,15 @@ public class TripObjectCleanupService {
                     .filter(key -> !key.isBlank())
                     .distinct()
                     .toList();
-            var item = uploadItems.findByTripAttachmentId(attachment.getId());
+            Optional<InitialAttachmentUploadItem> item = uploadItems.findByTripAttachmentId(attachment.getId());
             boolean withinRetention = item.isPresent() && uploadTransactions.cleanupObjects(item.get()).stream()
                     .filter(object -> keys.contains(object.key()))
                     .anyMatch(object -> object.startedAt() != null && object.startedAt().isAfter(before));
-            if (withinRetention) {
+            boolean additionalWithinRetention = additionalItems.findAllByTripAttachmentIdIn(List.of(attachment.getId())).stream()
+                    .flatMap(additional -> additionalTransactions.cleanupObjects(additional).stream())
+                    .filter(object -> keys.contains(object.key()))
+                    .anyMatch(object -> object.startedAt() != null && object.startedAt().isAfter(before));
+            if (withinRetention || additionalWithinRetention) {
                 continue;
             }
             boolean completed = keys.stream()
@@ -115,8 +125,13 @@ public class TripObjectCleanupService {
                     .reduce(true, Boolean::logicalAnd);
 
             if (completed) {
-                attachment.markObjectCleanupCompleted();
-                attachments.save(attachment);
+                mutations.run(attachment.getTripId(), () -> {
+                    TripAttachment current = attachments.findById(attachment.getId()).orElseThrow();
+                    if (current.getDeletedAt() != null) {
+                        current.markObjectCleanupCompleted();
+                        attachments.save(current);
+                    }
+                });
             }
         }
     }
@@ -158,7 +173,8 @@ public class TripObjectCleanupService {
     }
 
     private boolean isActivelyReferenced(String objectKey) {
-        return files.existsByObjectKeyAndDeletedAtIsNull(objectKey)
+        return analyses.countActiveInputReferences(objectKey) > 0
+                || files.existsByObjectKeyAndDeletedAtIsNull(objectKey)
                 || attachments.existsByAnalyzeStorageKeyAndDeletedAtIsNull(objectKey)
                 || attachments.existsByPreviewStorageKeyAndDeletedAtIsNull(objectKey)
                 || attachments.existsByDisplayStorageKeyAndDeletedAtIsNull(objectKey)

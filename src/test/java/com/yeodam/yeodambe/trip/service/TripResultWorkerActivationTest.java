@@ -27,7 +27,8 @@ class TripResultWorkerActivationTest {
             .withBean(TripCreationExecutionRepository.class, () -> mock(TripCreationExecutionRepository.class))
             .withBean(TripRepository.class, () -> mock(TripRepository.class))
             .withBean(InitialAttachmentUploadTransactionService.class, () -> mock(InitialAttachmentUploadTransactionService.class))
-            .withBean(TripPhotoAnalysisService.class, () -> mock(TripPhotoAnalysisService.class));
+            .withBean(TripPhotoAnalysisService.class, () -> mock(TripPhotoAnalysisService.class))
+            .withBean(TripMutationCoordinator.class, () -> mock(TripMutationCoordinator.class));
 
     @Test
     void 결과_워커를_끄면_결과와_만료_워커_및_스케줄이_생성되지_않는다() {
@@ -42,7 +43,8 @@ class TripResultWorkerActivationTest {
                     result.getBean(TripCreationExecutionRepository.class),
                     result.getBean(TripRepository.class),
                     result.getBean(InitialAttachmentUploadTransactionService.class),
-                    result.getBean(TripPhotoAnalysisService.class));
+                    result.getBean(TripPhotoAnalysisService.class),
+                    result.getBean(TripMutationCoordinator.class));
         });
     }
 

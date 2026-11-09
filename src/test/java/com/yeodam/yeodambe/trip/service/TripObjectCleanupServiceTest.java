@@ -5,7 +5,12 @@ import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadItem;
+import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadBatch;
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadItem;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemRepository;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
@@ -35,12 +40,23 @@ class TripObjectCleanupServiceTest {
     private final InitialAttachmentUploadTransactionService uploadTransactions = mock(InitialAttachmentUploadTransactionService.class);
     private final InitialAttachmentUploadItemRepository uploadItems =
             mock(InitialAttachmentUploadItemRepository.class);
+    private final AdditionalAttachmentUploadItemRepository additionalItems =
+            mock(AdditionalAttachmentUploadItemRepository.class);
+    private final AdditionalAttachmentUploadTransactionService additionalTransactions =
+            mock(AdditionalAttachmentUploadTransactionService.class);
     private final TripObjectCleanupService service = new TripObjectCleanupService(
-            attachments, files, trips, places, storage,
-                uploadItems,
-                uploadTransactions,
-                mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemRepository.class),
-                mock(AdditionalAttachmentUploadTransactionService.class));
+            attachments,
+            files,
+            trips,
+            places,
+            storage,
+            uploadItems,
+            uploadTransactions,
+            additionalItems,
+            additionalTransactions,
+            mock(TripAnalysisExecutionRepository.class),
+            TripMutationTestFixture.direct()
+    );
     private TripAttachment attachment;
 
     @BeforeEach
@@ -48,6 +64,7 @@ class TripObjectCleanupServiceTest {
         when(uploadTransactions.databaseTime()).thenReturn(LocalDateTime.now());
         StoredFile file = StoredFile.uploaded(1L, "photo.jpg", "original", "image/jpeg");
         attachment = TripAttachment.initial(7L, 20L, "analyze", "preview", "display");
+        when(attachments.findById(30L)).thenReturn(Optional.of(attachment));
         attachment.softDelete(LocalDateTime.now().minusDays(31));
         ReflectionTestUtils.setField(attachment, "id", 30L);
         ReflectionTestUtils.setField(attachment, "file", file);
@@ -143,7 +160,9 @@ class TripObjectCleanupServiceTest {
         TripAttachment legacy = TripAttachment.initial(
                 7L, 21L, "legacy-analyze", "legacy-preview");
         legacy.softDelete(LocalDateTime.now().minusDays(31));
+        ReflectionTestUtils.setField(legacy, "id", 31L);
         ReflectionTestUtils.setField(legacy, "file", file);
+        when(attachments.findById(31L)).thenReturn(Optional.of(legacy));
         when(attachments.findExpiredPendingCleanup(any(LocalDateTime.class), any()))
                 .thenReturn(List.of(legacy));
 
@@ -161,8 +180,11 @@ class TripObjectCleanupServiceTest {
         LocalDateTime now = LocalDateTime.of(2026, 10, 12, 12, 0);
         when(uploadTransactions.databaseTime()).thenReturn(now);
         when(attachments.findExpiredPendingCleanup(any(), any())).thenReturn(List.of());
-        var item = mock(InitialAttachmentUploadItem.class);
+        InitialAttachmentUploadItem item = mock(InitialAttachmentUploadItem.class);
         when(item.getId()).thenReturn(41L);
+        InitialAttachmentUploadBatch batch = mock(InitialAttachmentUploadBatch.class);
+        when(batch.getTripId()).thenReturn(7L);
+        when(item.getBatch()).thenReturn(batch);
         when(uploadItems.findPendingCleanup(any(), any())).thenReturn(List.of(item));
         when(uploadTransactions.cleanupObjects(item)).thenReturn(List.of(
                 new InitialAttachmentUploadTransactionService.CleanupObject("recent", now.minusDays(30).plusSeconds(1), "CANCELED", false),
@@ -180,10 +202,26 @@ class TripObjectCleanupServiceTest {
     }
 
     @Test
+    void 추가_업로드_정리_의도가_삼십일_전이면_오래된_삭제_첨부도_보존한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 10, 12, 12, 0);
+        when(uploadTransactions.databaseTime()).thenReturn(now);
+        AdditionalAttachmentUploadItem item = mock(AdditionalAttachmentUploadItem.class);
+        when(additionalItems.findAllByTripAttachmentIdIn(List.of(30L))).thenReturn(List.of(item));
+        when(additionalTransactions.cleanupObjects(item)).thenReturn(List.of(
+                new AdditionalAttachmentUploadTransactionService.CleanupObject(
+                        "original", now.minusDays(30).plusSeconds(1), "FAILED", false)));
+
+        service.retryPending();
+
+        verifyNoInteractions(storage);
+        assertThat(attachment.getClassificationStatus()).isNotEqualTo(ClassificationStatus.DELETED);
+    }
+
+    @Test
     void 첨부_삭제_시각보다_DB_정리_기록의_삼십일_보존을_우선한다() {
         LocalDateTime now = LocalDateTime.of(2026, 10, 12, 12, 0);
         when(uploadTransactions.databaseTime()).thenReturn(now);
-        var item = mock(InitialAttachmentUploadItem.class);
+        InitialAttachmentUploadItem item = mock(InitialAttachmentUploadItem.class);
         when(uploadItems.findByTripAttachmentId(30L)).thenReturn(Optional.of(item));
         when(uploadTransactions.cleanupObjects(item)).thenReturn(List.of(
                 new InitialAttachmentUploadTransactionService.CleanupObject(

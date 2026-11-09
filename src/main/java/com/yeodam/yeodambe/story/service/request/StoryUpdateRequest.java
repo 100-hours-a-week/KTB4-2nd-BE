@@ -24,10 +24,14 @@ public record StoryUpdateRequest(
     @AssertTrue
     public boolean isStorySummaryValid() {
         return storySummary == null
-                || (TextValidation.hasVisibleContent(storySummary)
-                && storySummary.codePointCount(
-                        0, storySummary.length()
-                ) <= 20);
+                || isSingleLineTextValid(storySummary, 20);
+    }
+
+    private static boolean isSingleLineTextValid(String value, int maxLength) {
+        return TextValidation.hasVisibleContent(value)
+                && !TextValidation.containsUnpairedSurrogate(value)
+                && value.codePoints().noneMatch(Character::isISOControl)
+                && value.codePointCount(0, value.length()) <= maxLength;
     }
 
     public record Block(
@@ -52,18 +56,15 @@ public record StoryUpdateRequest(
     ) {
         @AssertTrue
         public boolean isBlockTextValid() {
-            return TextValidation.hasVisibleContent(dayLabel)
-                    && dayLabel.codePointCount(0, dayLabel.length()) <= 40
-                    && TextValidation.hasVisibleContent(detailSummary)
-                    && detailSummary.codePointCount(
-                            0, detailSummary.length()
-                    ) <= 40;
+            return isSingleLineTextValid(dayLabel, 40)
+                    && isSingleLineTextValid(detailSummary, 40);
         }
 
         @AssertTrue
         public boolean isMemoLengthValid() {
             return memo == null
-                    || memo.codePointCount(0, memo.length()) <= 125;
+                    || (!TextValidation.containsUnpairedSurrogate(memo)
+                    && memo.codePointCount(0, memo.length()) <= 125);
         }
     }
 }

@@ -153,6 +153,55 @@ class StoryUpdateRequestTest {
                 .contains("blocks[0]." + field);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "\u0000", "\n요약", "요\t약", "요약\u007F", "요\u0085약",
+            "\uD800", "\uDC00", "\uDC00\uD800", "가\uD800", "😀\uDC00"
+    })
+    void 필수_문구의_제어문자와_짝이_깨진_서로게이트를_각각_거절한다(String text) {
+        List<StoryUpdateRequest> requests = List.of(
+                new StoryUpdateRequest(Story.Mood.CALM, text, blocks(1)),
+                new StoryUpdateRequest(Story.Mood.CALM, "요약", List.of(
+                        new StoryUpdateRequest.Block(null, 1L, text, "설명", null, 1)
+                )),
+                new StoryUpdateRequest(Story.Mood.CALM, "요약", List.of(
+                        new StoryUpdateRequest.Block(null, 1L, "첫째 날", text, null, 1)
+                ))
+        );
+
+        for (StoryUpdateRequest request : requests) {
+            assertThat(validator.validate(request)).isNotEmpty();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\uD800", "\uDC00", "\uDC00\uD800", "😀\uDC00"})
+    void 메모의_짝이_깨진_서로게이트를_거절한다(String memo) {
+        StoryUpdateRequest request = new StoryUpdateRequest(Story.Mood.CALM, "요약", List.of(
+                new StoryUpdateRequest.Block(null, 1L, "첫째 날", "설명", memo, 1)
+        ));
+
+        assertThat(validator.validate(request))
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .contains("blocks[0].memoLengthValid");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"😀", "👨‍👩‍👧‍👦", "e\u0301", "\u00A0\u200B요약\uFEFF "})
+    void 정상_이모지와_결합문자와_앞뒤_공백을_원문대로_유지한다(String text) {
+        String memo = "첫째 줄\n둘째 줄\t😀";
+        StoryUpdateRequest.Block block =
+                new StoryUpdateRequest.Block(null, 1L, text, text, memo, 1);
+        StoryUpdateRequest request =
+                new StoryUpdateRequest(Story.Mood.CALM, text, List.of(block));
+
+        assertThat(validator.validate(request)).isEmpty();
+        assertThat(request.storySummary()).isEqualTo(text);
+        assertThat(block.dayLabel()).isEqualTo(text);
+        assertThat(block.detailSummary()).isEqualTo(text);
+        assertThat(block.memo()).isEqualTo(memo);
+    }
+
     private List<StoryUpdateRequest.Block> blocks(int count) {
         return IntStream.rangeClosed(1, count)
                 .mapToObj(i -> new StoryUpdateRequest.Block(null, (long) i, "첫째 날", "설명", null, i)).toList();

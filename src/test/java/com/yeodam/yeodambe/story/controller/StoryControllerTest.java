@@ -306,6 +306,44 @@ class StoryControllerTest {
         verifyNoInteractions(updateService);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "\\u0000", "\\n", "\\t", "\\u007F", "\\u0085",
+            "\\uD800", "\\uDC00", "\\uDC00\\uD800", "😀\\uDC00"
+    })
+    void 잘못된_스토리_문구는_서비스_호출_전에_400으로_거절한다(String escapedText) throws Exception {
+        when(csrfTokens.find("update-browser")).thenReturn("csrf-token");
+
+        for (String original : List.of("수정 요약", "첫째 날", "사진 설명")) {
+            String body = updateBody().replace(original, escapedText);
+
+            mvc.perform(put("/stories/1")
+                            .cookie(authenticated(), new Cookie("CSRF_CONTEXT", "update-browser"))
+                            .header("X-CSRF-TOKEN", "csrf-token")
+                            .contentType("application/json")
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("INVALID_STORY_UPDATE"));
+        }
+
+        verifyNoInteractions(updateService);
+    }
+
+    @Test
+    void 짝이_깨진_서로게이트_메모는_서비스_호출_전에_400으로_거절한다() throws Exception {
+        when(csrfTokens.find("update-browser")).thenReturn("csrf-token");
+        String body = updateBody().replace("\"memo\":null", "\"memo\":\"\\uD800\"");
+
+        mvc.perform(put("/stories/1")
+                        .cookie(authenticated(), new Cookie("CSRF_CONTEXT", "update-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token")
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_STORY_UPDATE"));
+        verifyNoInteractions(updateService);
+    }
+
     private org.springframework.test.web.servlet.ResultActions updateRequest(String csrf) throws Exception {
         when(csrfTokens.find("update-browser")).thenReturn("csrf-token");
         return mvc.perform(put("/stories/1")

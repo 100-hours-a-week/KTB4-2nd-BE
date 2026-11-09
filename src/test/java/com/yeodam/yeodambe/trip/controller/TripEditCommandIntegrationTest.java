@@ -208,6 +208,22 @@ class TripEditCommandIntegrationTest {
         assertThat(notificationCount("TRIP_EVENT")).isEqualTo(1);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"\\uD800", "\\uDC00", "😀\\uDC00"})
+    void 공유_편집도_짝이_깨진_서로게이트_여행명을_거절한다(String escapedName) throws Exception {
+        String body = """
+                {"requestId":"invalid-surrogate","changes":{"tripName":"%s"}}
+                """.formatted(escapedName);
+
+        update(ownerId, body)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("INVALID_TRIP_REQUEST"))
+                .andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+        assertThat(trips.findById(trip.getId()).orElseThrow().getTripName()).isEqualTo("원래여행");
+        assertThat(notificationCount("TRIP_EVENT")).isZero();
+    }
+
     @Test
     void 권한_승인_후라도_락_진입_전에_삭제된_여행은_수정하지_않는다() throws Exception {
         doAnswer(invocation -> {

@@ -32,6 +32,19 @@ public class AdditionalAttachmentExecution {
     private Long userId;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "processing_mode", nullable = false, length = 8)
+    private ProcessingMode processingMode = ProcessingMode.LEGACY;
+
+    @Column(name = "accepted_actor_id", columnDefinition = "BIGINT UNSIGNED")
+    private Long acceptedActorId;
+
+    @Column(name = "analysis_failure_count", nullable = false)
+    private int analysisFailureCount;
+
+    @Column(name = "quarantined_at")
+    private LocalDateTime quarantinedAt;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 24)
     private Status status = Status.UPLOADING;
 
@@ -304,6 +317,11 @@ public class AdditionalAttachmentExecution {
         this.currentStep = nextStep;
 
         return true;
+    }
+
+    public enum ProcessingMode {
+        LEGACY,
+        V3
     }
 
     public enum Status {

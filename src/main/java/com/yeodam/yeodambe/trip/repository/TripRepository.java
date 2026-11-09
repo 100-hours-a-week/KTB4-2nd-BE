@@ -36,6 +36,70 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
         long getSequence();
     }
 
+    @Query("""
+            select trip.id from Trip trip
+            where trip.processingStatus = 'PROCESSING'
+              and trip.deletedAt is null
+              and trip.createdAt <= :before
+              and not exists (
+                  select execution.executionId from TripCreationExecution execution
+                  where execution.tripId = trip.id
+              )
+              and not exists (
+                  select execution.executionId from AdditionalAttachmentExecution execution
+                  where execution.tripId = trip.id
+              )
+              and not exists (
+                  select batch.id from InitialAttachmentUploadBatch batch
+                  where batch.tripId = trip.id
+              )
+              and not exists (
+                  select batch.id from AdditionalAttachmentUploadBatch batch
+                  where batch.tripId = trip.id
+              )
+              and not exists (
+                  select attachment.id from TripAttachment attachment
+                  where attachment.tripId = trip.id
+              )
+            order by trip.createdAt, trip.id
+            """)
+    List<Long> findUnstartedUploadExpired(@Param("before") LocalDateTime before, Pageable page);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Trip trip
+            set trip.processingStatus = 'FAILED', trip.updatedAt = :now
+            where trip.id = :tripId
+              and trip.processingStatus = 'PROCESSING'
+              and trip.deletedAt is null
+              and trip.createdAt <= :before
+              and not exists (
+                  select execution.executionId from TripCreationExecution execution
+                  where execution.tripId = trip.id
+              )
+              and not exists (
+                  select execution.executionId from AdditionalAttachmentExecution execution
+                  where execution.tripId = trip.id
+              )
+              and not exists (
+                  select batch.id from InitialAttachmentUploadBatch batch
+                  where batch.tripId = trip.id
+              )
+              and not exists (
+                  select batch.id from AdditionalAttachmentUploadBatch batch
+                  where batch.tripId = trip.id
+              )
+              and not exists (
+                  select attachment.id from TripAttachment attachment
+                  where attachment.tripId = trip.id
+              )
+            """)
+    int failUnstartedUploadIfExpired(
+            @Param("tripId") Long tripId,
+            @Param("before") LocalDateTime before,
+            @Param("now") LocalDateTime now
+    );
+
     @Modifying(flushAutomatically = true)
     @Query(value = "UPDATE trips SET change_sequence = change_sequence + 1 WHERE trip_id = :tripId", nativeQuery = true)
     int advanceSequence(@Param("tripId") Long tripId);

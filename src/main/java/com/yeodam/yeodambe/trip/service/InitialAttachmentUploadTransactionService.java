@@ -50,6 +50,7 @@ import com.yeodam.yeodambe.user.service.UserStatsService;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.context.ApplicationEventPublisher;
@@ -72,6 +73,7 @@ import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class InitialAttachmentUploadTransactionService {
@@ -978,6 +980,20 @@ public class InitialAttachmentUploadTransactionService {
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void failUnstartedTrip(Long tripId) {
+        Trip trip = trips.findActiveForUpdate(tripId).orElse(null);
+        if (trip == null) {
+            return;
+        }
+        LocalDateTime now = databaseTime();
+        int updated = trips.failUnstartedUploadIfExpired(tripId, now.minusMinutes(10), now);
+        if (updated == 1) {
+            log.info(TripInternalErrorMessage.UNSTARTED_UPLOAD_EXPIRED.message(),
+                    tripId, ErrorMessage.UPLOAD_TIMEOUT.name());
+        }
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void failExpiredExecution(
             String id,
             boolean resultTimeout
@@ -1289,17 +1305,17 @@ public class InitialAttachmentUploadTransactionService {
 
     private void logOriginalUploadCompleted(Trip trip, String executionId) {
         WorkflowLog.uploadCompleted("trip_creation", trip.getId(), executionId,
-                trip.getCreatedAt(), LocalDateTime.now());
+                trip.getCreatedAt(), now());
     }
 
     private void logWorkflowFailed(TripCreationExecution execution, Trip trip, String errorCode) {
-        WorkflowLog.finished("trip_creation", execution.getTripId(), execution.getExecutionId(),
-                trip == null ? null : trip.getCreatedAt(), "failure", errorCode);
+        WorkflowLog.finishedFromDatabase("trip_creation", execution.getTripId(), execution.getExecutionId(),
+                trip == null ? null : trip.getCreatedAt(), now(), "failure", errorCode);
     }
 
     private void logWorkflowCanceled(Long tripId, String executionId) {
-        WorkflowLog.finished("trip_creation", tripId, executionId,
-                trips.findById(tripId).map(Trip::getCreatedAt).orElse(null), "canceled", null);
+        WorkflowLog.finishedFromDatabase("trip_creation", tripId, executionId,
+                trips.findById(tripId).map(Trip::getCreatedAt).orElse(null), now(), "canceled", null);
     }
 
     private void logAttachmentPersisted(WorkflowLog.Stage timing) {

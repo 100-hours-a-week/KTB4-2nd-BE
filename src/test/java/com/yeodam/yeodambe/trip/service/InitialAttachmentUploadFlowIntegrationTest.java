@@ -167,6 +167,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
         worker.applyPendingResults();
         results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
         worker.applyPendingResults();
+        assertThat(execution().getResultConflicts()).isNull();
         ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
         verify(notificationPublisher).serialize(captor.capture());
         verifyNoMoreInteractions(notificationPublisher);
@@ -179,7 +180,7 @@ class InitialAttachmentUploadFlowIntegrationTest {
         assertThat(data.path("listItem").path("attachmentCount").asLong()).isEqualTo(1);
         long version = data.path("statusVersion").asLong();
         jdbc.update("UPDATE trip_attachments SET deleted_at = CURRENT_TIMESTAMP(6) WHERE trip_id = ?", trip.getId());
-        var restored = processingStatus.findStatus(trip.getId(), owner.getUserId());
+        TripProcessingStatusResponse restored = processingStatus.findStatus(trip.getId(), owner.getUserId());
         assertThat(restored.statusVersion()).isEqualTo(version);
         assertThat(restored.result().unclassifiedAttachmentCount()).isEqualTo(1);
     }

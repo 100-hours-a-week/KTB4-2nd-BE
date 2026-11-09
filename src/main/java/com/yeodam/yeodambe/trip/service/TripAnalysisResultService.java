@@ -460,19 +460,26 @@ public class TripAnalysisResultService {
             TripCreateResultEvent event,
             String rawPayload
     ) {
-        var candidate = creationExecutions.findById(event.executionId()).orElse(null);
+        TripCreationExecution candidate = creationExecutions.findById(event.executionId()).orElse(null);
         if (candidate == null || !candidate.getTripId().equals(event.tripId())) {
             return;
         }
-        Trip trip = trips.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId()).orElse(null);
-        var execution = lockExecution(event.executionId());
-        if (trip == null || execution.isTerminal() || execution.getProcessPayload() == null) {
-            return;
-        }
+        Trip trip = trips.findAnyForUpdate(candidate.getTripId()).orElse(null);
+        TripCreationExecution execution = lockExecution(event.executionId());
         if (execution.getResultRawPayload() != null) {
             if (!json.readTree(execution.getResultRawPayload()).equals(json.readTree(rawPayload))) {
                 execution.recordConflictingResult(rawPayload);
             }
+            return;
+        }
+        if (execution.isTerminal()) {
+            execution.recordConflictingResult(rawPayload);
+            if (execution.isRequiresRemoteTerminationConfirmation() && execution.getRemoteTerminalConfirmedAt() == null) {
+                execution.confirmRemoteTermination(uploadTransactions.databaseTime());
+            }
+            return;
+        }
+        if (trip == null || trip.getDeletedAt() != null || execution.getProcessPayload() == null) {
             return;
         }
         long previousVersion = execution.getStatusVersion();
@@ -482,7 +489,7 @@ public class TripAnalysisResultService {
             case COMPLETED -> {
                 // 원문을 먼저 커밋하고 검증·외부 조회·최종 저장은 별도 작업에서 수행한다.
                 if (execution.getStatusVersion() != previousVersion) {
-                    var snapshot = new TripProcessingStateSnapshot(
+                    TripProcessingStateSnapshot snapshot = new TripProcessingStateSnapshot(
                             execution.getTripId(),
                             execution.getExecutionId(),
                             execution.getStatusVersion(),

@@ -12,6 +12,8 @@ import java.util.Optional;
 
 public interface AdditionalAttachmentExecutionRepository
         extends JpaRepository<AdditionalAttachmentExecution, String> {
+    Optional<AdditionalAttachmentExecution> findFirstByTripIdAndUserIdAndEndedAtIsNullOrderByCreatedAtDescExecutionIdDesc(
+            Long tripId, Long userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
@@ -30,6 +32,58 @@ public interface AdditionalAttachmentExecutionRepository
     );
 
     boolean existsByTripIdAndEndedAtIsNull(Long tripId);
+
+    @Query("""
+            select coalesce(sum(execution.totalAttachmentCount), 0)
+            from AdditionalAttachmentExecution execution
+            where execution.tripId = :tripId and execution.endedAt is null
+            """)
+    long countDeclaredPendingAttachments(@Param("tripId") Long tripId);
+
+    @Query("""
+            select count(execution) > 0 from AdditionalAttachmentExecution execution
+            where execution.tripId = :tripId and execution.processingMode = 'LEGACY'
+              and execution.endedAt is null
+            """)
+    boolean hasActiveLegacyExecution(@Param("tripId") Long tripId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select execution from AdditionalAttachmentExecution execution
+            where execution.tripId = :tripId and execution.processingMode = 'V3'
+              and execution.endedAt is null and execution.inputClosed = true
+              and execution.quarantinedAt is null
+            order by execution.createdAt, execution.executionId
+            """)
+    List<AdditionalAttachmentExecution> findAnalysisCandidatesForUpdate(@Param("tripId") Long tripId);
+
+    @Query("""
+            select distinct execution.tripId from AdditionalAttachmentExecution execution
+            where execution.processingMode = 'V3' and execution.endedAt is null
+              and execution.inputClosed = true
+              and execution.tripId > :afterTripId
+              and not exists (
+                  select active.executionId from TripAnalysisExecution active
+                  where active.tripId = execution.tripId and active.endedAt is null
+              )
+            order by execution.tripId
+            """)
+    List<Long> findAnalysisCandidateTripIdsAfter(
+            @Param("afterTripId") Long afterTripId,
+            org.springframework.data.domain.Pageable page
+    );
+
+    @Query("""
+            select execution from AdditionalAttachmentExecution execution
+            where execution.tripId = :tripId and execution.processingMode = 'LEGACY'
+              and execution.endedAt is not null
+              and (execution.errorCode = 'AI_RESULT_TIMEOUT' or execution.status = 'CANCELED')
+              and (execution.processOutboxId is not null or execution.processPublishedAt is not null)
+              and execution.resultRawPayload is null
+              and execution.remoteTerminalConfirmedAt is null
+            order by execution.createdAt, execution.executionId
+            """)
+    List<AdditionalAttachmentExecution> findUnconfirmedLegacyTimeouts(@Param("tripId") Long tripId);
 
     @Query("""
         select distinct execution.tripId

@@ -85,6 +85,19 @@ public class AdditionalAttachmentUploadOutbox {
         this.requestId = requestId;
     }
 
+    public AdditionalAttachmentUploadOutbox(
+            Long uploadBatchId,
+            String analysisExecutionId,
+            int executionBatchNo,
+            String messageType,
+            String payload,
+            String requestId
+    ) {
+        this(uploadBatchId, messageType, payload, requestId);
+        this.analysisExecutionId = analysisExecutionId;
+        this.executionBatchNo = executionBatchNo;
+    }
+
     @Column(name = "claim_token", length = 36)
     private String claimToken;
     @Column(name = "lease_until")

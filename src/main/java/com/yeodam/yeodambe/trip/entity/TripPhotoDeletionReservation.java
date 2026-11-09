@@ -63,6 +63,11 @@ public class TripPhotoDeletionReservation {
         this.relatedAdditionIds = relatedAdditionIds;
     }
 
+    public void apply(LocalDateTime now) {
+        status = Status.APPLIED;
+        appliedAt = now;
+    }
+
     public enum Status {
         PENDING,
         APPLIED

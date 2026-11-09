@@ -2,6 +2,8 @@ package com.yeodam.yeodambe.common.logging;
 
 import ch.qos.logback.classic.pattern.ThrowableProxyConverter;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
 import org.slf4j.event.KeyValuePair;
 import org.springframework.boot.json.JsonWriter;
 import org.springframework.boot.logging.structured.JsonWriterStructuredLogFormatter;
@@ -30,6 +32,8 @@ public class BackendJsonLogFormatter
         members.add("event", event -> contextValue(event, "event"));
         members.add("result", event -> contextValue(event, "result"));
         members.add("request_id", event -> contextValue(event, "request_id"));
+        members.add("trace_id", event -> currentTraceContextValue(true));
+        members.add("span_id", event -> currentTraceContextValue(false));
         members.add("run_id", event -> contextValue(event, "run_id"));
         members.add("commit_result", event -> contextValue(event, "commit_result"));
         members.add("trip_id", event -> isKafkaDltEvent(event)
@@ -86,6 +90,14 @@ public class BackendJsonLogFormatter
         }
 
         return event.getMDCPropertyMap().get(key);
+    }
+
+    private static String currentTraceContextValue(boolean traceId) {
+        SpanContext spanContext = Span.current().getSpanContext();
+        if (!spanContext.isValid()) {
+            return null;
+        }
+        return traceId ? spanContext.getTraceId() : spanContext.getSpanId();
     }
 
     private static Long numberValue(Object value) {

@@ -4,6 +4,11 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.pattern.ThrowableProxyConverter;
 import ch.qos.logback.classic.spi.LoggingEvent;
 import ch.qos.logback.classic.spi.ThrowableProxy;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.TraceFlags;
+import io.opentelemetry.api.trace.TraceState;
+import io.opentelemetry.context.Scope;
 import org.junit.jupiter.api.Test;
 import org.slf4j.event.KeyValuePair;
 import org.springframework.mock.env.MockEnvironment;
@@ -154,6 +159,57 @@ class BackendJsonLogFormatterTest {
         assertThat(json.path("request_id").isNull()).isTrue();
         assertThat(json.path("release").asString()).isEqualTo("unknown");
     }
+
+    @Test
+    void 현재_유효한_추적_정보를_JSON_로그에_기록한다() throws Exception {
+        ThrowableProxyConverter converter = new ThrowableProxyConverter();
+        converter.start();
+        BackendJsonLogFormatter formatter = new BackendJsonLogFormatter(new MockEnvironment(), converter);
+        LoggingEvent event = new LoggingEvent();
+        event.setInstant(Instant.now());
+        event.setLevel(Level.INFO);
+        event.setLoggerName("probe");
+        event.setMessage("추적 정보 확인");
+        event.setMDCPropertyMap(Map.of("request_id", "request-trace-1"));
+
+        String traceId = "0123456789abcdef0123456789abcdef";
+        String spanId = "0123456789abcdef";
+        SpanContext spanContext = SpanContext.create(
+                traceId,
+                spanId,
+                TraceFlags.getSampled(),
+                TraceState.getDefault()
+        );
+
+        String jsonString;
+        try (Scope ignored = Span.wrap(spanContext).makeCurrent()) {
+            jsonString = formatter.format(event);
+        }
+
+        var json = objectMapper.readTree(jsonString);
+        assertThat(json.path("trace_id").asString()).isEqualTo(traceId);
+        assertThat(json.path("span_id").asString()).isEqualTo(spanId);
+        assertThat(json.path("request_id").asString()).isEqualTo("request-trace-1");
+    }
+
+    @Test
+    void 유효한_추적_정보가_없으면_추적_필드를_null로_기록한다() throws Exception {
+        ThrowableProxyConverter converter = new ThrowableProxyConverter();
+        converter.start();
+        BackendJsonLogFormatter formatter = new BackendJsonLogFormatter(new MockEnvironment(), converter);
+        LoggingEvent event = new LoggingEvent();
+        event.setInstant(Instant.now());
+        event.setLevel(Level.INFO);
+        event.setLoggerName("probe");
+        event.setMessage("추적 정보 없는 로그");
+        event.setMDCPropertyMap(Map.of());
+
+        var json = objectMapper.readTree(formatter.format(event));
+
+        assertThat(json.path("trace_id").isNull()).isTrue();
+        assertThat(json.path("span_id").isNull()).isTrue();
+    }
+
     @Test
     void DLT_알림의_필드와_타입을_안내대로_출력한다() {
         var converter = new ThrowableProxyConverter();

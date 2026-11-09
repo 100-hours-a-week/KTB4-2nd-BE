@@ -63,7 +63,12 @@ public class AttachmentConversionAdmissionService implements SchedulingConfigure
     }
 
     public synchronized void assertNewExecutionAllowed() {
-        if (evaluate(snapshot, age()) != Decision.ALLOWED) {
+        Decision decision = evaluate(snapshot, age());
+        if (decision != Decision.ALLOWED) {
+            log.atWarn()
+                    .addKeyValue("event", "attachment_conversion_admission_rejected")
+                    .addKeyValue("reason", decision.name())
+                    .log("이미지 변환 신규 접수를 거절했습니다.");
             throw new AttachmentConversionUnavailableException();
         }
     }

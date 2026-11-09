@@ -12,6 +12,11 @@ public final class TextValidation {
         return value != null && value.codePoints().anyMatch(TextValidation::isInvisible);
     }
 
+    public static boolean containsUnpairedSurrogate(String value) {
+        return value != null && value.codePoints()
+                .anyMatch(codePoint -> Character.getType(codePoint) == Character.SURROGATE);
+    }
+
     public static String stripInvisible(String value) {
         if (value == null) {
             return null;

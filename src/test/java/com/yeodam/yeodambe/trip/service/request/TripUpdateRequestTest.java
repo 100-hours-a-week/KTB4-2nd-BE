@@ -71,6 +71,16 @@ class TripUpdateRequestTest {
                 .isNotEmpty();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"\uD800", "\uDC00", "\uDC00\uD800", "가\uD800", "😀\uDC00"})
+    void 짝이_깨진_서로게이트가_있는_여행명은_수정을_거부한다(String name) {
+        TripUpdateRequest request = new TripUpdateRequest(name, null, null, null);
+
+        assertThat(validator.validate(request))
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .contains("tripNameValid");
+    }
+
     @Test
     void 입력한_지역_개수와_코드_형식을_검증한다() {
         List<List<String>> invalidLists = List.of(

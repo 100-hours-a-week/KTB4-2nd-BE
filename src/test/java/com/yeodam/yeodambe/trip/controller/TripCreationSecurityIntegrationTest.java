@@ -792,6 +792,19 @@ class TripCreationSecurityIntegrationTest {
         verifyNoInteractions(tripService);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"\\uD800", "\\uDC00", "😀\\uDC00"})
+    void 짝이_깨진_서로게이트_여행명은_생성_서비스_호출_전에_거절한다(String escapedName) throws Exception {
+        authenticatedCreationRequest("/trips", """
+                {"tripName":"%s","startDate":"2026-10-01","endDate":"2026-10-02",
+                 "regionCodes":["50110"]}
+                """.formatted(escapedName))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+
+        verifyNoInteractions(tripService);
+    }
+
     @Test
     void 메타데이터_없이_여행을_생성한다() throws Exception {
         given(tripService.createTrip(eq(42L), any())).willReturn(

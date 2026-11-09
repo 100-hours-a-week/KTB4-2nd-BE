@@ -37,6 +37,7 @@ public record TripUpdateRequest(
     public boolean isTripNameValid() {
         return tripName == null
                 || (TextValidation.hasVisibleContent(tripName)
+                && !TextValidation.containsUnpairedSurrogate(tripName)
                 && tripName.codePointCount(0, tripName.length()) <= 10);
     }
 }

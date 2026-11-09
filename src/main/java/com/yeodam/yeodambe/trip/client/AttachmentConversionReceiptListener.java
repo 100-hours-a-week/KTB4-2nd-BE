@@ -1,7 +1,7 @@
 package com.yeodam.yeodambe.trip.client;
 
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
-import com.yeodam.yeodambe.trip.service.AttachmentConversionTransactionService;
+import com.yeodam.yeodambe.trip.service.AttachmentConversionService;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionPublication;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +23,7 @@ import java.time.Instant;
         + " && !${app.attachment-conversion.operations.enabled:false}"
         + " && ${app.attachment-conversion.receipt-listener-enabled:true}")
 public class AttachmentConversionReceiptListener {
-    private final AttachmentConversionTransactionService transactions;
+    private final AttachmentConversionService transactions;
 
     @KafkaListener(
             id = "attachment-conversion-receipts",

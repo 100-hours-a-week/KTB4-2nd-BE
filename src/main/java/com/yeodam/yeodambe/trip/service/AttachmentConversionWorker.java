@@ -41,7 +41,7 @@ import java.util.stream.IntStream;
 @ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}"
         + " && ${app.attachment-conversion.consumer-enabled:true}")
 public class AttachmentConversionWorker {
-    private final AttachmentConversionTransactionService db;
+    private final AttachmentConversionService db;
     private final TripAttachmentDerivativeService photos;
     private final Topics topics;
     private final long backoffNanos;
@@ -56,7 +56,7 @@ public class AttachmentConversionWorker {
 
     @Autowired
     public AttachmentConversionWorker(
-            AttachmentConversionTransactionService db,
+            AttachmentConversionService db,
             TripAttachmentDerivativeService photos,
             AttachmentConversionProperties properties,
             @Value("${app.attachment-conversion.retry.technical-backoff}") Duration backoff
@@ -64,8 +64,12 @@ public class AttachmentConversionWorker {
         this(db, photos, properties.topics(), backoff);
     }
 
-    AttachmentConversionWorker(AttachmentConversionTransactionService db, TripAttachmentDerivativeService photos,
-            Topics topics, Duration backoff) {
+    AttachmentConversionWorker(
+            AttachmentConversionService db,
+            TripAttachmentDerivativeService photos,
+            Topics topics,
+            Duration backoff
+    ) {
         Assert.isTrue(backoff != null && backoff.isPositive(),
                 TripInternalErrorMessage.CONVERSION_TECHNICAL_BACKOFF_INVALID.message());
         this.db = db;

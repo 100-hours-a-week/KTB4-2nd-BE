@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.exception.TripEditLockRejectedException;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties.Topics;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
@@ -48,7 +49,7 @@ import static org.mockito.Mockito.*;
 class AttachmentConversionWorkerTest {
     private static final Duration BACKOFF = Duration.ofMillis(100);
     private final Topics topics = new Topics(null, null, null, null);
-    private final AttachmentConversionTransactionService db = mock(AttachmentConversionTransactionService.class);
+    private final AttachmentConversionService db = mock(AttachmentConversionService.class);
     private final TripAttachmentDerivativeService photos = mock(TripAttachmentDerivativeService.class);
     private final Map<String, AttachmentConversionClaim> claims = new ConcurrentHashMap<>();
     private final BlockingQueue<Call> calls = new LinkedBlockingQueue<>();
@@ -91,26 +92,42 @@ class AttachmentConversionWorkerTest {
         worker.close();
     }
 
-    @Test
-    void DB_확인_결과가_불확실하면_차단하고_재선점한_뒤_다음_물리_시도를_시작한다() throws Exception {
-        var first = fixture(Kind.INITIAL, Lane.LIGHT, 1);
-        var nextOwner = new AttachmentConversionClaim(first.taskId(), "next-token", first.kind(), first.lane(), first.batchId(),
-                first.uploadId(), first.executionId(), first.tripId(), first.userId(), first.requestId(), first.photos());
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void DB_확인_결과가_불확실하면_차단하고_재선점한_뒤_다음_물리_시도를_시작한다(boolean redisUnavailable) throws Exception {
+        AttachmentConversionClaim first = fixture(Kind.INITIAL, Lane.LIGHT, 1);
+        AttachmentConversionClaim nextOwner = new AttachmentConversionClaim(
+                first.taskId(),
+                "next-token",
+                first.kind(),
+                first.lane(),
+                first.batchId(),
+                first.uploadId(),
+                first.executionId(),
+                first.tripId(),
+                first.userId(),
+                first.requestId(),
+                first.photos()
+        );
         when(db.claim(eq(first.taskId()), any(), any())).thenReturn(
                 new AttachmentConversionClaimResult(AttachmentConversionClaimResult.Status.CLAIMED, first, null),
                 new AttachmentConversionClaimResult(AttachmentConversionClaimResult.Status.CLAIMED, nextOwner, null));
-        var uncertain = new AtomicBoolean();
-        var leaked = new AtomicReference<RuntimeException>();
+        AtomicBoolean uncertain = new AtomicBoolean();
+        AtomicReference<RuntimeException> leaked = new AtomicReference<>();
         when(db.renewLease(any())).thenAnswer(call -> {
             if (uncertain.getAndSet(false)) {
-                throw new TransientDataAccessResourceException("PUT guard DB unavailable");
+                if (redisUnavailable) {
+                    throw new TripEditLockRejectedException(
+                            TripEditLockRejectedException.Reason.STORE_UNAVAILABLE);
+                }
+                throw new TransientDataAccessResourceException(TestErrorMessage.PUT_GUARD_DB_UNAVAILABLE.message());
             }
             return true;
         });
         when(db.finishSubBatch(first)).thenReturn(step(AttachmentConversionStepResult.Status.CONTINUE));
         when(db.beginPhoto(eq(nextOwner), anyLong())).thenReturn(new AttachmentConversionAttemptResult(
                 AttachmentConversionAttemptResult.Status.STARTED, new Attempt(1L, 2, new DerivedPhotoKeys("original/1", "a/2", "p/2")), null));
-        var starts = new AtomicInteger();
+        AtomicInteger starts = new AtomicInteger();
         doAnswer(call -> {
             if (starts.incrementAndGet() == 1) {
                 uncertain.set(true);
@@ -120,15 +137,22 @@ class AttachmentConversionWorkerTest {
                     leaked.set(failure);
                     return CompletableFuture.failedFuture(failure);
                 }
-                return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("guard fenced"));
+                return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException(
+                        TestErrorMessage.GUARD_FENCED.message()));
             }
-            var entry = new Call(call.getArgument(0), call.getArgument(1), call.getArgument(2), call.getArgument(3), new CompletableFuture<>());
+            Call entry = new Call(
+                    call.getArgument(0),
+                    call.getArgument(1),
+                    call.getArgument(2),
+                    call.getArgument(3),
+                    new CompletableFuture<>()
+            );
             calls.add(entry);
             allCalls.add(entry);
             return entry.result();
         }).when(photos).processConversionPhoto(any(), any(), any(), any());
-        var result = process(first);
-        var resumed = next();
+        CompletableFuture<Void> result = process(first);
+        Call resumed = next();
         try {
             assertThat(leaked.get()).isNull();
             assertThat(resumed.claim().claimToken()).isEqualTo("next-token");
@@ -218,7 +242,7 @@ class AttachmentConversionWorkerTest {
     @Test
     void Kafka_워커_설정은_명시적인_양수_백오프를_요구한다() {
         var runner = new ApplicationContextRunner().withUserConfiguration(AttachmentConversionWorker.class)
-                .withBean(AttachmentConversionTransactionService.class, () -> db)
+                .withBean(AttachmentConversionService.class, () -> db)
                 .withBean(TripAttachmentDerivativeService.class, () -> photos)
                 .withBean(AttachmentConversionProperties.class, () -> new AttachmentConversionProperties(
                         null,
@@ -590,6 +614,21 @@ class AttachmentConversionWorkerTest {
 
         void succeed() {
             result.complete(keys());
+        }
+    }
+
+    private enum TestErrorMessage {
+        PUT_GUARD_DB_UNAVAILABLE("PUT guard DB unavailable"),
+        GUARD_FENCED("guard fenced");
+
+        private final String message;
+
+        TestErrorMessage(String message) {
+            this.message = message;
+        }
+
+        String message() {
+            return message;
         }
     }
 }

@@ -165,6 +165,7 @@ public enum TripInternalErrorMessage {
     CONVERSION_ADMISSION_REOPEN_RATIO_INVALID("재허용 비율은 0 초과 1 미만이어야 합니다."),
     CONVERSION_ADMISSION_DURATION_INVALID("admission 시간 설정은 양수여야 합니다."),
     CONVERSION_RECOVERY_INTERVAL_INVALID("재알림 간격은 양수여야 합니다."),
+    CONVERSION_RECOVERY_CANDIDATE_MISSING("재알림 후보가 필요합니다."),
     CONVERSION_RECOVERY_BUDGET_INVALID("재알림 실행 예산은 양수여야 합니다."),
     CONVERSION_INITIAL_LIGHT_TOPIC_MISSING("초기 LIGHT 토픽이 필요합니다."),
     CONVERSION_INITIAL_HEIC_TOPIC_MISSING("초기 HEIC 토픽이 필요합니다."),

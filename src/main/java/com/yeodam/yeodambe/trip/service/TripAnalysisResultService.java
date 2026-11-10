@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowe
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.common.validation.TextValidation;
+import com.yeodam.yeodambe.story.service.StoryPhotoChangeService;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
@@ -64,6 +65,7 @@ public class TripAnalysisResultService {
     private final TripMapCacheStore tripMapCacheStore;
     private final ApplicationEventPublisher eventPublisher;
     private final TripCompletionSnapshotFactory completionSnapshots;
+    private final StoryPhotoChangeService storyPhotoChangeService;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void saveCompleted(
@@ -177,9 +179,9 @@ public class TripAnalysisResultService {
 
     @Transactional
     public void replaceCompleted(Long tripId, Long userId, JsonNode result, Map<String, String> placeNames) {
-        requireCompletedTrip(tripId, userId);
+        Trip trip = requireCompletedTrip(tripId, userId);
         List<TripAttachment> attachments = attachmentRepository.findAllForReanalysis(tripId);
-        replaceClassification(tripId, userId, attachments, result, placeNames);
+        replaceClassification(trip, attachments, result, placeNames);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -190,31 +192,35 @@ public class TripAnalysisResultService {
             JsonNode result,
             Map<String, String> placeNames
     ) {
-        requireCompletedTrip(tripId, userId);
+        Trip trip = requireCompletedTrip(tripId, userId);
         if (attachments.stream().anyMatch(attachment -> !tripId.equals(attachment.getTripId())
                 || attachment.getDeletedAt() != null || attachment.getFile().getDeletedAt() != null)) {
             throw new IllegalStateException(TripInternalErrorMessage.AI_RESULT_ATTACHMENT_LIST_MISMATCH.message());
         }
-        replaceClassification(tripId, userId, attachments, result, placeNames);
+        replaceClassification(trip, attachments, result, placeNames);
     }
 
-    private void requireCompletedTrip(Long tripId, Long userId) {
-        Trip trip = trips.findOwnedActiveForUpdate(tripId, userId).orElseThrow(TripNotFoundException::new);
+    private Trip requireCompletedTrip(Long tripId, Long userId) {
+        Trip trip = trips.findOwnedActiveForUpdate(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
             throw new com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException();
         }
+        return trip;
     }
 
     private void replaceClassification(
-            Long tripId,
-            Long userId,
+            Trip trip,
             List<TripAttachment> attachments,
             JsonNode result,
             Map<String, String> placeNames
     ) {
         validateCompletedResult(attachments, result, placeNames);
-        placeRepository.softDeleteByTripId(tripId, LocalDateTime.now());
-        applyClassification(tripId, userId, attachments, result, placeNames);
+
+        LocalDateTime changedAt = LocalDateTime.now();
+        placeRepository.softDeleteByTripId(trip.getId(), changedAt);
+        storyPhotoChangeService.invalidateCurrentStory(trip, changedAt);
+        applyClassification(trip.getId(), trip.getUserId(), attachments, result, placeNames);
     }
 
     private void applyClassification(Long tripId, Long userId, List<TripAttachment> attachments,

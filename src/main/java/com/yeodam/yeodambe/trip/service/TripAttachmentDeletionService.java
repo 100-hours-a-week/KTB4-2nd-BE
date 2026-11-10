@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.AttachmentDeleteNotAllowedException;
+import com.yeodam.yeodambe.story.service.StoryPhotoChangeService;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
@@ -34,6 +35,7 @@ public class TripAttachmentDeletionService {
     private final TripRepository tripRepository;
     private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
     private final EntityManager entityManager;
+    private final StoryPhotoChangeService storyPhotoChangeService;
     private static final int MAX_DELETE_COUNT = 200;
 
     private static final Comparator<TripAttachment> THUMBNAIL_ORDER = Comparator.comparing(
@@ -181,6 +183,11 @@ public class TripAttachmentDeletionService {
             attachment.softDelete(deletedAt);
             attachment.getFile().softDelete(deletedAt);
         });
+
+        attachments.stream()
+                .map(TripAttachment::getTrip)
+                .distinct()
+                .forEach(trip -> storyPhotoChangeService.invalidateCurrentStory(trip, deletedAt));
 
         tripAttachmentRepository.flush();
 

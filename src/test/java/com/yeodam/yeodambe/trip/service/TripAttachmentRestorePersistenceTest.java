@@ -17,6 +17,9 @@ import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
 import com.yeodam.yeodambe.user.service.UserStatsService;
+import com.yeodam.yeodambe.trip.config.TripEditLockProperties;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.redisson.api.RedissonClient;
 import org.junit.jupiter.api.Test;
 import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus;
@@ -47,6 +50,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -61,7 +65,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop"
 })
-@Import({TripAttachmentRestoreService.class, AdditionalAttachmentModificationGuard.class, TripAccessService.class, TripAttachmentRestorePersistenceTest.ValidationConfig.class})
+@Import({TripAttachmentRestoreService.class, TripMutationCoordinator.class, AdditionalAttachmentModificationGuard.class, TripAccessService.class, TripAttachmentRestorePersistenceTest.ValidationConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripAttachmentRestorePersistenceTest {
     @MockitoBean
@@ -84,6 +88,13 @@ class TripAttachmentRestorePersistenceTest {
 
     @TestConfiguration
     static class ValidationConfig {
+        @Bean
+        TripEditLock tripEditLock() {
+            return new TripEditLock(mock(RedissonClient.class),
+                    new TripEditLockProperties(false, "test", Duration.ofSeconds(2), Duration.ofSeconds(30)),
+                    new SimpleMeterRegistry());
+        }
+
         @Bean
         Validator validator() {
             return Validation.buildDefaultValidatorFactory().getValidator();

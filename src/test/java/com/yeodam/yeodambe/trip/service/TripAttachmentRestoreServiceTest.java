@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.request.*;
 import com.yeodam.yeodambe.file.entity.StoredFile;
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
 import jakarta.persistence.EntityManager;
 import jakarta.validation.Validation;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +31,8 @@ class TripAttachmentRestoreServiceTest {
     private final TripAttachmentRestoreService service = new TripAttachmentRestoreService(
             attachments, trips, places, access, entityManager,
             Validation.buildDefaultValidatorFactory().getValidator(), mapCache,
-            new AdditionalAttachmentModificationGuard(trips, mock(AdditionalAttachmentUploadBatchRepository.class))
+            new AdditionalAttachmentModificationGuard(trips, mock(AdditionalAttachmentUploadBatchRepository.class)),
+            TripMutationTestFixture.direct()
     );
     private Trip trip;
     private TripDetailPlace place;

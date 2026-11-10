@@ -148,11 +148,15 @@ class WithdrawalIntegrationTest {
                 .andReturn().getResponse();
 
         assertThat(response.getHeaders(HttpHeaders.SET_COOKIE))
-                .hasSize(2)
+                .hasSize(4)
                 .anySatisfy(cookie -> assertThat(cookie)
                         .contains("accessToken=;", "Path=/;", "Max-Age=0", "HttpOnly", "SameSite=Lax"))
                 .anySatisfy(cookie -> assertThat(cookie)
-                        .contains("refreshToken=;", "Path=/api/auth;", "Max-Age=0", "HttpOnly", "SameSite=Lax"));
+                        .contains("refreshToken=;", "Path=/api/auth;", "Max-Age=0", "HttpOnly", "SameSite=Lax"))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains("CSRF_CONTEXT=;", "Path=/;", "Max-Age=0", "HttpOnly", "SameSite=Lax"))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains("OAUTH_BROWSER_CONTEXT=;", "Path=/api/auth;", "Max-Age=0", "HttpOnly", "SameSite=Lax"));
         assertThat(csrfTokenStore.find(browserContext)).isNull();
 
         assertSoftDeleted("users", "user_id", user.getUserId());

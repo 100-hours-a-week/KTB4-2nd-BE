@@ -98,7 +98,7 @@ public interface TripShareUserRepository extends JpaRepository<TripShareUser, Lo
             Pageable pageable
     );
 
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("""
             update TripShareUser share
             set share.deletedAt = :withdrawnAt,

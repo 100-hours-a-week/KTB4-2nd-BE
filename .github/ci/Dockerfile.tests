@@ -1,6 +1,8 @@
 FROM eclipse-temurin:25-jdk-noble
 
-RUN sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources \
+RUN sed -i -e 's|http://|https://|g' \
+        -e 's|https://security.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+        /etc/apt/sources.list.d/ubuntu.sources \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
         docker.io \

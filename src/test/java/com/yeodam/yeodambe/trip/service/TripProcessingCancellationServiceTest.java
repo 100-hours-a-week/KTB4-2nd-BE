@@ -9,6 +9,8 @@ import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
+import com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
@@ -56,10 +58,11 @@ class TripProcessingCancellationServiceTest {
             return null;
         }).when(transactions).executeWithoutResult(any());
         when(executions.snapshot(any())).thenThrow(new TripInitialAttachmentUploadNotAllowedException());
+        when(trips.findByIdAndUserId(7L, 1L)).thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING, null)));
         service = new TripProcessingCancellationService(
                 trips, regions, places, attachments, files, analysis, executions, transactions, uploadBatches, derivatives,
                 mock(InitialAttachmentUploadTransactionService.class),
-                mock(TripCreationExecutionRepository.class));
+                mock(TripCreationExecutionRepository.class), TripMutationTestFixture.direct());
     }
 
     @Test
@@ -122,7 +125,8 @@ class TripProcessingCancellationServiceTest {
         when(attachments.findAllByTripIdAndDeletedAtIsNull(7L)).thenReturn(List.of(attachment));
         when(files.findAllById(List.of(20L))).thenReturn(List.of(file));
         when(executions.cancel(7L)).thenReturn(true);
-        doThrow(new IllegalStateException("AI")).when(analysis).cancel(7L);
+        doThrow(new IllegalStateException(TripUploadTestErrorMessage.AI_CANCELLATION_FAILURE.message()))
+                .when(analysis).cancel(7L);
         assertDoesNotThrow(() -> service.cancel(7L, 1L));
     }
 
@@ -139,12 +143,12 @@ class TripProcessingCancellationServiceTest {
 
     @Test
     void AI_시작_전에도_DB_취소_성공_후_이미지_실행을_취소한다() {
-        var registry = new InitialUploadExecutionRegistry();
+        InitialUploadExecutionRegistry registry = new InitialUploadExecutionRegistry();
         String executionId = registry.reserve(7L);
-        var cancellation = new TripProcessingCancellationService(
+        TripProcessingCancellationService cancellation = new TripProcessingCancellationService(
                 trips, regions, places, attachments, files, analysis, registry, transactions, uploadBatches, derivatives,
                 mock(InitialAttachmentUploadTransactionService.class),
-                mock(TripCreationExecutionRepository.class));
+                mock(TripCreationExecutionRepository.class), TripMutationTestFixture.direct());
         when(trips.cancelProcessing(eq(7L), eq(1L), eq(ProcessingStatus.PROCESSING),
                 eq(ProcessingStatus.CANCELED), any(LocalDateTime.class))).thenReturn(1);
         cancellation.cancel(7L, 1L);
@@ -155,7 +159,8 @@ class TripProcessingCancellationServiceTest {
 
     @Test
     void DB_취소_트랜잭션이_실패하면_이미지와_레지스트리를_취소하지_않는다() {
-        doThrow(new IllegalStateException("DB commit")) .when(transactions).executeWithoutResult(any());
+        doThrow(new IllegalStateException(TripUploadTestErrorMessage.DATABASE_COMMIT_FAILURE.message()))
+                .when(transactions).executeWithoutResult(any());
         assertThrows(IllegalStateException.class, () -> service.cancel(7L, 1L));
         verifyNoInteractions(derivatives, executions, analysis);
     }

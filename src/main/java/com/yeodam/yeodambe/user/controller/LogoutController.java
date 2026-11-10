@@ -57,12 +57,22 @@ public class LogoutController {
                 "refreshToken",
                 cookiePathResolver.apiPath("/auth")
         );
+        ResponseCookie csrfContextCookie = expiredCookie(
+                "CSRF_CONTEXT",
+                "/"
+        );
+        ResponseCookie oauthBrowserContextCookie = expiredCookie(
+                "OAUTH_BROWSER_CONTEXT",
+                cookiePathResolver.apiPath("/auth")
+        );
 
         return ResponseEntity.noContent()
                 .header(
                         HttpHeaders.SET_COOKIE,
                         accessCookie.toString(),
-                        refreshCookie.toString()
+                        refreshCookie.toString(),
+                        csrfContextCookie.toString(),
+                        oauthBrowserContextCookie.toString()
                 )
                 .build();
     }

@@ -54,7 +54,7 @@ class LogoutControllerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(204);
         assertThat(response.getBody()).isNull();
         assertThat(response.getHeaders().get("Set-Cookie"))
-                .hasSize(2)
+                .hasSize(4)
                 .anySatisfy(cookie -> assertThat(cookie)
                         .contains(
                                 "accessToken=",
@@ -67,6 +67,23 @@ class LogoutControllerTest {
                         .contains(
                                 "refreshToken=",
                                 "Path=/api/auth",
+                                "Max-Age=0",
+                                "HttpOnly",
+                                "SameSite=Lax"
+                        ));
+        assertThat(response.getHeaders().get("Set-Cookie"))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains(
+                                "CSRF_CONTEXT=;",
+                                "Path=/;",
+                                "Max-Age=0",
+                                "HttpOnly",
+                                "SameSite=Lax"
+                        ))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains(
+                                "OAUTH_BROWSER_CONTEXT=;",
+                                "Path=/api/auth;",
                                 "Max-Age=0",
                                 "HttpOnly",
                                 "SameSite=Lax"

@@ -37,7 +37,6 @@ class TripEditServiceTest {
     private final TripAccessService access = mock(TripAccessService.class);
     private final ObjectMapper mapper = new ObjectMapper();
     private final TripService service = new TripService(
-            mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
             mock(com.yeodam.yeodambe.user.repository.UserRepository.class),
             trips,
             regions,

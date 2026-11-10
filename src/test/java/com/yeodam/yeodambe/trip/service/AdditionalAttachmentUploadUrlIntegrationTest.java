@@ -219,17 +219,25 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
     }
 
     @Test
-    void 두_번째_URL_발급이_실패하면_새_배치와_파일을_롤백한다() {
+    void URL_발급_실패_후_같은_묶음의_URL을_중복_예약_없이_다시_발급한다() {
         when(storage.createUploadUrl(anyString(), anyString(), eq(Duration.ofMinutes(10))))
                 .thenReturn("https://example.test/first")
-                .thenThrow(new IllegalStateException("test presign failure"));
+                .thenThrow(new IllegalStateException(
+                        com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage.PRESIGN_FAILURE.message()));
 
         assertThatThrownBy(() -> service.issueUploadUrls(tripId, userId, request()))
-                .isInstanceOf(IllegalStateException.class).hasMessage("test presign failure");
-        assertThat(batchCount()).isZero();
-        assertThat(itemCount()).isZero();
-        assertThat(executionCount()).isZero();
-        assertThat(memberReservedBytes()).isZero();
+                .isInstanceOf(IllegalStateException.class).hasMessage(
+                        com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage.PRESIGN_FAILURE.message());
+        assertThat(batchCount()).isOne();
+        assertThat(itemCount()).isEqualTo(2);
+        assertThat(executionCount()).isOne();
+        assertThat(memberReservedBytes()).isEqualTo(3072L);
+        when(storage.createUploadUrl(anyString(), anyString(), eq(Duration.ofMinutes(10))))
+                .thenReturn("https://example.test/retry");
+        assertThat(service.issueUploadUrls(tripId, userId, request()).attachments()).hasSize(2);
+        assertThat(batchCount()).isOne();
+        assertThat(itemCount()).isEqualTo(2);
+        assertThat(memberReservedBytes()).isEqualTo(3072L);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT processing_status FROM trips WHERE trip_id = ?", String.class, tripId))
                 .isEqualTo("COMPLETED");

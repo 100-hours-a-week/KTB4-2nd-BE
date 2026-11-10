@@ -3,6 +3,8 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
 import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -19,7 +21,10 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class TripResultWorkerActivationTest {
     private final ApplicationContextRunner context = new ApplicationContextRunner()
             .withUserConfiguration(SchedulingConfiguration.class, TripAnalysisResultWorker.class,
-                    AdditionalAttachmentResultWorker.class, TripUploadTimeoutService.class)
+                    AdditionalAttachmentResultWorker.class, TripUploadTimeoutService.class, TripAnalysisSchedulingWorker.class)
+            .withBean(AdditionalAttachmentExecutionRepository.class, () -> mock(AdditionalAttachmentExecutionRepository.class))
+            .withBean(TripAnalysisExecutionRepository.class, () -> mock(TripAnalysisExecutionRepository.class))
+            .withBean(TripAnalysisExecutionService.class, () -> mock(TripAnalysisExecutionService.class))
             .withBean(TaskScheduler.class, () -> mock(TaskScheduler.class))
             .withBean(TripAnalysisResultService.class, () -> mock(TripAnalysisResultService.class))
             .withBean(TripAnalysisResultApplicationService.class, () -> mock(TripAnalysisResultApplicationService.class))
@@ -35,7 +40,8 @@ class TripResultWorkerActivationTest {
         context.withPropertyValues("app.trip.result-worker-enabled=false").run(result -> {
             assertThat(result).hasNotFailed().doesNotHaveBean(TripAnalysisResultWorker.class)
                     .doesNotHaveBean(AdditionalAttachmentResultWorker.class)
-                    .doesNotHaveBean(TripUploadTimeoutService.class);
+                    .doesNotHaveBean(TripUploadTimeoutService.class)
+                    .doesNotHaveBean(TripAnalysisSchedulingWorker.class);
             assertThat(result.getBean(ScheduledAnnotationBeanPostProcessor.class).getScheduledTasks()).isEmpty();
             verifyNoInteractions(result.getBean(TripAnalysisResultService.class),
                     result.getBean(TripAnalysisResultApplicationService.class),
@@ -50,12 +56,13 @@ class TripResultWorkerActivationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"app.trip.result-worker-enabled=true", "unrelated.setting=true"})
-    void 결과_워커를_켜거나_설정하지_않으면_세_워커의_스케줄을_유지한다(String property) {
+    void 결과_워커를_켜거나_설정하지_않으면_네_워커의_스케줄을_유지한다(String property) {
         context.withPropertyValues(property).run(result -> {
             assertThat(result).hasNotFailed().hasSingleBean(TripAnalysisResultWorker.class)
                     .hasSingleBean(AdditionalAttachmentResultWorker.class)
-                    .hasSingleBean(TripUploadTimeoutService.class);
-            assertThat(result.getBean(ScheduledAnnotationBeanPostProcessor.class).getScheduledTasks()).hasSize(3);
+                    .hasSingleBean(TripUploadTimeoutService.class)
+                    .hasSingleBean(TripAnalysisSchedulingWorker.class);
+            assertThat(result.getBean(ScheduledAnnotationBeanPostProcessor.class).getScheduledTasks()).hasSize(4);
         });
     }
 

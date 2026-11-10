@@ -33,6 +33,15 @@ public class TripAnalysisTestFixture {
         return tripId;
     }
 
+    public void markLegacyUpload(String uploadId) {
+        jdbc.update("""
+                UPDATE additional_attachment_executions execution
+                JOIN additional_attachment_upload_batches batch ON batch.addition_id = execution.execution_id
+                SET execution.processing_mode = 'LEGACY', execution.accepted_actor_id = NULL
+                WHERE batch.upload_id = ?
+                """, uploadId);
+    }
+
     public Long createPhoto(Long tripId, Long ownerId) {
         String key = "fixture/" + UUID.randomUUID();
         jdbc.update("""

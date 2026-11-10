@@ -62,7 +62,6 @@ class TripReadStateControllerTest {
                 access, places, attachments, storage, mapper
         );
         TripService service = new TripService(
-                mock(AdditionalAttachmentModificationGuard.class),
                 mock(com.yeodam.yeodambe.user.repository.UserRepository.class),
                 trips,
                 regions,

@@ -63,8 +63,21 @@ public class AdditionalAttachmentAdmissionTransactionService {
             Long actorId,
             AdditionalAttachmentUploadUrlRequest request
     ) {
+        return prepareBatch(tripId, actorId, request, ProcessingMode.V3);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AdditionalAttachmentUploadBatch continueLegacyBatch(
+            Long tripId, Long actorId, AdditionalAttachmentUploadUrlRequest request
+    ) {
+        return prepareBatch(tripId, actorId, request, ProcessingMode.LEGACY);
+    }
+
+    private AdditionalAttachmentUploadBatch prepareBatch(
+            Long tripId, Long actorId, AdditionalAttachmentUploadUrlRequest request, ProcessingMode mode
+    ) {
         long batchBytes = validateRequest(request);
-        Trip trip = requireCompletedTrip(tripId);
+        Trip trip = requireActiveTrip(tripId);
         Long ownerId = trip.getUserId();
         users.findByUserIdAndDeletedAtIsNull(actorId).orElseThrow(UserNotFoundException::new);
 
@@ -74,7 +87,8 @@ public class AdditionalAttachmentAdmissionTransactionService {
 
         if (execution != null) {
             entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
-            if (execution.getProcessingMode() != ProcessingMode.V3
+            if (execution.getProcessingMode() != mode
+                    || (mode == ProcessingMode.LEGACY && !ownerId.equals(actorId))
                     || !execution.getTripId().equals(tripId)
                     || !execution.acceptedBy(actorId)
                     || execution.getTotalAttachmentCount()
@@ -86,8 +100,12 @@ public class AdditionalAttachmentAdmissionTransactionService {
                 throw new TripAttachmentAddNotAllowedException();
             }
         } else {
+            if (mode == ProcessingMode.LEGACY) {
+                throw new InvalidAttachmentUploadException();
+            }
             authorization.requireWritePermission(trip, actorId);
         }
+        requireCompletedTripState(trip);
 
         AdditionalAttachmentUploadBatch existing =
                 uploadBatchRepository.findByAdditionIdAndBatchNo(
@@ -250,6 +268,35 @@ public class AdditionalAttachmentAdmissionTransactionService {
         return savedBatch;
     }
 
+    @Transactional(readOnly = true)
+    public ProcessingMode validateAccess(Long tripId, Long actorId, AdditionalAttachmentUploadUrlRequest request) {
+        validateRequest(request);
+        users.findByUserIdAndDeletedAtIsNull(actorId).orElseThrow(UserNotFoundException::new);
+        Trip trip = tripRepository.findByIdAndDeletedAtIsNull(tripId).orElseThrow(TripNotFoundException::new);
+        AdditionalAttachmentExecution execution = executionRepository.findById(request.additionId()).orElse(null);
+        ProcessingMode mode = ProcessingMode.V3;
+        if (execution == null) {
+            authorization.requireWritePermission(trip, actorId);
+        } else {
+            mode = execution.getProcessingMode();
+            if (mode == ProcessingMode.LEGACY && !trip.getUserId().equals(actorId)) {
+                throw new TripNotFoundException();
+            }
+            if (!execution.getTripId().equals(tripId) || !execution.acceptedBy(actorId)) {
+                authorization.requireReadPermission(trip, actorId);
+                throw new InvalidAttachmentUploadException();
+            }
+            if (execution.getTotalAttachmentCount() != request.totalAttachmentCount()) {
+                throw new InvalidAttachmentUploadException();
+            }
+            if (execution.isTerminal()) {
+                throw new TripAttachmentAddNotAllowedException();
+            }
+        }
+        requireCompletedTripState(trip);
+        return mode;
+    }
+
     long validateRequest(AdditionalAttachmentUploadUrlRequest request) {
         if (request == null
                 || request.additionId() == null
@@ -305,15 +352,18 @@ public class AdditionalAttachmentAdmissionTransactionService {
         );
     }
 
-    private Trip requireCompletedTrip(Long tripId) {
+    private Trip requireActiveTrip(Long tripId) {
         Trip trip = tripRepository.findActiveForUpdate(tripId).orElseThrow(TripNotFoundException::new);
         entityManager.refresh(trip, LockModeType.PESSIMISTIC_WRITE);
+        return trip;
+    }
 
+    private void requireCompletedTripState(Trip trip) {
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
             throw new TripAttachmentAddNotAllowedException();
         }
         if (storyGenerationJobRepository.existsByTripIdAndStatusIn(
-                tripId,
+                trip.getId(),
                 List.of(
                         StoryGenerationJob.Status.QUEUED,
                         StoryGenerationJob.Status.PROCESSING
@@ -321,7 +371,6 @@ public class AdditionalAttachmentAdmissionTransactionService {
         )) {
             throw new TripAttachmentAddNotAllowedException();
         }
-        return trip;
     }
 
     private void requireSameRequest(

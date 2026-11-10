@@ -238,7 +238,9 @@ class AdditionalUploadCompletionMutationIntegrationTest {
         if (v3) {
             return mutations.execute(tripId, () -> admissions.prepareBatch(tripId, actorId, request));
         }
-        return legacyAdmission.prepareBatch(tripId, ownerId, request);
+        AdditionalAttachmentUploadBatch batch = legacyAdmission.prepareBatch(tripId, ownerId, request);
+        new TripAnalysisTestFixture(jdbc).markLegacyUpload(batch.getUploadId());
+        return batch;
     }
 
     private void validStorage() {

@@ -142,6 +142,7 @@ class DbConversionMutationBoundaryIntegrationTest {
                     () -> v3Admission.prepareBatch(tripId, ownerId, request)).getUploadId();
         } else {
             uploadId = admission.issueUploadUrls(tripId, ownerId, request).uploadId();
+            new TripAnalysisTestFixture(jdbc).markLegacyUpload(uploadId);
         }
         additional.markVerified(tripId, ownerId, uploadId);
         when(derivatives.generateAdditional(anyString(), anyString(), anyString(), anyList()))

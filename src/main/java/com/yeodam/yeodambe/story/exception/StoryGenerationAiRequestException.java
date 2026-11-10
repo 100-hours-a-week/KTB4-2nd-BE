@@ -6,23 +6,25 @@ import lombok.Getter;
 public class StoryGenerationAiRequestException extends RuntimeException {
     private final Integer statusCode;
     private final String errorCode;
+    private final boolean transportFailure;
 
     public StoryGenerationAiRequestException(
             StoryGenerationInternalErrorMessage message,
             Integer statusCode,
             String errorCode
     ) {
-        this(message, statusCode, errorCode, null);
+        this(message, statusCode, errorCode, false);
     }
 
     public StoryGenerationAiRequestException(
             StoryGenerationInternalErrorMessage message,
             Integer statusCode,
             String errorCode,
-            Throwable cause
+            boolean transportFailure
     ) {
-        super(message.message(), cause);
+        super(message.message());
         this.statusCode = statusCode;
         this.errorCode = errorCode;
+        this.transportFailure = transportFailure;
     }
 }

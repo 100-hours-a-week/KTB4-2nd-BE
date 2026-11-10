@@ -5,7 +5,6 @@ import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.StoryGenerationAiRequestException;
-import org.springframework.web.client.ResourceAccessException;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.response.ApiResponse;
@@ -696,7 +695,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(StoryGenerationAiRequestException.class)
     ResponseEntity<ApiResponse<Void>> handleStoryGenerationAiRequest(StoryGenerationAiRequestException e) {
-        if (e.getCause() instanceof ResourceAccessException) {
+        if (e.isTransportFailure()) {
             logFailure(log.atWarn(), ErrorMessage.STORY_GENERATION_CANCEL_UNAVAILABLE, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(new ApiResponse<>(ErrorMessage.STORY_GENERATION_CANCEL_UNAVAILABLE, null));

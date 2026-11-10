@@ -330,7 +330,7 @@ class StoryGenerationControllerTest {
                         StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 500, null)
                 : new StoryGenerationAiRequestException(
                         StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, null, null,
-                        new org.springframework.web.client.ResourceAccessException("timeout"));
+                        true);
         when(ai.cancel(100L)).thenThrow(failure);
 
         mvc.perform(authenticatedCancellation()).andExpect(status().is(status))

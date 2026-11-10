@@ -184,6 +184,7 @@ class StoryGenerationAiClientTest {
 
         assertThat(failure.getStatusCode()).isNull();
         assertThat(failure.getErrorCode()).isNull();
+        assertThat(failure.isTransportFailure()).isFalse();
         assertThat(failure).hasCause(null);
     }
 
@@ -198,12 +199,14 @@ class StoryGenerationAiClientTest {
                 () -> client.getStatus(241L));
         assertThat(timeout.getStatusCode()).isNull();
         assertThat(timeout.getErrorCode()).isNull();
+        assertThat(timeout.isTransportFailure()).isTrue();
 
         server.stop(0);
         var refused = catchThrowableOfType(StoryGenerationAiRequestException.class,
                 () -> client.cancel(241L));
         assertThat(refused.getStatusCode()).isNull();
         assertThat(refused.getErrorCode()).isNull();
+        assertThat(refused.isTransportFailure()).isTrue();
         assertThat(refused).hasMessage(StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED.message());
     }
 }

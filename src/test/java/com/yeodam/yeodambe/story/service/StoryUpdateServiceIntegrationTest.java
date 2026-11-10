@@ -49,6 +49,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.time.ZoneOffset;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -94,6 +95,7 @@ class StoryUpdateServiceIntegrationTest {
     @Autowired EntityManager em;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired StoryUpdateService service;
+    @Autowired StoryContentCleanupService cleanup;
     @MockitoSpyBean StoryContentRepository contents;
     @MockitoSpyBean StoryContentUpdateRepository contentUpdates;
     @Autowired com.yeodam.yeodambe.story.repository.StoryBlockRepository sqlBlocks;
@@ -139,6 +141,42 @@ class StoryUpdateServiceIntegrationTest {
     @AfterEach
     void cleanMongo() {
         if (fixture != null) contents.deleteById(fixture.storyId());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 삭제가_커밋된_스토리와_여행의_MongoDB_본문만_정리한다(boolean deleteTrip) {
+        tx.executeWithoutResult(status -> {
+            em.find(Trip.class, fixture.tripId()).softDelete(LocalDateTime.now());
+            status.setRollbackOnly();
+        });
+        cleanup.cleanupBatch();
+        assertThat(contents.existsById(fixture.storyId())).isTrue();
+
+        tx.executeWithoutResult(status -> {
+            if (deleteTrip) {
+                em.find(Trip.class, fixture.tripId()).softDelete(LocalDateTime.now());
+            } else {
+                em.find(Story.class, fixture.storyId()).softDelete(LocalDateTime.now());
+            }
+        });
+        cleanup.cleanupBatch();
+        cleanup.cleanupBatch();
+        assertThat(contents.existsById(fixture.storyId())).isFalse();
+        assertThat(stories.findById(fixture.storyId())).isPresent();
+    }
+
+    @Test
+    void MongoDB_삭제가_실패하면_다음_정리에서_다시_시도한다() {
+        tx.executeWithoutResult(status -> em.find(Story.class, fixture.storyId()).softDelete(LocalDateTime.now()));
+        doThrow(new DataAccessResourceFailureException("MongoDB unavailable"))
+                .when(contents).deleteAllById(List.of(fixture.storyId()));
+
+        assertThatThrownBy(cleanup::cleanupBatch).isInstanceOf(DataAccessResourceFailureException.class);
+        assertThat(contents.existsById(fixture.storyId())).isTrue();
+        reset(contents);
+        cleanup.cleanupBatch();
+        assertThat(contents.existsById(fixture.storyId())).isFalse();
     }
 
     @ParameterizedTest

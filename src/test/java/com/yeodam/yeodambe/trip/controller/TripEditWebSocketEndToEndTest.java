@@ -43,6 +43,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
@@ -97,13 +98,17 @@ class TripEditWebSocketEndToEndTest {
                 try (Connection writer = connect(firstPort, owner);
                      Connection viewer = connect(secondPort, reader)) {
                     writer.send("SUBSCRIBE\nid:personal\ndestination:/user/queue/command-results\n\n");
+                    writer.send("SUBSCRIBE\nid:trip\ndestination:/topic/trips/" + trip.getId() + "/events\n\n");
                     viewer.send("SUBSCRIBE\nid:trip\ndestination:/topic/trips/" + trip.getId() + "/events\n\n");
                     awaitSubscription(writer, WebSocketEventTargetType.USER, owner, WebSocketEventType.COMMAND_RESULT);
+                    awaitSubscription(writer, WebSocketEventTargetType.TRIP, trip.getId(), WebSocketEventType.TRIP_EVENT);
                     awaitSubscription(viewer, WebSocketEventTargetType.TRIP, trip.getId(), WebSocketEventType.TRIP_EVENT);
                     String command = "SEND\ndestination:/app/trips/" + trip.getId()
                             + "/update\ncontent-type:application/json\n\n{\"requestId\":\"e2e-save\",\"changes\":{\"tripName\":\"소켓수정\"}}";
                     writer.send(command);
-                    assertThat(writer.next()).contains("TRIP_UPDATE_SUCCESS", "SUCCEEDED", "e2e-save");
+                    assertThat(List.of(writer.next(), writer.next())).satisfiesExactlyInAnyOrder(
+                            frame -> assertThat(frame).contains("TRIP_UPDATE_SUCCESS", "SUCCEEDED", "e2e-save"),
+                            frame -> assertThat(frame).contains("TRIP_UPDATED", "소켓수정", "e2e-save"));
                     assertThat(viewer.next()).contains("TRIP_UPDATED", "소켓수정", "e2e-save");
                     writer.send(command);
                     assertThat(writer.next()).contains("TRIP_UPDATE_SUCCESS", "e2e-save");
@@ -171,8 +176,9 @@ class TripEditWebSocketEndToEndTest {
     private void awaitSubscription(Connection connection, WebSocketEventTargetType target, Long id, WebSocketEventType type) {
         await().atMost(Duration.ofSeconds(10)).until(() -> {
             publisher.publish(new WebSocketEvent(UUID.randomUUID(), type, 1, Instant.now(),
-                    new WebSocketEventTarget(target, id), new ApiResponse<>("SUBSCRIPTION_PROBE", null)));
-            return connection.messages.poll(200, TimeUnit.MILLISECONDS) != null;
+                    new WebSocketEventTarget(target, id), new ApiResponse<>("SUBSCRIPTION_PROBE", type.name())));
+            String frame = connection.messages.poll(200, TimeUnit.MILLISECONDS);
+            return frame != null && frame.contains("\"data\":\"" + type.name() + "\"");
         });
     }
 

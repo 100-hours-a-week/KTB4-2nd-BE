@@ -80,7 +80,7 @@ public class TripSubscriptionService implements ExecutorChannelInterceptor {
         try {
             long tripId = Long.parseLong(matcher.group(1));
             if (headers.getMessageType() == SimpMessageType.MESSAGE) {
-                return true;
+                return hasActiveSubscription(headers.getSessionId(), principal.userId(), tripId);
             }
             Map<String, Object> attributes = headers.getSessionAttributes();
             if (attributes == null || headers.getSessionId() == null || headers.getSubscriptionId() == null
@@ -95,6 +95,19 @@ public class TripSubscriptionService implements ExecutorChannelInterceptor {
         } catch (RuntimeException exception) {
             return false;
         }
+    }
+
+    private boolean hasActiveSubscription(String sessionId, long userId, long tripId) {
+        if (sessionId == null) {
+            return false;
+        }
+        Instant now = Instant.now();
+        return subscriptions.values().stream().anyMatch(subscription ->
+                sessionId.equals(subscription.sessionId())
+                        && userId == subscription.userId()
+                        && tripId == subscription.tripId()
+                        && subscription.validUntil() != null
+                        && subscription.validUntil().isAfter(now));
     }
 
     @Scheduled(scheduler = "tripSubscriptionRevalidationTaskScheduler", initialDelay = 30_000, fixedDelay = 30_000)

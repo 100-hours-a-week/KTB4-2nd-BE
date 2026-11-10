@@ -28,6 +28,7 @@ import org.springframework.security.web.csrf.DefaultCsrfToken;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,6 +43,7 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
     private BackendTripEditClient tripClient;
 
     private static final String CSRF_TOKEN = "existing-test-csrf-token";
+    private final String sessionId = UUID.randomUUID().toString();
 
     @Autowired
     @Qualifier("clientInboundChannel")
@@ -97,7 +99,9 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
 
     @ParameterizedTest
     @ValueSource(strings = {"/app/trips/14/update", "/app/trips/14/attachments/delete"})
-    void 인증된_두_편집_명령을_허용한다(String destination) {
+    void 여행을_구독한_연결의_편집_명령만_허용한다(String destination) {
+        assertDenied(message(SimpMessageType.MESSAGE, destination, true, null));
+        assertThat(send(message(SimpMessageType.SUBSCRIBE, "/topic/trips/14/events", true, null))).isTrue();
         assertThat(send(message(SimpMessageType.MESSAGE, destination, true, null))).isTrue();
         assertDenied(message(SimpMessageType.MESSAGE, destination, false, null));
     }
@@ -153,7 +157,7 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
             String csrfHeader
     ) {
         SimpMessageHeaderAccessor headers = SimpMessageHeaderAccessor.create(type);
-        headers.setSessionId("message-security-test-session");
+        headers.setSessionId(sessionId);
         headers.setSubscriptionId("security-subscription");
         headers.setSessionAttributes(Map.of(
                 CsrfToken.class.getName(),

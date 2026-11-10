@@ -111,9 +111,29 @@ class TripSubscriptionServiceTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"/app/trips/14/update", "/app/trips/14/attachments/delete"})
-    void 명령_목적지만_허용하고_읽기_권한을_부여하지_않는다(String destination) {
-        assertThat(service.authorize(message("s1", "sub", destination, SimpMessageType.MESSAGE), user)).isTrue();
+    void 같은_연결에서_같은_여행을_구독해야_편집_명령을_허용한다(String destination) {
+        Message<byte[]> command = message("s1", null, destination, SimpMessageType.MESSAGE);
+        assertThat(service.authorize(command, user)).isFalse();
+
+        subscribe("s2");
+        assertThat(service.authorize(command, user)).isFalse();
+        assertThat(service.authorize(message("s1", "other", "/topic/trips/15/events", SimpMessageType.SUBSCRIBE), user)).isTrue();
+        assertThat(service.authorize(command, user)).isFalse();
+
+        subscribe("s1");
+        clearInvocations(client);
+        assertThat(service.authorize(command, user)).isTrue();
+        service.onUnsubscribe(new SessionUnsubscribeEvent(this, message("s1", "sub", null, SimpMessageType.UNSUBSCRIBE)));
+        assertThat(service.authorize(command, user)).isFalse();
         verifyNoInteractions(client);
+    }
+
+    @Test
+    void 유효기간이_지난_구독으로는_편집_명령을_보낼_수_없다() {
+        when(client.checkAccess(14, 42, credentials)).thenReturn(Instant.now().minusSeconds(1));
+        subscribe("s1");
+
+        assertThat(service.authorize(message("s1", null, "/app/trips/14/update", SimpMessageType.MESSAGE), user)).isFalse();
     }
 
     @Test

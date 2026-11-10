@@ -237,6 +237,7 @@ class TripPermissionRevalidationExecutionTest {
                 return Instant.now().plusSeconds(60);
             });
             SimpMessageHeaderAccessor headers = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+            headers.setSessionId("s1");
             headers.setDestination("/app/trips/1/update");
             var command = MessageBuilder.createMessage(new byte[0], headers.getMessageHeaders());
             assertThat(service.authorize(command, user)).isTrue();

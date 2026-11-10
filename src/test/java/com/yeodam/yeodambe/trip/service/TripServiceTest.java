@@ -510,7 +510,6 @@ class TripServiceTest {
 
     private TripService createService(Clock clock) {
         return new TripService(
-                mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class),
                 userRepository,
                 tripRepository,
                 tripRegionRepository,

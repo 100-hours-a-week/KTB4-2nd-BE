@@ -4,6 +4,8 @@ import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.integration.service.OutboxReceiptService;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
 import com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture.Addition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,10 @@ class TripAnalysisSchedulingIntegrationTest {
     private ObjectMapper json;
     @Autowired
     private OutboxReceiptService receipts;
+    @Autowired
+    private AdditionalAttachmentExecutionRepository additions;
+    @Autowired
+    private TripAnalysisExecutionRepository analyses;
 
     private TripAnalysisTestFixture fixture;
     private Long ownerId;
@@ -53,6 +59,16 @@ class TripAnalysisSchedulingIntegrationTest {
         ownerId = fixture.createOwner();
         tripId = fixture.createTrip(ownerId);
         existingPhoto = fixture.createPhoto(tripId, ownerId);
+    }
+
+    @Test
+    void 워커를_다시_만들어도_DB에_준비된_묶음을_찾고_분석을_중복_생성하지_않는다() {
+        fixture.prepareAddition(tripId, ownerId);
+        new TripAnalysisSchedulingWorker(additions, scheduling, analyses).startPendingAnalyses();
+        new TripAnalysisSchedulingWorker(additions, scheduling, analyses).startPendingAnalyses();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM trip_analysis_executions WHERE trip_id = ?
+                """, Integer.class, tripId)).isOne();
     }
 
     @Test

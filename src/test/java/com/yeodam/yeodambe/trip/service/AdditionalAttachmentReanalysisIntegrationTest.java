@@ -4,6 +4,8 @@ import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import java.time.Instant;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadBatchSnapshot;
 import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
 import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEvent;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusNotification;
@@ -141,7 +143,16 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         });
         when(kakao.lookup(any(), any())).thenReturn(new KakaoLocalClient.LookupResult("새 장소", "서울", KakaoLocalClient.Failure.NONE));
         additionId = UUID.randomUUID().toString();
-        uploadId = urls.issueUploadUrls(tripId, userId, request(1, 1, true)).uploadId();
+        uploadId = issueLegacyUrls(tripId, userId, request(1, 1, true)).uploadId();
+    }
+
+    private com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse issueLegacyUrls(
+            Long tripId, Long userId, AdditionalAttachmentUploadUrlRequest request
+    ) {
+        com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse response =
+                urls.issueUploadUrls(tripId, userId, request);
+        new com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture(jdbc).markLegacyUpload(response.uploadId());
+        return response;
     }
 
     private com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadBatchSnapshot prepareAsync() {
@@ -560,19 +571,19 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     void 후속_배치_검증이_실패하면_추가를_종료하고_기존_여행_데이터를_보존한다() {
         transactions.failExecution(additionId, "TEST_RESET");
         additionId = UUID.randomUUID().toString();
-        uploadId = urls.issueUploadUrls(tripId, userId, request(1, 2, false)).uploadId();
-        var firstClaim = prepareAsync();
-        var ready = outboxes.findAll().stream().filter(value -> value.getTripId().equals(tripId)
+        uploadId = issueLegacyUrls(tripId, userId, request(1, 2, false)).uploadId();
+        AdditionalAttachmentUploadBatchSnapshot firstClaim = prepareAsync();
+        AdditionalAttachmentUploadOutbox ready = outboxes.findAll().stream().filter(value -> value.getTripId().equals(tripId)
                 && "photos_ready".equals(value.getMessageType())).findFirst().orElseThrow();
         confirm(ready);
-        var second = urls.issueUploadUrls(tripId, userId, request(2, 2, true));
+        AdditionalAttachmentUploadUrlResponse second = issueLegacyUrls(tripId, userId, request(2, 2, true));
         when(storage.open(anyString())).thenAnswer(call -> new ByteArrayInputStream("broken photo".getBytes()));
 
         assertThatThrownBy(() -> completion.complete(tripId, userId,
                 new AdditionalAttachmentUploadCompleteRequest(second.uploadId())))
                 .isInstanceOf(com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException.class);
 
-        var failed = executionRepository.findById(additionId).orElseThrow();
+        AdditionalAttachmentExecution failed = executionRepository.findById(additionId).orElseThrow();
         assertThat(failed.getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.FAILED);
         assertThat(failed.getEndedAt()).isNotNull();
         assertThat(jdbc.queryForList("SELECT status FROM additional_attachment_upload_batches WHERE addition_id = ?",
@@ -794,11 +805,11 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void 추가_중에는_사진과_정보_변경을_막고_여행_삭제는_작업을_취소한다() {
+    void 추가_중에도_정보_수정은_허용하고_사진_삭제_보호와_여행_삭제_취소를_유지한다() {
         assertThatThrownBy(() -> deletion.deleteOne(userId, oldPhotoId))
                 .isInstanceOf(TripAttachmentAddNotAllowedException.class);
-        assertThatThrownBy(() -> tripService.updateTrip(tripId, userId, new TripUpdateRequest("수정 이름", null, null, null)))
-                .isInstanceOf(TripUpdateNotAllowedException.class);
+        tripService.updateTrip(tripId, userId, new TripUpdateRequest("수정 이름", null, null, null));
+        assertThat(trips.findById(tripId).orElseThrow().getTripName()).isEqualTo("수정 이름");
         assertThat(attachments.findAccessibleById(oldPhotoId, userId)).isPresent();
         assertThat(places.countByTripIdAndDeletedAtIsNull(tripId)).isEqualTo(1);
         tripDeletion.delete(tripId, userId);
@@ -836,16 +847,16 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         jdbc.update("DELETE FROM additional_attachment_upload_batches WHERE addition_id = ?", additionId);
         jdbc.update("DELETE FROM additional_attachment_executions WHERE execution_id = ?", additionId);
         jdbc.update("UPDATE user_stats SET storage_reserved_bytes = 0 WHERE user_id = ?", userId);
-        uploadId = urls.issueUploadUrls(tripId, userId, request(1, 2, false)).uploadId();
+        uploadId = issueLegacyUrls(tripId, userId, request(1, 2, false)).uploadId();
         assertThat(completion.prepareAddition(tripId, userId, completeRequest())).isEmpty();
         assertThat(batchStatus()).isEqualTo("VERIFIED");
-        uploadId = urls.issueUploadUrls(tripId, userId, request(2, 2, true)).uploadId();
-        var prepared = completion.prepareAddition(tripId, userId, completeRequest()).orElseThrow();
+        uploadId = issueLegacyUrls(tripId, userId, request(2, 2, true)).uploadId();
+        AdditionalAttachmentAnalysisPreparationService.PreparedAnalysis prepared = completion.prepareAddition(tripId, userId, completeRequest()).orElseThrow();
         assertThat(prepared.request().attachments()).hasSize(3);
         assertThat(jdbc.queryForList("SELECT status FROM additional_attachment_upload_batches WHERE addition_id = ? ORDER BY batch_no",
                 String.class, additionId)).containsExactly("PREPARED", "PREPARED");
         clearInvocations(derivatives);
-        var repeated = completion.prepareAddition(tripId, userId, completeRequest()).orElseThrow();
+        AdditionalAttachmentAnalysisPreparationService.PreparedAnalysis repeated = completion.prepareAddition(tripId, userId, completeRequest()).orElseThrow();
         assertThat(repeated.request()).isEqualTo(prepared.request());
         verifyNoInteractions(derivatives);
     }

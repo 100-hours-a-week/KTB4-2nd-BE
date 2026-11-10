@@ -68,6 +68,7 @@ class KafkaDeploymentRoleIntegrationTest {
                 assertThat(running).hasSize(consumerCount);
                 assertThat(context.getBeansOfType(AttachmentConversionWorker.class)).hasSize(conversionEnabled ? 1 : 0);
                 assertThat(context.getBeansOfType(TripAnalysisResultWorker.class)).hasSize(resultEnabled ? 1 : 0);
+                assertThat(context.getBeansOfType(TripAnalysisSchedulingWorker.class)).hasSize(resultEnabled ? 1 : 0);
                 assertThat(context.getBeansOfType(AdditionalAttachmentResultWorker.class)).hasSize(resultEnabled ? 1 : 0);
                 assertThat(context.getBeansOfType(TripUploadTimeoutService.class)).hasSize(resultEnabled ? 1 : 0);
                 assertThat(context.getBeansOfType(TripProcessingStatusScheduler.class)).hasSize(resultEnabled ? 1 : 0);

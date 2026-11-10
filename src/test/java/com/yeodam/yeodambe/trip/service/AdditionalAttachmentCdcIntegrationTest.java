@@ -1,6 +1,9 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventType;
+import com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadBatchSnapshot;
 import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
 import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEvent;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusNotification;
@@ -45,6 +48,8 @@ import static org.mockito.Mockito.*;
 @Import(TestcontainersConfiguration.class)
 class AdditionalAttachmentCdcIntegrationTest {
     @Autowired private AdditionalAttachmentUploadUrlService urls;
+    @Autowired private TripAnalysisExecutionService analyses;
+    @Autowired private com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository analysisExecutions;
     @Autowired private AdditionalAttachmentUploadCompletionService completion;
     @Autowired private AdditionalAttachmentUploadTransactionService transactions;
     @Autowired private AdditionalAttachmentUploadOutboxService outboxService;
@@ -149,9 +154,11 @@ class AdditionalAttachmentCdcIntegrationTest {
         });
         urls.issueUploadUrls(tripId, userId, request(1, 1, true));
         ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-        verify(notificationPublisher).serialize(captor.capture());
+        verify(notificationPublisher, times(2)).serialize(captor.capture());
+        assertThat(captor.getAllValues()).extracting(WebSocketEvent::type).containsExactly(
+                WebSocketEventType.AI_TASK, WebSocketEventType.TRIP_EVENT);
         verifyNoMoreInteractions(notificationPublisher);
-        WebSocketEvent message = captor.getValue();
+        WebSocketEvent message = captor.getAllValues().getFirst();
         TripProcessingStatusNotification notification = (TripProcessingStatusNotification) message.payload().data();
         assertThat(message.target().id()).isEqualTo(userId);
         assertThat(notification.tripId()).isEqualTo(tripId);
@@ -185,9 +192,11 @@ class AdditionalAttachmentCdcIntegrationTest {
         transactions.failExecution(additionId, "REPEATED_FAILURE");
 
         ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-        verify(notificationPublisher).serialize(captor.capture());
+        verify(notificationPublisher, times(2)).serialize(captor.capture());
+        assertThat(captor.getAllValues()).extracting(WebSocketEvent::type).containsExactly(
+                WebSocketEventType.AI_TASK, WebSocketEventType.TRIP_EVENT);
         verifyNoMoreInteractions(notificationPublisher);
-        WebSocketEvent message = captor.getValue();
+        WebSocketEvent message = captor.getAllValues().getFirst();
         TripProcessingStatusNotification notification = (TripProcessingStatusNotification) message.payload().data();
         assertThat(message.target().id()).isEqualTo(userId);
         assertThat(notification.executionId()).isEqualTo(additionId);
@@ -294,12 +303,33 @@ class AdditionalAttachmentCdcIntegrationTest {
         assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
     }
 
+    @Test
+    void V3_변환_완료는_묶음_ID로_발행하지_않고_새_분석_실행에_포함한다() {
+        uploadId = urls.issueUploadUrls(tripId, userId, request(1, 1, true)).uploadId();
+        finishUploadedBatch();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM additional_attachment_upload_outbox WHERE trip_id = ?
+                """, Integer.class, tripId)).isZero();
+        new TripAnalysisSchedulingWorker(executionRepository, analyses, analysisExecutions).startPendingAnalyses();
+        String executionId = jdbc.queryForObject(
+                "SELECT execution_id FROM trip_analysis_executions WHERE trip_id = ?", String.class, tripId);
+        assertThat(executionId).isNotEqualTo(additionId);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM additional_attachment_upload_outbox WHERE analysis_execution_id = ?
+                """, Integer.class, executionId)).isEqualTo(2);
+    }
+
     private void convertBatch(int number, int total, boolean last) {
         uploadId = urls.issueUploadUrls(tripId, userId, request(number, total, last)).uploadId();
+        new TripAnalysisTestFixture(jdbc).markLegacyUpload(uploadId);
+        finishUploadedBatch();
+    }
+
+    private void finishUploadedBatch() {
         completion.complete(tripId, userId, new AdditionalAttachmentUploadCompleteRequest(uploadId));
-        var claim = transactions.claimBatch().orElseThrow();
-        var item = claim.photos().getFirst();
-        var keys = transactions.startPhotoAttempt(claim, item.itemId());
+        AdditionalAttachmentUploadBatchSnapshot claim = transactions.claimBatch().orElseThrow();
+        AdditionalAttachmentUploadBatchSnapshot.Photo item = claim.photos().getFirst();
+        List<String> keys = transactions.startPhotoAttempt(claim, item.itemId());
         transactions.savePhotoSuccess(claim, item.itemId(), new DerivedPhotoKeys(
                 item.objectKey(), keys.get(0), keys.get(1), null,
                 OffsetDateTime.parse("2026-10-07T12:00:00+09:00"), BigDecimal.ONE, BigDecimal.TEN,

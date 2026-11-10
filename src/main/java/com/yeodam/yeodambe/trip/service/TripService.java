@@ -76,7 +76,6 @@ import java.util.stream.Collectors;
 @Slf4j
 public class TripService {
     private static final ZoneId TRIP_ZONE = ZoneId.of("Asia/Seoul");
-    private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
     private static final int TRIP_LIST_SIZE = 7;
     private static final int TRIP_LIST_FETCH_SIZE = TRIP_LIST_SIZE + 1;
     private static final int FAVORITE_TRIP_LIST_SIZE = 10;
@@ -243,12 +242,6 @@ public class TripService {
         Long userId = trip.getUserId();
 
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
-            throw new TripUpdateNotAllowedException();
-        }
-
-        try {
-            additionalAttachmentModificationGuard.check(tripId, userId);
-        } catch (com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException e) {
             throw new TripUpdateNotAllowedException();
         }
 

@@ -16,6 +16,7 @@ public enum ErrorMessage {
     INVALID_TRIP_REQUEST("여행 요청이 올바르지 않습니다."),
     PRESENCE_LIMIT_EXCEEDED("여행 참여 한도를 초과했습니다."),
     PRESENCE_NOT_JOINED("여행 참여 정보가 없습니다."),
+    TRIP_EDIT_BUSY("다른 편집이 진행 중입니다. 잠시 후 다시 시도해 주세요."),
     TRIP_EDIT_COMMAND_MISMATCH("같은 요청 번호로 다른 편집 명령을 보낼 수 없습니다."),
     TRIP_EDIT_COMMAND_RESULT_EXPIRED("편집 명령 결과의 확인 기간이 지났습니다."),
     TRIP_NOT_FOUND("여행을 찾을 수 없습니다."),

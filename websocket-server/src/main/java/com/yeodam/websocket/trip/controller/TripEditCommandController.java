@@ -94,6 +94,8 @@ public class TripEditCommandController {
             int status = exception.getStatusCode().value();
             if (status == 401 || status == 403) {
                 sessionManager.closeConnection(headers.getSessionId());
+            } else if (status == 429 && knownError(exception) == ErrorMessage.TRIP_EDIT_BUSY) {
+                reject(user, tripId, requestId, ErrorMessage.TRIP_EDIT_BUSY);
             } else if (status == 400 || status == 404 || status == 409 || status == 413 || status == 422) {
                 reject(user, tripId, requestId, knownError(exception));
             } else {
@@ -121,11 +123,12 @@ public class TripEditCommandController {
         try {
             JsonNode body = mapper.readTree(exception.getResponseBodyAsByteArray());
             ErrorMessage message = ErrorMessage.valueOf(body.path("message").asString());
-            if (REJECTION_MESSAGES.contains(message)) {
+            if (REJECTION_MESSAGES.contains(message)
+                    || (exception.getStatusCode().value() == 429 && message == ErrorMessage.TRIP_EDIT_BUSY)) {
                 return message;
             }
         } catch (RuntimeException ignored) {
-            // Only known nonexecution HTTP errors reach this local rejection path.
+            // Unknown or malformed responses do not establish an edit lock rejection.
         }
         return ErrorMessage.INVALID_TRIP_REQUEST;
     }

@@ -74,7 +74,7 @@ class TripPlaceFolderMySqlRepositoryTest {
     }
 
     @Test
-    void 지도_통합_집계는_MySQL에서_한글_이름과_ID순으로_반환하고_SQL은_3회다() {
+    void 지도_통합_집계는_MySQL에서_한글_이름과_ID순으로_반환하고_SQL은_2회다() {
         User owner = users.save(new User("mysql-map@test.com", "지도회원"));
         Trip trip = new Trip(owner.getUserId(), "지도여행", LocalDate.now(), LocalDate.now());
         ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
@@ -99,7 +99,7 @@ class TripPlaceFolderMySqlRepositoryTest {
                     .containsExactly(2L, 1L, 1L);
             assertThat(response.markers().getFirst().latitude()).isEqualByComparingTo("33.45000000");
             assertThat(response.markers().getFirst().longitude()).isEqualByComparingTo("126.94000000");
-            assertThat(statistics.getPrepareStatementCount()).isEqualTo(3L);
+            assertThat(statistics.getPrepareStatementCount()).isEqualTo(2L);
 
             Trip empty = new Trip(owner.getUserId(), "빈지도", LocalDate.now(), LocalDate.now());
             ReflectionTestUtils.setField(empty, "processingStatus", ProcessingStatus.COMPLETED);
@@ -107,7 +107,7 @@ class TripPlaceFolderMySqlRepositoryTest {
             statistics.clear();
 
             assertThat(tripService.findTripDetailMap(empty.getId(), owner.getUserId()).markers()).isEmpty();
-            assertThat(statistics.getPrepareStatementCount()).isEqualTo(3L);
+            assertThat(statistics.getPrepareStatementCount()).isEqualTo(2L);
         } finally {
             statistics.setStatisticsEnabled(previouslyEnabled);
         }

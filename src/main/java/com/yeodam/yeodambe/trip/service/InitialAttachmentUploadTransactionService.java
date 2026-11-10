@@ -743,6 +743,19 @@ public class InitialAttachmentUploadTransactionService {
                 .flatMap(this::claimCandidate);
     }
 
+    @Transactional(readOnly = true)
+    public List<InitialAttachmentUploadBatch> findPendingBatches() {
+        return batches.findPendingConversion(now(), PageRequest.of(0, 20));
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Optional<InitialAttachmentUploadBatchSnapshot> claimBatch(Long batchId) {
+        if (conversionProperties.mode() != AttachmentConversionRoute.DB || conversionProperties.operations().enabled()) {
+            return Optional.empty();
+        }
+        return batches.findById(batchId).flatMap(this::claimCandidate);
+    }
+
     private Optional<InitialAttachmentUploadBatchSnapshot> claimCandidate(
             InitialAttachmentUploadBatch candidate
     ) {

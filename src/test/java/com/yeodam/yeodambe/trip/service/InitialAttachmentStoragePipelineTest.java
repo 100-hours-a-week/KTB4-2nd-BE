@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
@@ -53,7 +54,7 @@ class InitialAttachmentStoragePipelineTest {
         transactions = mock(InitialAttachmentUploadTransactionService.class);
         meters = new SimpleMeterRegistry();
         scheduler = new TripDerivativeScheduler(1, 1, 10, 20, meters);
-        pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meters, 128 * 1024 * 1024L);
+        pipeline = new InitialAttachmentStoragePipeline(storage, transactions, scheduler, meters, 128 * 1024 * 1024L, TripMutationTestFixture.direct());
         when(transactions.renewLease(any())).thenReturn(true);
         when(transactions.startPhotoAttempt(any(InitialAttachmentUploadBatchSnapshot.class), any())).thenAnswer(call -> {
             Long id = call.getArgument(1);
@@ -402,7 +403,7 @@ class InitialAttachmentStoragePipelineTest {
                     call.getArgument(2), call.getArgument(3));
         });
         InitialAttachmentStoragePipeline limited = new InitialAttachmentStoragePipeline(
-                storage, transactions, rejecting, meters, 134217728L);
+                storage, transactions, rejecting, meters, 134217728L, TripMutationTestFixture.direct());
         CompletableFuture<String> upload = new CompletableFuture<>();
         CountDownLatch started = new CountDownLatch(1);
         InitialAttachmentUploadBatchSnapshot claim = claim(1L, 2L);
@@ -429,7 +430,7 @@ class InitialAttachmentStoragePipelineTest {
     @Test
     void 저장_bytes가_한도에_도달하면_새_배치를_선점_반환한다() throws Exception {
         InitialAttachmentStoragePipeline limited = new InitialAttachmentStoragePipeline(
-                storage, transactions, scheduler, meters, 1);
+                storage, transactions, scheduler, meters, 1, TripMutationTestFixture.direct());
         CompletableFuture<String> upload = new CompletableFuture<>();
         CountDownLatch started = new CountDownLatch(1);
         when(storage.storeDerivedToAsync(eq("1/analyze"), any(), eq("image/jpeg")))

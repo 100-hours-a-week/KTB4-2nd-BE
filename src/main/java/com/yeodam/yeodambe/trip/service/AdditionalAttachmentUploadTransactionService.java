@@ -636,49 +636,68 @@ public class AdditionalAttachmentUploadTransactionService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public List<AdditionalAttachmentUploadBatch> findPendingBatches() {
+        return uploadBatchRepository.findPendingConversion(databaseTime(), PageRequest.of(0, 20));
+    }
+
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Optional<AdditionalAttachmentUploadBatchSnapshot> claimBatch() {
         if (conversionProperties.mode() != AttachmentConversionRoute.DB || conversionProperties.operations().enabled()) {
             return Optional.empty();
         }
-        for (AdditionalAttachmentUploadBatch candidate : uploadBatchRepository.findPendingConversion(
-                databaseTime(), PageRequest.of(0, 20))) {
-            Trip trip = tripRepository.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId())
-                    .orElse(null);
-            if (trip == null || trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
-                continue;
+        for (AdditionalAttachmentUploadBatch candidate : findPendingBatches()) {
+            Optional<AdditionalAttachmentUploadBatchSnapshot> claim = claimBatch(candidate.getId());
+            if (claim.isPresent()) {
+                return claim;
             }
-            AdditionalAttachmentExecution execution = executionRepository.findForUpdate(candidate.getAdditionId())
-                    .orElse(null);
-            if (execution == null) {
-                continue;
-            }
-            entityManager.flush();
-            entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
-            AdditionalAttachmentUploadBatch batch = uploadBatchRepository.findForUpdate(
-                    candidate.getUploadId(), candidate.getTripId(), candidate.getUserId()).orElse(null);
-            if (batch == null) {
-                continue;
-            }
-            entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
-            LocalDateTime now = databaseTime();
-            if (batch.getConversionRoute() != AttachmentConversionRoute.DB
-                    || execution.isTerminal()
-                    || !execution.getTripId().equals(batch.getTripId())
-                    || !execution.getUserId().equals(batch.getUserId())
-                    || (batch.getStatus() != AdditionalAttachmentUploadStatus.VERIFIED
-                        && batch.getStatus() != AdditionalAttachmentUploadStatus.CONVERTING)
-                    || (batch.getLeaseExpiresAt() != null && batch.getLeaseExpiresAt().isAfter(now))
-                    || (batch.getNextAttemptAt() != null && batch.getNextAttemptAt().isAfter(now))) {
-                continue;
-            }
-            if (batch.getStatus() == AdditionalAttachmentUploadStatus.CONVERTING) {
-                batch.releaseConversion(batch.getWorkerToken());
-            }
-            batch.claimConversion(UUID.randomUUID().toString(), now.plusMinutes(10));
-            return Optional.of(snapshot(batch));
         }
         return Optional.empty();
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Optional<AdditionalAttachmentUploadBatchSnapshot> claimBatch(Long batchId) {
+        if (conversionProperties.mode() != AttachmentConversionRoute.DB || conversionProperties.operations().enabled()) {
+            return Optional.empty();
+        }
+        AdditionalAttachmentUploadBatch candidate = uploadBatchRepository.findById(batchId).orElse(null);
+        if (candidate == null) {
+            return Optional.empty();
+        }
+        Trip trip = tripRepository.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId())
+                .orElse(null);
+        if (trip == null || trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            return Optional.empty();
+        }
+        AdditionalAttachmentExecution execution = executionRepository.findForUpdate(candidate.getAdditionId())
+                .orElse(null);
+        if (execution == null) {
+            return Optional.empty();
+        }
+        entityManager.flush();
+        entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
+        AdditionalAttachmentUploadBatch batch = uploadBatchRepository.findForUpdate(
+                candidate.getUploadId(), candidate.getTripId(), candidate.getUserId()).orElse(null);
+        if (batch == null) {
+            return Optional.empty();
+        }
+        entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
+        LocalDateTime now = databaseTime();
+        if (batch.getConversionRoute() != AttachmentConversionRoute.DB
+                || execution.isTerminal()
+                || !execution.getTripId().equals(batch.getTripId())
+                || !execution.getUserId().equals(batch.getUserId())
+                || (batch.getStatus() != AdditionalAttachmentUploadStatus.VERIFIED
+                    && batch.getStatus() != AdditionalAttachmentUploadStatus.CONVERTING)
+                || (batch.getLeaseExpiresAt() != null && batch.getLeaseExpiresAt().isAfter(now))
+                || (batch.getNextAttemptAt() != null && batch.getNextAttemptAt().isAfter(now))) {
+            return Optional.empty();
+        }
+        if (batch.getStatus() == AdditionalAttachmentUploadStatus.CONVERTING) {
+            batch.releaseConversion(batch.getWorkerToken());
+        }
+        batch.claimConversion(UUID.randomUUID().toString(), now.plusMinutes(10));
+        return Optional.of(snapshot(batch));
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

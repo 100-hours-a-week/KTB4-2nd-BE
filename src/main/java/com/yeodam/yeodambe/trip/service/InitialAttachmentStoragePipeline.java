@@ -44,6 +44,7 @@ import java.util.function.Predicate;
 @Component
 public class InitialAttachmentStoragePipeline {
     private final TripAttachmentStorageClient storage;
+    private final TripMutationCoordinator mutations;
     private final InitialAttachmentUploadTransactionService transactions;
     private final TripDerivativeScheduler scheduler;
     private final long maxBytes;
@@ -64,12 +65,14 @@ public class InitialAttachmentStoragePipeline {
             InitialAttachmentUploadTransactionService transactions,
             TripDerivativeScheduler scheduler,
             MeterRegistry meters,
-            @Value("${attachment.derivative.storage-max-staged-bytes:134217728}") long maxBytes
+            @Value("${attachment.derivative.storage-max-staged-bytes:134217728}") long maxBytes,
+            TripMutationCoordinator mutations
     ) {
         if (maxBytes < 1) {
             throw new IllegalArgumentException(TripInternalErrorMessage.STORAGE_PENDING_BYTES_LIMIT_INVALID.message());
         }
         this.storage = storage;
+        this.mutations = mutations;
         this.transactions = transactions;
         this.scheduler = scheduler;
         this.maxBytes = maxBytes;
@@ -100,7 +103,7 @@ public class InitialAttachmentStoragePipeline {
             }
         }
         if (!accepted) {
-            transactions.releaseSaturatedBatch(claim);
+            mutations.run(claim.tripId(), () -> transactions.releaseSaturatedBatch(claim));
         }
     }
 
@@ -200,7 +203,7 @@ public class InitialAttachmentStoragePipeline {
     private void heartbeat(Batch batch) {
         try (var scope = WorkflowMdcScope.open(batch.context)) {
             try {
-                if (!transactions.renewLease(batch.claim)) {
+                if (!mutations.execute(batch.claim.tripId(), () -> transactions.renewLease(batch.claim))) {
                     throw new CancellationException(TripInternalErrorMessage.STORAGE_CLAIM_EXPIRED.message());
                 }
             } catch (RuntimeException failure) {
@@ -240,12 +243,14 @@ public class InitialAttachmentStoragePipeline {
                 scheduler.submitPrepared(batch.claim.executionId(), photo.contentType(), () -> {
                     try (var conversionScope = WorkflowMdcScope.open(batch.context)) {
                         populatePhotoLoggingContext(photo);
-                        List<String> keys = transactions.startPhotoAttempt(batch.claim, photo.itemId());
+                        List<String> keys = mutations.execute(batch.claim.tripId(),
+                                () -> transactions.startPhotoAttempt(batch.claim, photo.itemId()));
                         return WorkflowLog.collect(batch.timings, () -> batch.prepare.apply(photo, keys));
                     }
                 }, () -> {
                     try (var leaseScope = WorkflowMdcScope.open(batch.context)) {
-                        return !stopping.get() && transactions.renewLease(batch.claim);
+                        return !stopping.get()
+                                && mutations.execute(batch.claim.tripId(), () -> transactions.renewLease(batch.claim));
                     }
                 })
                         .whenComplete((prepared, failure) -> control.execute(() -> {
@@ -325,7 +330,8 @@ public class InitialAttachmentStoragePipeline {
                         requireActive(pending.batch);
                         retain(pending.prepared);
                         WorkflowLog.collect(pending.batch.timings, () -> {
-                            transactions.savePhotoSuccess(pending.batch.claim, pending.photo.itemId(), pending.prepared.photo());
+                            mutations.run(pending.batch.claim.tripId(), () -> transactions.savePhotoSuccess(
+                                    pending.batch.claim, pending.photo.itemId(), pending.prepared.photo()));
                             return null;
                         });
                         success = true;
@@ -368,7 +374,8 @@ public class InitialAttachmentStoragePipeline {
     }
 
     private void requireActive(Batch batch) {
-        if (stopping.get() || batch.failure != null || !transactions.renewLease(batch.claim)) {
+        if (stopping.get() || batch.failure != null
+                || !mutations.execute(batch.claim.tripId(), () -> transactions.renewLease(batch.claim))) {
             throw new CancellationException(TripInternalErrorMessage.STORAGE_CLAIM_LOST.message());
         }
     }
@@ -397,11 +404,12 @@ public class InitialAttachmentStoragePipeline {
             batch.heartbeat.cancel(false);
             try {
                 if (batch.failure == null && batch.saturated) {
-                    transactions.releaseSaturatedBatch(batch.claim);
+                    mutations.run(batch.claim.tripId(), () -> transactions.releaseSaturatedBatch(batch.claim));
                 } else if (batch.failure == null) {
-                    transactions.completeBatch(batch.claim);
+                    mutations.run(batch.claim.tripId(), () -> transactions.completeBatch(batch.claim));
                 } else {
-                    transactions.retryBatch(batch.claim, batch.failedItem, !batch.transientFailure.test(batch.failure));
+                    mutations.run(batch.claim.tripId(), () -> transactions.retryBatch(
+                            batch.claim, batch.failedItem, !batch.transientFailure.test(batch.failure)));
                 }
             } catch (RuntimeException failure) {
                 logBatchCompletionFailure(batch.claim.executionId(), failure);

@@ -2,7 +2,6 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
-
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
@@ -13,18 +12,28 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadBatch;
+import com.yeodam.yeodambe.trip.exception.TripEditLockRejectedException;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.RecoverableDataAccessException;
+import org.springframework.dao.TransientDataAccessException;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ScheduledFuture;
 
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class AdditionalAttachmentDerivativeWorker {
     private final AdditionalAttachmentUploadTransactionService transactions;
+    private final TripMutationCoordinator mutations;
     private final TripAttachmentDerivativeService derivatives;
     private final TripDerivativeScheduler scheduler;
     private final TripAttachmentStorageClient storage;
@@ -37,7 +46,14 @@ public class AdditionalAttachmentDerivativeWorker {
         if (conversionProperties.mode() != AttachmentConversionRoute.DB) {
             return;
         }
-        transactions.claimBatch().ifPresent(claim -> convertNext(claim, 0, new WorkflowLog.BatchTimings()));
+        for (AdditionalAttachmentUploadBatch candidate : transactions.findPendingBatches()) {
+            Optional<AdditionalAttachmentUploadBatchSnapshot> claim = mutations.execute(candidate.getTripId(),
+                    () -> transactions.claimBatch(candidate.getId()));
+            if (claim.isPresent()) {
+                convertNext(claim.get(), 0, new WorkflowLog.BatchTimings());
+                return;
+            }
+        }
     }
 
     private void convertNext(
@@ -45,9 +61,9 @@ public class AdditionalAttachmentDerivativeWorker {
             int from,
             WorkflowLog.BatchTimings timings
     ) {
-        try (var scope = WorkflowMdcScope.job("trip_reanalysis", claim.tripId(), claim.executionId())) {
+        try (WorkflowMdcScope scope = WorkflowMdcScope.job("trip_reanalysis", claim.tripId(), claim.executionId())) {
             populateBatchLoggingContext(claim);
-            var context = MDC.getCopyOfContextMap();
+            Map<String, String> context = MDC.getCopyOfContextMap();
             int index = from;
             while (index < claim.photos().size() && claim.photos().get(index).derived() != null) {
                 index++;
@@ -55,22 +71,22 @@ public class AdditionalAttachmentDerivativeWorker {
             if (index == claim.photos().size()) {
                 timings.log();
                 try {
-                    transactions.completeBatch(claim);
+                    mutations.run(claim.tripId(), () -> transactions.completeBatch(claim));
                 } catch (RuntimeException failure) {
                     logBatchCompletionFailure(claim.executionId(), failure);
-                    transactions.releaseSaturatedBatch(claim);
+                    mutations.run(claim.tripId(), () -> transactions.releaseSaturatedBatch(claim));
                 }
                 return;
             }
-            var photo = claim.photos().get(index);
+            AdditionalAttachmentUploadBatchSnapshot.Photo photo = claim.photos().get(index);
             if (photo.attempts() >= 3) {
                 timings.log();
-                transactions.retryBatch(claim, photo.itemId(), true);
+                mutations.run(claim.tripId(), () -> transactions.retryBatch(claim, photo.itemId(), true));
                 return;
             }
-            var heartbeat = leases.scheduleAtFixedRate(() -> {
-                try (var heartbeatScope = WorkflowMdcScope.open(context)) {
-                    if (!transactions.renewLease(claim)) {
+            ScheduledFuture<?> heartbeat = leases.scheduleAtFixedRate(() -> {
+                try (WorkflowMdcScope heartbeatScope = WorkflowMdcScope.open(context)) {
+                    if (!mutations.execute(claim.tripId(), () -> transactions.renewLease(claim))) {
                         scheduler.cancelExecution(claim.executionId());
                     }
                 } catch (RuntimeException failure) {
@@ -80,44 +96,81 @@ public class AdditionalAttachmentDerivativeWorker {
             }, 30, 30, TimeUnit.SECONDS);
             try {
                 int next = index + 1;
-                var task = new TripDerivativeScheduler.PhotoTask(0, photo.contentType(), () -> {
-                    try (var conversionScope = WorkflowMdcScope.open(context)) {
+                TripDerivativeScheduler.PhotoTask task = new TripDerivativeScheduler.PhotoTask(0, photo.contentType(), () -> {
+                    try (WorkflowMdcScope conversionScope = WorkflowMdcScope.open(context)) {
                         populatePhotoLoggingContext(photo.itemId(), photo.attempts() + 1);
-                        var keys = transactions.startPhotoAttempt(claim, photo.itemId());
-                        var derived = WorkflowLog.collect(timings, () -> derivatives.generateAdditional(
+                        List<String> keys = mutations.execute(claim.tripId(),
+                                () -> transactions.startPhotoAttempt(claim, photo.itemId()));
+                        DerivedPhotoKeys derived = WorkflowLog.collect(timings, () -> derivatives.generateAdditional(
                                 claim.executionId(), photo.objectKey(), photo.contentType(), keys));
-                        var retained = new ArrayList<>(keys);
+                        List<String> retained = new ArrayList<>(keys);
                         retained.add(photo.objectKey());
                         storage.retain(retained);
-                        WorkflowLog.collect(timings, () -> {
-                            transactions.savePhotoSuccess(claim, photo.itemId(), derived);
-                            return null;
-                        });
                         return derived;
                     }
                 });
-                scheduler.submit(claim.executionId(), List.of(task), () -> transactions.renewLease(claim))
+                scheduler.submit(claim.executionId(), List.of(task),
+                                () -> mutations.execute(claim.tripId(), () -> transactions.renewLease(claim)))
                         .whenComplete((result, failure) -> {
-                            try (var callbackScope = WorkflowMdcScope.open(context)) {
-                                heartbeat.cancel(false);
+                            try (WorkflowMdcScope callbackScope = WorkflowMdcScope.open(context)) {
                                 if (failure == null) {
-                                    convertNext(claim, next, timings);
+                                    saveConverted(claim, photo, result.getFirst(), next, timings, heartbeat, context);
                                 } else {
+                                    heartbeat.cancel(false);
                                     timings.log();
-                                    transactions.retryBatch(claim, photo.itemId(),
-                                            !derivatives.isTransientConversionFailure(failure));
+                                    mutations.run(claim.tripId(), () -> transactions.retryBatch(claim, photo.itemId(),
+                                            !derivatives.isTransientConversionFailure(failure)));
                                 }
                             }
                         });
             } catch (RejectedExecutionException saturated) {
                 heartbeat.cancel(false);
                 timings.log();
-                transactions.releaseSaturatedBatch(claim);
+                mutations.run(claim.tripId(), () -> transactions.releaseSaturatedBatch(claim));
             } catch (RuntimeException failure) {
                 heartbeat.cancel(false);
                 timings.log();
-                transactions.retryBatch(claim, photo.itemId(), !derivatives.isTransientConversionFailure(failure));
+                mutations.run(claim.tripId(), () -> transactions.retryBatch(
+                        claim, photo.itemId(), !derivatives.isTransientConversionFailure(failure)));
             }
+        }
+    }
+
+    private void saveConverted(
+            AdditionalAttachmentUploadBatchSnapshot claim,
+            AdditionalAttachmentUploadBatchSnapshot.Photo photo,
+            DerivedPhotoKeys output,
+            int next,
+            WorkflowLog.BatchTimings timings,
+            ScheduledFuture<?> heartbeat,
+            Map<String, String> context
+    ) {
+        try (WorkflowMdcScope scope = WorkflowMdcScope.open(context)) {
+            try {
+                WorkflowLog.collect(timings, () -> {
+                    mutations.run(claim.tripId(), () -> transactions.savePhotoSuccess(claim, photo.itemId(), output));
+                    return null;
+                });
+            } catch (TransientDataAccessException
+                     | RecoverableDataAccessException
+                     | DataAccessResourceFailureException
+                     | TripEditLockRejectedException failure) {
+                logBatchCompletionFailure(claim.executionId(), failure);
+                if (!leases.isShutdown()) {
+                    leases.schedule(() -> saveConverted(claim, photo, output, next, timings, heartbeat, context),
+                            1, TimeUnit.SECONDS);
+                }
+                return;
+            } catch (RuntimeException failure) {
+                heartbeat.cancel(false);
+                timings.log();
+                boolean permanent = failure instanceof DataAccessException
+                        || !derivatives.isTransientConversionFailure(failure);
+                mutations.run(claim.tripId(), () -> transactions.retryBatch(claim, photo.itemId(), permanent));
+                return;
+            }
+            heartbeat.cancel(false);
+            convertNext(claim, next, timings);
         }
     }
 

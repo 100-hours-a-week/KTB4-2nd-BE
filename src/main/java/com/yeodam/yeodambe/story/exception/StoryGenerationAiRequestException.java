@@ -12,7 +12,16 @@ public class StoryGenerationAiRequestException extends RuntimeException {
             Integer statusCode,
             String errorCode
     ) {
-        super(message.message());
+        this(message, statusCode, errorCode, null);
+    }
+
+    public StoryGenerationAiRequestException(
+            StoryGenerationInternalErrorMessage message,
+            Integer statusCode,
+            String errorCode,
+            Throwable cause
+    ) {
+        super(message.message(), cause);
         this.statusCode = statusCode;
         this.errorCode = errorCode;
     }

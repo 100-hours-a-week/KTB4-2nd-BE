@@ -283,7 +283,7 @@ class StoryGenerationControllerTest {
     @ValueSource(booleans = {true, false})
     void 없거나_다른_소유자의_작업_취소는_조회_실패를_반환한다(boolean missing) throws Exception {
         if (missing) {
-            when(jobs.findById(7L)).thenReturn(Optional.empty());
+            when(jobs.findByIdForUpdate(7L)).thenReturn(Optional.empty());
         } else {
             prepareCancellationJob(999L);
         }
@@ -318,14 +318,38 @@ class StoryGenerationControllerTest {
                 .andExpect(jsonPath("$.message").value("STORY_GENERATION_CANNOT_BE_CANCELED"));
     }
 
-    @Test
-    void AI_취소_실패는_내부_오류를_반환한다() throws Exception {
-        prepareCancellationJob(42L);
-        when(ai.cancel(100L)).thenThrow(new StoryGenerationAiRequestException(
-                StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, null, null));
+    @ParameterizedTest
+    @CsvSource({
+            "502, STORY_GENERATION_CANCEL_FAILED",
+            "503, STORY_GENERATION_CANCEL_UNAVAILABLE"
+    })
+    void AI_취소_통신_오류를_구분하고_작업_상태를_유지한다(int status, String message) throws Exception {
+        var saved = prepareCancellationJob(42L);
+        var failure = status == 502
+                ? new StoryGenerationAiRequestException(
+                        StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, 500, null)
+                : new StoryGenerationAiRequestException(
+                        StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED, null, null,
+                        new org.springframework.web.client.ResourceAccessException("timeout"));
+        when(ai.cancel(100L)).thenThrow(failure);
 
-        mvc.perform(authenticatedCancellation()).andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.message").value("INTERNAL_SERVER_ERROR"));
+        mvc.perform(authenticatedCancellation()).andExpect(status().is(status))
+                .andExpect(jsonPath("$.message").value(message))
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.PROCESSING);
+    }
+
+    @Test
+    void 대기_작업_취소는_AI_호출_없이_204를_반환한다() throws Exception {
+        var saved = new StoryGenerationJob("execution-cancel", 100L, 42L, Story.Mood.EMOTIONAL);
+        when(jobs.findByIdForUpdate(7L)).thenReturn(Optional.of(saved));
+
+        mvc.perform(authenticatedCancellation()).andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        assertThat(saved.getStatus()).isEqualTo(StoryGenerationJob.Status.CANCELED);
+        verifyNoInteractions(ai);
     }
 
     @Test
@@ -347,6 +371,7 @@ class StoryGenerationControllerTest {
 
     private StoryGenerationJob prepareCancellationJob(Long ownerId) {
         var saved = new StoryGenerationJob("execution-cancel", 100L, ownerId, Story.Mood.EMOTIONAL);
+        saved.updateProcessing(50);
         when(jobs.findById(7L)).thenReturn(Optional.of(saved));
         when(jobs.findByIdForUpdate(7L)).thenReturn(Optional.of(saved));
         return saved;

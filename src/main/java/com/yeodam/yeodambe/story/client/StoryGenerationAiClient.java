@@ -93,7 +93,8 @@ public class StoryGenerationAiClient {
             throw new StoryGenerationAiRequestException(
                     failureMessage,
                     null,
-                    null
+                    null,
+                    failure
             );
         }
     }

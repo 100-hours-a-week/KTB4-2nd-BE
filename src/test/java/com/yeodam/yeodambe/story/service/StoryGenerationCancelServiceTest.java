@@ -23,15 +23,21 @@ import static org.mockito.Mockito.*;
 class StoryGenerationCancelServiceTest {
     private final StoryGenerationJobRepository jobs = mock(StoryGenerationJobRepository.class);
     private final StoryGenerationAiClient ai = mock(StoryGenerationAiClient.class);
-    private final StoryGenerationCancelService service = new StoryGenerationCancelService(jobs, ai, new StoryGenerationTerminalService(jobs, mock(org.springframework.context.ApplicationEventPublisher.class), mock(StoryGenerationDiscardService.class)));
+    private final StoryGenerationCancelService service = new StoryGenerationCancelService(ai, new StoryGenerationTerminalService(jobs, mock(org.springframework.context.ApplicationEventPublisher.class), mock(StoryGenerationDiscardService.class)));
 
-    @ParameterizedTest
-    @EnumSource(value = StoryGenerationJob.Status.class, names = {"QUEUED", "PROCESSING"})
-    void 취소_확인_응답을_받으면_즉시_작업을_종료한다(StoryGenerationJob.Status status) {
+    @Test
+    void 대기_작업은_AI_호출_없이_취소한다() {
+        var job = prepare(42L, false);
+
+        service.cancel(42L, 7L);
+
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.CANCELED);
+        verifyNoInteractions(ai);
+    }
+
+    @Test
+    void 취소_확인_응답을_받으면_즉시_작업을_종료한다() {
         var job = prepare(42L);
-        if (status == StoryGenerationJob.Status.PROCESSING) {
-            job.updateProcessing(50);
-        }
         when(ai.cancel(77L)).thenReturn(response(77L, "execution-1", StoryGenerationAiResponse.Status.CANCELED));
 
         service.cancel(42L, 7L);
@@ -62,7 +68,7 @@ class StoryGenerationCancelServiceTest {
     @ValueSource(booleans = {true, false})
     void 없거나_다른_소유자의_작업은_AI_요청_전에_거부한다(boolean missing) {
         if (missing) {
-            when(jobs.findById(7L)).thenReturn(Optional.empty());
+            when(jobs.findByIdForUpdate(7L)).thenReturn(Optional.empty());
         } else {
             prepare(999L);
         }
@@ -90,7 +96,7 @@ class StoryGenerationCancelServiceTest {
         when(ai.cancel(77L)).thenThrow(failure);
 
         assertThatThrownBy(() -> service.cancel(42L, 7L)).isSameAs(failure);
-        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.PROCESSING);
     }
 
     @ParameterizedTest
@@ -137,8 +143,8 @@ class StoryGenerationCancelServiceTest {
 
         assertThatThrownBy(() -> service.cancel(42L, 7L)).isSameAs(failure);
 
-        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
-        verify(jobs, never()).findByIdForUpdate(anyLong());
+        assertThat(job.getStatus()).isEqualTo(StoryGenerationJob.Status.PROCESSING);
+        verify(jobs).findByIdForUpdate(7L);
     }
 
     @Test
@@ -156,8 +162,14 @@ class StoryGenerationCancelServiceTest {
     }
 
     private StoryGenerationJob prepare(Long ownerId) {
+        return prepare(ownerId, true);
+    }
+
+    private StoryGenerationJob prepare(Long ownerId, boolean processing) {
         var job = new StoryGenerationJob("execution-1", 77L, ownerId, Story.Mood.EMOTIONAL);
-        when(jobs.findById(7L)).thenReturn(Optional.of(job));
+        if (processing) {
+            job.updateProcessing(50);
+        }
         when(jobs.findByIdForUpdate(7L)).thenReturn(Optional.of(job));
         return job;
     }

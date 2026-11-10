@@ -1,12 +1,10 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.common.exception.StoryGenerationCannotBeCanceledException;
-import com.yeodam.yeodambe.common.exception.StoryGenerationNotFoundException;
 import com.yeodam.yeodambe.story.client.StoryGenerationAiClient;
 import com.yeodam.yeodambe.story.client.response.StoryGenerationAiResponse;
 import com.yeodam.yeodambe.story.exception.StoryGenerationAiRequestException;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
-import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -14,18 +12,15 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class StoryGenerationCancelService {
 
-    private final StoryGenerationJobRepository jobRepository;
     private final StoryGenerationAiClient aiClient;
     private final StoryGenerationTerminalService terminalService;
 
     public void cancel(Long userId, Long generationId) {
-        var job = jobRepository.findById(generationId)
-                .filter(saved -> saved.getUserId().equals(userId))
-                .orElseThrow(StoryGenerationNotFoundException::new);
-
-        if (job.isFinished()) {
-            throw new StoryGenerationCannotBeCanceledException();
+        var processingJob = terminalService.prepareCancellation(userId, generationId);
+        if (processingJob.isEmpty()) {
+            return;
         }
+        var job = processingJob.get();
 
         StoryGenerationAiResponse response;
 

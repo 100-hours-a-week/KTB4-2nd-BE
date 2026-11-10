@@ -176,20 +176,27 @@ class StoryGenerationKafkaResultIntegrationTest {
     }
 
     @ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
-    void 취소를_저장하고_늦은_Kafka_결과의_스토리_생성을_막는다(boolean taskMissing) throws Exception {
-        if (taskMissing) {
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"queued", "missing", "confirmed"})
+    void 취소를_저장하고_늦은_Kafka_결과의_스토리_생성을_막는다(String scenario) throws Exception {
+        if (!"queued".equals(scenario)) {
+            job.updateProcessing(50);
+            jobs.saveAndFlush(job);
+        }
+        if ("missing".equals(scenario)) {
             org.mockito.Mockito.when(ai.cancel(trip.getId())).thenThrow(
                     new com.yeodam.yeodambe.story.exception.StoryGenerationAiRequestException(
                             com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage.AI_CANCEL_REQUEST_FAILED,
                             404, "TASK_NOT_FOUND"));
-        } else {
+        } else if ("confirmed".equals(scenario)) {
             org.mockito.Mockito.when(ai.cancel(trip.getId())).thenReturn(new StoryGenerationAiResponse(
                     trip.getId(), job.getExecutionId(), StoryGenerationAiResponse.Status.CANCELED,
                     null, null, null, null));
         }
 
         cancellation.cancel(owner.getUserId(), job.getId());
+        if ("queued".equals(scenario)) {
+            org.mockito.Mockito.verify(ai, org.mockito.Mockito.never()).cancel(trip.getId());
+        }
 
         assertThat(jobs.findById(job.getId()).orElseThrow().getStatus())
                 .isEqualTo(StoryGenerationJob.Status.CANCELED);

@@ -260,7 +260,7 @@ class StoryUpdateServiceIntegrationTest {
     }
 
     @Test
-    void 신규블록_추가와_누락삭제_재전송_삭제블록_복구를_처리한다() {
+    void 삭제한_사진을_다시_추가하면_새_블록_ID를_발급한다() {
         Long newPhoto = newPhoto(true);
         var input = request(block(null, newPhoto, 1));
         var first = service.update(fixture.userId(), fixture.storyId(), input);
@@ -277,10 +277,31 @@ class StoryUpdateServiceIntegrationTest {
             assertThat(em.createQuery("select count(b) from StoryBlock b where b.storyId = :id", Long.class)
                     .setParameter("id", fixture.storyId()).getSingleResult()).isEqualTo(1L);
         });
-        var restored = service.update(fixture.userId(), fixture.storyId(), request(
+        var readded = service.update(fixture.userId(), fixture.storyId(), request(
                 block(null, fixture.photoId(), 1), block(newBlock, newPhoto, 2)));
-        assertThat(restored.days().stream().flatMap(day -> day.blocks().stream()))
-                .extracting(item -> item.storyBlockId()).containsExactly(fixture.blockId(), newBlock);
+        assertThat(readded.days().stream().flatMap(day -> day.blocks().stream()))
+                .filteredOn(item -> item.tripAttachmentId().equals(fixture.photoId()))
+                .singleElement().satisfies(item -> assertThat(item.storyBlockId()).isNotIn(fixture.blockId(), newBlock));
+        assertThat(contents.findById(fixture.storyId()).orElseThrow().getBlocks())
+                .filteredOn(item -> item.id().equals(fixture.blockId()))
+                .singleElement().satisfies(item -> assertThat(item.deletedAt()).isNotNull());
+    }
+
+    @Test
+    void 삭제된_블록_ID는_거절하지만_그_사진으로_활성_블록을_교체할_수_있다() {
+        Long newPhoto = newPhoto(true);
+        var first = service.update(fixture.userId(), fixture.storyId(), request(block(null, newPhoto, 1)));
+        Long activeBlockId = first.days().getFirst().blocks().getFirst().storyBlockId();
+
+        assertThatThrownBy(() -> service.update(fixture.userId(), fixture.storyId(), request(
+                block(fixture.blockId(), fixture.photoId(), 1))))
+                .isInstanceOf(StoryOrAttachmentNotFoundException.class);
+
+        var replaced = service.update(fixture.userId(), fixture.storyId(), request(
+                block(activeBlockId, fixture.photoId(), 1)));
+        var block = replaced.days().getFirst().blocks().getFirst();
+        assertThat(block.storyBlockId()).isEqualTo(activeBlockId);
+        assertThat(block.tripAttachmentId()).isEqualTo(fixture.photoId());
     }
 
     @Test

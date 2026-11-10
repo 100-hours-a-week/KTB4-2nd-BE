@@ -50,6 +50,13 @@ public class StoryReadService {
         return prepareContentResponse(tripId, context.ownerId().equals(userId), content);
     }
 
+    boolean hasNoVisiblePhotos(Long tripId, Long storyId) {
+        return storyContentRepository.findActiveContentById(storyId)
+                .map(content -> loadValidatedBlockDetails(tripId, content).stream()
+                        .allMatch(this::isDeletedContentPhoto))
+                .orElse(false);
+    }
+
     StoryDetailResponse prepareContentResponse(
             Long tripId,
             boolean userByMe,
@@ -65,17 +72,7 @@ public class StoryReadService {
             boolean userByMe,
             StoryReadContent content
     ) {
-        List<StoryContentBlock> blocks = content.blocks().stream()
-                .filter(block -> block.deletedAt() == null)
-                .toList();
-
-        storyValidator.validateBlockCount(blocks);
-
-        List<StoryContentBlockDetail> details =
-                loadContentBlockDetails(blocks);
-
-        storyValidator.validateContentBlockRelations(tripId, details);
-
+        List<StoryContentBlockDetail> details = loadValidatedBlockDetails(tripId, content);
         List<StoryContentBlockDetail> visibleBlocks = details.stream()
                 .filter(detail -> !isDeletedContentPhoto(detail))
                 .toList();
@@ -92,13 +89,19 @@ public class StoryReadService {
         );
     }
 
-    private List<StoryContentBlockDetail> loadContentBlockDetails(
-            List<StoryContentBlock> blocks
-    ) {
+    private List<StoryContentBlockDetail> loadValidatedBlockDetails(Long tripId, StoryReadContent content) {
+        List<StoryContentBlock> blocks = content.blocks().stream()
+                .filter(block -> block.deletedAt() == null)
+                .toList();
+
+        storyValidator.validateBlockCount(blocks);
+
         if (blocks.isEmpty()) {
             return List.of();
         }
-        return referenceQuery.findByBlocks(blocks);
+        List<StoryContentBlockDetail> details = referenceQuery.findByBlocks(blocks);
+        storyValidator.validateContentBlockRelations(tripId, details);
+        return details;
     }
 
     private void requireAccess(StoryReadContext context, Long userId) {

@@ -17,6 +17,7 @@ import com.yeodam.yeodambe.common.exception.StoryGenerationInProgressException;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -31,6 +32,8 @@ public class StoryGenerationJobService {
     private final StoryRepository storyRepository;
     private final StoryGenerationJobRepository jobRepository;
     private final StoryGenerationPlaceRepository placeRepository;
+    private final StoryReadService storyReadService;
+    private final StoryPhotoChangeService storyPhotoChangeService;
 
     @Transactional
     public StoryGenerationJob create(
@@ -40,9 +43,12 @@ public class StoryGenerationJobService {
     ) {
         Trip trip = inputService.validate(userId, tripId, request);
 
-        if (storyRepository.findCurrentCompletedByTripId(trip.getId()).isPresent()) {
-            throw new StoryAlreadyExistsException();
-        }
+        storyRepository.findCurrentCompletedByTripId(trip.getId()).ifPresent(story -> {
+            if (!storyReadService.hasNoVisiblePhotos(trip.getId(), story.getId())) {
+                throw new StoryAlreadyExistsException();
+            }
+            storyPhotoChangeService.invalidateCurrentStory(trip, LocalDateTime.now());
+        });
 
         if (jobRepository.existsByTripIdAndStatusIn(
                 trip.getId(),

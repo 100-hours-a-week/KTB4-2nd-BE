@@ -41,6 +41,12 @@ public class WithdrawalController {
                 Long.valueOf(jwt.getSubject()),
                 csrfContext
         );
+        ResponseCookie csrfContextCookie = expiredCookie("CSRF_CONTEXT", "/");
+        ResponseCookie oauthBrowserContextCookie = expiredCookie(
+                "OAUTH_BROWSER_CONTEXT",
+                cookiePathResolver.apiPath("/auth")
+        );
+
         return ResponseEntity.noContent()
                 .header(
                         HttpHeaders.SET_COOKIE,
@@ -48,7 +54,9 @@ public class WithdrawalController {
                         expiredCookie(
                                 "refreshToken",
                                 cookiePathResolver.apiPath("/auth")
-                        ).toString()
+                        ).toString(),
+                        csrfContextCookie.toString(),
+                        oauthBrowserContextCookie.toString()
                 )
                 .build();
     }

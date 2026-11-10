@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.trip.entity.TripSharePermission;
 import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -95,5 +96,18 @@ public interface TripShareUserRepository extends JpaRepository<TripShareUser, Lo
             @Param("now") LocalDateTime now,
             @Param("lastTripShareId") Long lastTripShareId,
             Pageable pageable
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update TripShareUser share
+            set share.deletedAt = :withdrawnAt,
+                share.updatedAt = :withdrawnAt
+            where share.deletedAt is null
+              and (share.userId = :userId or share.granteeUserId = :userId)
+            """)
+    int softDeleteByUserId(
+            @Param("userId") Long userId,
+            @Param("withdrawnAt") LocalDateTime withdrawnAt
     );
 }

@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.trip.service.TripEditLock;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketAuthRevocationPublisher;
 import java.util.List;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +33,10 @@ class WithdrawalServiceAuthenticationCleanupTest {
     private final WithdrawalTransactionService transactions = mock(WithdrawalTransactionService.class);
     private final LoginSessionStore sessions = mock(LoginSessionStore.class);
     private final CsrfTokenStore csrf = mock(CsrfTokenStore.class);
-    private final WithdrawalService service = new WithdrawalService(trips, editLock, transactions, sessions, csrf);
+    private final WebSocketAuthRevocationPublisher authRevocationPublisher =
+            mock(WebSocketAuthRevocationPublisher.class);
+    private final WithdrawalService service = new WithdrawalService(
+            trips, editLock, transactions, sessions, csrf, authRevocationPublisher);
 
     @BeforeEach
     void executeLockedAction() {
@@ -53,7 +57,7 @@ class WithdrawalServiceAuthenticationCleanupTest {
                 .isInstanceOf(WithdrawalFailedException.class)
                 .hasCause(failure);
 
-        verifyNoInteractions(editLock, transactions, csrf, sessions);
+        verifyNoInteractions(editLock, transactions, csrf, sessions, authRevocationPublisher);
     }
 
     @Test
@@ -64,7 +68,7 @@ class WithdrawalServiceAuthenticationCleanupTest {
 
         assertThatThrownBy(() -> service.withdraw(42L, "browser")).isSameAs(failure);
 
-        verifyNoInteractions(editLock, transactions, csrf, sessions);
+        verifyNoInteractions(editLock, transactions, csrf, sessions, authRevocationPublisher);
     }
 
     @Test
@@ -75,17 +79,18 @@ class WithdrawalServiceAuthenticationCleanupTest {
 
         assertThatThrownBy(() -> service.withdraw(42L, "browser")).isSameAs(failure);
 
-        verifyNoInteractions(transactions, csrf, sessions);
+        verifyNoInteractions(transactions, csrf, sessions, authRevocationPublisher);
     }
 
     @Test
     void 탈퇴_트랜잭션_성공_후_CSRF와_전체_로그인_세션을_정리한다() {
         service.withdraw(42L, "browser");
 
-        InOrder ordered = inOrder(transactions, csrf, sessions);
+        InOrder ordered = inOrder(transactions, csrf, sessions, authRevocationPublisher);
         ordered.verify(transactions).withdraw(42L, List.of(7L));
         ordered.verify(csrf).delete("browser");
         ordered.verify(sessions).deleteByUserId(42L);
+        ordered.verify(authRevocationPublisher).revokeUser(42L);
     }
 
     @Test
@@ -95,7 +100,7 @@ class WithdrawalServiceAuthenticationCleanupTest {
 
         assertThatThrownBy(() -> service.withdraw(42L, "browser")).isInstanceOf(IllegalStateException.class);
 
-        verifyNoInteractions(csrf, sessions);
+        verifyNoInteractions(csrf, sessions, authRevocationPublisher);
     }
 
     @Test
@@ -106,6 +111,7 @@ class WithdrawalServiceAuthenticationCleanupTest {
         service.withdraw(42L, "browser");
 
         verify(sessions).deleteByUserId(42L);
+        verify(authRevocationPublisher).revokeUser(42L);
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.user.controller;
 import com.yeodam.yeodambe.user.service.LogoutService;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketAuthRevocationPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class LogoutControllerTest {
@@ -25,29 +27,34 @@ class LogoutControllerTest {
     @Mock
     private CsrfTokenStore csrfTokenStore;
 
+    @Mock
+    private WebSocketAuthRevocationPublisher authRevocationPublisher;
+
     private LogoutController controller;
 
     @BeforeEach
     void setUp() {
         controller = new LogoutController(
-                service, csrfTokenStore, false, new CookiePathResolver("/api")
+                service, csrfTokenStore, false, new CookiePathResolver("/api"), authRevocationPublisher
         );
     }
 
     @Test
     void 현재_세션을_삭제하고_인증_쿠키를_만료시킨다() {
         Jwt jwt = mock(Jwt.class);
+        given(jwt.getSubject()).willReturn("42");
         given(jwt.getClaimAsString("sid"))
                 .willReturn("current-session-id");
 
         ResponseEntity<Void> response = controller.logout(jwt, "csrf-logout");
 
         then(service).should().logout("current-session-id");
+        verify(authRevocationPublisher).revokeSession(42L, "current-session-id");
         then(csrfTokenStore).should().delete("csrf-logout");
         assertThat(response.getStatusCode().value()).isEqualTo(204);
         assertThat(response.getBody()).isNull();
         assertThat(response.getHeaders().get("Set-Cookie"))
-                .hasSize(2)
+                .hasSize(4)
                 .anySatisfy(cookie -> assertThat(cookie)
                         .contains(
                                 "accessToken=",
@@ -60,6 +67,23 @@ class LogoutControllerTest {
                         .contains(
                                 "refreshToken=",
                                 "Path=/api/auth",
+                                "Max-Age=0",
+                                "HttpOnly",
+                                "SameSite=Lax"
+                        ));
+        assertThat(response.getHeaders().get("Set-Cookie"))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains(
+                                "CSRF_CONTEXT=;",
+                                "Path=/;",
+                                "Max-Age=0",
+                                "HttpOnly",
+                                "SameSite=Lax"
+                        ))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains(
+                                "OAUTH_BROWSER_CONTEXT=;",
+                                "Path=/api/auth;",
                                 "Max-Age=0",
                                 "HttpOnly",
                                 "SameSite=Lax"

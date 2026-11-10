@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
 import org.junit.jupiter.api.Test;
 import com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage;
 import jakarta.persistence.EntityManager;
@@ -20,10 +21,11 @@ class TripWithdrawalServiceTest {
     private final TripRegionRepository regions = mock(TripRegionRepository.class);
     private final TripDetailPlaceRepository places = mock(TripDetailPlaceRepository.class);
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
+    private final TripShareUserRepository shares = mock(TripShareUserRepository.class);
     private final StoredFileRepository files = mock(StoredFileRepository.class);
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private final TripWithdrawalService service = new TripWithdrawalService(
-            trips, regions, places, attachments, files,
+            trips, regions, places, attachments, shares, files,
             mock(TripWorkflowCancellationService.class), mock(EntityManager.class), mapCache);
 
     @Test
@@ -35,6 +37,7 @@ class TripWithdrawalServiceTest {
         ordered.verify(trips).softDeleteByUserId(1L, at);
         ordered.verify(mapCache).evictAfterCommit(1L);
         verify(attachments).softDeleteByUserId(1L, at);
+        verify(shares).softDeleteByUserId(1L, at);
         verify(files).softDeleteByUserId(1L, at);
     }
 
@@ -44,5 +47,6 @@ class TripWithdrawalServiceTest {
         doThrow(new IllegalStateException(TripUploadTestErrorMessage.ANALYSIS_OUTBOX_FAILURE.message())).when(regions).softDeleteByUserId(1L, at);
         assertThatThrownBy(() -> service.withdrawAll(1L, at)).isInstanceOf(IllegalStateException.class);
         verifyNoInteractions(mapCache);
+        verifyNoInteractions(shares);
     }
 }

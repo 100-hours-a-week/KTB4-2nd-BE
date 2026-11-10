@@ -76,6 +76,7 @@ class WebSocketEventPublisherTest {
         return Stream.of(
                 Arguments.of(WebSocketEventType.AI_TASK, WebSocketEventTargetType.USER),
                 Arguments.of(WebSocketEventType.COMMAND_RESULT, WebSocketEventTargetType.USER),
+                Arguments.of(WebSocketEventType.AUTH_REVOKED, WebSocketEventTargetType.USER),
                 Arguments.of(WebSocketEventType.TRIP_EVENT, WebSocketEventTargetType.TRIP)
         );
     }

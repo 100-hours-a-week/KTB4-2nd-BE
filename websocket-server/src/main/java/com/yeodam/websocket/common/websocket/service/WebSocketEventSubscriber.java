@@ -6,6 +6,7 @@ import com.yeodam.websocket.common.websocket.exception.WebSocketEventFailure;
 import com.yeodam.websocket.common.websocket.exception.WebSocketEventValidationException;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEvent;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEventTargetType;
+import com.yeodam.websocket.common.websocket.service.request.WebSocketAuthRevocationScope;
 import com.yeodam.websocket.common.websocket.config.WebSocketEventProperties;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
 import org.springframework.data.redis.connection.SubscriptionListener;
@@ -132,8 +133,25 @@ public class WebSocketEventSubscriber
             case PRESENCE_SNAPSHOT -> presenceService.onSnapshotEvent(event);
             case AI_TASK -> messagingTemplate.convertAndSendToUser(targetId, "/queue/ai-tasks", event.payload());
             case COMMAND_RESULT -> messagingTemplate.convertAndSendToUser(targetId, "/queue/command-results", event.payload());
+            case AUTH_REVOKED -> closeRevokedConnections(event);
             case TRIP_EVENT -> messagingTemplate.convertAndSend("/topic/trips/" + targetId + "/events", event.payload());
         }
+    }
+
+    private void closeRevokedConnections(WebSocketEvent event) {
+        tools.jackson.databind.JsonNode data = event.payload().path("data");
+        WebSocketAuthRevocationScope scope =
+                WebSocketAuthRevocationScope.valueOf(data.path("scope").asString());
+
+        if (scope == WebSocketAuthRevocationScope.SESSION) {
+            sessionManager.closeConnectionsForSession(
+                    event.target().id(),
+                    data.path("sid").asString()
+            );
+            return;
+        }
+
+        sessionManager.closeConnectionsForUser(event.target().id());
     }
 
     private void validate(WebSocketEvent event) {
@@ -147,7 +165,7 @@ public class WebSocketEventSubscriber
         require(event.target().id() != null && event.target().id() > 0,
                 WebSocketEventFailure.TARGET_ID_INVALID);
         WebSocketEventTargetType expectedTarget = switch (event.type()) {
-            case AI_TASK, COMMAND_RESULT -> WebSocketEventTargetType.USER;
+            case AI_TASK, COMMAND_RESULT, AUTH_REVOKED -> WebSocketEventTargetType.USER;
             case TRIP_EVENT, PRESENCE_SNAPSHOT -> WebSocketEventTargetType.TRIP;
         };
         require(event.target().type() == expectedTarget, WebSocketEventFailure.TARGET_TYPE_MISMATCH);
@@ -157,6 +175,22 @@ public class WebSocketEventSubscriber
                         && StringUtils.hasText(event.payload().path("message").asString()),
                 WebSocketEventFailure.PAYLOAD_MESSAGE_INVALID);
         require(event.payload().has("data"), WebSocketEventFailure.PAYLOAD_DATA_MISSING);
+        if (event.type() == com.yeodam.websocket.common.websocket.service.request.WebSocketEventType.AUTH_REVOKED) {
+            validateAuthRevocationData(event.payload().path("data"));
+        }
+    }
+
+    private void validateAuthRevocationData(tools.jackson.databind.JsonNode data) {
+        require(data.isObject(), WebSocketEventFailure.AUTH_REVOCATION_DATA_INVALID);
+        tools.jackson.databind.JsonNode scope = data.path("scope");
+        require(scope.isString()
+                        && ("SESSION".equals(scope.asString()) || "USER".equals(scope.asString())),
+                WebSocketEventFailure.AUTH_REVOCATION_SCOPE_INVALID);
+        if ("SESSION".equals(scope.asString())) {
+            tools.jackson.databind.JsonNode sid = data.path("sid");
+            require(sid.isString() && StringUtils.hasText(sid.asString()),
+                    WebSocketEventFailure.AUTH_REVOCATION_SESSION_ID_INVALID);
+        }
     }
 
     private void require(boolean condition, WebSocketEventFailure failure) {

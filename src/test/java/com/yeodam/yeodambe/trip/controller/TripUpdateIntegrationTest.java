@@ -1,6 +1,10 @@
 package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture;
+import com.yeodam.yeodambe.trip.service.TripAnalysisExecutionService;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
@@ -54,6 +58,10 @@ class TripUpdateIntegrationTest {
     private AccessTokenIssuer tokens;
     @Autowired
     private CsrfTokenStore csrf;
+    @Autowired
+    private TripAnalysisExecutionService analyses;
+    @Autowired
+    private ObjectMapper json;
     @MockitoSpyBean private TripRegionRepository regions;
     private Long userId;
     private Long tripId;
@@ -70,6 +78,30 @@ class TripUpdateIntegrationTest {
         csrf.save(browser, "csrf-token");
         tripId = create("원래 여행", List.of("11000", "26000"));
         jdbc.update("UPDATE trips SET processing_status = 'COMPLETED', is_favorite = true, thumbnail_key = 'original-thumb' WHERE trip_id = ?", tripId);
+    }
+
+    @Test
+    void 분석_중_REST_이름과_종료일과_지역을_수정하면_확정_입력은_보존하고_참여자_알림을_한번_기록한다() throws Exception {
+        new TripAnalysisTestFixture(jdbc).prepareAddition(tripId, userId);
+        String executionId = analyses.startNext(tripId).orElseThrow();
+        String frozen = jdbc.queryForObject("SELECT payload FROM additional_attachment_upload_outbox WHERE analysis_execution_id = ? AND message_type = 'process'",
+                String.class, executionId);
+        String body = "{\"tripName\":\"새 여행\",\"endDate\":\"2026-09-04\",\"regionCodes\":[\"50110\"]}";
+
+        mvc.perform(request(body)).andExpect(status().isOk());
+        mvc.perform(request(body)).andExpect(status().isOk());
+
+        List<JsonNode> events = metadataEvents();
+        assertThat(events).hasSize(1);
+        JsonNode data = events.getFirst().path("payload").path("data");
+        assertThat(data.path("sequence").asLong()).isEqualTo(jdbc.queryForObject(
+                "SELECT change_sequence FROM trips WHERE trip_id = ?", Long.class, tripId));
+        assertThat(data.path("changes").path("tripName").asString()).isEqualTo("새 여행");
+        assertThat(data.path("changes").path("startDate").asString()).isEqualTo("2026-09-01");
+        assertThat(data.path("changes").path("endDate").asString()).isEqualTo("2026-09-04");
+        assertThat(data.path("changes").path("regionCodes").get(0).asString()).isEqualTo("50110");
+        assertThat(jdbc.queryForObject("SELECT payload FROM additional_attachment_upload_outbox WHERE analysis_execution_id = ? AND message_type = 'process'",
+                String.class, executionId)).isEqualTo(frozen);
     }
 
     @Test
@@ -322,6 +354,13 @@ class TripUpdateIntegrationTest {
                 LocalDate.of(2026, 9, 3),
                 codes
         )).tripId();
+    }
+
+    private List<JsonNode> metadataEvents() {
+        return jdbc.queryForList("SELECT event_json FROM trip_edit_notification_outbox WHERE target_type = 'TRIP' AND target_id = ?",
+                        String.class, tripId).stream().map(json::readTree)
+                .filter(event -> event.path("payload").path("message").asString().equals("TRIP_UPDATED"))
+                .toList();
     }
 
     private String name() {

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.user.controller;
 
+import com.yeodam.yeodambe.common.websocket.service.WebSocketAuthRevocationPublisher;
 import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
@@ -54,6 +55,9 @@ class LogoutSecurityIntegrationTest {
 
     @MockitoBean
     private LogoutService logoutService;
+
+    @MockitoBean
+    private WebSocketAuthRevocationPublisher authRevocationPublisher;
 
     @MockitoBean
     private ActiveLoginSessionValidator activeLoginSessionValidator;

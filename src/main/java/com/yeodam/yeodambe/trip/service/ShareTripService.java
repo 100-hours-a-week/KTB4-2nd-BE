@@ -41,6 +41,7 @@ public class ShareTripService {
     private final Clock clock;
     private final TripAccessService tripAccessService;
     private final ObjectMapper objectMapper;
+    private final TripMutationCoordinator mutations;
 
     @Transactional(readOnly = true)
     public TripShareListResponse findShares(Long tripId, Long requesterId, String cursor) {
@@ -65,8 +66,16 @@ public class ShareTripService {
                 share.getExpiresAt().atZone(SHARE_ZONE).toOffsetDateTime());
     }
 
-    @Transactional
     public TripShareCreateResponse register(Long tripId, Long ownerId, TripShareCreateRequest request) {
+        Trip trip = tripRepository.findByIdAndDeletedAtIsNull(tripId)
+                .orElseThrow(TripNotFoundException::new);
+        validateTrip(trip, ownerId);
+        return mutations.execute(tripId, () -> registerInTransaction(tripId, ownerId, request));
+    }
+
+    private TripShareCreateResponse registerInTransaction(
+            Long tripId, Long ownerId, TripShareCreateRequest request
+    ) {
         Trip trip = tripRepository.findActiveForUpdate(tripId)
                 .orElseThrow(TripNotFoundException::new);
         validateTrip(trip, ownerId);

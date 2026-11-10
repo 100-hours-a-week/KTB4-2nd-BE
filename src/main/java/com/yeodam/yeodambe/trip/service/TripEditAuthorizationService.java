@@ -4,8 +4,8 @@ import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.WritePermissionRequiredException;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripSharePermission;
-import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
+import com.yeodam.yeodambe.trip.repository.TripShareUserRepository.GrantSnapshot;
 import com.yeodam.yeodambe.trip.service.response.TripEditAccess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -47,9 +47,9 @@ public class TripEditAuthorizationService {
         }
 
         LocalDateTime shareCheckedAt = LocalDateTime.ofInstant(checkedAt, SHARE_ZONE);
-        TripShareUser share = shareRepository.findByTripIdAndGranteeUserId(tripId, actorId)
-                .filter(found -> found.getUserId().equals(ownerId))
-                .filter(found -> found.isEffective(shareCheckedAt))
+        GrantSnapshot share = shareRepository.findGrantSnapshot(tripId, actorId)
+                .filter(found -> found.getOwnerId().equals(ownerId))
+                .filter(found -> found.getDeletedAt() == null && found.getExpiresAt().isAfter(shareCheckedAt))
                 .orElseThrow(TripNotFoundException::new);
         Instant shareExpiresAt = share.getExpiresAt().atZone(SHARE_ZONE).toInstant();
         if (shareExpiresAt.isBefore(accessValidUntil)) {

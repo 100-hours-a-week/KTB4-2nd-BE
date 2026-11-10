@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.user.service;
 import com.yeodam.yeodambe.common.exception.WithdrawalFailedException;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketAuthRevocationPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ public class WithdrawalService {
     private final WithdrawalTransactionService transactions;
     private final LoginSessionStore loginSessionStore;
     private final CsrfTokenStore csrfTokenStore;
+    private final WebSocketAuthRevocationPublisher authRevocationPublisher;
 
     public void withdraw(Long userId, String csrfContext) {
         boolean committed = false;
@@ -64,6 +66,7 @@ public class WithdrawalService {
         } catch (RuntimeException exception) {
             logCleanupFailure("session_cleanup");
         }
+        authRevocationPublisher.revokeUser(userId);
     }
 
     private void logCleanupFailure(String stage) {

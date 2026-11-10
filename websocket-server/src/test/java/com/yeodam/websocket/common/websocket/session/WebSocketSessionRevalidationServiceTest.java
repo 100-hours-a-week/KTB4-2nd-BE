@@ -56,8 +56,13 @@ class WebSocketSessionRevalidationServiceTest {
 
         service.revalidateSessions();
 
-        verify(manager).closeConnection("first");
-        verify(manager).closeConnection("second");
+        if (failure == BackendAuthenticationFailure.USER_UNAUTHORIZED
+                || failure == BackendAuthenticationFailure.CSRF_INVALID) {
+            verify(manager).closeConnectionsForSession(42L, "login-a");
+        } else {
+            verify(manager).closeConnection("first");
+            verify(manager).closeConnection("second");
+        }
         verify(manager, never()).closeConnection("other");
         verify(client).authenticate("other-token", "context");
     }

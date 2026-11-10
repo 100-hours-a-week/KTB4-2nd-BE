@@ -34,11 +34,15 @@ class WithdrawalControllerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(204);
         assertThat(response.getBody()).isNull();
         assertThat(response.getHeaders().get("Set-Cookie"))
-                .hasSize(2)
+                .hasSize(4)
                 .anySatisfy(cookie -> assertThat(cookie)
                         .contains("accessToken=;", "Path=/;", "Max-Age=0", "Secure", "HttpOnly", "SameSite=Lax"))
                 .anySatisfy(cookie -> assertThat(cookie)
-                        .contains("refreshToken=;", "Path=/api/auth;", "Max-Age=0", "Secure", "HttpOnly", "SameSite=Lax"));
+                        .contains("refreshToken=;", "Path=/api/auth;", "Max-Age=0", "Secure", "HttpOnly", "SameSite=Lax"))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains("CSRF_CONTEXT=;", "Path=/;", "Max-Age=0", "Secure", "HttpOnly", "SameSite=Lax"))
+                .anySatisfy(cookie -> assertThat(cookie)
+                        .contains("OAUTH_BROWSER_CONTEXT=;", "Path=/api/auth;", "Max-Age=0", "Secure", "HttpOnly", "SameSite=Lax"));
     }
 
     @Test

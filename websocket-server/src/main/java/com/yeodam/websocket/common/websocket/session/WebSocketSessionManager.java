@@ -28,6 +28,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class WebSocketSessionManager {
 
+    private static final CloseStatus AUTH_REVOKED_CLOSE_STATUS =
+            new CloseStatus(4401, "AUTH_REVOKED");
+
     private final Map<String, WebSocketSession> sessions =
             new ConcurrentHashMap<>();
 
@@ -122,6 +125,33 @@ public class WebSocketSessionManager {
     }
 
     public void closeConnection(String connectionId) {
+        closeConnection(connectionId, CloseStatus.POLICY_VIOLATION);
+    }
+
+    public void closeConnectionsForSession(Long userId, String sessionId) {
+        for (WebSocketSession session : getSessions()) {
+            WebSocketPrincipal principal = principalOf(session);
+            if (principal.userId().equals(userId)
+                    && principal.sessionId().equals(sessionId)) {
+                closeConnection(session.getId(), AUTH_REVOKED_CLOSE_STATUS);
+            }
+        }
+    }
+
+    public void closeConnectionsForUser(Long userId) {
+        for (WebSocketSession session : getSessions()) {
+            if (principalOf(session).userId().equals(userId)) {
+                closeConnection(session.getId(), AUTH_REVOKED_CLOSE_STATUS);
+            }
+        }
+    }
+
+    private WebSocketPrincipal principalOf(WebSocketSession session) {
+        Authentication authentication = (Authentication) session.getPrincipal();
+        return (WebSocketPrincipal) authentication.getPrincipal();
+    }
+
+    private void closeConnection(String connectionId, CloseStatus closeStatus) {
         WebSocketSession session = sessions.get(connectionId);
 
         if (session == null) {
@@ -129,8 +159,8 @@ public class WebSocketSessionManager {
         }
 
         try {
-            session.close(CloseStatus.POLICY_VIOLATION);
-        } catch (IOException exception) {
+            session.close(closeStatus);
+        } catch (IOException | RuntimeException exception) {
             log.warn(
                     "Failed to close WebSocket connection. connection_id={}",
                     connectionId,

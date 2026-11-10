@@ -20,6 +20,7 @@ public class TripUpdateService {
     private final TripEditNotificationOutboxService notifications;
 
     public TripUpdateResponse updateTrip(Long tripId, Long actorId, TripUpdateRequest request) {
+        requireOwner(tripId, actorId);
         return mutations.execute(tripId, () -> {
             long previousSequence = trips.findPhotoReadStateById(tripId)
                     .orElseThrow(TripNotFoundException::new).getSequence();
@@ -36,10 +37,17 @@ public class TripUpdateService {
     }
 
     public TripFavoriteResponse registerFavorite(Long tripId, Long userId) {
+        requireOwner(tripId, userId);
         return mutations.execute(tripId, () -> transactions.registerFavorite(tripId, userId));
     }
 
     public void removeFavorite(Long tripId, Long userId) {
+        requireOwner(tripId, userId);
         mutations.run(tripId, () -> transactions.removeFavorite(tripId, userId));
+    }
+
+    private void requireOwner(Long tripId, Long userId) {
+        trips.findByIdAndUserIdAndDeletedAtIsNull(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
     }
 }

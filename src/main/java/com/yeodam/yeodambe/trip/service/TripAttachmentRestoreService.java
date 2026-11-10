@@ -66,8 +66,10 @@ public class TripAttachmentRestoreService {
         if (tripAttachmentId == null || tripAttachmentId <= 0) {
             throw new InvalidRestoreRequestException();
         }
-        List<Long> tripIds = tripAttachmentRepository.findDeletionTripIds(List.of(tripAttachmentId));
-        return mutations.executeAll(tripIds, () -> restoreOneInTransaction(userId, tripAttachmentId, request));
+        Long tripId = tripAttachmentRepository.findAccessibleById(tripAttachmentId, userId)
+                .map(TripAttachment::getTripId)
+                .orElseThrow(AttachmentNotFoundException::new);
+        return mutations.executeAll(List.of(tripId), () -> restoreOneInTransaction(userId, tripAttachmentId, request));
     }
 
     private AttachmentRestoreResponse restoreOneInTransaction(
@@ -90,7 +92,12 @@ public class TripAttachmentRestoreService {
         List<BulkAttachmentRestoreRequest.Item> items = request.items();
         validateItems(items);
         List<Long> ids = items.stream().map(BulkAttachmentRestoreRequest.Item::tripAttachmentId).toList();
-        List<Long> tripIds = tripAttachmentRepository.findDeletionTripIds(ids);
+        List<TripAttachment> targets = tripAttachmentRepository.findAllActiveWithTripAndFileByIds(ids);
+        if (targets.size() != ids.size()
+                || targets.stream().anyMatch(attachment -> !userId.equals(attachment.getTrip().getUserId()))) {
+            throw new BulkRestoreFailedException();
+        }
+        List<Long> tripIds = targets.stream().map(TripAttachment::getTripId).distinct().sorted().toList();
         return mutations.executeAll(tripIds, () -> restoreBulkInTransaction(userId, items, ids));
     }
 

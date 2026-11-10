@@ -125,7 +125,7 @@ class TripAttachmentRestoreMySqlTest {
             Object result = delegate.answer(invocation);
             secondRead.countDown();
             return result;
-        }).when(attachments).findAccessibleById(fixture.last(), fixture.user());
+        }).when(attachments).findDeletionTripIds(List.of(fixture.last()));
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
@@ -230,7 +230,7 @@ class TripAttachmentRestoreMySqlTest {
                 secondStarted.countDown();
             }
             return result;
-        }).when(attachments).findAccessibleById(fixture.first(), fixture.user());
+        }).when(attachments).findDeletionTripIds(List.of(fixture.first()));
         doAnswer(invocation -> {
             if (Thread.currentThread() == secondThread.get()) {
                 secondStarted.countDown();

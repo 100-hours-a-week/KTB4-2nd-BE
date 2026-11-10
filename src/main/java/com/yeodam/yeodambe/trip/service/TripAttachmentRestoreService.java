@@ -24,11 +24,10 @@ import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.validation.Validator;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -58,8 +57,8 @@ public class TripAttachmentRestoreService {
     private final Validator validator;
     private final TripMapCacheStore tripMapCacheStore;
     private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
+    private final TripMutationCoordinator mutations;
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public AttachmentRestoreResponse restoreOne(
             Long userId, Long tripAttachmentId, AttachmentRestoreRequest request
     ) {
@@ -67,7 +66,13 @@ public class TripAttachmentRestoreService {
         if (tripAttachmentId == null || tripAttachmentId <= 0) {
             throw new InvalidRestoreRequestException();
         }
+        List<Long> tripIds = tripAttachmentRepository.findDeletionTripIds(List.of(tripAttachmentId));
+        return mutations.executeAll(tripIds, () -> restoreOneInTransaction(userId, tripAttachmentId, request));
+    }
 
+    private AttachmentRestoreResponse restoreOneInTransaction(
+            Long userId, Long tripAttachmentId, AttachmentRestoreRequest request
+    ) {
         TripAttachment attachment = tripAttachmentRepository.findAccessibleById(tripAttachmentId, userId)
                 .orElseThrow(AttachmentNotFoundException::new);
 
@@ -80,16 +85,19 @@ public class TripAttachmentRestoreService {
         return new AttachmentRestoreResponse(tripAttachmentId, request.tripPlaceId(), "CLASSIFIED");
     }
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public BulkAttachmentRestoreResponse restoreBulk(Long userId, BulkAttachmentRestoreRequest request) {
         validateRequest(request);
         List<BulkAttachmentRestoreRequest.Item> items = request.items();
         validateItems(items);
+        List<Long> ids = items.stream().map(BulkAttachmentRestoreRequest.Item::tripAttachmentId).toList();
+        List<Long> tripIds = tripAttachmentRepository.findDeletionTripIds(ids);
+        return mutations.executeAll(tripIds, () -> restoreBulkInTransaction(userId, items, ids));
+    }
 
+    private BulkAttachmentRestoreResponse restoreBulkInTransaction(
+            Long userId, List<BulkAttachmentRestoreRequest.Item> items, List<Long> ids
+    ) {
         try {
-            List<Long> ids = items.stream()
-                    .map(BulkAttachmentRestoreRequest.Item::tripAttachmentId)
-                    .toList();
             List<TripAttachment> attachments = tripAttachmentRepository.findAllActiveWithTripAndFileByIds(ids);
 
             if (attachments.size() != ids.size()) {
@@ -115,7 +123,7 @@ public class TripAttachmentRestoreService {
             throw new InvalidRestoreRequestException();
         }
 
-        var violations = validator.validate(request);
+        Set<ConstraintViolation<Object>> violations = validator.validate(request);
 
         boolean missingDestination = violations.stream()
                 .anyMatch(violation ->

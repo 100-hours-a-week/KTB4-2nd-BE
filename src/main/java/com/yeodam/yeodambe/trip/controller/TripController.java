@@ -28,9 +28,12 @@ import com.yeodam.yeodambe.trip.service.response.InvitedTripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentProcessingStatusResponse;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -144,6 +147,18 @@ public class TripController {
         return ResponseEntity.ok(new ApiResponse<>(
                 SuccessMessage.TRIP_PROCESSING_STATUS_FOUND,
                 processingStatusService.findStatus(tripId, Long.valueOf(jwt.getSubject()))
+        ));
+    }
+
+    @GetMapping("/trips/{tripId}/attachments/additions/{additionId}/processing-status")
+    public ResponseEntity<ApiResponse<AdditionalAttachmentProcessingStatusResponse>> getAdditionalProcessingStatus(
+            @PathVariable @Positive Long tripId,
+            @PathVariable @NotBlank @Size(max = 36) String additionId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(
+                SuccessMessage.TRIP_PROCESSING_STATUS_FOUND,
+                processingStatusService.findAdditionalStatus(tripId, Long.valueOf(jwt.getSubject()), additionId)
         ));
     }
 

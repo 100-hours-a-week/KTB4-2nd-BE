@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import com.yeodam.yeodambe.trip.entity.TripAnalysisExecution;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
 
 @Slf4j
 @Component
@@ -23,6 +25,7 @@ public class TripProcessingStatusScheduler {
     private final TripCreationExecutionRepository creationExecutions;
     private final AdditionalAttachmentExecutionRepository additionalExecutions;
     private final TripProcessingStatusService statusService;
+    private final TripAnalysisExecutionRepository analyses;
 
     @Scheduled(
             initialDelayString = "${app.trip.worker-initial-delay-ms:0}",
@@ -30,17 +33,23 @@ public class TripProcessingStatusScheduler {
     )
     public void synchronizePendingExecutions() {
         for (TripCreationExecution execution : creationExecutions.findAwaitingAiStatus()) {
-            synchronize(execution.getTripId(), execution.getUserId(), execution.getExecutionId());
+            synchronize(execution.getTripId(), execution.getExecutionId(), () ->
+                    statusService.synchronizeCreation(execution.getExecutionId()));
         }
 
         for (AdditionalAttachmentExecution execution : additionalExecutions.findAwaitingAiStatus()) {
-            synchronize(execution.getTripId(), execution.getUserId(), execution.getExecutionId());
+            synchronize(execution.getTripId(), execution.getExecutionId(), () ->
+                    statusService.synchronizeAddition(execution.getExecutionId()));
+        }
+        for (TripAnalysisExecution execution : analyses.findAwaitingAiStatus()) {
+            synchronize(execution.getTripId(), execution.getExecutionId(), () ->
+                    statusService.synchronizeAnalysis(execution.getExecutionId()));
         }
     }
 
-    private void synchronize(Long tripId, Long userId, String executionId) {
+    private void synchronize(Long tripId, String executionId, Runnable synchronize) {
         try {
-            statusService.synchronizeStatus(tripId, userId);
+            synchronize.run();
         } catch (RuntimeException failure) {
             log.atWarn()
                     .addKeyValue("event", "trip_status_sync")

@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.InetSocketAddress;
@@ -190,6 +191,28 @@ class AiQueryClientTest {
         assertThat(json.path("candidates").get(1).path("taken_at").isNull()).isTrue();
         assertThat(json.path("limit").asInt()).isEqualTo(30);
         assertThat(json.path("visual_query").asString()).isEqualTo("바다");
+    }
+
+    @Test
+    void 사진_내용_조건이_없으면_검색_요청에_visual_query를_null로_전송한다() {
+        response = """
+                {"attachments":[],"answer":null,"answer_error":null}
+                """;
+
+        client.search(new AiQuerySearchRequest(
+                "용인에서 찍은 사진",
+                Intent.SEARCH,
+                null,
+                List.of(new AiQuerySearchRequest.Candidate(7L, "trips/1/analyze/7.jpg", null, "용인", "용인 여행")),
+                30
+        ));
+
+        JsonNode json = new ObjectMapper().readTree(body.get());
+        assertThat(method.get()).isEqualTo("POST /query/search");
+        assertThat(json.has("visual_query")).isTrue();
+        assertThat(json.path("visual_query").isNull()).isTrue();
+        assertThat(json.path("query").asString()).isEqualTo("용인에서 찍은 사진");
+        assertThat(json.path("intent").asString()).isEqualTo("SEARCH");
     }
 
     @Test

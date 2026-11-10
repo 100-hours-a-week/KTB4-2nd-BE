@@ -98,7 +98,7 @@ public class SearchService {
     }
 
     private String resolveVisualQuery(AiQueryParseResponse parsed, String query) {
-        if (!parsed.parsed() || parsed.visualQuery() == null || parsed.visualQuery().isBlank()) {
+        if (!parsed.parsed() || (parsed.visualQuery() != null && parsed.visualQuery().isBlank())) {
             return query;
         }
         return parsed.visualQuery();

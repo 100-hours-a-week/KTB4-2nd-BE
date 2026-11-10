@@ -17,6 +17,7 @@ import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.*;
+import com.yeodam.yeodambe.trip.service.response.TripEditAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -57,7 +59,10 @@ class TripReadStateControllerTest {
     @BeforeEach
     void setUp() {
         ObjectMapper mapper = new ObjectMapper();
-        TripAccessService access = new TripAccessService(trips, mock(TripEditAuthorizationService.class));
+        TripEditAuthorizationService authorization = mock(TripEditAuthorizationService.class);
+        when(authorization.requireReadPermission(trip, 1L))
+                .thenReturn(new TripEditAccess("OWNER", Instant.EPOCH, Instant.EPOCH.plusSeconds(60)));
+        TripAccessService access = new TripAccessService(trips, authorization);
         TripPlaceFolderListService folders = new TripPlaceFolderListService(
                 access, places, attachments, storage, mapper
         );

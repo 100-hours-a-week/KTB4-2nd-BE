@@ -32,6 +32,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -136,6 +137,7 @@ class TripEditIntegrationTest {
                 .andExpect(jsonPath("$.data.attachmentCount").value(1));
         mvc.perform(request(tripId))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.permission").value(permission.name()))
                 .andExpect(jsonPath("$.data.sequence").value(7))
                 .andExpect(jsonPath("$.data.attachments.sequence").value(7))
                 .andExpect(jsonPath("$.data.attachments.items[0].tripAttachmentId").value(attachment.getId()));
@@ -170,6 +172,7 @@ class TripEditIntegrationTest {
         mvc.perform(request(tripId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("TRIP_EDIT_FOUND"))
+                .andExpect(jsonPath("$.data.permission").value("OWNER"))
                 .andExpect(jsonPath("$.data.tripId").value(tripId))
                 .andExpect(jsonPath("$.data.tripName").value("수정 여행"))
                 .andExpect(jsonPath("$.data.startDate").value("2026-09-01"))
@@ -195,12 +198,13 @@ class TripEditIntegrationTest {
                 .andExpect(jsonPath("$.data.attachments.items.length()").value(18))
                 .andExpect(jsonPath("$.data.attachments.hasNext").value(true))
                 .andReturn().getResponse().getContentAsString();
-        var page = mapper.readTree(body).path("data").path("attachments");
+        JsonNode page = mapper.readTree(body).path("data").path("attachments");
         for (int i = 0; i < 18; i++) {
             assertThat(page.path("items").get(i).path("tripAttachmentId").asLong()).isEqualTo(ids.get(i));
         }
         mvc.perform(request(tripId).param("cursor", page.path("nextCursor").asText()))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.permission").value("OWNER"))
                 .andExpect(jsonPath("$.data.attachmentCount").value(19))
                 .andExpect(jsonPath("$.data.attachments.items.length()").value(1))
                 .andExpect(jsonPath("$.data.attachments.items[0].tripAttachmentId").value(ids.getLast()))

@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.common.exception.TripDetailNotAvailableException;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.service.response.TripEditAccess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,8 +29,12 @@ public class TripAccessService {
     public Trip requireReadableTrip(Long tripId, Long userId) {
         Trip trip = tripRepository.findByIdAndDeletedAtIsNull(tripId)
                 .orElseThrow(TripNotFoundException::new);
-        authorizationService.requireReadPermission(trip, userId);
+        requireReadPermission(trip, userId);
         return trip;
+    }
+
+    public TripEditAccess requireReadPermission(Trip trip, Long userId) {
+        return authorizationService.requireReadPermission(trip, userId);
     }
 
     public Trip requireCompletedTrip(Long tripId, Long userId) {

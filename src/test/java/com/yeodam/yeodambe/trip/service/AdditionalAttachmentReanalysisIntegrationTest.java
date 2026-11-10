@@ -15,6 +15,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
+import com.yeodam.yeodambe.story.service.StoryGenerationAcceptanceService;
+import com.yeodam.yeodambe.story.service.request.StoryGenerationRequest;
 import com.yeodam.yeodambe.trip.client.*;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
@@ -74,6 +79,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     @Autowired private AdditionalAttachmentUploadOutboxRepository outboxes;
     @Autowired private ObjectMapper applicationMapper;
     @Autowired private com.yeodam.yeodambe.story.service.StoryReadService storyReadService;
+    @Autowired private StoryGenerationAcceptanceService storyGenerationAcceptance;
+    @Autowired private StoryGenerationOutboxRepository storyGenerationOutboxes;
     @Autowired private AdditionalAttachmentUploadTransactionService transactions;
     @Autowired private AdditionalAttachmentAnalysisPreparationService preparation;
     @Autowired private AdditionalAttachmentAnalysisResultService results;
@@ -395,6 +402,17 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(stats.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isZero();
         assertThat(processingStatus.findStatus(tripId, userId).status())
                 .isEqualTo(com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status.COMPLETED);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getEndedAt()).isNotNull();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM story_generation_jobs WHERE trip_id = ?", Integer.class, tripId))
+                .isZero();
+
+        Long newPlaceId = attachments.findById(oldPhotoId).orElseThrow().getTripPlaceId();
+        assertThat(newPlaceId).isNotNull().isNotEqualTo(oldPlaceId);
+        var request = new StoryGenerationRequest(Story.Mood.PLAIN, List.of(newPlaceId));
+        StoryGenerationJob newJob = storyGenerationAcceptance.accept(userId, tripId, request, "story-after-reanalysis");
+
+        assertThat(newJob.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(storyGenerationOutboxes.findByGenerationId(newJob.getId())).isPresent();
     }
 
     @Test

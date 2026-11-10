@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.story.service.StoryPhotoChangeService;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -50,7 +51,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop"
 })
-@Import({AdditionalAttachmentModificationGuard.class, TripAttachmentDeletionService.class, UserStatsService.class})
+@Import({AdditionalAttachmentModificationGuard.class, TripAttachmentDeletionService.class,
+        StoryPhotoChangeService.class, UserStatsService.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripAttachmentDeletionPersistenceTest {
     @MockitoBean

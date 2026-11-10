@@ -44,16 +44,18 @@ public class TripAnalysisResultApplicationService {
                     return claim;
                 }
             } catch (TripEditLockRejectedException failure) {
-                if (failure.reason() != TripEditLockRejectedException.Reason.CONTENDED) {
-                    throw failure;
-                }
+                rethrowUnlessContended(failure);
             }
         }
         for (AdditionalAttachmentExecution candidate : legacy.findClaimCandidates()) {
-            Optional<TripAnalysisResultClaim> claim = mutations.execute(candidate.getTripId(),
-                    () -> legacy.claim(candidate.getExecutionId()));
-            if (claim.isPresent()) {
-                return claim;
+            try {
+                Optional<TripAnalysisResultClaim> claim = mutations.execute(candidate.getTripId(),
+                        () -> legacy.claim(candidate.getExecutionId()));
+                if (claim.isPresent()) {
+                    return claim;
+                }
+            } catch (TripEditLockRejectedException failure) {
+                rethrowUnlessContended(failure);
             }
         }
         return Optional.empty();
@@ -99,13 +101,27 @@ public class TripAnalysisResultApplicationService {
 
     public void expire() {
         for (TripAnalysisExecution candidate : transactions.findExpiredCandidates()) {
-            editLock.execute(candidate.getTripId(), () -> {
-                transactions.expire(candidate.getExecutionId());
-                return null;
-            });
+            try {
+                editLock.execute(candidate.getTripId(), () -> {
+                    transactions.expire(candidate.getExecutionId());
+                    return null;
+                });
+            } catch (TripEditLockRejectedException failure) {
+                rethrowUnlessContended(failure);
+            }
         }
         for (AdditionalAttachmentExecution candidate : legacy.findExpiredCandidates()) {
-            mutations.run(candidate.getTripId(), () -> legacy.expire(candidate.getExecutionId()));
+            try {
+                mutations.run(candidate.getTripId(), () -> legacy.expire(candidate.getExecutionId()));
+            } catch (TripEditLockRejectedException failure) {
+                rethrowUnlessContended(failure);
+            }
+        }
+    }
+
+    private void rethrowUnlessContended(TripEditLockRejectedException failure) {
+        if (failure.reason() != TripEditLockRejectedException.Reason.CONTENDED) {
+            throw failure;
         }
     }
 }

@@ -1,16 +1,23 @@
 package com.yeodam.yeodambe.trip.service;
 
-import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
-
 import com.yeodam.yeodambe.common.response.ErrorMessage;
+import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
+import com.yeodam.yeodambe.trip.exception.TripEditLockRejectedException;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+import com.yeodam.yeodambe.trip.service.response.TripAnalysisResultClaim;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataAccessException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.dao.DataAccessException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CancellationException;
 
 @Slf4j
 @Component
@@ -19,28 +26,33 @@ import org.springframework.stereotype.Component;
 public class TripAnalysisResultWorker {
     private final TripAnalysisResultService results;
     private final TripPlaceNameService placeNames;
+    private final TripMutationCoordinator mutations;
 
     @Scheduled(initialDelayString = "${app.trip.worker-initial-delay-ms:0}", fixedDelayString = "${app.trip.result-delay-ms:5000}")
     public void applyPendingResults() {
-        var pending = results.claimResult();
+        Optional<TripAnalysisResultClaim> pending = claimNext();
         if (pending.isEmpty()) {
             return;
         }
-        var claim = pending.get();
+        TripAnalysisResultClaim claim = pending.get();
         boolean validated = false;
-        try (var scope = WorkflowMdcScope.job("trip_creation", claim.tripId(), claim.executionId())) {
-            if (!results.startResultAttempt(claim)) {
+        try (WorkflowMdcScope scope = WorkflowMdcScope.job("trip_creation", claim.tripId(), claim.executionId())) {
+            if (!mutations.execute(claim.tripId(), () -> results.startResultAttempt(claim))) {
                 return;
             }
-            try (var timing = startResultApplicationLogging(claim.attempt())) {
-                var result = results.validateForApplication(claim);
+            try (WorkflowLog.Stage timing = startResultApplicationLogging(claim.attempt())) {
+                JsonNode result = results.validateForApplication(claim);
                 validated = true;
-                var names = placeNames.resolve(claim.tripId(), claim.executionId(), result,
-                        () -> results.renewResultLease(claim));
-                results.saveKafkaCompleted(claim, result, names);
+                Map<String, String> names = placeNames.resolve(claim.tripId(), claim.executionId(), result,
+                        () -> mutations.execute(claim.tripId(), () -> results.renewResultLease(claim)));
+                mutations.run(claim.tripId(), () -> results.saveKafkaCompleted(claim, result, names));
                 timing.success();
             }
         } catch (RuntimeException failure) {
+            if (failure instanceof TripEditLockRejectedException
+                    || failure instanceof CancellationException) {
+                return;
+            }
             logResultApplicationFailure(claim.tripId(), claim.executionId(), claim.attempt(), validated, failure);
             boolean permanent = !validated && !(failure instanceof DataAccessException);
             String reason = permanent && failure instanceof IllegalStateException
@@ -48,8 +60,26 @@ public class TripAnalysisResultWorker {
             if (reason == null || reason.length() > 255) {
                 reason = ErrorMessage.AI_RESULT_APPLICATION_FAILED.name();
             }
-            results.failResult(claim, permanent, reason);
+            String failureReason = reason;
+            mutations.run(claim.tripId(), () -> results.failResult(claim, permanent, failureReason));
         }
+    }
+
+    private Optional<TripAnalysisResultClaim> claimNext() {
+        for (TripCreationExecution candidate : results.findResultClaimCandidates()) {
+            try {
+                Optional<TripAnalysisResultClaim> claim = mutations.execute(
+                        candidate.getTripId(), () -> results.claimResult(candidate.getExecutionId()));
+                if (claim.isPresent()) {
+                    return claim;
+                }
+            } catch (TripEditLockRejectedException failure) {
+                if (failure.reason() != TripEditLockRejectedException.Reason.CONTENDED) {
+                    throw failure;
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     private void logResultApplicationFailure(

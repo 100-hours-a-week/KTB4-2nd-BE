@@ -22,7 +22,7 @@ class TripResultWorkerActivationTest {
                     AdditionalAttachmentResultWorker.class, TripUploadTimeoutService.class)
             .withBean(TaskScheduler.class, () -> mock(TaskScheduler.class))
             .withBean(TripAnalysisResultService.class, () -> mock(TripAnalysisResultService.class))
-            .withBean(AdditionalAttachmentKafkaResultService.class, () -> mock(AdditionalAttachmentKafkaResultService.class))
+            .withBean(TripAnalysisResultApplicationService.class, () -> mock(TripAnalysisResultApplicationService.class))
             .withBean(TripPlaceNameService.class, () -> mock(TripPlaceNameService.class))
             .withBean(TripCreationExecutionRepository.class, () -> mock(TripCreationExecutionRepository.class))
             .withBean(TripRepository.class, () -> mock(TripRepository.class))
@@ -38,7 +38,7 @@ class TripResultWorkerActivationTest {
                     .doesNotHaveBean(TripUploadTimeoutService.class);
             assertThat(result.getBean(ScheduledAnnotationBeanPostProcessor.class).getScheduledTasks()).isEmpty();
             verifyNoInteractions(result.getBean(TripAnalysisResultService.class),
-                    result.getBean(AdditionalAttachmentKafkaResultService.class),
+                    result.getBean(TripAnalysisResultApplicationService.class),
                     result.getBean(TripPlaceNameService.class),
                     result.getBean(TripCreationExecutionRepository.class),
                     result.getBean(TripRepository.class),

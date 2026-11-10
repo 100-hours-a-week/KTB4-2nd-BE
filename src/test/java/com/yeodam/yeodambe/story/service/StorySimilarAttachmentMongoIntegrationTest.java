@@ -3,6 +3,8 @@ package com.yeodam.yeodambe.story.service;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.common.exception.StoryBlockNotFoundException;
 import com.yeodam.yeodambe.story.client.StorySimilarAttachmentAiClient;
+import com.yeodam.yeodambe.integration.service.RunpodStatusService;
+import com.yeodam.yeodambe.integration.service.response.RunpodStatusResponse;
 import com.yeodam.yeodambe.story.client.request.StorySimilarAttachmentAiRequest;
 import com.yeodam.yeodambe.story.client.response.StorySimilarAttachmentAiResponse;
 import com.yeodam.yeodambe.file.entity.StoredFile;
@@ -64,6 +66,7 @@ class StorySimilarAttachmentMongoIntegrationTest {
     @Autowired private EntityManager entityManager;
     @Autowired private JdbcTemplate jdbc;
     @MockitoBean private StorySimilarAttachmentAiClient ai;
+    @MockitoBean private RunpodStatusService runpodStatus;
 
     private Long userId;
     private Long tripId;
@@ -110,6 +113,7 @@ class StorySimilarAttachmentMongoIntegrationTest {
         var candidateId = attachments.saveAndFlush(candidate).getId();
         entityManager.clear();
         var request = new StorySimilarAttachmentAiRequest(photoId, List.of(candidateId), 10);
+        when(runpodStatus.getStatus()).thenReturn(new RunpodStatusResponse(true, true));
         when(ai.findSimilar(tripId, request)).thenReturn(new StorySimilarAttachmentAiResponse(
                 photoId, List.of(new StorySimilarAttachmentAiResponse.Item(candidateId, 0.95))));
 

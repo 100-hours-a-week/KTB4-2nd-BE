@@ -7,7 +7,8 @@ public enum TripUploadTestErrorMessage {
     DATABASE_UNAVAILABLE("database unavailable"),
     DATABASE_WRITE_CONSTRAINT_FAILED("database write constraint failed"),
     S3_FAILURE("S3 failure"),
-    NOTIFICATION_PUBLISH_FAILURE("redis unavailable");
+    NOTIFICATION_PUBLISH_FAILURE("redis unavailable"),
+    INVALID_RESULT("invalid");
 
     private final String message;
 

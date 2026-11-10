@@ -5,6 +5,13 @@ import java.time.Instant;
 import java.util.Comparator;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.trip.config.TripEditLockProperties;
+import org.mockito.invocation.InvocationOnMock;
+import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.yeodam.yeodambe.SharedTestKafka;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
@@ -45,10 +52,13 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "spring.kafka.consumer.auto-offset-reset=earliest",
+        "app.trip.edit-lock.enabled=true",
         "app.trip.result-listener-enabled=true"
 })
 @ActiveProfiles("test")
@@ -79,7 +89,7 @@ class TripCreationKafkaFlowIntegrationTest {
 
     @Autowired
     private InitialAttachmentUploadTransactionService transactions;
-    @Autowired
+    @MockitoSpyBean
     private TripAnalysisResultService results;
     @Autowired
     private TripAnalysisResultWorker worker;
@@ -105,6 +115,11 @@ class TripCreationKafkaFlowIntegrationTest {
     private TripCreationOutboxRepository outboxes;
     @Autowired
     private KafkaTemplate<String, String> kafka;
+    @Autowired
+    private TripEditLockProperties lockProperties;
+    @Autowired
+    @Qualifier("tripEditRedissonClient")
+    private RedissonClient redis;
     private User owner;
     private Trip trip;
 
@@ -130,7 +145,32 @@ class TripCreationKafkaFlowIntegrationTest {
         stats.save(new UserStats(owner));
         trip = trips.save(new Trip(owner.getUserId(), "직접 업로드", LocalDate.now(), LocalDate.now()));
         regions.save(new TripRegion(trip, "11000", "서울특별시", BigDecimal.ONE, BigDecimal.TEN));
-        when(names.resolve(any(), any(), any(), any())).thenReturn(Map.of());
+        when(names.resolve(any(), any(), any(), any())).thenAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(redis.getLock(lockProperties.namespace() + ":lock:trip:mutation:" + trip.getId()).isLocked()).isFalse();
+            return Map.of();
+        });
+        doAnswer(this::observeResultMutation).when(results).claimResult(anyString());
+        doAnswer(this::observeResultMutation).when(results).startResultAttempt(any());
+        doAnswer(this::observeResultMutation).when(results).renewResultLease(any());
+        doAnswer(this::observeResultMutation).when(results).saveKafkaCompleted(any(), any(), any());
+    }
+
+    private Object observeResultMutation(InvocationOnMock invocation) throws Throwable {
+        assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+        assertResultLockHeld();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                assertResultLockHeld();
+            }
+        });
+        return invocation.callRealMethod();
+    }
+
+    private void assertResultLockHeld() {
+        assertThat(redis.getLock(lockProperties.namespace() + ":lock:trip:mutation:" + trip.getId())
+                .isHeldByCurrentThread()).isTrue();
     }
 
     @Test

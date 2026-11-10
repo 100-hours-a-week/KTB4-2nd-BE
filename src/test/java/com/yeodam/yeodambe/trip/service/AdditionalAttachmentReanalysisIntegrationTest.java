@@ -46,6 +46,10 @@ import static org.mockito.Mockito.*;
 @ActiveProfiles("test")
 @Import({TestcontainersConfiguration.class, AdditionalAttachmentReanalysisIntegrationTest.MongoConfig.class})
 class AdditionalAttachmentReanalysisIntegrationTest {
+    @Autowired
+    private TripPhotoDeletionReservationService deletionReservations;
+    @Autowired
+    private TripMutationCoordinator mutations;
     @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
     static class MongoConfig {
         @org.springframework.context.annotation.Bean
@@ -92,6 +96,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     @MockitoBean private TripAttachmentDerivativeService derivatives;
     @MockitoBean private KakaoLocalClient kakao;
     @MockitoBean private WebSocketEventPublisher notificationPublisher;
+    @MockitoBean
+    private TripEditNotificationPublisher notificationDelivery;
     @Autowired private TransactionTemplate transaction;
     private Long userId;
     private Long tripId;
@@ -103,15 +109,19 @@ class AdditionalAttachmentReanalysisIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        when(notificationPublisher.serialize(any()))
+                .thenAnswer(call -> applicationMapper.writeValueAsString(call.getArgument(0)));
         User owner = users.save(new User(UUID.randomUUID() + "@yeodam.test", "재분석회원"));
-        userId = owner.getUserId(); stats.save(new UserStats(owner));
+        userId = owner.getUserId();
+        stats.save(new UserStats(owner));
         Trip trip = trips.save(new Trip(userId, "재분석 여행", LocalDate.now(), LocalDate.now()));
         tripId = trip.getId();
         jdbc.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", tripId);
         regions.save(new TripRegion(trip, "11000", "서울특별시", BigDecimal.ONE, BigDecimal.TEN));
         StoredFile file = StoredFile.uploaded(userId, "old.jpg", "old/" + UUID.randomUUID(), "image/jpeg");
-        file.storageSize(12L); file = files.save(file);
-        var place = places.save(TripDetailPlace.fromAnalysis(tripId, 1, "기존 장소", BigDecimal.ONE,
+        file.storageSize(12L);
+        file = files.save(file);
+        TripDetailPlace place = places.save(TripDetailPlace.fromAnalysis(tripId, 1, "기존 장소", BigDecimal.ONE,
                 BigDecimal.TEN, LocalDateTime.now(), LocalDateTime.now(), "old-preview"));
         oldPlaceId = place.getId();
         TripAttachment old = TripAttachment.initial(tripId, file.getId(), "old-analyze", "old-preview");
@@ -191,7 +201,7 @@ class AdditionalAttachmentReanalysisIntegrationTest {
             transaction.executeWithoutResult(status -> executionRepository.findForUpdate(additionId).orElseThrow()
                     .updateDisplayStatus(TripDisplayStatus.FINALIZING, null));
         }
-        var event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
+        com.yeodam.yeodambe.trip.event.TripCreateResultEvent event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
         transaction.executeWithoutResult(status -> {
             assertThat(kafkaResults.receive(event, raw)).isTrue();
             verifyNoInteractions(notificationPublisher);
@@ -201,11 +211,11 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         if (alreadyFinalizing) {
             verifyNoInteractions(notificationPublisher);
         } else {
-            var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-            verify(notificationPublisher).publish(captor.capture());
+            ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+            verify(notificationPublisher).serialize(captor.capture());
             verifyNoMoreInteractions(notificationPublisher);
-            var message = captor.getValue();
-            var notification = (TripProcessingStatusNotification) message.payload().data();
+            WebSocketEvent message = captor.getValue();
+            TripProcessingStatusNotification notification = (TripProcessingStatusNotification) message.payload().data();
             assertThat(message.target().id()).isEqualTo(userId);
             assertThat(notification.executionId()).isEqualTo(additionId);
             assertThat(notification.status()).isEqualTo(TripProcessingStatusResponse.Status.FINALIZING);
@@ -258,6 +268,85 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
+    void 기존_결과의_삭제_예약도_분류와_정산과_알림을_함께_롤백하고_재적용한다() {
+        prepareAsync();
+        publishBoth();
+        String raw = successfulPayload();
+        kafkaResults.receive(applicationMapper.readValue(raw,
+                com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class), raw);
+        jdbc.update("UPDATE additional_attachment_executions SET result_next_attempt_at = '2099-01-01' WHERE execution_id <> ?", additionId);
+        com.yeodam.yeodambe.trip.service.response.TripAnalysisResultClaim claim = kafkaResults.claim().orElseThrow();
+        assertThat(kafkaResults.start(claim)).isTrue();
+        JsonNode validated = kafkaResults.validate(claim);
+        mutations.run(tripId, () -> deletionReservations.reserve(
+                tripId, userId, UUID.randomUUID().toString(), List.of(oldPhotoId)));
+        Long laterPhoto = new com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture(jdbc).createPhoto(tripId, userId);
+        Map<String, Object> laterBefore = jdbc.queryForMap("SELECT * FROM trip_attachments WHERE trip_attachment_id = ?", laterPhoto);
+        Map<String, Object> statsBefore = jdbc.queryForMap("SELECT * FROM user_stats WHERE user_id = ?", userId);
+        int notifications = tripNotificationCount();
+
+        transaction.executeWithoutResult(status -> {
+            kafkaResults.complete(claim, validated, Map.of("place-one", "새 장소"));
+            status.setRollbackOnly();
+        });
+
+        assertThat(jdbc.queryForObject("SELECT status FROM trip_photo_deletion_reservations WHERE attachment_id = ?",
+                String.class, oldPhotoId)).isEqualTo("PENDING");
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(jdbc.queryForMap("SELECT * FROM user_stats WHERE user_id = ?", userId)).isEqualTo(statsBefore);
+        assertThat(tripNotificationCount()).isEqualTo(notifications);
+
+        kafkaResults.complete(claim, validated, Map.of("place-one", "새 장소"));
+
+        assertThat(jdbc.queryForObject("SELECT status FROM trip_photo_deletion_reservations WHERE attachment_id = ?",
+                String.class, oldPhotoId)).isEqualTo("APPLIED");
+        assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(jdbc.queryForMap("SELECT * FROM trip_attachments WHERE trip_attachment_id = ?", laterPhoto)).isEqualTo(laterBefore);
+        assertThat(attachments.countVisibleForEditByTripId(tripId)).isEqualTo(2);
+        assertThat(stats.findByUser_UserId(userId).orElseThrow().getAttachmentCount()).isEqualTo(2);
+        assertThat(tripNotificationCount()).isEqualTo(notifications + 2);
+    }
+
+    private int tripNotificationCount() {
+        return jdbc.queryForObject("""
+                SELECT COUNT(*) FROM trip_edit_notification_outbox
+                WHERE (target_type = 'TRIP' AND target_id = ?) OR (target_type = 'USER' AND target_id = ?)
+                """, Integer.class, tripId, userId);
+    }
+
+    @Test
+    void 기존_결과는_고정된_입력만_분류하고_나중_사진과_현재_집계를_보존한다() {
+        prepareAsync();
+        publishBoth();
+        String raw = successfulPayload();
+        kafkaResults.receive(applicationMapper.readValue(raw,
+                com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class), raw);
+        jdbc.update("UPDATE additional_attachment_executions SET result_next_attempt_at = '2099-01-01' WHERE execution_id <> ?", additionId);
+        com.yeodam.yeodambe.trip.service.response.TripAnalysisResultClaim claim = kafkaResults.claim().orElseThrow();
+        assertThat(kafkaResults.start(claim)).isTrue();
+        JsonNode validated = kafkaResults.validate(claim);
+        Long laterPhoto = new com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture(jdbc).createPhoto(tripId, userId);
+        Map<String, Object> before = jdbc.queryForMap("SELECT * FROM trip_attachments WHERE trip_attachment_id = ?", laterPhoto);
+        clearInvocations(notificationPublisher);
+
+        kafkaResults.complete(claim, validated, Map.of("place-one", "새 장소"));
+
+        assertThat(jdbc.queryForMap("SELECT * FROM trip_attachments WHERE trip_attachment_id = ?", laterPhoto)).isEqualTo(before);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getStatus())
+                .isEqualTo(AdditionalAttachmentExecution.Status.COMPLETED);
+        assertThat(attachments.countVisibleForEditByTripId(tripId)).isEqualTo(3);
+        assertThat(stats.findByUser_UserId(userId).orElseThrow().getAttachmentCount()).isEqualTo(3);
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).serialize(captor.capture());
+        JsonNode data = applicationMapper.valueToTree(captor.getValue().payload()).path("data");
+        JsonNode completionResult = data.path("result");
+        assertThat(completionResult.path("classifiedAttachmentCount").asInt()
+                + completionResult.path("unclassifiedAttachmentCount").asInt()).isEqualTo(3);
+        assertThat(data.path("listItem").path("attachmentCount").asInt()).isEqualTo(3);
+    }
+
+    @Test
     void 비동기_파이프라인은_순서대로_발행하고_스토리를_유지하며_모든_사진을_한_번_적용한다() {
         Long storyId = createExistingStory();
         prepareAsync();
@@ -266,14 +355,14 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
         publishBoth();
         String raw = successfulPayload();
-        var event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
+        com.yeodam.yeodambe.trip.event.TripCreateResultEvent event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
         assertThat(kafkaResults.receive(event, raw)).isTrue();
         assertThat(kafkaResults.receive(event, raw)).isTrue();
         jdbc.update("UPDATE additional_attachment_executions SET result_next_attempt_at = '2099-01-01' WHERE execution_id <> ?", additionId);
-        var claim = kafkaResults.claim().orElseThrow();
+        com.yeodam.yeodambe.trip.service.response.TripAnalysisResultClaim claim = kafkaResults.claim().orElseThrow();
         assertThat(kafkaResults.claim()).isEmpty();
         assertThat(kafkaResults.start(claim)).isTrue();
-        var validated = kafkaResults.validate(claim);
+        JsonNode validated = kafkaResults.validate(claim);
         clearInvocations(notificationPublisher);
         org.hibernate.stat.Statistics queryStatistics = entityManagerFactory
                 .unwrap(org.hibernate.SessionFactory.class).getStatistics();
@@ -286,15 +375,16 @@ class AdditionalAttachmentReanalysisIntegrationTest {
                 .sum();
         assertThat(reanalysisQueries).isEqualTo(1L);
         assertThat(stats.findByUser_UserId(userId).orElseThrow().getAttachmentCount()).isEqualTo(2L);
-        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-        verify(notificationPublisher).publish(captor.capture());
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(notificationPublisher).serialize(captor.capture());
         verifyNoMoreInteractions(notificationPublisher);
-        var data = applicationMapper.valueToTree(captor.getValue().payload()).path("data");
+        JsonNode data = applicationMapper.valueToTree(captor.getValue().payload()).path("data");
         assertThat(data.path("eventType").asString()).isEqualTo("TRIP_ANALYSIS_APPLIED");
         assertThat(data.path("result").path("classifiedAttachmentCount").asInt()).isEqualTo(2);
         assertThat(data.path("listItem").path("sequence").asLong()).isEqualTo(1);
         assertThat(data.path("listItem").path("attachmentCount").asLong()).isEqualTo(2);
         kafkaResults.receive(event, raw);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getResultConflicts()).isNull();
         assertThat(executionRepository.findById(additionId).orElseThrow().getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.COMPLETED);
         assertThat(attachments.countVisibleForEditByTripId(tripId)).isEqualTo(2);
         assertThat(batchStatus()).isEqualTo("COMPLETED");
@@ -346,7 +436,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         publishBoth();
         String raw = json.writeValueAsString(Map.of("type", "process_result", "trip_id", tripId,
                 "execution_id", additionId, "status", "FAILED", "error", Map.of("code", "AI_FAILED")));
-        var event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
+        com.yeodam.yeodambe.trip.event.TripCreateResultEvent event = applicationMapper.readValue(raw,
+                com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
         kafkaResults.receive(event, raw);
         assertThat(executionRepository.findById(additionId).orElseThrow().getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.FAILED);
         assertThat(attachments.findById(oldPhotoId).orElseThrow().getDeletedAt()).isNull();
@@ -354,6 +445,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(executionRepository.findById(additionId).orElseThrow().isTerminal()).isTrue();
         assertThat(attachments.countForEditByTripId(tripId)).isEqualTo(1);
         assertThat(trips.findById(tripId).orElseThrow().getCurrentStoryId()).isEqualTo(storyId);
+        kafkaResults.receive(event, raw);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getResultConflicts()).isNull();
         verify(storage, never()).delete(anyString());
     }
 
@@ -361,9 +454,10 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     void 회원_탈퇴는_대기_중인_추가를_중단하고_미변환_예약량을_해제한다() {
         completion.complete(tripId, userId, completeRequest());
         tripWithdrawal.withdrawAll(userId, LocalDateTime.now());
-        var ended = executionRepository.findById(additionId).orElseThrow();
+        AdditionalAttachmentExecution ended = executionRepository.findById(additionId).orElseThrow();
         assertThat(ended.isTerminal()).isTrue();
         assertThat(ended.getErrorCode()).isEqualTo("USER_WITHDRAWN");
+        assertThat(ended.getStatus()).isEqualTo(AdditionalAttachmentExecution.Status.CANCELED);
         assertThat(stats.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isZero();
         assertThat(trips.findById(tripId).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(jdbc.queryForObject("SELECT cleanup_started_at FROM additional_attachment_upload_items WHERE upload_batch_id = "
@@ -700,15 +794,17 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void 추가_중에는_사진과_여행_변경을_막고_조회는_허용한다() {
+    void 추가_중에는_사진과_정보_변경을_막고_여행_삭제는_작업을_취소한다() {
         assertThatThrownBy(() -> deletion.deleteOne(userId, oldPhotoId))
                 .isInstanceOf(TripAttachmentAddNotAllowedException.class);
         assertThatThrownBy(() -> tripService.updateTrip(tripId, userId, new TripUpdateRequest("수정 이름", null, null, null)))
                 .isInstanceOf(TripUpdateNotAllowedException.class);
-        assertThatThrownBy(() -> tripDeletion.delete(tripId, userId))
-                .isInstanceOf(TripDeletionNotAllowedException.class);
         assertThat(attachments.findAccessibleById(oldPhotoId, userId)).isPresent();
         assertThat(places.countByTripIdAndDeletedAtIsNull(tripId)).isEqualTo(1);
+        tripDeletion.delete(tripId, userId);
+        assertThat(trips.findById(tripId).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(executionRepository.findById(additionId).orElseThrow().getStatus())
+                .isEqualTo(AdditionalAttachmentExecution.Status.CANCELED);
     }
 
     @Test

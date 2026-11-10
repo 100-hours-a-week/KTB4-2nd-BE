@@ -55,4 +55,21 @@ class TextValidationTest {
         assertThat(TextValidation.hasVisibleContent(null)).isFalse();
         assertThat(TextValidation.hasVisibleContent("\u200B가")).isTrue();
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\uD800", "\uDC00", "\uDC00\uD800", "가\uD800", "😀\uDC00"})
+    void 짝이_깨진_서로게이트를_찾는다(String value) {
+        assertThat(TextValidation.containsUnpairedSurrogate(value)).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "제주", "😀", "👨‍👩‍👧‍👦", "e\u0301", "\uDBFF\uDFFF"})
+    void 정상_서로게이트_쌍과_일반_문자는_허용한다(String value) {
+        assertThat(TextValidation.containsUnpairedSurrogate(value)).isFalse();
+    }
+
+    @Test
+    void null은_잘못된_서로게이트를_포함하지_않는다() {
+        assertThat(TextValidation.containsUnpairedSurrogate(null)).isFalse();
+    }
 }

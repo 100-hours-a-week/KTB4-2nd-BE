@@ -1,6 +1,5 @@
 package com.yeodam.yeodambe.trip.event.handler;
 
-import com.yeodam.yeodambe.SharedTestMysql;
 import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
 import com.yeodam.yeodambe.common.websocket.service.request.*;
 import com.yeodam.yeodambe.trip.entity.*;
@@ -15,71 +14,81 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage;
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import tools.jackson.databind.ObjectMapper;
 
-import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.*;
 
-@DataJpaTest(properties = {
-        "spring.flyway.enabled=true",
-        "spring.jpa.hibernate.ddl-auto=validate",
-        "spring.jpa.show-sql=false"
-})
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({TripProcessingStatusSyncService.class, TripProcessingStatusEventHandler.class,
-        TripProcessingStatusEventHandlerMysqlTest.MysqlConfig.class})
+@SpringBootTest
+@ActiveProfiles("test")
+@Import(TestcontainersConfiguration.class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripProcessingStatusEventHandlerMysqlTest {
-    @Autowired private TripProcessingStatusSyncService syncService;
-    @Autowired private TripCreationExecutionRepository creations;
-    @Autowired private AdditionalAttachmentExecutionRepository additions;
-    @Autowired private TripRepository trips;
-    @Autowired private UserRepository users;
-    @Autowired private PlatformTransactionManager transactionManager;
-    @MockitoBean private WebSocketEventPublisher publisher;
-    @MockitoBean private com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient storage;
+    @Autowired
+    private TripProcessingStatusSyncService syncService;
+    @Autowired
+    private TripCreationExecutionRepository creations;
+    @Autowired
+    private AdditionalAttachmentExecutionRepository additions;
+    @Autowired
+    private TripRepository trips;
+    @Autowired
+    private UserRepository users;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+    @MockitoBean
+    private WebSocketEventPublisher publisher;
+    @MockitoBean
+    private com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient storage;
 
-    @TestConfiguration(proxyBeanMethods = false)
-    static class MysqlConfig {
-        @Bean
-        JdbcConnectionDetails mysql() throws SQLException {
-            return SharedTestMysql.createDatabase();
-        }
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @BeforeEach
+    void serializeStoredEvent() {
+        when(publisher.serialize(any())).thenAnswer(call -> new ObjectMapper()
+                .writeValueAsString(call.getArgument(0, WebSocketEvent.class)));
     }
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void 커밋_후에만_발행하고_같은_상태는_반복_발행하지_않는다(boolean creation) {
-        var fixture = fixture(creation);
-        var transaction = new TransactionTemplate(transactionManager);
-        var snapshot = transaction.execute(status -> {
-            var changed = synchronize(creation, fixture.executionId(), 1);
+        Fixture fixture = fixture(creation);
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        TripProcessingStateSnapshot snapshot = transaction.execute(status -> {
+            TripProcessingStateSnapshot changed = synchronize(creation, fixture.executionId(), 1);
             synchronize(creation, fixture.executionId(), 2);
             verifyNoInteractions(publisher);
             return changed;
         });
 
-        var captor = ArgumentCaptor.forClass(WebSocketEvent.class);
-        verify(publisher).publish(captor.capture());
-        verifyNoMoreInteractions(publisher);
-        var event = captor.getValue();
-        var notification = (TripProcessingStatusNotification) event.payload().data();
+        ArgumentCaptor<WebSocketEvent> captor = ArgumentCaptor.forClass(WebSocketEvent.class);
+        verify(publisher).serialize(captor.capture());
+        Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                verify(publisher, atLeastOnce()).publishSerialized(anyString()));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trip_edit_notification_outbox WHERE target_type = 'USER' AND target_id = ?",
+                Integer.class, fixture.userId())).isOne();
+        WebSocketEvent event = captor.getValue();
+        TripProcessingStatusNotification notification = (TripProcessingStatusNotification) event.payload().data();
         assertThat(event.type()).isEqualTo(WebSocketEventType.AI_TASK);
         assertThat(event.schemaVersion()).isEqualTo(1);
         assertThat(event.target()).isEqualTo(new WebSocketEventTarget(WebSocketEventTargetType.USER, fixture.userId()));
@@ -100,7 +109,7 @@ class TripProcessingStatusEventHandlerMysqlTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void 트랜잭션을_롤백하면_발행하지_않는다(boolean creation) {
-        var fixture = fixture(creation);
+        Fixture fixture = fixture(creation);
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             synchronize(creation, fixture.executionId(), 1);
             status.setRollbackOnly();
@@ -113,12 +122,16 @@ class TripProcessingStatusEventHandlerMysqlTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void 발행_실패는_커밋된_상태를_되돌리거나_호출자를_실패시키지_않는다(boolean creation) {
-        var fixture = fixture(creation);
-        doThrow(new IllegalStateException("redis unavailable")).when(publisher).publish(any());
+        Fixture fixture = fixture(creation);
+        doThrow(new IllegalStateException(TripUploadTestErrorMessage.NOTIFICATION_PUBLISH_FAILURE.message()))
+                .when(publisher).publishSerialized(anyString());
 
         assertThatCode(() -> synchronize(creation, fixture.executionId(), 1)).doesNotThrowAnyException();
 
-        verify(publisher).publish(any());
+        Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                verify(publisher, atLeastOnce()).publishSerialized(anyString()));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trip_edit_notification_outbox WHERE target_type = 'USER' AND target_id = ?",
+                Integer.class, fixture.userId())).isOne();
         assertThat(storedVersion(creation, fixture.executionId())).isEqualTo(2);
         String step = creation
                 ? creations.findById(fixture.executionId()).orElseThrow().getCurrentStep()
@@ -140,16 +153,22 @@ class TripProcessingStatusEventHandlerMysqlTest {
 
     private Fixture fixture(boolean creation) {
         return new TransactionTemplate(transactionManager).execute(status -> {
-            var user = users.save(new User(UUID.randomUUID() + "@notification.test", "알림검증"));
-            var trip = trips.save(new Trip(user.getUserId(), "알림 검증", LocalDate.now(), LocalDate.now()));
+            User user = users.save(new User(UUID.randomUUID() + "@notification.test", "알림검증"));
+            Trip trip = trips.save(new Trip(user.getUserId(), "알림 검증", LocalDate.now(), LocalDate.now()));
             String executionId = UUID.randomUUID().toString();
-            if (creation) creations.save(new TripCreationExecution(executionId, trip.getId(), user.getUserId(), 2));
-            else additions.save(new AdditionalAttachmentExecution(
-                    executionId, trip.getId(), user.getUserId(), 2, LocalDateTime.now()));
+            if (creation) {
+                creations.save(new TripCreationExecution(executionId, trip.getId(), user.getUserId(), 2));
+            } else {
+                additions.save(new AdditionalAttachmentExecution(executionId, trip.getId(), user.getUserId(), 2, LocalDateTime.now()));
+            }
             return new Fixture(user.getUserId(), trip.getId(), executionId);
         });
     }
 
-    private record Fixture(Long userId, Long tripId, String executionId) {
+    private record Fixture(
+            Long userId,
+            Long tripId,
+            String executionId
+    ) {
     }
 }

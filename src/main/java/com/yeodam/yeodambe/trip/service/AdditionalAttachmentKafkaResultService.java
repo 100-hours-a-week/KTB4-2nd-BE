@@ -24,6 +24,7 @@ import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +32,7 @@ import java.util.Set;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -47,11 +49,12 @@ public class AdditionalAttachmentKafkaResultService {
     private final ObjectMapper json;
     private final ApplicationEventPublisher eventPublisher;
     private final TripCompletionSnapshotFactory completionSnapshots;
+    private final TripPhotoDeletionReservationService deletions;
 
     private AdditionalAttachmentExecution lock(String id) {
-        var candidate = executionRepository.findById(id).orElseThrow();
-        tripRepository.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId()).orElseThrow();
-        var execution = executionRepository.findForUpdate(id).orElseThrow();
+        AdditionalAttachmentExecution candidate = executionRepository.findById(id).orElseThrow();
+        tripRepository.findAnyForUpdate(candidate.getTripId()).orElseThrow();
+        AdditionalAttachmentExecution execution = executionRepository.findForUpdate(id).orElseThrow();
         entityManager.flush();
         entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
         return execution;
@@ -59,13 +62,28 @@ public class AdditionalAttachmentKafkaResultService {
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public boolean receive(TripCreateResultEvent event, String raw) {
-        var candidate = executionRepository.findById(event.executionId()).orElse(null);
-        if (candidate == null) return false;
-        if (!candidate.getTripId().equals(event.tripId()) || candidate.isTerminal()) return true;
-        var execution = lock(event.executionId());
-        if (execution.isTerminal() || execution.getProcessOutboxId() == null) return true;
+        AdditionalAttachmentExecution candidate = executionRepository.findById(event.executionId()).orElse(null);
+        if (candidate == null) {
+            return false;
+        }
+        if (!candidate.getTripId().equals(event.tripId())) {
+            return true;
+        }
+        AdditionalAttachmentExecution execution = lock(event.executionId());
         if (execution.getResultRawPayload() != null) {
-            if (!json.readTree(execution.getResultRawPayload()).equals(json.readTree(raw))) execution.recordConflictingResult(raw);
+            if (!json.readTree(execution.getResultRawPayload()).equals(json.readTree(raw))) {
+                execution.recordConflictingResult(raw);
+            }
+            return true;
+        }
+        if (execution.isTerminal()) {
+            execution.recordConflictingResult(raw);
+            if (execution.getRemoteTerminalConfirmedAt() == null) {
+                execution.confirmRemoteTermination(transactions.databaseTime());
+            }
+            return true;
+        }
+        if (execution.getProcessOutboxId() == null) {
             return true;
         }
         long previousVersion = execution.getStatusVersion();
@@ -73,7 +91,7 @@ public class AdditionalAttachmentKafkaResultService {
         logAiResultReceived(event.tripId(), event.executionId());
         if (event.status() == TripCreateResultEvent.Status.COMPLETED) {
             if (execution.getStatusVersion() != previousVersion) {
-                var snapshot = new TripProcessingStateSnapshot(
+                TripProcessingStateSnapshot snapshot = new TripProcessingStateSnapshot(
                         execution.getTripId(),
                         execution.getExecutionId(),
                         execution.getStatusVersion(),
@@ -90,23 +108,38 @@ public class AdditionalAttachmentKafkaResultService {
         return true;
     }
 
+    @Transactional(readOnly = true)
+    public List<AdditionalAttachmentExecution> findClaimCandidates() {
+        return executionRepository.findResultsToApply(transactions.databaseTime(), PageRequest.of(0, 20));
+    }
+
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Optional<TripAnalysisResultClaim> claim() {
-        for (var candidate : executionRepository.findResultsToApply(transactions.databaseTime(), PageRequest.of(0, 20))) {
-            var execution = lock(candidate.getExecutionId());
-            var now = transactions.databaseTime();
-            if (execution.isTerminal() || execution.getResultRawPayload() == null
-                    || execution.getResultLeaseUntil() != null && execution.getResultLeaseUntil().isAfter(now)
-                    || execution.getResultNextAttemptAt() != null && execution.getResultNextAttemptAt().isAfter(now)) continue;
-            if (execution.getResultAttempts() >= 3) {
-                transactions.failExecution(execution.getExecutionId(), ErrorMessage.RESULT_APPLY_RETRY_EXHAUSTED.name());
-                continue;
+        for (AdditionalAttachmentExecution candidate : findClaimCandidates()) {
+            Optional<TripAnalysisResultClaim> claim = claim(candidate.getExecutionId());
+            if (claim.isPresent()) {
+                return claim;
             }
-            execution.claimResult(UUID.randomUUID().toString(), now.plusMinutes(5));
-            return Optional.of(new TripAnalysisResultClaim(execution.getExecutionId(), execution.getTripId(), execution.getUserId(),
-                    execution.getResultClaimToken(), execution.getResultRawPayload(), execution.getResultAttempts() + 1));
         }
         return Optional.empty();
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Optional<TripAnalysisResultClaim> claim(String executionId) {
+        AdditionalAttachmentExecution execution = lock(executionId);
+        LocalDateTime now = transactions.databaseTime();
+        if (execution.isTerminal() || execution.getResultRawPayload() == null
+                || execution.getResultLeaseUntil() != null && execution.getResultLeaseUntil().isAfter(now)
+                || execution.getResultNextAttemptAt() != null && execution.getResultNextAttemptAt().isAfter(now)) {
+            return Optional.empty();
+        }
+        if (execution.getResultAttempts() >= 3) {
+            transactions.failExecution(executionId, ErrorMessage.RESULT_APPLY_RETRY_EXHAUSTED.name());
+            return Optional.empty();
+        }
+        execution.claimResult(UUID.randomUUID().toString(), now.plusMinutes(5));
+        return Optional.of(new TripAnalysisResultClaim(executionId, execution.getTripId(), execution.getUserId(),
+                execution.getResultClaimToken(), execution.getResultRawPayload(), execution.getResultAttempts() + 1));
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -145,7 +178,8 @@ public class AdditionalAttachmentKafkaResultService {
         String payload = outboxRepository.findById(execution.getProcessOutboxId()).orElseThrow().getPayload();
         Set<Long> expected = new HashSet<>();
         json.readTree(payload).path("attachments").forEach(photo -> expected.add(photo.path("trip_attachment_id").asLong()));
-        List<TripAttachment> photos = attachmentRepository.findAllForReanalysis(claim.tripId());
+        List<TripAttachment> photos = attachmentRepository.findAllForReanalysis(claim.tripId()).stream()
+                .filter(photo -> expected.contains(photo.getId())).toList();
         if (!expected.equals(new HashSet<>(photos.stream().map(TripAttachment::getId).toList()))) {
             throw new IllegalStateException(ErrorMessage.AI_RESULT_INTEGRITY_FAILED.name());
         }
@@ -170,13 +204,20 @@ public class AdditionalAttachmentKafkaResultService {
             execution.releaseReservation(execution.getAccountedBytes());
         }
         execution.finish(AdditionalAttachmentExecution.Status.COMPLETED, null, transactions.databaseTime());
+        deletions.applyForInput(claim.tripId(), photos.stream().map(TripAttachment::getId).collect(Collectors.toSet()));
         stats.refreshFromActiveTrips(claim.userId());
-        TripCompletionSnapshot completion = completionSnapshots.capture(claim.tripId(), claim.userId(),
+        TripCompletionSnapshot completion = completionSnapshots.captureCurrent(claim.tripId(), claim.userId(),
                 com.yeodam.yeodambe.common.websocket.service.request.AiTaskCompletionType.TRIP_ANALYSIS_APPLIED,
                 execution.getResultRawPayload());
         TripProcessingStateSnapshot snapshot = new TripProcessingStateSnapshot(
-                execution.getTripId(), execution.getExecutionId(), execution.getStatusVersion(),
-                execution.getDisplayStatus(), execution.getCurrentStep(), execution.getErrorCode(), execution.getResultRawPayload());
+                execution.getTripId(),
+                execution.getExecutionId(),
+                execution.getStatusVersion(),
+                execution.getDisplayStatus(),
+                execution.getCurrentStep(),
+                execution.getErrorCode(),
+                execution.getResultRawPayload()
+        );
         eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(execution.getUserId(), snapshot, completion));
         logWorkflowCompleted(claim, execution);
     }
@@ -192,17 +233,30 @@ public class AdditionalAttachmentKafkaResultService {
         else execution.retryResult(transactions.databaseTime().plusSeconds(10));
     }
 
+    @Transactional(readOnly = true)
+    public List<AdditionalAttachmentExecution> findExpiredCandidates() {
+        LocalDateTime now = transactions.databaseTime();
+        return executionRepository.findExpired(now.minusMinutes(10), now.minusHours(1), PageRequest.of(0, 100));
+    }
+
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void expire() {
-        var now = transactions.databaseTime();
-        for (var candidate : executionRepository.findExpired(now.minusMinutes(10), now.minusHours(1), PageRequest.of(0, 100))) {
-            var execution = lock(candidate.getExecutionId());
-            now = transactions.databaseTime();
-            if (execution.isTerminal() || execution.getResultRawPayload() != null) continue;
-            if (!execution.isInputClosed() && !execution.getLastUploadActivityAt().isAfter(now.minusMinutes(10)))
-                transactions.failExecution(execution.getExecutionId(), "UPLOAD_TIMEOUT");
-            else if (execution.getProcessPublishedAt() != null && !execution.getProcessPublishedAt().isAfter(now.minusHours(1)))
-                transactions.failExecution(execution.getExecutionId(), "AI_RESULT_TIMEOUT");
+        for (AdditionalAttachmentExecution candidate : findExpiredCandidates()) {
+            expire(candidate.getExecutionId());
+        }
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void expire(String executionId) {
+        AdditionalAttachmentExecution execution = lock(executionId);
+        LocalDateTime now = transactions.databaseTime();
+        if (execution.isTerminal() || execution.getResultRawPayload() != null) {
+            return;
+        }
+        if (!execution.isInputClosed() && !execution.getLastUploadActivityAt().isAfter(now.minusMinutes(10))) {
+            transactions.failExecution(executionId, ErrorMessage.UPLOAD_TIMEOUT.name());
+        } else if (execution.getProcessPublishedAt() != null && !execution.getProcessPublishedAt().isAfter(now.minusHours(1))) {
+            transactions.failExecution(executionId, ErrorMessage.AI_RESULT_TIMEOUT.name());
         }
     }
 

@@ -1,14 +1,15 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.*;
-import com.yeodam.yeodambe.integration.service.request.TripPhotoAnalysisRequest;
-import com.yeodam.yeodambe.integration.service.request.PhotosReadyMessage;
 import com.yeodam.yeodambe.integration.service.request.PhotoProcessMessage;
+import com.yeodam.yeodambe.integration.service.request.PhotosReadyMessage;
+import com.yeodam.yeodambe.integration.service.request.TripPhotoAnalysisRequest;
 import com.yeodam.yeodambe.trip.entity.*;
-import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+import com.yeodam.yeodambe.trip.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
@@ -27,13 +28,19 @@ public class AdditionalAttachmentAnalysisPreparationService {
     @Transactional
     public PreparedAnalysis prepare(Long tripId, Long userId, String uploadId) {
         Trip trip = tripRepository.findOwnedActiveForUpdate(tripId, userId).orElseThrow(TripNotFoundException::new);
-        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) throw new TripAttachmentAddNotAllowedException();
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
         AdditionalAttachmentUploadBatch last = uploadBatchRepository.findForUpdate(uploadId, tripId, userId)
                 .orElseThrow(InvalidAttachmentUploadException::new);
-        if (!last.getLastBatch()) throw new InvalidAttachmentUploadException();
+        if (!last.getLastBatch()) {
+            throw new InvalidAttachmentUploadException();
+        }
         List<AdditionalAttachmentUploadBatch> batches = uploadBatchRepository
                 .findAllByAdditionIdOrderByBatchNoAsc(last.getAdditionId());
-        if (batches.size() != last.getBatchNo()) throw new InvalidAttachmentUploadException();
+        if (batches.size() != last.getBatchNo()) {
+            throw new InvalidAttachmentUploadException();
+        }
         for (int index = 0; index < batches.size(); index++) {
             AdditionalAttachmentUploadBatch batch = batches.get(index);
             if (!batch.getTripId().equals(tripId) || !batch.getUserId().equals(userId)
@@ -56,27 +63,41 @@ public class AdditionalAttachmentAnalysisPreparationService {
                 .anyMatch(item -> !photoIds.contains(item.getTripAttachmentId()))) {
             throw new TripAttachmentAddNotAllowedException();
         }
+        batches.forEach(AdditionalAttachmentUploadBatch::markPrepared);
+        return new PreparedAnalysis(tripId, last.getAdditionId(), prepareInput(trip, last.getAdditionId(), photos));
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public TripPhotoAnalysisRequest prepareInput(Trip trip, String executionId, List<TripAttachment> photos) {
+        if (photos.isEmpty() || photos.size() > 200) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
+        Set<Long> photoIds = photos.stream().map(TripAttachment::getId).collect(java.util.stream.Collectors.toSet());
         Map<Long, OffsetDateTime> takenAt = new HashMap<>();
         for (InitialAttachmentUploadItem item : initialUploadItemRepository.findAllByTripAttachmentIdIn(photoIds)) {
-            if (item.getTakenAtWithOffset() != null) takenAt.put(item.getTripAttachmentId(), OffsetDateTime.parse(item.getTakenAtWithOffset()));
+            if (item.getTakenAtWithOffset() != null) {
+                takenAt.put(item.getTripAttachmentId(), OffsetDateTime.parse(item.getTakenAtWithOffset()));
+            }
         }
         for (AdditionalAttachmentUploadItem item : uploadItemRepository.findAllByTripAttachmentIdIn(photoIds)) {
-            if (item.getTakenAtWithOffset() != null) takenAt.put(item.getTripAttachmentId(), OffsetDateTime.parse(item.getTakenAtWithOffset()));
+            if (item.getTakenAtWithOffset() != null) {
+                takenAt.put(item.getTripAttachmentId(), OffsetDateTime.parse(item.getTakenAtWithOffset()));
+            }
         }
         List<TripPhotoAnalysisRequest.Region> regions = tripRegionRepository
-                .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(tripId).stream()
+                .findByTrip_IdAndDeletedAtIsNullOrderByIdAsc(trip.getId()).stream()
                 .map(region -> new TripPhotoAnalysisRequest.Region(region.getLatitude(), region.getLongitude())).toList();
-        if (regions.isEmpty()) throw new IllegalStateException(TripInternalErrorMessage.TRIP_REGION_MISSING.message());
-        List<TripPhotoAnalysisRequest.Photo> inputs = photos.stream().map(photo ->
-                new TripPhotoAnalysisRequest.Photo(photo.getId(), photo.getAnalyzeStorageKey(),
+        if (regions.isEmpty()) {
+            throw new IllegalStateException(TripInternalErrorMessage.TRIP_REGION_MISSING.message());
+        }
+        List<TripPhotoAnalysisRequest.Photo> inputs = photos.stream()
+                .map(photo -> new TripPhotoAnalysisRequest.Photo(photo.getId(), photo.getAnalyzeStorageKey(),
                         takenAt.get(photo.getId()),
                         photo.getRegionOrigin() == RegionOrigin.EXIF ? photo.getLatitude() : null,
                         photo.getRegionOrigin() == RegionOrigin.EXIF ? photo.getLongitude() : null,
                         photo.getDeviceModel())).toList();
-        batches.forEach(AdditionalAttachmentUploadBatch::markPrepared);
-        return new PreparedAnalysis(tripId, last.getAdditionId(), new TripPhotoAnalysisRequest(
-                last.getAdditionId(), trip.getTripName(),
-                new TripPhotoAnalysisRequest.Period(trip.getStartDate(), trip.getEndDate()), regions, inputs));
+        return new TripPhotoAnalysisRequest(executionId, trip.getTripName(),
+                new TripPhotoAnalysisRequest.Period(trip.getStartDate(), trip.getEndDate()), regions, inputs);
     }
 
     @Transactional(readOnly = true)
@@ -91,7 +112,9 @@ public class AdditionalAttachmentAnalysisPreparationService {
     @Transactional
     public PhotosReadyMessage photosReady(Long tripId, Long userId, String uploadId, String executionId) {
         Trip trip = tripRepository.findOwnedActiveForUpdate(tripId, userId).orElseThrow(TripNotFoundException::new);
-        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) throw new TripAttachmentAddNotAllowedException();
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new TripAttachmentAddNotAllowedException();
+        }
         AdditionalAttachmentUploadBatch batch = uploadBatchRepository.findForUpdate(uploadId, tripId, userId)
                 .orElseThrow(InvalidAttachmentUploadException::new);
         if (batch.getStatus() != AdditionalAttachmentUploadStatus.VERIFIED
@@ -107,13 +130,19 @@ public class AdditionalAttachmentAnalysisPreparationService {
             TripAttachment photo = tripAttachmentRepository.findById(item.getTripAttachmentId())
                     .orElseThrow(TripAttachmentAddNotAllowedException::new);
             if (!photo.getTripId().equals(tripId) || photo.getDeletedAt() != null
-                    || photo.getFile().getDeletedAt() != null) throw new TripAttachmentAddNotAllowedException();
+                    || photo.getFile().getDeletedAt() != null) {
+                throw new TripAttachmentAddNotAllowedException();
+            }
             ready.add(new PhotosReadyMessage.Attachment(photo.getId(), photo.getAnalyzeStorageKey()));
         }
         return PhotosReadyMessage.create(tripId, executionId, batch.getBatchNo(), ready);
     }
 
-    public record PreparedAnalysis(Long tripId, String additionId, TripPhotoAnalysisRequest request) {
+    public record PreparedAnalysis(
+            Long tripId,
+            String additionId,
+            TripPhotoAnalysisRequest request
+    ) {
         public PhotoProcessMessage processMessage(String executionId) {
             return PhotoProcessMessage.from(tripId, executionId, request);
         }

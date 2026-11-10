@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripService;
+import com.yeodam.yeodambe.trip.service.TripUpdateService;
 import com.yeodam.yeodambe.trip.service.ShareTripService;
 import com.yeodam.yeodambe.trip.service.InvitedTripListService;
 import com.yeodam.yeodambe.trip.service.request.TripShareCreateRequest;
@@ -27,9 +28,12 @@ import com.yeodam.yeodambe.trip.service.response.InvitedTripListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripPlaceFolderListResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentProcessingStatusResponse;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -50,6 +54,7 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class TripController {
     private final TripService tripService;
+    private final TripUpdateService tripUpdateService;
     private final TripProcessingStatusService processingStatusService;
     private final TripProcessingCancellationService processingCancellationService;
     private final TripPlaceFolderListService tripPlaceFolderListService;
@@ -105,7 +110,7 @@ public class TripController {
         }
 
         Long userId = Long.valueOf(jwt.getSubject());
-        TripUpdateResponse data = tripService.updateTrip(
+        TripUpdateResponse data = tripUpdateService.updateTrip(
                 tripId, userId, request
         );
 
@@ -121,7 +126,7 @@ public class TripController {
     ) {
         return ResponseEntity.ok(new ApiResponse<>(
                 SuccessMessage.FAVORITE_REGISTERED,
-                tripService.registerFavorite(tripId, Long.valueOf(jwt.getSubject()))
+                tripUpdateService.registerFavorite(tripId, Long.valueOf(jwt.getSubject()))
         ));
     }
 
@@ -130,7 +135,7 @@ public class TripController {
             @PathVariable Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        tripService.removeFavorite(tripId, Long.valueOf(jwt.getSubject()));
+        tripUpdateService.removeFavorite(tripId, Long.valueOf(jwt.getSubject()));
         return ResponseEntity.noContent().build();
     }
 
@@ -142,6 +147,18 @@ public class TripController {
         return ResponseEntity.ok(new ApiResponse<>(
                 SuccessMessage.TRIP_PROCESSING_STATUS_FOUND,
                 processingStatusService.findStatus(tripId, Long.valueOf(jwt.getSubject()))
+        ));
+    }
+
+    @GetMapping("/trips/{tripId}/attachments/additions/{additionId}/processing-status")
+    public ResponseEntity<ApiResponse<AdditionalAttachmentProcessingStatusResponse>> getAdditionalProcessingStatus(
+            @PathVariable @Positive Long tripId,
+            @PathVariable @NotBlank @Size(max = 36) String additionId,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(
+                SuccessMessage.TRIP_PROCESSING_STATUS_FOUND,
+                processingStatusService.findAdditionalStatus(tripId, Long.valueOf(jwt.getSubject()), additionId)
         ));
     }
 

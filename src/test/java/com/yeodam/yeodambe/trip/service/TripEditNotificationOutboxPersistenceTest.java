@@ -38,6 +38,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import org.mockito.ArgumentCaptor;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import javax.sql.DataSource;
 import java.sql.SQLException;
@@ -88,6 +91,10 @@ class TripEditNotificationOutboxPersistenceTest {
     @Autowired private StringRedisTemplate redis;
     @Autowired @Qualifier("tripEditNotificationExecutor") private Executor executor;
     @MockitoSpyBean private TripEditNotificationPersistenceService persistence;
+    @MockitoBean
+    private TripAttachmentStorageClient storage;
+    @Autowired
+    private ObjectMapper json;
     private TransactionTemplate transactions;
     private List<Runnable> submitted;
 
@@ -314,6 +321,28 @@ class TripEditNotificationOutboxPersistenceTest {
         assertThat(onlyRecord().getStatus()).isEqualTo(Status.PENDING);
         verifyNoInteractions(redis);
         publisher.retryPending();
+        assertThat(onlyRecord().getStatus()).isEqualTo(Status.PUBLISHED);
+    }
+
+    @Test
+    void 썸네일_URL은_커밋_뒤_DB_연결을_반환한_다음_만들고_원래_알림은_보존한다() {
+        WebSocketEvent event = event(Map.of("listItem", Map.of("tripId", 7L, "thumbnailUrl", "")));
+        transactions.executeWithoutResult(status -> {
+            outbox.enqueue(event, "preview-key");
+            verifyNoInteractions(storage, redis, executor);
+        });
+        String frozen = onlyRecord().getEventJson();
+        when(storage.createReadUrl("preview-key")).thenAnswer(call -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(((HikariDataSource) dataSource).getHikariPoolMXBean().getActiveConnections()).isZero();
+            return "https://storage.test/fresh-preview";
+        });
+        submitted.getFirst().run();
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        verify(redis).convertAndSend(eq(CHANNEL), sent.capture());
+        assertThat(json.readTree(sent.getValue()).path("payload").path("data").path("listItem").path("thumbnailUrl").asString())
+                .isEqualTo("https://storage.test/fresh-preview");
+        assertThat(onlyRecord().getEventJson()).isEqualTo(frozen);
         assertThat(onlyRecord().getStatus()).isEqualTo(Status.PUBLISHED);
     }
 

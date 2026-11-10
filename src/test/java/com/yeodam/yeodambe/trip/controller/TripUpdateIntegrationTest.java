@@ -185,6 +185,16 @@ class TripUpdateIntegrationTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"\\uD800", "\\uDC00", "😀\\uDC00"})
+    void 짝이_깨진_서로게이트_여행명을_거절하고_기존_이름을_보존한다(String escapedName) throws Exception {
+        mvc.perform(request("{\"tripName\":\"" + escapedName + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_TRIP_REQUEST"));
+
+        assertThat(name()).isEqualTo("원래 여행");
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {
             "\u3164", "\u2800", "\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF",
             "\u00A0", "\u2007", "\u202F", " \u3164\u2800\u200B\u2060\uFEFF "

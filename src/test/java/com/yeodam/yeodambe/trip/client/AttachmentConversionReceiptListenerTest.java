@@ -1,6 +1,6 @@
 package com.yeodam.yeodambe.trip.client;
 
-import com.yeodam.yeodambe.trip.service.AttachmentConversionTransactionService;
+import com.yeodam.yeodambe.trip.service.AttachmentConversionService;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionPublication;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.internals.RecordHeaders;
@@ -19,7 +19,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(OutputCaptureExtension.class)
 class AttachmentConversionReceiptListenerTest {
-    private final AttachmentConversionTransactionService transactions = mock(AttachmentConversionTransactionService.class);
+    private final AttachmentConversionService transactions = mock(AttachmentConversionService.class);
     private final AttachmentConversionReceiptListener listener = new AttachmentConversionReceiptListener(transactions);
 
     @Test

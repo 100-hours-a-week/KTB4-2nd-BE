@@ -12,6 +12,15 @@ import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
+import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
+import com.yeodam.yeodambe.trip.entity.TripAnalysisExecution;
+import com.yeodam.yeodambe.trip.entity.TripAnalysisExecutionUpload;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionUploadRepository;
+
+import java.util.Map;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +30,8 @@ public class TripProcessingStatusSyncService {
     private final EntityManager entityManager;
     private final AdditionalAttachmentExecutionRepository additionalExecutions;
     private final ApplicationEventPublisher eventPublisher;
+    private final TripAnalysisExecutionRepository analyses;
+    private final TripAnalysisExecutionUploadRepository includedUploads;
 
     @Transactional
     public TripProcessingStateSnapshot synchronizeCreation(
@@ -29,7 +40,7 @@ public class TripProcessingStatusSyncService {
             TripDisplayStatus nextStatus,
             String nextStep
     ) {
-        var execution = creationExecutions.findForUpdate(executionId)
+        TripCreationExecution execution = creationExecutions.findForUpdate(executionId)
                 .orElseThrow(TripNotFoundException::new);
 
         entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
@@ -37,7 +48,7 @@ public class TripProcessingStatusSyncService {
         boolean changed = execution.getStatusVersion() == expectedVersion
                 && execution.updateDisplayStatus(nextStatus, nextStep);
 
-        var snapshot = new TripProcessingStateSnapshot(
+        TripProcessingStateSnapshot snapshot = new TripProcessingStateSnapshot(
                 execution.getTripId(),
                 execution.getExecutionId(),
                 execution.getStatusVersion(),
@@ -54,6 +65,7 @@ public class TripProcessingStatusSyncService {
 
         return snapshot;
     }
+
     @Transactional
     public TripProcessingStateSnapshot synchronizeAddition(
             String executionId,
@@ -61,7 +73,7 @@ public class TripProcessingStatusSyncService {
             TripDisplayStatus nextStatus,
             String nextStep
     ) {
-        var execution = additionalExecutions.findForUpdate(executionId)
+        AdditionalAttachmentExecution execution = additionalExecutions.findForUpdate(executionId)
                 .orElseThrow(TripNotFoundException::new);
 
         entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
@@ -69,7 +81,7 @@ public class TripProcessingStatusSyncService {
         boolean changed = execution.getStatusVersion() == expectedVersion
                 && execution.updateDisplayStatus(nextStatus, nextStep);
 
-        var snapshot = new TripProcessingStateSnapshot(
+        TripProcessingStateSnapshot snapshot = new TripProcessingStateSnapshot(
                 execution.getTripId(),
                 execution.getExecutionId(),
                 execution.getStatusVersion(),
@@ -85,5 +97,43 @@ public class TripProcessingStatusSyncService {
         }
 
         return snapshot;
+    }
+
+    @Transactional
+    public void synchronizeAnalysis(
+            String executionId,
+            Map<String, Long> expectedVersions,
+            TripDisplayStatus nextStatus,
+            String nextStep
+    ) {
+        TripAnalysisExecution execution = analyses.findForUpdate(executionId)
+                .orElseThrow(TripNotFoundException::new);
+        entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
+        if (execution.getEndedAt() != null || execution.getResultRawPayload() != null
+                || execution.getStatus() != TripAnalysisExecution.Status.AI_REQUESTED) {
+            return;
+        }
+        for (TripAnalysisExecutionUpload included :
+                includedUploads.findAllByExecutionIdOrderById(executionId)) {
+            AdditionalAttachmentExecution addition = additionalExecutions
+                    .findForUpdate(included.getAdditionId()).orElseThrow(TripNotFoundException::new);
+            entityManager.refresh(addition, LockModeType.PESSIMISTIC_WRITE);
+            if (Objects.equals(expectedVersions.get(addition.getExecutionId()), addition.getStatusVersion())
+                    && addition.updateDisplayStatus(nextStatus, nextStep)) {
+                TripProcessingStateSnapshot snapshot = new TripProcessingStateSnapshot(
+                        addition.getTripId(),
+                        addition.getExecutionId(),
+                        addition.getStatusVersion(),
+                        addition.getDisplayStatus(),
+                        addition.getCurrentStep(),
+                        addition.getErrorCode(),
+                        null,
+                        executionId,
+                        execution.getStatus(),
+                        null
+                );
+                eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(addition.getUserId(), snapshot));
+            }
+        }
     }
 }

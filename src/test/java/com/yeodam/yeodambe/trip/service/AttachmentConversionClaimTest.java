@@ -61,6 +61,8 @@ import static org.mockito.ArgumentMatchers.any;
 class AttachmentConversionClaimTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2000, 1, 1, 12, 0);
     @Autowired private AttachmentConversionTransactionService transactions;
+    @Autowired
+    private AttachmentConversionService conversions;
     @Autowired private EntityManager entityManager;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private ObjectMapper json;
@@ -224,7 +226,8 @@ class AttachmentConversionClaimTest {
         });
         var topics = new Topics(null, null, null, null);
         String topic = kind == Kind.INITIAL ? topics.initialLight() : topics.additionalLight();
-        var worker = new AttachmentConversionWorker(transactions, processing, topics, Duration.ofMillis(50));
+        AttachmentConversionWorker worker = new AttachmentConversionWorker(
+                conversions, processing, topics, Duration.ofMillis(50));
         try {
             var ack = worker.process(fixture.taskId(), kind, Lane.LIGHT, topic, 0);
             assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();

@@ -50,6 +50,8 @@ class AttachmentConversionRecoveryTest {
     private static final Duration INTERVAL = Duration.ofMinutes(5);
     private static final LocalDateTime NOW = LocalDateTime.of(2020, 1, 1, 12, 0);
     @MockitoSpyBean private AttachmentConversionTransactionService transactions;
+    @Autowired
+    private AttachmentConversionService conversions;
     @Autowired private AttachmentConversionTaskRepository tasks;
     @MockitoSpyBean private AttachmentConversionOutboxRepository outboxes;
     @Autowired private EntityManager entityManager;
@@ -277,7 +279,7 @@ class AttachmentConversionRecoveryTest {
                     true,
                     true
             );
-            var recovery = new AttachmentConversionRecoveryService(properties, transactions);
+            AttachmentConversionRecoveryService recovery = new AttachmentConversionRecoveryService(properties, conversions);
             var registrar = new org.springframework.scheduling.config.ScheduledTaskRegistrar();
             recovery.configureTasks(registrar);
             recovery.reconcilePendingRequests();
@@ -366,7 +368,24 @@ class AttachmentConversionRecoveryTest {
     }
 
     private AttachmentConversionRecoveryService service(int pageSize, int pages, int reissues) {
-        return new AttachmentConversionRecoveryService(properties(pageSize, pages, reissues), transactions);
+        return new AttachmentConversionRecoveryService(properties(pageSize, pages, reissues), conversions);
+    }
+
+    @Test
+    void 후보_조회_뒤_작업이_사라져도_다음_후보의_복구를_계속한다() {
+        Fixture removed = fixture(Kind.INITIAL);
+        Fixture remaining = fixture(Kind.INITIAL);
+        AttachmentConversionRecoveryCandidate removedCandidate = candidate(removed);
+        AttachmentConversionRecoveryCandidate remainingCandidate = candidate(remaining);
+        doReturn(List.of(removedCandidate, remainingCandidate)).when(transactions)
+                .findRecoveryCandidates(any(), eq(10), eq(INTERVAL));
+        jdbc.update("DELETE FROM attachment_conversion_outbox WHERE task_id = ?", removed.taskId());
+        jdbc.update("DELETE FROM attachment_conversion_tasks WHERE task_id = ?", removed.taskId());
+
+        service(10, 1, 10).reconcilePendingRequests();
+
+        assertThat(tasks.findById(remaining.taskId()).orElseThrow().getLatestDeliveryNo()).isEqualTo(2);
+        assertThat(outboxes.findAll()).hasSize(2);
     }
 
     private AttachmentConversionProperties properties(int pageSize, int pages, int reissues) {

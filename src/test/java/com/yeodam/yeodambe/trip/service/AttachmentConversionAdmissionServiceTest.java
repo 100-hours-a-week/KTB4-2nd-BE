@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.common.exception.AttachmentConversionUnavailableException;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties.Admission;
@@ -14,6 +17,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
@@ -101,6 +106,39 @@ class AttachmentConversionAdmissionServiceTest {
         verifyNoInteractions(jdbc, transactionManager);
         assertThatThrownBy(service(AttachmentConversionRoute.HOLD)::assertNewExecutionAllowed)
                 .isInstanceOf(AttachmentConversionUnavailableException.class);
+    }
+
+    @Test
+    void 신규_접수_거절_로그에_판정_사유와_request_id를_기록한다() {
+        Logger logger = (Logger) LoggerFactory.getLogger(AttachmentConversionAdmissionService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            MDC.put("request_id", "request-admission-1");
+            assertThatThrownBy(service(AttachmentConversionRoute.HOLD)::assertNewExecutionAllowed)
+                    .isInstanceOf(AttachmentConversionUnavailableException.class);
+        } finally {
+            MDC.remove("request_id");
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        assertThat(appender.list).hasSize(1);
+        ILoggingEvent event = appender.list.getFirst();
+        assertThat(event.getKeyValuePairs())
+                .anySatisfy(pair -> assertThat(pair.key).isEqualTo("event"))
+                .anySatisfy(pair -> assertThat(pair.key).isEqualTo("reason"));
+        assertThat(event.getKeyValuePairs().stream()
+                .filter(pair -> "event".equals(pair.key))
+                .findFirst().orElseThrow().value)
+                .isEqualTo("attachment_conversion_admission_rejected");
+        assertThat(event.getKeyValuePairs().stream()
+                .filter(pair -> "reason".equals(pair.key))
+                .findFirst().orElseThrow().value)
+                .isEqualTo("HOLD");
+        assertThat(event.getMDCPropertyMap()).containsEntry("request_id", "request-admission-1");
     }
 
     @Test

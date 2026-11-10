@@ -120,6 +120,16 @@ class TripCreateRequestTest {
         assertThat(validator.validate(request("😀".repeat(10), List.of("50110")))).isEmpty();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"\uD800", "\uDC00", "\uDC00\uD800", "가\uD800", "😀\uDC00"})
+    void 짝이_깨진_서로게이트가_있는_여행명은_생성을_거부한다(String name) {
+        TripCreateRequest request = request(name, List.of("50110"));
+
+        assertThat(validator.validate(request))
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .contains("tripNameContentValid");
+    }
+
     private TripCreateRequest request(
             String name,
             List<String> codes

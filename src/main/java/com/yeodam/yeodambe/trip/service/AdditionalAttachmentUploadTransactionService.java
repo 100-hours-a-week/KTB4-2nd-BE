@@ -26,6 +26,8 @@ import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadItemRepository;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
+import com.yeodam.yeodambe.trip.entity.TripAnalysisExecution;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
@@ -72,6 +74,8 @@ public class AdditionalAttachmentUploadTransactionService {
     private final UserStatsService userStatsService;
     private final AdditionalAttachmentExecutionRepository executionRepository;
     private final EntityManager entityManager;
+    private final TripPhotoDeletionReservationService deletionReservations;
+    private final TripAnalysisExecutionRepository analyses;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final AdditionalAttachmentAnalysisPreparationService analysisPreparationService;
@@ -632,49 +636,68 @@ public class AdditionalAttachmentUploadTransactionService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public List<AdditionalAttachmentUploadBatch> findPendingBatches() {
+        return uploadBatchRepository.findPendingConversion(databaseTime(), PageRequest.of(0, 20));
+    }
+
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Optional<AdditionalAttachmentUploadBatchSnapshot> claimBatch() {
         if (conversionProperties.mode() != AttachmentConversionRoute.DB || conversionProperties.operations().enabled()) {
             return Optional.empty();
         }
-        for (AdditionalAttachmentUploadBatch candidate : uploadBatchRepository.findPendingConversion(
-                databaseTime(), PageRequest.of(0, 20))) {
-            Trip trip = tripRepository.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId())
-                    .orElse(null);
-            if (trip == null || trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
-                continue;
+        for (AdditionalAttachmentUploadBatch candidate : findPendingBatches()) {
+            Optional<AdditionalAttachmentUploadBatchSnapshot> claim = claimBatch(candidate.getId());
+            if (claim.isPresent()) {
+                return claim;
             }
-            AdditionalAttachmentExecution execution = executionRepository.findForUpdate(candidate.getAdditionId())
-                    .orElse(null);
-            if (execution == null) {
-                continue;
-            }
-            entityManager.flush();
-            entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
-            AdditionalAttachmentUploadBatch batch = uploadBatchRepository.findForUpdate(
-                    candidate.getUploadId(), candidate.getTripId(), candidate.getUserId()).orElse(null);
-            if (batch == null) {
-                continue;
-            }
-            entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
-            LocalDateTime now = databaseTime();
-            if (batch.getConversionRoute() != AttachmentConversionRoute.DB
-                    || execution.isTerminal()
-                    || !execution.getTripId().equals(batch.getTripId())
-                    || !execution.getUserId().equals(batch.getUserId())
-                    || (batch.getStatus() != AdditionalAttachmentUploadStatus.VERIFIED
-                        && batch.getStatus() != AdditionalAttachmentUploadStatus.CONVERTING)
-                    || (batch.getLeaseExpiresAt() != null && batch.getLeaseExpiresAt().isAfter(now))
-                    || (batch.getNextAttemptAt() != null && batch.getNextAttemptAt().isAfter(now))) {
-                continue;
-            }
-            if (batch.getStatus() == AdditionalAttachmentUploadStatus.CONVERTING) {
-                batch.releaseConversion(batch.getWorkerToken());
-            }
-            batch.claimConversion(UUID.randomUUID().toString(), now.plusMinutes(10));
-            return Optional.of(snapshot(batch));
         }
         return Optional.empty();
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Optional<AdditionalAttachmentUploadBatchSnapshot> claimBatch(Long batchId) {
+        if (conversionProperties.mode() != AttachmentConversionRoute.DB || conversionProperties.operations().enabled()) {
+            return Optional.empty();
+        }
+        AdditionalAttachmentUploadBatch candidate = uploadBatchRepository.findById(batchId).orElse(null);
+        if (candidate == null) {
+            return Optional.empty();
+        }
+        Trip trip = tripRepository.findOwnedActiveForUpdate(candidate.getTripId(), candidate.getUserId())
+                .orElse(null);
+        if (trip == null || trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            return Optional.empty();
+        }
+        AdditionalAttachmentExecution execution = executionRepository.findForUpdate(candidate.getAdditionId())
+                .orElse(null);
+        if (execution == null) {
+            return Optional.empty();
+        }
+        entityManager.flush();
+        entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
+        AdditionalAttachmentUploadBatch batch = uploadBatchRepository.findForUpdate(
+                candidate.getUploadId(), candidate.getTripId(), candidate.getUserId()).orElse(null);
+        if (batch == null) {
+            return Optional.empty();
+        }
+        entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
+        LocalDateTime now = databaseTime();
+        if (batch.getConversionRoute() != AttachmentConversionRoute.DB
+                || execution.isTerminal()
+                || !execution.getTripId().equals(batch.getTripId())
+                || !execution.getUserId().equals(batch.getUserId())
+                || (batch.getStatus() != AdditionalAttachmentUploadStatus.VERIFIED
+                    && batch.getStatus() != AdditionalAttachmentUploadStatus.CONVERTING)
+                || (batch.getLeaseExpiresAt() != null && batch.getLeaseExpiresAt().isAfter(now))
+                || (batch.getNextAttemptAt() != null && batch.getNextAttemptAt().isAfter(now))) {
+            return Optional.empty();
+        }
+        if (batch.getStatus() == AdditionalAttachmentUploadStatus.CONVERTING) {
+            batch.releaseConversion(batch.getWorkerToken());
+        }
+        batch.claimConversion(UUID.randomUUID().toString(), now.plusMinutes(10));
+        return Optional.of(snapshot(batch));
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -824,8 +847,18 @@ public class AdditionalAttachmentUploadTransactionService {
 
     @Transactional
     public void cancelForWithdrawal(Long tripId, Long userId) {
-        for (var execution : executionRepository.findByTripIdAndUserIdAndEndedAtIsNull(tripId, userId)) {
-            failExecution(execution.getExecutionId(), "USER_WITHDRAWN");
+        cancelUploads(tripId, userId, "USER_WITHDRAWN");
+    }
+
+    @Transactional
+    public void cancelForDeletion(Long tripId, Long userId) {
+        cancelUploads(tripId, userId, AdditionalAttachmentExecution.Status.CANCELED.name());
+    }
+
+    private void cancelUploads(Long tripId, Long userId, String reason) {
+        for (AdditionalAttachmentExecution candidate : executionRepository.findByTripIdAndUserIdAndEndedAtIsNull(tripId, userId)) {
+            AdditionalAttachmentExecution execution = requireExecutionForUpdate(candidate.getExecutionId());
+            terminateExecution(execution, reason, AdditionalAttachmentExecution.Status.CANCELED);
         }
     }
 
@@ -844,16 +877,25 @@ public class AdditionalAttachmentUploadTransactionService {
     }
 
     private void failExecution(AdditionalAttachmentExecution execution, String errorCode) {
+        terminateExecution(execution, errorCode, AdditionalAttachmentExecution.Status.FAILED);
+    }
+
+    private void terminateExecution(
+            AdditionalAttachmentExecution execution,
+            String errorCode,
+            AdditionalAttachmentExecution.Status terminalStatus
+    ) {
         if (execution.isTerminal()) {
             return;
         }
         String executionId = execution.getExecutionId();
-        var now = databaseTime();
+        deletionReservations.settleFailedUpload(executionId);
+        LocalDateTime now = databaseTime();
         logWorkflowFailed(execution, now, errorCode);
-        for (var item : uploadItemRepository.findAdditionItems(executionId)) {
+        for (AdditionalAttachmentUploadItem item : uploadItemRepository.findAdditionItems(executionId)) {
             entityManager.refresh(item, LockModeType.PESSIMISTIC_WRITE);
             if (item.getTripAttachmentId() != null) {
-                var attachment = tripAttachmentRepository.findById(item.getTripAttachmentId()).orElseThrow();
+                TripAttachment attachment = tripAttachmentRepository.findById(item.getTripAttachmentId()).orElseThrow();
                 attachment.softDelete(now);
                 attachment.getFile().softDelete(now);
             }
@@ -868,22 +910,30 @@ public class AdditionalAttachmentUploadTransactionService {
         }
         entityManager.flush();
         userStatsService.refreshFromActiveTrips(execution.getUserId());
-        execution.finish(AdditionalAttachmentExecution.Status.FAILED, errorCode, now);
+        execution.finish(terminalStatus, errorCode, now);
+        deletionReservations.settleEndedAdditions(execution.getTripId());
         publishStatusChanged(execution);
     }
 
     private void publishStatusChanged(AdditionalAttachmentExecution execution) {
-        var snapshot = new TripProcessingStateSnapshot(
+        boolean shared = execution.getProcessingMode() == AdditionalAttachmentExecution.ProcessingMode.V3;
+        TripAnalysisExecution analysis = shared
+                ? analyses.findForAddition(execution.getExecutionId(), PageRequest.of(0, 1)).stream().findFirst().orElse(null)
+                : null;
+        TripProcessingStateSnapshot snapshot = new TripProcessingStateSnapshot(
                 execution.getTripId(),
                 execution.getExecutionId(),
                 execution.getStatusVersion(),
                 execution.getDisplayStatus(),
                 execution.getCurrentStep(),
-                execution.getErrorCode()
-        );
-
-        eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(
-                execution.getUserId(), snapshot));
+                execution.getErrorCode(),
+                null,
+                analysis == null ? null : analysis.getExecutionId(),
+                analysis == null ? null : analysis.getStatus(),
+                analysis != null && analysis.getStatus() == TripAnalysisExecution.Status.APPLY_BLOCKED
+                        ? analysis.getErrorCode() : null,
+                shared);
+        eventPublisher.publishEvent(new TripProcessingStatusChangedEvent(execution.getUserId(), snapshot));
     }
 
     private AdditionalAttachmentExecution requireExecutionForUpdate(String executionId) {

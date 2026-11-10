@@ -141,6 +141,33 @@ class StoryUpdateServiceIntegrationTest {
         if (fixture != null) contents.deleteById(fixture.storyId());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"\u0000", "요\n약", "\u007F", "\u0085", "\uD800", "\uDC00"})
+    void 잘못된_문구는_서비스에서_직접_호출해도_거절하고_기존_본문을_보존한다(String text) {
+        StoryContentDocument before = contents.findById(fixture.storyId()).orElseThrow();
+        StoryUpdateRequest.Block validBlock = block(fixture.blockId(), fixture.photoId(), 1);
+        List<StoryUpdateRequest> requests = List.of(
+                new StoryUpdateRequest(Story.Mood.CALM, text, List.of(validBlock)),
+                new StoryUpdateRequest(Story.Mood.CALM, "요약", List.of(
+                        new StoryUpdateRequest.Block(fixture.blockId(), fixture.photoId(), text, "설명", null, 1)
+                )),
+                new StoryUpdateRequest(Story.Mood.CALM, "요약", List.of(
+                        new StoryUpdateRequest.Block(fixture.blockId(), fixture.photoId(), "첫째 날", text, null, 1)
+                ))
+        );
+
+        for (StoryUpdateRequest request : requests) {
+            assertThatThrownBy(() -> service.update(fixture.userId(), fixture.storyId(), request))
+                    .isInstanceOf(InvalidStoryUpdateException.class);
+        }
+
+        StoryContentDocument after = contents.findById(fixture.storyId()).orElseThrow();
+        assertThat(after.getStorySummary()).isEqualTo(before.getStorySummary());
+        assertThat(after.getMood()).isEqualTo(before.getMood());
+        assertThat(after.getVersion()).isEqualTo(before.getVersion());
+        assertThat(after.getBlocks()).containsExactlyElementsOf(before.getBlocks());
+    }
+
     @Test
     void 읽은뒤_문서버전이_변하면_최신본문을_덮어쓰지_않는다() {
         service.update(fixture.userId(), fixture.storyId(),

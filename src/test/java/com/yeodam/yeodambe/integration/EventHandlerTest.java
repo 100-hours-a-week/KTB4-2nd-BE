@@ -18,6 +18,9 @@ import com.yeodam.yeodambe.trip.event.handler.TripUpdateRequestEventHandler;
 import com.yeodam.yeodambe.trip.event.handler.TripUpdateResultEventHandler;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadTransactionService;
 import com.yeodam.yeodambe.trip.service.TripAnalysisResultService;
+import com.yeodam.yeodambe.trip.service.TripAnalysisResultApplicationService;
+import com.yeodam.yeodambe.trip.service.TripMutationCoordinator;
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -35,8 +38,12 @@ class EventHandlerTest {
 
     @Test
     void 여행_결과의_ID와_상태를_다른_JSON_타입에서_강제_변환하지_않는다() {
-        var results = mock(TripAnalysisResultService.class);
-        var handler = new TripCreateResultEventHandler(results, new ObjectMapper());
+        TripAnalysisResultService results = mock(TripAnalysisResultService.class);
+        TripCreateResultEventHandler handler = new TripCreateResultEventHandler(
+                results,
+                new ObjectMapper(),
+                TripMutationTestFixture.direct()
+        );
         for (String tripId : List.of("7.5", "\"7\"", "9223372036854775808")) {
             String raw = """
                     {"type":"process_result","trip_id":%s,"execution_id":"run",
@@ -61,8 +68,9 @@ class EventHandlerTest {
         new ApplicationContextRunner()
                 .withBean(InitialAttachmentUploadTransactionService.class, () -> mock(InitialAttachmentUploadTransactionService.class))
                 .withBean(TripAnalysisResultService.class, () -> mock(TripAnalysisResultService.class))
-                .withBean(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class,
-                        () -> mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class))
+                .withBean(TripAnalysisResultApplicationService.class,
+                        () -> mock(TripAnalysisResultApplicationService.class))
+                .withBean(TripMutationCoordinator.class, TripMutationTestFixture::direct)
                 .withBean(ObjectMapper.class, ObjectMapper::new)
                 .withBean(StoryGenerationJobRepository.class, () -> mock(StoryGenerationJobRepository.class))
                 .withBean(StoryGenerationCompletionService.class, () -> mock(StoryGenerationCompletionService.class))
@@ -86,7 +94,9 @@ class EventHandlerTest {
     @Test
     void 미구현_핸들러는_이벤트를_처리한_것처럼_정상_종료하지_않는다() {
         assertNotImplemented(new TripUpdateRequestEventHandler(), new TripUpdateRequestEvent());
-        assertNotImplemented(new TripUpdateResultEventHandler(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class), new ObjectMapper()), new TripUpdateResultEvent());
+        assertNotImplemented(
+                new TripUpdateResultEventHandler(mock(TripAnalysisResultApplicationService.class), new ObjectMapper()),
+                new TripUpdateResultEvent());
         assertNotImplemented(new StoryCreateRequestEventHandler(), new StoryCreateRequestEvent());
     }
 
@@ -119,7 +129,7 @@ class EventHandlerTest {
         직접_호출시_null_거절_검증(requestHandler());
         직접_호출시_null_거절_검증(resultHandler());
         직접_호출시_null_거절_검증(new TripUpdateRequestEventHandler());
-        직접_호출시_null_거절_검증(new TripUpdateResultEventHandler(mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService.class), new ObjectMapper()));
+        직접_호출시_null_거절_검증(new TripUpdateResultEventHandler(mock(TripAnalysisResultApplicationService.class), new ObjectMapper()));
         직접_호출시_null_거절_검증(new StoryCreateRequestEventHandler());
         직접_호출시_null_거절_검증(storyResultHandler());
     }
@@ -129,8 +139,11 @@ class EventHandlerTest {
     }
 
     private TripCreateResultEventHandler resultHandler() {
-        return new TripCreateResultEventHandler(mock(TripAnalysisResultService.class),
-                new ObjectMapper());
+        return new TripCreateResultEventHandler(
+                mock(TripAnalysisResultService.class),
+                new ObjectMapper(),
+                TripMutationTestFixture.direct()
+        );
     }
 
     private StoryCreateResultEventHandler storyResultHandler() {

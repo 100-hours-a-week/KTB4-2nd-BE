@@ -26,7 +26,8 @@ public record TripCreateRequest(
 
     @AssertTrue
     public boolean isTripNameContentValid() {
-        return TextValidation.hasVisibleContent(tripName);
+        return TextValidation.hasVisibleContent(tripName)
+                && !TextValidation.containsUnpairedSurrogate(tripName);
     }
 
     @AssertTrue

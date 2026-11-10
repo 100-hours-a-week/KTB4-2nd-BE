@@ -35,6 +35,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import com.yeodam.yeodambe.trip.config.TripEditLockProperties;
+import org.redisson.api.RedissonClient;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -53,12 +56,22 @@ import static org.mockito.Mockito.*;
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop"
 })
-@Import({AdditionalAttachmentModificationGuard.class, TripDeletionService.class, TripObjectCleanupService.class, UserStatsService.class,
-        TripDeletionPersistenceTest.MeterRegistryTestConfiguration.class})
+@Import({AdditionalAttachmentModificationGuard.class, TripDeletionService.class, UserStatsService.class,
+        TripDeletionPersistenceTest.MeterRegistryTestConfiguration.class, TripEditLock.class, TripDeletionPersistenceTest.LockConfiguration.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TripDeletionPersistenceTest {
+    @TestConfiguration
+    @EnableConfigurationProperties(TripEditLockProperties.class)
+    static class LockConfiguration {
+        @Bean(name = "tripEditRedissonClient")
+        RedissonClient redisson() {
+            return mock(RedissonClient.class);
+        }
+    }
     @MockitoBean
     private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
+    @MockitoBean
+    private TripWorkflowCancellationService cancellations;
     @TestConfiguration
     static class MeterRegistryTestConfiguration {
         @Bean

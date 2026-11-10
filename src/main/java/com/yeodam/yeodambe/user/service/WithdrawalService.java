@@ -1,94 +1,58 @@
 package com.yeodam.yeodambe.user.service;
 
-import com.yeodam.yeodambe.trip.service.TripWithdrawalService;
-import com.yeodam.yeodambe.user.entity.Consent;
-import com.yeodam.yeodambe.user.entity.OAuthAccount;
-import com.yeodam.yeodambe.user.entity.User;
-import com.yeodam.yeodambe.user.entity.UserStats;
-import com.yeodam.yeodambe.common.exception.UserNotFoundException;
 import com.yeodam.yeodambe.common.exception.WithdrawalFailedException;
-import com.yeodam.yeodambe.user.repository.ConsentRepository;
-import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
-import com.yeodam.yeodambe.user.repository.UserRepository;
-import com.yeodam.yeodambe.user.repository.UserStatsRepository;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
 import com.yeodam.yeodambe.common.websocket.service.WebSocketAuthRevocationPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.service.TripEditLock;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.DataAccessResourceFailureException;
 
-import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class WithdrawalService {
 
-    private final UserRepository userRepository;
-    private final OAuthAccountRepository oauthAccountRepository;
-    private final ConsentRepository consentRepository;
-    private final UserStatsRepository userStatsRepository;
+    private final TripRepository trips;
+    private final TripEditLock editLock;
+    private final WithdrawalTransactionService transactions;
     private final LoginSessionStore loginSessionStore;
-    private final TripWithdrawalService tripWithdrawalService;
     private final CsrfTokenStore csrfTokenStore;
     private final WebSocketAuthRevocationPublisher authRevocationPublisher;
 
-    @Transactional
     public void withdraw(Long userId, String csrfContext) {
+        boolean committed = false;
+        for (int attempt = 0; attempt < 3 && !committed; attempt++) {
+            List<Long> tripIds = findActiveOwnedTripIds(userId);
+            try {
+                editLock.executeAll(tripIds, () -> {
+                    transactions.withdraw(userId, tripIds);
+                    return null;
+                });
+                committed = true;
+            } catch (OptimisticLockingFailureException changedTrips) {
+                if (attempt == 2) {
+                    throw changedTrips;
+                }
+            }
+        }
+        cleanupAuthenticationData(userId, csrfContext);
+    }
+
+    private List<Long> findActiveOwnedTripIds(Long userId) {
         try {
-            LocalDateTime withdrawnAt = LocalDateTime.now();
-
-            User user = userRepository.findById(userId)
-                    .filter(found -> found.getDeletedAt() == null)
-                    .orElseThrow(UserNotFoundException::new);
-
-            OAuthAccount oauthAccount = oauthAccountRepository
-                    .findByUser_UserIdAndDeletedAtIsNull(userId)
-                    .orElseThrow(WithdrawalFailedException::new);
-
-            Consent consent = consentRepository
-                    .findByUser_UserIdAndDeletedAtIsNull(userId)
-                    .orElseThrow(WithdrawalFailedException::new);
-
-            UserStats userStats = userStatsRepository
-                    .findByUser_UserIdAndDeletedAtIsNull(userId)
-                    .orElseThrow(WithdrawalFailedException::new);
-
-            tripWithdrawalService.withdrawAll(userId, withdrawnAt);
-
-            oauthAccount.withdraw(withdrawnAt);
-            consent.withdraw(withdrawnAt);
-            userStats.withdraw(withdrawnAt);
-            user.withdraw(withdrawnAt);
-
-            cleanupAfterCommit(userId, csrfContext);
-        } catch (
-                UserNotFoundException
-                | WithdrawalFailedException
-                | DataAccessResourceFailureException exception
-        ) {
+            return trips.findActiveOwnedIds(userId);
+        } catch (DataAccessResourceFailureException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             throw new WithdrawalFailedException(exception);
         }
-    }
-
-    private void cleanupAfterCommit(Long userId, String csrfContext) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            cleanupAuthenticationData(userId, csrfContext);
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                cleanupAuthenticationData(userId, csrfContext);
-            }
-        });
     }
 
     private void cleanupAuthenticationData(Long userId, String csrfContext) {

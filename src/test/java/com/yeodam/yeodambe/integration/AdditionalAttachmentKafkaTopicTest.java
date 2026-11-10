@@ -4,7 +4,7 @@ import com.yeodam.yeodambe.integration.client.OutboxReceiptConsumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import com.yeodam.yeodambe.trip.event.handler.TripUpdateResultEventHandler;
-import com.yeodam.yeodambe.trip.service.AdditionalAttachmentKafkaResultService;
+import com.yeodam.yeodambe.trip.service.TripAnalysisResultApplicationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.annotation.KafkaListener;
 import tools.jackson.databind.ObjectMapper;
@@ -25,8 +25,8 @@ class AdditionalAttachmentKafkaTopicTest {
 
     @Test
     void 전송_형식을_바꾸지_않고_추가_사진_결과를_소비한다() {
-        var results = mock(AdditionalAttachmentKafkaResultService.class);
-        var handler = new TripUpdateResultEventHandler(results, new ObjectMapper());
+        TripAnalysisResultApplicationService results = mock(TripAnalysisResultApplicationService.class);
+        TripUpdateResultEventHandler handler = new TripUpdateResultEventHandler(results, new ObjectMapper());
         String raw = """
                 {"type":"process_result","trip_id":7,"execution_id":"addition",
                  "status":"CANCELED","result":null,"error":null}
@@ -37,8 +37,8 @@ class AdditionalAttachmentKafkaTopicTest {
 
     @Test
     void 잘못된_추가_사진_결과는_DB_처리_전에_실패한다() {
-        var results = mock(AdditionalAttachmentKafkaResultService.class);
-        var handler = new TripUpdateResultEventHandler(results, new ObjectMapper());
+        TripAnalysisResultApplicationService results = mock(TripAnalysisResultApplicationService.class);
+        TripUpdateResultEventHandler handler = new TripUpdateResultEventHandler(results, new ObjectMapper());
         assertThatIllegalArgumentException().isThrownBy(() -> handler.consume("{broken"))
                 .withMessage("TRIP_RESULT_TRANSPORT_INVALID");
         assertThatIllegalArgumentException().isThrownBy(() -> handler.consume("""

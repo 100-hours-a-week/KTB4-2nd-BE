@@ -24,9 +24,20 @@ class TripSearchServiceTest {
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final TripRegionRepository regions = mock(TripRegionRepository.class);
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
-    private final TripService service = new TripService(mock(AdditionalAttachmentModificationGuard.class), mock(TripRepository.class), regions,
-            mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class), mock(RegionCatalog.class), attachments, storage, mock(TripAccessService.class),
-            new tools.jackson.databind.ObjectMapper(), mock(StoryRepository.class), mock(TripMapCacheStore.class), Clock.systemUTC(),
+    private final TripService service = new TripService(
+            mock(AdditionalAttachmentModificationGuard.class),
+            mock(com.yeodam.yeodambe.user.repository.UserRepository.class),
+            mock(TripRepository.class),
+            regions,
+            mock(com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository.class),
+            mock(RegionCatalog.class),
+            attachments,
+            storage,
+            mock(TripAccessService.class),
+            new tools.jackson.databind.ObjectMapper(),
+            mock(StoryRepository.class),
+            mock(TripMapCacheStore.class),
+            Clock.systemUTC(),
             mock(com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository.class)
     );
 

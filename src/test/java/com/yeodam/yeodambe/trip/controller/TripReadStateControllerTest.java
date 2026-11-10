@@ -62,13 +62,23 @@ class TripReadStateControllerTest {
                 access, places, attachments, storage, mapper
         );
         TripService service = new TripService(
-                mock(AdditionalAttachmentModificationGuard.class), trips, regions,
-                executions, mock(RegionCatalog.class), attachments, storage, access,
-                mapper, mock(StoryRepository.class), mock(TripMapCacheStore.class), Clock.systemUTC(),
+                mock(AdditionalAttachmentModificationGuard.class),
+                mock(com.yeodam.yeodambe.user.repository.UserRepository.class),
+                trips,
+                regions,
+                executions,
+                mock(RegionCatalog.class),
+                attachments,
+                storage,
+                access,
+                mapper,
+                mock(StoryRepository.class),
+                mock(TripMapCacheStore.class),
+                Clock.systemUTC(),
                 places
         );
         TripController controller = new TripController(
-                service, mock(TripProcessingStatusService.class),
+                service, mock(TripUpdateService.class), mock(TripProcessingStatusService.class),
                 mock(TripProcessingCancellationService.class), folders,
                 mock(TripDeletionService.class), mapper, mock(ShareTripService.class), mock(InvitedTripListService.class)
         );

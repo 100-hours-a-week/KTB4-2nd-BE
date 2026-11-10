@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RequiredArgsConstructor
 public class AttachmentConversionRecoveryService implements SchedulingConfigurer {
     private final AttachmentConversionProperties properties;
-    private final AttachmentConversionTransactionService transactions;
+    private final AttachmentConversionService transactions;
     private final AtomicBoolean running = new AtomicBoolean();
     private Cursor cursor;
 

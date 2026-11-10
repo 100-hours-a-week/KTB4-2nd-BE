@@ -1,5 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.yeodam.yeodambe.SharedTestKafka;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.trip.client.AttachmentConversionKafkaListener;
@@ -68,7 +71,8 @@ class AttachmentConversionKafkaIntegrationTest {
     private static final Duration BACKOFF = Duration.ofMillis(100);
     @Autowired private KafkaTemplate<String, String> kafka;
     @Autowired private ConcurrentKafkaListenerContainerFactoryConfigurer configurer;
-    @Autowired private AttachmentConversionTransactionService database;
+    @Autowired
+    private AttachmentConversionService database;
     @Autowired private InitialAttachmentUploadTransactionService source;
     @Autowired private AttachmentConversionEnqueueService enqueue;
     @Autowired private AttachmentConversionTaskRepository tasks;
@@ -85,7 +89,7 @@ class AttachmentConversionKafkaIntegrationTest {
 
     @Test
     void 커밋은_작업_DB_반영과_정리를_기다린다() throws Exception {
-        var db = mock(AttachmentConversionTransactionService.class, org.mockito.AdditionalAnswers.delegatesTo(database));
+        AttachmentConversionService db = mock(AttachmentConversionService.class, org.mockito.AdditionalAnswers.delegatesTo(database));
         var photos = mock(TripAttachmentDerivativeService.class);
         var cleanup = new CompletableFuture<DerivedPhotoKeys>();
         var planned = new AtomicReference<DerivedPhotoKeys>();
@@ -269,20 +273,21 @@ class AttachmentConversionKafkaIntegrationTest {
 
     @Test
     void 동기_치명적_실패와_Future_취소는_민감한_로그_없이_오프셋을_대기시킨다() throws Exception {
-        var worker = mockWorker();
-        var cancelled = new CompletableFuture<Void>();
+        AttachmentConversionWorker worker = mockWorker();
+        CompletableFuture<Void> cancelled = new CompletableFuture<>();
         cancelled.cancel(true);
-        var ready = new AtomicBoolean(false);
+        AtomicBoolean ready = new AtomicBoolean(false);
         when(worker.process(anyString(), any(), any(), anyString(), anyInt())).thenAnswer(call ->
                 ready.get() ? CompletableFuture.completedFuture(null) : cancelled);
-        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.list = new CopyOnWriteArrayList<>();
         logs.start();
-        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
         logger.addAppender(logs);
-        try (var h = new Harness(worker, kafka)) {
+        try (Harness h = new Harness(worker, kafka)) {
             h.synchronousFailure.set(true);
             h.start();
-            var record = h.send(h.topics.initialLight(), message(UUID.randomUUID().toString()));
+            ConsumerRecord<String, String> record = h.send(h.topics.initialLight(), message(UUID.randomUUID().toString()));
             await().atMost(Duration.ofSeconds(5)).until(() -> h.synchronousAttempts.get() >= 3);
             h.uncommitted(record);
             verify(worker, never()).process(anyString(), any(), any(), anyString(), anyInt());
@@ -394,7 +399,7 @@ class AttachmentConversionKafkaIntegrationTest {
         when(photos.processConversionPhoto(any(), any(), any(), any())).thenReturn(
                 CompletableFuture.failedFuture(new IllegalStateException("temporary native failure")));
         when(photos.isTransientConversionFailure(any())).thenReturn(true);
-        var db = mock(AttachmentConversionTransactionService.class, org.mockito.AdditionalAnswers.delegatesTo(database));
+        AttachmentConversionService db = mock(AttachmentConversionService.class, org.mockito.AdditionalAnswers.delegatesTo(database));
         doAnswer(call -> {
             var result = database.recordPhotoFailure(call.getArgument(0), call.getArgument(1), call.getArgument(2));
             if (result.status() == com.yeodam.yeodambe.trip.service.response.AttachmentConversionStepResult.Status.RETRY_LATER) {

@@ -39,6 +39,24 @@ public interface TripShareUserRepository extends JpaRepository<TripShareUser, Lo
     Optional<TripShareUser> findByTripIdAndGranteeUserId(Long tripId, Long granteeUserId);
 
     @Query("""
+            select share.userId as ownerId, share.permission as permission,
+                   share.expiresAt as expiresAt, share.deletedAt as deletedAt
+            from TripShareUser share
+            where share.tripId = :tripId and share.granteeUserId = :actorId
+            """)
+    Optional<GrantSnapshot> findGrantSnapshot(@Param("tripId") Long tripId, @Param("actorId") Long actorId);
+
+    interface GrantSnapshot {
+        Long getOwnerId();
+
+        TripSharePermission getPermission();
+
+        LocalDateTime getExpiresAt();
+
+        LocalDateTime getDeletedAt();
+    }
+
+    @Query("""
             select share
             from TripShareUser share
             join fetch share.trip trip

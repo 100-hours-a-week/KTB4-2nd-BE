@@ -39,6 +39,7 @@ import com.yeodam.yeodambe.trip.service.response.TripCreateResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import com.yeodam.yeodambe.trip.service.response.TripDetailMapResponse;
 import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
+import com.yeodam.yeodambe.trip.service.response.TripEditAccess;
 import com.yeodam.yeodambe.trip.service.response.TripFavoriteResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
@@ -313,7 +314,9 @@ public class TripService {
             Long userId,
             String cursor
     ) {
-        Trip trip = tripAccessService.requireReadableTrip(tripId, userId);
+        Trip trip = tripRepository.findByIdAndDeletedAtIsNull(tripId)
+                .orElseThrow(TripNotFoundException::new);
+        TripEditAccess access = tripAccessService.requireReadPermission(trip, userId);
 
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
             throw new TripUpdateNotAllowedException();
@@ -375,7 +378,8 @@ public class TripService {
                 regions,
                 tripAttachmentRepository.countVisibleForEditByTripId(tripId),
                 new TripAttachmentListResponse(items, hasNext, nextCursor, trip.getSequence()),
-                trip.getSequence()
+                trip.getSequence(),
+                access.permission()
         );
     }
 

@@ -13,6 +13,8 @@ import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.request.cursor.AttachmentCursor;
+import com.yeodam.yeodambe.trip.service.response.TripEditAccess;
+import com.yeodam.yeodambe.trip.service.response.TripEditResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -21,9 +23,11 @@ import org.springframework.data.domain.PageRequest;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.*;
@@ -62,7 +66,9 @@ class TripEditServiceTest {
         when(trip.getStartDate()).thenReturn(LocalDate.of(2026, 9, 1));
         when(trip.getEndDate()).thenReturn(LocalDate.of(2026, 9, 3));
         when(trip.getProcessingStatus()).thenReturn(ProcessingStatus.COMPLETED);
-        when(access.requireReadableTrip(7L, 1L)).thenReturn(trip);
+        when(trips.findByIdAndDeletedAtIsNull(7L)).thenReturn(Optional.of(trip));
+        when(access.requireReadPermission(trip, 1L))
+                .thenReturn(new TripEditAccess("OWNER", Instant.EPOCH, Instant.EPOCH.plusSeconds(60)));
         TripRegion region = mock(TripRegion.class);
         when(region.getId()).thenReturn(31L);
         when(region.getRegionCode()).thenReturn("50110");
@@ -74,7 +80,7 @@ class TripEditServiceTest {
     void 사진이_없어도_여행_정보와_빈_페이지를_반환한다() {
         when(attachments.findForEditWithCursor(7L, null, null, PageRequest.of(0, 19)))
                 .thenReturn(List.of());
-        var result = service.findTripForEdit(7L, 1L, null);
+        TripEditResponse result = service.findTripForEdit(7L, 1L, null);
         assertThat(result.tripId()).isEqualTo(7L);
         assertThat(result.tripName()).isEqualTo("제주 여행");
         assertThat(result.startDate()).isEqualTo(LocalDate.of(2026, 9, 1));
@@ -85,7 +91,8 @@ class TripEditServiceTest {
         assertThat(result.attachments().items()).isEmpty();
         assertThat(result.attachments().hasNext()).isFalse();
         assertThat(result.attachments().nextCursor()).isNull();
-        verifyNoInteractions(storage, trips);
+        assertThat(result.permission()).isEqualTo("OWNER");
+        verifyNoInteractions(storage);
     }
 
     @Test
@@ -94,7 +101,7 @@ class TripEditServiceTest {
         when(attachments.findForEditWithCursor(7L, null, null, PageRequest.of(0, 19)))
                 .thenReturn(page);
         when(attachments.countVisibleForEditByTripId(7L)).thenReturn(18L);
-        var result = service.findTripForEdit(7L, 1L, null);
+        TripEditResponse result = service.findTripForEdit(7L, 1L, null);
         assertThat(result.attachments().items()).hasSize(18);
         assertThat(result.attachmentCount()).isEqualTo(18);
         assertThat(result.attachments().hasNext()).isFalse();
@@ -107,7 +114,7 @@ class TripEditServiceTest {
         when(attachments.findForEditWithCursor(7L, null, null, PageRequest.of(0, 19)))
                 .thenReturn(page);
         when(attachments.countVisibleForEditByTripId(7L)).thenReturn(30L);
-        var result = service.findTripForEdit(7L, 1L, null);
+        TripEditResponse result = service.findTripForEdit(7L, 1L, null);
         assertThat(result.attachments().items()).hasSize(18);
         assertThat(result.attachments().items().getFirst().thumbnailUrl()).isEqualTo("url/preview-100");
         assertThat(result.attachmentCount()).isEqualTo(30);
@@ -115,7 +122,6 @@ class TripEditServiceTest {
         assertThat(AttachmentCursor.decode(result.attachments().nextCursor(), 7L, null, null, mapper))
                 .isEqualTo(new AttachmentCursor(createdAt, 83L, 7L, null, null));
         verify(storage, never()).createReadUrl("preview-82");
-        verifyNoInteractions(trips);
     }
 
     @Test
@@ -124,7 +130,7 @@ class TripEditServiceTest {
         TripAttachment nextPhoto = photo(82L);
         when(attachments.findForEditWithCursor(7L, createdAt, 83L, PageRequest.of(0, 19)))
                 .thenReturn(List.of(nextPhoto));
-        var result = service.findTripForEdit(7L, 1L, cursor);
+        TripEditResponse result = service.findTripForEdit(7L, 1L, cursor);
         assertThat(result.attachments().items().getFirst().tripAttachmentId()).isEqualTo(82L);
         verify(attachments).findForEditWithCursor(7L, createdAt, 83L, PageRequest.of(0, 19));
     }
@@ -147,7 +153,7 @@ class TripEditServiceTest {
 
     @Test
     void 다른_사용자의_여행은_사진을_조회하지_않는다() {
-        when(access.requireReadableTrip(7L, 2L)).thenThrow(new TripNotFoundException());
+        when(access.requireReadPermission(trip, 2L)).thenThrow(new TripNotFoundException());
         assertThatThrownBy(() -> service.findTripForEdit(7L, 2L, null))
                 .isInstanceOf(TripNotFoundException.class);
         verifyNoInteractions(attachments, storage, regions);

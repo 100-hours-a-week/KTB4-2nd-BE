@@ -11,7 +11,8 @@ public record TripEditResponse(
         List<Region> regions,
         long attachmentCount,
         TripAttachmentListResponse attachments,
-        long sequence
+        long sequence,
+        String permission
 ) {
     public record Region(
             Long regionId,

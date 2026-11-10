@@ -16,7 +16,11 @@ public record AttachmentPageData(
     public record Item(
             Long tripAttachmentId,
             LocalDateTime createdAt,
-            String previewStorageKey
+            String previewStorageKey,
+            boolean pendingDeletion
     ) {
+        public Item(Long tripAttachmentId, LocalDateTime createdAt, String previewStorageKey) {
+            this(tripAttachmentId, createdAt, previewStorageKey, false);
+        }
     }
 }

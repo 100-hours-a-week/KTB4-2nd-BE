@@ -71,8 +71,8 @@ public class TripEditCommandService {
         try {
             return authorizeAndExecute(tripId, actorId, requestId, type, hash, parse, operation);
         } catch (DataIntegrityViolationException exception) {
-            return transactions.replayExistingResult(tripId, actorId, requestId, type, hash)
-                    .orElseThrow(() -> exception);
+            return editLock.execute(tripId, () -> transactions.replayExistingResult(tripId, actorId, requestId, type, hash)
+                    .orElseThrow(() -> exception));
         }
     }
 
@@ -92,7 +92,7 @@ public class TripEditCommandService {
             if (message == null) {
                 throw exception;
             }
-            return transactions.reject(tripId, actorId, requestId, type, hash, message);
+            return editLock.execute(tripId, () -> transactions.reject(tripId, actorId, requestId, type, hash, message));
         }
         T parsed;
         try {

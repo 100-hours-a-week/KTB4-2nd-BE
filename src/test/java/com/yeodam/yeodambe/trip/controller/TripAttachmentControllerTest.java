@@ -13,7 +13,9 @@ import com.yeodam.yeodambe.trip.service.BulkAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.AdditionalAttachmentUploadUrlService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.TripPhotoDeletionService;
+import com.yeodam.yeodambe.trip.service.TripPhotoDeletionReservationService;
+import com.yeodam.yeodambe.trip.service.TripEditLock;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
@@ -61,7 +63,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TripAttachmentControllerTest {
     private final TripAttachmentListService listService = mock(TripAttachmentListService.class);
     private final TripAttachmentDetailService detailService = mock(TripAttachmentDetailService.class);
-    private final TripAttachmentDeletionService deletionService = mock(TripAttachmentDeletionService.class);
+    private final TripPhotoDeletionService deletionService = mock(TripPhotoDeletionService.class);
     private final TripAttachmentDownloadService downloadService = mock(TripAttachmentDownloadService.class);
     private final BulkAttachmentDownloadService bulkDownloadService = mock(BulkAttachmentDownloadService.class);
     private final InitialAttachmentUploadUrlService uploadUrlService = mock(InitialAttachmentUploadUrlService.class);
@@ -368,11 +370,11 @@ class TripAttachmentControllerTest {
     void 일괄_삭제_201개_요청은_조회_없이_기존_400_응답을_반환한다() throws Exception {
         TripAttachmentRepository repository = mock(TripAttachmentRepository.class);
         UserStatsService stats = mock(UserStatsService.class);
-        TripAttachmentDeletionService realDeletionService =
-                new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.repository.TripRepository.class), mock(com.yeodam.yeodambe.trip.service.AdditionalAttachmentModificationGuard.class), mock(jakarta.persistence.EntityManager.class), repository, stats,
-                        mock(com.yeodam.yeodambe.trip.service.TripMapCacheStore.class));
+        TripPhotoDeletionReservationService reservations = mock(TripPhotoDeletionReservationService.class);
+        TripEditLock lock = mock(TripEditLock.class);
+        TripPhotoDeletionService realDeletionService = new TripPhotoDeletionService(repository, reservations, lock);
         TripAttachmentController realController = new TripAttachmentController(
-                    listService,
+                listService,
                 detailService,
                 realDeletionService,
                 downloadService,
@@ -380,7 +382,7 @@ class TripAttachmentControllerTest {
                 uploadUrlService,
                 uploadCompletion,
                 additionalUploadUrlService,
-            additionalUploadCompletion,
+                additionalUploadCompletion,
                 mock(UnclassifiedFolderListService.class),
                 restoreService
         );
@@ -400,7 +402,7 @@ class TripAttachmentControllerTest {
                 .andExpect(jsonPath("$.message").value("INVALID_ATTACHMENT_IDS"))
                 .andExpect(jsonPath("$.data").isEmpty());
 
-        verifyNoInteractions(repository, stats);
+        verifyNoInteractions(repository, stats, reservations, lock);
     }
 
     @Test

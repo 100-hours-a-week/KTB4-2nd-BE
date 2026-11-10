@@ -17,6 +17,7 @@ import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.service.response.TripDetailMapResponse;
+import com.yeodam.yeodambe.trip.service.response.TripDetailResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -234,16 +235,31 @@ class TripDetailServiceTest {
     }
 
     @Test
-    void 접근_불가와_사진_추가_중에는_지도를_조회하지_않는다() {
+    void 접근할_수_없는_여행은_지도와_상세를_조회하지_않는다() {
         when(tripAccessService.requireReadableTrip(7L, 1L)).thenThrow(new TripNotFoundException());
         assertThrows(TripNotFoundException.class, () -> tripService.findTripDetailMap(7L, 1L));
-        verifyNoInteractions(executions);
+        assertThrows(TripNotFoundException.class, () -> tripService.findTripDetail(7L, 1L));
+        verifyNoInteractions(places, storage, tripRegionRepository, tripAttachmentRepository, executions);
+    }
 
+    @Test
+    void 완료된_여행은_사진_추가_분석_중에도_지도와_상세를_조회한다() {
         doReturn(trip(ProcessingStatus.COMPLETED)).when(tripAccessService).requireReadableTrip(7L, 1L);
         when(executions.existsByTripIdAndEndedAtIsNull(7L)).thenReturn(true);
-        assertThrows(TripDetailNotAvailableException.class, () -> tripService.findTripDetailMap(7L, 1L));
-        assertThrows(TripDetailNotAvailableException.class, () -> tripService.findTripDetail(7L, 1L));
-        verifyNoInteractions(places, storage, tripRegionRepository, tripAttachmentRepository);
+        when(places.findMapMarkers(7L)).thenReturn(List.of(
+                new TripDetailMapMarker(11L, "A", BigDecimal.ONE, BigDecimal.TEN, "preview/11", 1L)
+        ));
+        when(storage.createReadUrl("preview/11")).thenReturn("https://read.test/11");
+
+        TripDetailMapResponse map = tripService.findTripDetailMap(7L, 1L);
+        TripDetailResponse detail = tripService.findTripDetail(7L, 1L);
+
+        assertThat(map.tripId()).isEqualTo(7L);
+        assertThat(map.markers()).extracting(TripDetailMapResponse.Marker::tripPlaceId).containsExactly(11L);
+        assertThat(map.markers().getFirst().thumbnailUrl()).isEqualTo("https://read.test/11");
+        assertThat(detail.tripId()).isEqualTo(7L);
+        assertThat(detail.tripName()).isEqualTo("제주 여행");
+        verifyNoInteractions(executions);
     }
 
     private Trip trip(ProcessingStatus status) {

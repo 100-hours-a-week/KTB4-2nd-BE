@@ -31,6 +31,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -136,9 +137,11 @@ public class TripAttachmentPageReader {
                 query.tripId(), query.tripPlaceId(), ClassificationStatus.ACTIVE,
                 cursor == null ? null : cursor.createdAt(),
                 cursor == null ? null : cursor.tripAttachmentId(), PageRequest.of(0, PAGE_SIZE + 1));
+        Set<Long> pending = Set.copyOf(attachments.findPendingDeletionIds(found.stream().map(TripAttachment::getId).toList()));
         List<AttachmentPageData.Item> items = found.stream().limit(PAGE_SIZE)
                 .map(attachment -> new AttachmentPageData.Item(
-                        attachment.getId(), attachment.getCreatedAt(), attachment.getPreviewStorageKey()))
+                        attachment.getId(), attachment.getCreatedAt(), attachment.getPreviewStorageKey(),
+                        pending.contains(attachment.getId())))
                 .toList();
         boolean hasNext = found.size() > PAGE_SIZE;
         String nextCursor = null;

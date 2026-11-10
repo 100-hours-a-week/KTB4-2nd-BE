@@ -43,7 +43,8 @@ public class TripAttachmentDetailService {
 
         return new TripAttachmentDetailResponse(
                 attachment.getId(),
-                originalUrl
+                originalUrl,
+                !tripAttachmentRepository.findPendingDeletionIds(List.of(attachment.getId())).isEmpty()
         );
     }
 }

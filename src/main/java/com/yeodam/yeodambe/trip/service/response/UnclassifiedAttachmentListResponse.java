@@ -16,7 +16,11 @@ public record UnclassifiedAttachmentListResponse(
             Long tripAttachmentId,
             String thumbnailUrl,
             AttachmentIssue issue,
-            Long restoreTripPlaceId
+            Long restoreTripPlaceId,
+            boolean pendingDeletion
     ) {
+        public Item(Long tripAttachmentId, String thumbnailUrl, AttachmentIssue issue, Long restoreTripPlaceId) {
+            this(tripAttachmentId, thumbnailUrl, issue, restoreTripPlaceId, false);
+        }
     }
 }

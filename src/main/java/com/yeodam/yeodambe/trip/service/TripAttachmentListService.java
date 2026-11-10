@@ -35,7 +35,7 @@ public class TripAttachmentListService {
     private TripAttachmentListResponse toResponse(AttachmentPageData page) {
         List<TripAttachmentListResponse.Item> items = page.items().stream()
                 .map(item -> new TripAttachmentListResponse.Item(
-                        item.tripAttachmentId(), storage.createReadUrl(item.previewStorageKey())))
+                        item.tripAttachmentId(), storage.createReadUrl(item.previewStorageKey()), item.pendingDeletion()))
                 .toList();
         return new TripAttachmentListResponse(items, page.hasNext(), page.nextCursor(), page.sequence());
     }

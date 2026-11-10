@@ -24,8 +24,18 @@ import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.yeodam.yeodambe.trip.entity.TripAnalysisExecution;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadOutboxRepository;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionUploadRepository;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentProcessingStatusResponse;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.Optional;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -39,14 +49,59 @@ public class TripProcessingStatusService {
     private final AdditionalAttachmentExecutionRepository additionalExecutions;
     private final TripProcessingStatusSyncService statusSyncService;
     private final TripCompletionSnapshotFactory completionSnapshots;
+    private final TripAnalysisExecutionRepository analyses;
+    private final TripAnalysisExecutionUploadRepository includedUploads;
+    private final TripEditAccessService access;
+    private final TripMutationCoordinator mutations;
+    private final AdditionalAttachmentUploadOutboxRepository outboxes;
+    private final ObjectMapper json;
 
-    public TripProcessingStatusResponse findStatus(
+    @Transactional(readOnly = true)
+    public TripProcessingStatusResponse findStatus(Long tripId, Long userId) {
+        TripProcessingStatusResponse response = findOwnedStatus(tripId, userId);
+        return analyses.findFirstByTripIdAndEndedAtIsNull(tripId).map(response::withAnalysis).orElse(response);
+    }
+
+    @Transactional(readOnly = true)
+    public AdditionalAttachmentProcessingStatusResponse findAdditionalStatus(
             Long tripId,
-            Long userId
+            Long actorId,
+            String additionId
     ) {
+        access.findAccess(tripId, actorId);
+        AdditionalAttachmentExecution addition = additionalExecutions.findById(additionId)
+                .filter(found -> tripId.equals(found.getTripId())).orElseThrow(TripNotFoundException::new);
+        TripAnalysisExecution execution = analyses.findFirstByTripIdAndEndedAtIsNull(tripId)
+                .orElseGet(() -> analyses.findForAddition(additionId, PageRequest.of(0, 1)).stream()
+                        .findFirst().orElse(null));
+        boolean included = execution != null
+                && includedUploads.existsByExecutionIdAndAdditionId(execution.getExecutionId(), additionId);
+        boolean automaticRetryPending = !addition.isTerminal() && addition.getAnalysisFailureCount() > 0
+                && (execution == null || execution.getEndedAt() != null);
+        String blockedReason = execution != null
+                && (execution.getStatus() == TripAnalysisExecution.Status.APPLY_BLOCKED
+                || execution.isRequiresRemoteTerminationConfirmation() && execution.getRemoteTerminalConfirmedAt() == null)
+                ? execution.getErrorCode() : null;
+        return new AdditionalAttachmentProcessingStatusResponse(
+                tripId,
+                additionId,
+                addition.getStatusVersion(),
+                Status.valueOf(addition.getDisplayStatus().name()),
+                addition.getCurrentStep(),
+                execution == null ? null : execution.getExecutionId(),
+                execution == null ? null : execution.getStatus(),
+                included,
+                addition.getAnalysisFailureCount(),
+                automaticRetryPending,
+                blockedReason
+        );
+    }
+
+    private TripProcessingStatusResponse findOwnedStatus(Long tripId, Long userId) {
         Trip trip = findTrip(tripId, userId);
         Optional<AdditionalAttachmentExecution> addition =
-                additionalExecutions.findFirstByTripIdAndUserIdOrderByCreatedAtDescExecutionIdDesc(tripId, userId);
+                additionalExecutions.findFirstByTripIdAndUserIdAndEndedAtIsNullOrderByCreatedAtDescExecutionIdDesc(tripId, userId)
+                        .or(() -> additionalExecutions.findFirstByTripIdAndUserIdOrderByCreatedAtDescExecutionIdDesc(tripId, userId));
         if (addition.isPresent()) {
             AdditionalAttachmentExecution execution = addition.get();
             return fromSnapshot(new TripProcessingStateSnapshot(
@@ -77,13 +132,51 @@ public class TripProcessingStatusService {
 
     public void synchronizeStatus(Long tripId, Long userId) {
         findTrip(tripId, userId);
+        Optional<TripAnalysisExecution> active = analyses.findFirstByTripIdAndEndedAtIsNull(tripId);
+        if (active.isPresent()) {
+            synchronizeAnalysis(active.get().getExecutionId());
+            return;
+        }
         Optional<AdditionalAttachmentExecution> addition =
-                additionalExecutions.findFirstByTripIdAndUserIdOrderByCreatedAtDescExecutionIdDesc(tripId, userId);
+                additionalExecutions.findFirstByTripIdAndUserIdAndEndedAtIsNullOrderByCreatedAtDescExecutionIdDesc(tripId, userId)
+                        .or(() -> additionalExecutions.findFirstByTripIdAndUserIdOrderByCreatedAtDescExecutionIdDesc(tripId, userId));
         if (addition.isPresent()) {
             synchronizeAddition(addition.get());
             return;
         }
         creationExecutions.findByTripId(tripId).ifPresent(this::synchronizeCreation);
+    }
+
+    public void synchronizeCreation(String executionId) {
+        creationExecutions.findById(executionId).ifPresent(this::synchronizeCreation);
+    }
+
+    public void synchronizeAddition(String additionId) {
+        additionalExecutions.findById(additionId).ifPresent(this::synchronizeAddition);
+    }
+
+    public void synchronizeAnalysis(String executionId) {
+        TripAnalysisExecution execution = analyses.findById(executionId).orElseThrow();
+        if (execution.getEndedAt() != null || execution.getResultRawPayload() != null
+                || execution.getProcessPublishedAt() == null
+                || execution.getStatus() != TripAnalysisExecution.Status.AI_REQUESTED) {
+            return;
+        }
+        Map<String, Long> versions = includedUploads.findAllByExecutionIdOrderById(executionId).stream()
+                .map(included -> additionalExecutions.findById(included.getAdditionId()).orElseThrow())
+                .collect(Collectors.toMap(AdditionalAttachmentExecution::getExecutionId,
+                        AdditionalAttachmentExecution::getStatusVersion));
+        int expectedTotal = json.readTree(outboxes.findById(execution.getProcessOutboxId()).orElseThrow().getPayload())
+                .path("attachments").size();
+        TripPhotoAnalysisStatusResponse ai = analysis.findStatus(execution.getTripId(), executionId);
+        if (ai.progress() != null && ai.progress().total() != expectedTotal) {
+            throw new IllegalStateException(TripInternalErrorMessage.AI_PROGRESS_TOTAL_EXECUTION_MISMATCH.message());
+        }
+        TripDisplayStatus nextStatus = ai.status() == TripPhotoAnalysisStatusResponse.Status.COMPLETED
+                ? TripDisplayStatus.FINALIZING : TripDisplayStatus.PROCESSING;
+        String nextStep = ai.status() == TripPhotoAnalysisStatusResponse.Status.PROCESSING ? ai.currentStep() : null;
+        mutations.run(execution.getTripId(), () ->
+                statusSyncService.synchronizeAnalysis(executionId, versions, nextStatus, nextStep));
     }
 
     private void synchronizeAddition(AdditionalAttachmentExecution execution) {
@@ -108,7 +201,10 @@ public class TripProcessingStatusService {
                 nextStep = ai.currentStep();
             }
         }
-        statusSyncService.synchronizeAddition(executionId, expectedVersion, nextStatus, nextStep);
+        TripDisplayStatus status = nextStatus;
+        String step = nextStep;
+        mutations.run(execution.getTripId(), () ->
+                statusSyncService.synchronizeAddition(executionId, expectedVersion, status, step));
     }
 
     private void synchronizeCreation(TripCreationExecution execution) {
@@ -132,7 +228,10 @@ public class TripProcessingStatusService {
                 nextStep = ai.status() == TripPhotoAnalysisStatusResponse.Status.QUEUED ? null : ai.currentStep();
             }
         }
-        statusSyncService.synchronizeCreation(executionId, expectedVersion, nextStatus, nextStep);
+        TripDisplayStatus status = nextStatus;
+        String step = nextStep;
+        mutations.run(execution.getTripId(), () ->
+                statusSyncService.synchronizeCreation(executionId, expectedVersion, status, step));
     }
 
     private TripProcessingStatusResponse findLegacyStatus(Trip trip, Long userId) {

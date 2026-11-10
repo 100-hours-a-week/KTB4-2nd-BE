@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.entity.TripAnalysisExecution;
 import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripSharePermission;
@@ -35,6 +36,8 @@ import com.yeodam.yeodambe.trip.service.response.FavoriteTripListResponse;
 import com.yeodam.yeodambe.trip.service.response.FavoriteTripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
 import com.yeodam.yeodambe.trip.service.response.TripListResponse;
+import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentProcessingStatusResponse;
+import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.user.security.SecurityConfig;
 import com.yeodam.yeodambe.user.security.csrf.CsrfAccessDeniedHandler;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenGenerator;
@@ -160,6 +163,59 @@ class TripCreationSecurityIntegrationTest {
     void allowSessionValidation() {
         given(activeLoginSessionValidator.validate(any(Jwt.class)))
                 .willReturn(OAuth2TokenValidatorResult.success());
+    }
+
+    @Test
+    void 묶음_상태_API는_인증_사용자와_경로_ID를_전달하고_분석_보류_상태를_반환한다() throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+        given(processingStatusService.findAdditionalStatus(7L, 42L, "addition-1"))
+                .willReturn(new AdditionalAttachmentProcessingStatusResponse(
+                        7L,
+                        "addition-1",
+                        3L,
+                        TripProcessingStatusResponse.Status.FINALIZING,
+                        null,
+                        "analysis-1",
+                        TripAnalysisExecution.Status.APPLY_BLOCKED,
+                        true,
+                        0,
+                        false,
+                        "RESULT_APPLY_RETRY_EXHAUSTED"
+                ));
+
+        mockMvc.perform(get("/trips/7/attachments/additions/addition-1/processing-status")
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_PROCESSING_STATUS_FOUND"))
+                .andExpect(jsonPath("$.data.additionId").value("addition-1"))
+                .andExpect(jsonPath("$.data.analysisState").value("APPLY_BLOCKED"))
+                .andExpect(jsonPath("$.data.includedInAnalysis").value(true))
+                .andExpect(jsonPath("$.data.blockedReason").value("RESULT_APPLY_RETRY_EXHAUSTED"));
+
+        then(processingStatusService).should().findAdditionalStatus(7L, 42L, "addition-1");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/trips/0/attachments/additions/addition-1/processing-status",
+            "/trips/-1/attachments/additions/addition-1/processing-status",
+            "/trips/7/attachments/additions/1234567890123456789012345678901234567/processing-status"
+    })
+    void 묶음_상태_API는_유효하지_않은_여행과_묶음_ID를_조회_전에_거절한다(String path) throws Exception {
+        String accessToken = accessTokenIssuer.issue(42L, "sid-42");
+
+        mockMvc.perform(get(path).cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isBadRequest());
+
+        then(processingStatusService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void 묶음_상태_API는_인증되지_않은_요청을_거절한다() throws Exception {
+        mockMvc.perform(get("/trips/7/attachments/additions/addition-1/processing-status"))
+                .andExpect(status().isUnauthorized());
+
+        then(processingStatusService).shouldHaveNoInteractions();
     }
 
     @Test

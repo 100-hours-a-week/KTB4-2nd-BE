@@ -12,6 +12,8 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionUploadRepository;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -28,7 +30,14 @@ class TripProcessingStatusSyncServiceTest {
             mock(AdditionalAttachmentExecutionRepository.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final TripProcessingStatusSyncService service =
-            new TripProcessingStatusSyncService(repository, entityManager, additionalRepository, eventPublisher);
+            new TripProcessingStatusSyncService(
+                    repository,
+                    entityManager,
+                    additionalRepository,
+                    eventPublisher,
+                    mock(TripAnalysisExecutionRepository.class),
+                    mock(TripAnalysisExecutionUploadRepository.class)
+            );
     private final TripCreationExecution execution = new TripCreationExecution("execution", 7L, 42L, 2);
 
     @BeforeEach

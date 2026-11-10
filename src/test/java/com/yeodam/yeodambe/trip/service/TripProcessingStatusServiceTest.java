@@ -24,6 +24,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadOutboxRepository;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionUploadRepository;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -43,7 +48,7 @@ class TripProcessingStatusServiceTest {
     private TripProcessingStatusService service;
 
     @Test
-    void statusQueryReturnsStoredCreationWithoutAiOrVersionChange() {
+    void 생성_상태_조회는_AI_호출이나_버전_변경_없이_저장한_상태를_반환한다() {
         TripCreationExecution execution = publishedExecution();
         execution.updateDisplayStatus(TripDisplayStatus.PROCESSING, "SAVED_STEP");
         when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
@@ -62,7 +67,7 @@ class TripProcessingStatusServiceTest {
     }
 
     @Test
-    void statusQueryReturnsStoredAdditionWithoutAiOrVersionChange() {
+    void 추가_상태_조회는_AI_호출이나_버전_변경_없이_저장한_상태를_반환한다() {
         AdditionalAttachmentExecution execution = publishedAddition();
         execution.updateDisplayStatus(TripDisplayStatus.PROCESSING, "SAVED_STEP");
         when(analysis.findStatus(7L, "addition")).thenReturn(new TripPhotoAnalysisStatusResponse(
@@ -85,10 +90,31 @@ class TripProcessingStatusServiceTest {
         analysis = mock(TripPhotoAnalysisService.class);
         creationExecutions = mock(TripCreationExecutionRepository.class);
         additionalExecutions = mock(AdditionalAttachmentExecutionRepository.class);
-        service = new TripProcessingStatusService(trips, places, attachments, analysis, mock(InitialAttachmentUploadBatchRepository.class),
-                creationExecutions, additionalExecutions,
-                new TripProcessingStatusSyncService(creationExecutions, mock(EntityManager.class),
-                        additionalExecutions, mock(ApplicationEventPublisher.class)), mock(TripCompletionSnapshotFactory.class));
+        TripProcessingStatusSyncService synchronization = new TripProcessingStatusSyncService(
+                creationExecutions,
+                mock(EntityManager.class),
+                additionalExecutions,
+                mock(ApplicationEventPublisher.class),
+                mock(TripAnalysisExecutionRepository.class),
+                mock(TripAnalysisExecutionUploadRepository.class)
+        );
+        service = new TripProcessingStatusService(
+                trips,
+                places,
+                attachments,
+                analysis,
+                mock(InitialAttachmentUploadBatchRepository.class),
+                creationExecutions,
+                additionalExecutions,
+                synchronization,
+                mock(TripCompletionSnapshotFactory.class),
+                mock(TripAnalysisExecutionRepository.class),
+                mock(TripAnalysisExecutionUploadRepository.class),
+                mock(TripEditAccessService.class),
+                TripMutationTestFixture.direct(),
+                mock(AdditionalAttachmentUploadOutboxRepository.class),
+                new ObjectMapper()
+        );
     }
 
     @Test

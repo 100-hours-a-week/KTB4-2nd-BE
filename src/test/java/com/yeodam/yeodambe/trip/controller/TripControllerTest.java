@@ -104,6 +104,9 @@ class TripControllerTest {
         assertThat(response.getBody().data()).isSameAs(status);
         assertThat(response.getBody().data().status()).isEqualTo(TripProcessingStatusResponse.Status.FINALIZING);
         assertThat(objectMapper.valueToTree(response.getBody()).path("data").has("progress")).isFalse();
+        assertThat(objectMapper.valueToTree(response.getBody()).path("data").has("analysisExecutionId")).isFalse();
+        assertThat(objectMapper.valueToTree(response.getBody()).path("data").has("analysisState")).isFalse();
+        assertThat(objectMapper.valueToTree(response.getBody()).path("data").has("blockedReason")).isFalse();
     }
 
     @Test

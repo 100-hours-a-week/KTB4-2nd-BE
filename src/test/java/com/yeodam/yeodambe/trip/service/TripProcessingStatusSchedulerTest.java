@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
+import com.yeodam.yeodambe.trip.entity.TripAnalysisExecution;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import com.yeodam.yeodambe.trip.repository.TripAnalysisExecutionRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,19 +27,24 @@ class TripProcessingStatusSchedulerTest {
     private final TripCreationExecutionRepository creations = mock(TripCreationExecutionRepository.class);
     private final AdditionalAttachmentExecutionRepository additions = mock(AdditionalAttachmentExecutionRepository.class);
     private final TripProcessingStatusService statuses = mock(TripProcessingStatusService.class);
+    private final TripAnalysisExecutionRepository analyses = mock(TripAnalysisExecutionRepository.class);
     private final TripProcessingStatusScheduler scheduler =
-            new TripProcessingStatusScheduler(creations, additions, statuses);
+            new TripProcessingStatusScheduler(
+                    creations, additions, statuses, analyses
+            );
 
     @Test
-    void 생성과_추가_실행을_각_소유자로_조회한다() {
+    void 생성과_추가와_분석을_정확한_실행_ID로_수집한다() {
         when(creations.findAwaitingAiStatus()).thenReturn(List.of(creation(7L, 42L)));
         when(additions.findAwaitingAiStatus()).thenReturn(List.of(addition(8L, 43L)));
+        when(analyses.findAwaitingAiStatus()).thenReturn(List.of(new TripAnalysisExecution("analysis-9", 9L, 44L)));
 
         scheduler.synchronizePendingExecutions();
 
         InOrder order = inOrder(statuses);
-        order.verify(statuses).synchronizeStatus(7L, 42L);
-        order.verify(statuses).synchronizeStatus(8L, 43L);
+        order.verify(statuses).synchronizeCreation("creation-7");
+        order.verify(statuses).synchronizeAddition("addition-8");
+        order.verify(statuses).synchronizeAnalysis("analysis-9");
         verifyNoMoreInteractions(statuses);
     }
 
@@ -45,13 +52,20 @@ class TripProcessingStatusSchedulerTest {
     void 한_실행의_실패가_뒤의_실행과_추가_목록_처리를_막지_않는다() {
         when(creations.findAwaitingAiStatus()).thenReturn(List.of(creation(7L, 42L), creation(8L, 43L)));
         when(additions.findAwaitingAiStatus()).thenReturn(List.of(addition(9L, 44L)));
-        doThrow(IllegalStateException.class).when(statuses).synchronizeStatus(7L, 42L);
+        when(analyses.findAwaitingAiStatus()).thenReturn(List.of(
+                new TripAnalysisExecution("analysis-10", 10L, 45L),
+                new TripAnalysisExecution("analysis-11", 11L, 46L)
+        ));
+        doThrow(IllegalStateException.class).when(statuses).synchronizeCreation("creation-7");
+        doThrow(IllegalStateException.class).when(statuses).synchronizeAnalysis("analysis-10");
 
         scheduler.synchronizePendingExecutions();
 
-        verify(statuses).synchronizeStatus(7L, 42L);
-        verify(statuses).synchronizeStatus(8L, 43L);
-        verify(statuses).synchronizeStatus(9L, 44L);
+        verify(statuses).synchronizeCreation("creation-7");
+        verify(statuses).synchronizeCreation("creation-8");
+        verify(statuses).synchronizeAddition("addition-9");
+        verify(statuses).synchronizeAnalysis("analysis-10");
+        verify(statuses).synchronizeAnalysis("analysis-11");
     }
 
     @Test
@@ -60,6 +74,7 @@ class TripProcessingStatusSchedulerTest {
 
         verify(creations).findAwaitingAiStatus();
         verify(additions).findAwaitingAiStatus();
+        verify(analyses).findAwaitingAiStatus();
         verifyNoInteractions(statuses);
     }
 
@@ -98,7 +113,7 @@ class TripProcessingStatusSchedulerTest {
         doAnswer(invocation -> {
             called.countDown();
             return null;
-        }).when(statuses).synchronizeStatus(7L, 42L);
+        }).when(statuses).synchronizeCreation("creation-7");
         try (AnnotationConfigApplicationContext context = context(Map.of("app.trip.status-polling-enabled", "true"))) {
             context.register(SchedulingConfiguration.class);
             context.refresh();
@@ -113,6 +128,7 @@ class TripProcessingStatusSchedulerTest {
         context.registerBean(TripCreationExecutionRepository.class, () -> creations);
         context.registerBean(AdditionalAttachmentExecutionRepository.class, () -> additions);
         context.registerBean(TripProcessingStatusService.class, () -> statuses);
+        context.registerBean(TripAnalysisExecutionRepository.class, () -> analyses);
         return context;
     }
 

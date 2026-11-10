@@ -8,6 +8,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import com.yeodam.yeodambe.common.exception.WritePermissionRequiredException;
 import com.yeodam.yeodambe.file.entity.StoredFile;
+import com.yeodam.yeodambe.story.service.StoryPhotoChangeService;
 import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
@@ -34,8 +35,10 @@ class TripAttachmentDeletionServiceTest {
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
     private final AdditionalAttachmentModificationGuard guard = mock(AdditionalAttachmentModificationGuard.class);
     private final jakarta.persistence.EntityManager entityManager = mock(jakarta.persistence.EntityManager.class);
+    private final StoryPhotoChangeService storyPhotoChangeService = mock(StoryPhotoChangeService.class);
     private final TripAttachmentDeletionService service =
-            new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.repository.TripRepository.class), guard, entityManager, tripAttachmentRepository, userStats, mapCache);
+            new TripAttachmentDeletionService(mock(com.yeodam.yeodambe.trip.repository.TripRepository.class), guard,
+                    entityManager, storyPhotoChangeService, tripAttachmentRepository, userStats, mapCache);
 
     @Test
     void 공유_삭제의_잘못된_ID는_조회와_부분_삭제_전에_거절한다() {
@@ -76,6 +79,7 @@ class TripAttachmentDeletionServiceTest {
             verify(attachment.getFile()).softDelete(any());
         }
         verify(entityManager).refresh(trip);
+        verify(storyPhotoChangeService).invalidateCurrentStory(eq(trip), any());
         verify(tripAttachmentRepository).flush();
         verify(userStats).refreshFromActiveTrips(1L);
         verify(mapCache).evictAfterCommit(1L);
@@ -115,6 +119,7 @@ class TripAttachmentDeletionServiceTest {
 
         verify(attachment, never()).softDelete(any());
         verify(tripAttachmentRepository, never()).flush();
+        verifyNoInteractions(storyPhotoChangeService);
         verifyNoInteractions(mapCache);
     }
 

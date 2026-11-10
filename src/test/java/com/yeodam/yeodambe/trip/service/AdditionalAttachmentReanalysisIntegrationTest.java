@@ -17,6 +17,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.story.entity.Story;
+import com.yeodam.yeodambe.story.entity.StoryGenerationJob;
+import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
+import com.yeodam.yeodambe.story.service.StoryGenerationAcceptanceService;
+import com.yeodam.yeodambe.story.service.request.StoryGenerationRequest;
 import com.yeodam.yeodambe.trip.client.*;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
@@ -76,6 +81,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     @Autowired private AdditionalAttachmentUploadOutboxRepository outboxes;
     @Autowired private ObjectMapper applicationMapper;
     @Autowired private com.yeodam.yeodambe.story.service.StoryReadService storyReadService;
+    @Autowired private StoryGenerationAcceptanceService storyGenerationAcceptance;
+    @Autowired private StoryGenerationOutboxRepository storyGenerationOutboxes;
     @Autowired private AdditionalAttachmentUploadTransactionService transactions;
     @Autowired private AdditionalAttachmentAnalysisPreparationService preparation;
     @Autowired private AdditionalAttachmentAnalysisResultService results;
@@ -358,12 +365,13 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void 비동기_파이프라인은_순서대로_발행하고_스토리를_유지하며_모든_사진을_한_번_적용한다() {
+    void 비동기_파이프라인은_모든_사진을_한_번_적용하고_기존_스토리를_정리한다() {
         Long storyId = createExistingStory();
         prepareAsync();
         assertThat(processingStatus.findStatus(tripId, userId).status())
                 .isEqualTo(com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status.PROCESSING);
         assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNull();
+        assertThat(trips.findById(tripId).orElseThrow().getCurrentStoryId()).isEqualTo(storyId);
         publishBoth();
         String raw = successfulPayload();
         com.yeodam.yeodambe.trip.event.TripCreateResultEvent event = applicationMapper.readValue(raw, com.yeodam.yeodambe.trip.event.TripCreateResultEvent.class);
@@ -401,10 +409,21 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         assertThat(batchStatus()).isEqualTo("COMPLETED");
         assertThat(places.findById(oldPlaceId).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(places.countByTripIdAndDeletedAtIsNull(tripId)).isEqualTo(1);
-        assertThat(trips.findById(tripId).orElseThrow().getCurrentStoryId()).isEqualTo(storyId);
+        assertStoryInvalidated(storyId);
         assertThat(stats.findByUser_UserId(userId).orElseThrow().getStorageReservedBytes()).isZero();
         assertThat(processingStatus.findStatus(tripId, userId).status())
                 .isEqualTo(com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse.Status.COMPLETED);
+        assertThat(executionRepository.findById(additionId).orElseThrow().getEndedAt()).isNotNull();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM story_generation_jobs WHERE trip_id = ?", Integer.class, tripId))
+                .isZero();
+
+        Long newPlaceId = attachments.findById(oldPhotoId).orElseThrow().getTripPlaceId();
+        assertThat(newPlaceId).isNotNull().isNotEqualTo(oldPlaceId);
+        var request = new StoryGenerationRequest(Story.Mood.PLAIN, List.of(newPlaceId));
+        StoryGenerationJob newJob = storyGenerationAcceptance.accept(userId, tripId, request, "story-after-reanalysis");
+
+        assertThat(newJob.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(storyGenerationOutboxes.findByGenerationId(newJob.getId())).isPresent();
     }
 
     @Test
@@ -606,32 +625,19 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void 재분류는_재생성_없이_기존_스토리_행과_현재_스토리를_유지한다() {
+    void 재분류가_성공하면_기존_스토리를_숨기고_새_스토리는_자동_생성하지_않는다() {
         Long storyId = createExistingStory();
-        LocalDate sourceDate = places.findById(oldPlaceId).orElseThrow().getStartedAt().toLocalDate();
-        var beforeStory = jdbc.queryForMap("SELECT * FROM stories WHERE story_id = ?", storyId);
         var beforeBlocks = jdbc.queryForList("SELECT * FROM story_blocks WHERE story_id = ?", storyId);
         var beforeSelections = jdbc.queryForList("SELECT * FROM story_selected_places WHERE story_id = ?", storyId);
         completion.prepareBatchPhotos(tripId, userId, completeRequest());
         var prepared = preparation.prepare(tripId, userId, uploadId);
         results.acceptResult(tripId, userId, additionId, result(prepared, false));
 
-        assertThat(jdbc.queryForMap("SELECT * FROM stories WHERE story_id = ?", storyId)).isEqualTo(beforeStory);
+        assertStoryInvalidated(storyId);
         assertThat(jdbc.queryForList("SELECT * FROM story_blocks WHERE story_id = ?", storyId)).isEqualTo(beforeBlocks);
         assertThat(jdbc.queryForList("SELECT * FROM story_selected_places WHERE story_id = ?", storyId)).isEqualTo(beforeSelections);
-        assertThat(jdbc.queryForObject("SELECT current_story_id FROM trips WHERE trip_id = ?", Long.class, tripId))
-                .isEqualTo(storyId);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stories WHERE trip_id = ?", Integer.class, tripId)).isEqualTo(1);
-        when(storage.createReadUrl(anyString())).thenReturn("https://example.test/story-photo");
-        jdbc.update("UPDATE trip_detail_places SET started_at = '2099-01-01 00:00:00' WHERE trip_place_id = ?", oldPlaceId);
-        var detail = storyReadService.findStory(userId, tripId);
-        assertThat(detail.storyId()).isEqualTo(storyId);
-        assertThat(detail.storySummary()).isEqualTo("기존 스토리");
-        assertThat(detail.days()).hasSize(1);
-        assertThat(detail.days().getFirst().date()).isEqualTo(sourceDate);
-        assertThat(detail.days().getFirst().blocks().getFirst().tripPlaceId()).isEqualTo(oldPlaceId);
         assertThat(attachments.findById(oldPhotoId).orElseThrow().getTripPlaceId()).isNotEqualTo(oldPlaceId);
-        assertThat(detail.days().getFirst().blocks().getFirst().tripAttachmentId()).isEqualTo(oldPhotoId);
     }
 
     @Test
@@ -653,9 +659,8 @@ class AdditionalAttachmentReanalysisIntegrationTest {
     }
 
     @Test
-    void 사진이_미분류가_되어도_원본_장소와_날짜로_스토리를_조회한다() {
+    void 사진이_모두_미분류가_되는_재분석도_성공하면_기존_스토리를_숨긴다() {
         Long storyId = createExistingStory();
-        LocalDate sourceDate = places.findById(oldPlaceId).orElseThrow().getStartedAt().toLocalDate();
         completion.prepareBatchPhotos(tripId, userId, completeRequest());
         var prepared = preparation.prepare(tripId, userId, uploadId);
         var unclassified = prepared.request().attachments().stream()
@@ -666,19 +671,17 @@ class AdditionalAttachmentReanalysisIntegrationTest {
         results.acceptResult(tripId, userId, additionId, outcome);
 
         assertThat(batchStatus()).isEqualTo("COMPLETED");
-        assertThat(jdbc.queryForObject("SELECT current_story_id FROM trips WHERE trip_id = ?", Long.class, tripId))
-                .isEqualTo(storyId);
+        assertStoryInvalidated(storyId);
         assertThat(attachments.findById(oldPhotoId).orElseThrow().getTripPlaceId()).isNull();
-        when(storage.createReadUrl(anyString())).thenReturn("https://example.test/story-photo");
-        var detail = storyReadService.findStory(userId, tripId);
-        assertThat(detail.storyId()).isEqualTo(storyId);
-        assertThat(detail.storySummary()).isEqualTo("기존 스토리");
-        assertThat(detail.days().getFirst().date()).isEqualTo(sourceDate);
-        var block = detail.days().getFirst().blocks().getFirst();
-        assertThat(block.tripPlaceId()).isEqualTo(oldPlaceId);
-        assertThat(block.tripAttachmentId()).isEqualTo(oldPhotoId);
-        assertThat(block.detailSummary()).isEqualTo("기존 사진 이야기");
-        assertThat(block.memo()).isEqualTo("기존 메모");
+    }
+
+    private void assertStoryInvalidated(Long storyId) {
+        assertThat(trips.findById(tripId).orElseThrow().getCurrentStoryId()).isNull();
+        assertThat(jdbc.queryForMap("SELECT deleted_at FROM stories WHERE story_id = ?", storyId)
+                .get("deleted_at")).isNotNull();
+        assertThat(storyContents.existsById(storyId)).isTrue();
+        assertThatThrownBy(() -> storyReadService.findStory(userId, tripId))
+                .isInstanceOf(com.yeodam.yeodambe.common.exception.StoryNotFoundException.class);
     }
 
     @Test

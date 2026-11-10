@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.story.service.StoryPhotoChangeService;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
@@ -33,13 +34,15 @@ class TripAnalysisResultServiceTest {
     private final InitialUploadExecutionRegistry executions = new InitialUploadExecutionRegistry();
     private final UserStatsService userStats = mock(UserStatsService.class);
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
+    private final StoryPhotoChangeService storyPhotoChangeService = mock(StoryPhotoChangeService.class);
     private final TripAnalysisResultService service = new TripAnalysisResultService(
             trips, attachments, places, executions, userStats, mock(InitialAttachmentUploadBatchRepository.class),
                 mock(TripCreationExecutionRepository.class),
                 mock(InitialAttachmentUploadItemRepository.class),
                 mock(InitialAttachmentUploadTransactionService.class),
                 new ObjectMapper(),
-                mock(EntityManager.class), mapCache, mock(ApplicationEventPublisher.class), mock(TripCompletionSnapshotFactory.class));
+                mock(EntityManager.class), mapCache, mock(ApplicationEventPublisher.class),
+                mock(TripCompletionSnapshotFactory.class), storyPhotoChangeService);
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
@@ -108,6 +111,7 @@ class TripAnalysisResultServiceTest {
     @Test
     void 추가_사진_재분석_저장후_지도_캐시를_무효화한다() {
         Trip trip = new Trip(1L, "trip", java.time.LocalDate.now(), java.time.LocalDate.now());
+        ReflectionTestUtils.setField(trip, "id", 7L);
         ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
         when(trips.findOwnedActiveForUpdate(7L, 1L)).thenReturn(java.util.Optional.of(trip));
         TripAttachment photo = photo(30L);
@@ -122,6 +126,7 @@ class TripAnalysisResultServiceTest {
         service.replaceCompleted(7L, 1L, result, Map.of());
 
         verify(attachments).saveAll(List.of(photo));
+        verify(storyPhotoChangeService).invalidateCurrentStory(eq(trip), any(LocalDateTime.class));
         verifyNoInteractions(userStats);
         verify(mapCache).evictAfterCommit(1L);
     }
@@ -142,7 +147,7 @@ class TripAnalysisResultServiceTest {
         assertThrows(IllegalStateException.class,
                 () -> service.replaceCompleted(7L, 1L, List.of(other), result, Map.of()));
 
-        verifyNoInteractions(attachments, places, userStats, mapCache);
+        verifyNoInteractions(attachments, places, userStats, mapCache, storyPhotoChangeService);
     }
 
     @Test

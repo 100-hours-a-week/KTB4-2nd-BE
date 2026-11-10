@@ -80,6 +80,24 @@ class TripPhotoDeletionReservationIntegrationTest {
     }
 
     @Test
+    void 일반_사진_삭제가_완료되면_현재_스토리를_함께_정리한다() {
+        jdbc.update("""
+                INSERT INTO stories (trip_id, mood, story_summary, processing_status)
+                VALUES (?, 'PLAIN', '기존 스토리', 'COMPLETED')
+                """, tripId);
+        Long storyId = jdbc.queryForObject("SELECT story_id FROM stories WHERE trip_id = ?", Long.class, tripId);
+        jdbc.update("UPDATE trips SET current_story_id = ? WHERE trip_id = ?", storyId, tripId);
+
+        deletion.deleteOne(ownerId, normalPhoto);
+
+        assertThat(isDeleted(normalPhoto)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT current_story_id FROM trips WHERE trip_id = ?", Long.class, tripId))
+                .isNull();
+        assertThat(jdbc.queryForMap("SELECT deleted_at FROM stories WHERE story_id = ?", storyId)
+                .get("deleted_at")).isNotNull();
+    }
+
+    @Test
     void 분석_중_기존_사진을_중복_삭제_요청해도_예약은_하나이고_성공할_때_삭제한다() {
         fixture.prepareAddition(tripId, ownerId);
         String executionId = scheduling.startNext(tripId).orElseThrow();

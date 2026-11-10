@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.story.exception.StoryGenerationAiRequestException;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -93,7 +94,8 @@ public class StoryGenerationAiClient {
             throw new StoryGenerationAiRequestException(
                     failureMessage,
                     null,
-                    null
+                    null,
+                    failure instanceof ResourceAccessException
             );
         }
     }

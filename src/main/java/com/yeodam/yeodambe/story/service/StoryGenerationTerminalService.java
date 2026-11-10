@@ -17,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.yeodam.yeodambe.common.exception.StoryGenerationCannotBeCanceledException;
 import com.yeodam.yeodambe.common.exception.StoryGenerationNotFoundException;
 
+import java.util.Optional;
+
 @Service
 @RequiredArgsConstructor
 public class StoryGenerationTerminalService {
@@ -79,10 +81,21 @@ public class StoryGenerationTerminalService {
     }
 
     @Transactional
+    public Optional<StoryGenerationJob> prepareCancellation(Long userId, Long generationId) {
+        var job = findOwnedJobForUpdate(userId, generationId);
+        if (job.isFinished()) {
+            throw new StoryGenerationCannotBeCanceledException();
+        }
+        if (job.getStatus() == StoryGenerationJob.Status.QUEUED) {
+            cancel(job);
+            return Optional.empty();
+        }
+        return Optional.of(job);
+    }
+
+    @Transactional
     public void confirmCancellation(Long userId, Long generationId) {
-        var job = jobRepository.findByIdForUpdate(generationId)
-                .filter(saved -> saved.getUserId().equals(userId))
-                .orElseThrow(StoryGenerationNotFoundException::new);
+        var job = findOwnedJobForUpdate(userId, generationId);
 
         if (job.getStatus() == StoryGenerationJob.Status.CANCELED) {
             return;
@@ -92,6 +105,16 @@ public class StoryGenerationTerminalService {
             throw new StoryGenerationCannotBeCanceledException();
         }
 
+        cancel(job);
+    }
+
+    private StoryGenerationJob findOwnedJobForUpdate(Long userId, Long generationId) {
+        return jobRepository.findByIdForUpdate(generationId)
+                .filter(saved -> saved.getUserId().equals(userId))
+                .orElseThrow(StoryGenerationNotFoundException::new);
+    }
+
+    private void cancel(StoryGenerationJob job) {
         job.cancel();
         discardService.discardPreparedStory(job);
         publishStatusChanged(job);

@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.trip.exception.TripEditLockRejectedException;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
+import com.yeodam.yeodambe.story.exception.StoryGenerationAiRequestException;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.response.ApiResponse;
@@ -690,6 +691,22 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.CONFLICT)
     ApiResponse<Void> handleStoryGenerationCannotBeCanceled(StoryGenerationCannotBeCanceledException e) {
         return new ApiResponse<>(ErrorMessage.STORY_GENERATION_CANNOT_BE_CANCELED, null);
+    }
+
+    @ExceptionHandler(StoryGenerationAiRequestException.class)
+    ResponseEntity<ApiResponse<Void>> handleStoryGenerationAiRequest(StoryGenerationAiRequestException e) {
+        if (e.isTransportFailure()) {
+            logFailure(log.atWarn(), ErrorMessage.STORY_GENERATION_CANCEL_UNAVAILABLE, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(new ApiResponse<>(ErrorMessage.STORY_GENERATION_CANCEL_UNAVAILABLE, null));
+        }
+        Integer statusCode = e.getStatusCode();
+        if (statusCode != null && statusCode >= 500 && statusCode < 600) {
+            logFailure(log.atWarn(), ErrorMessage.STORY_GENERATION_CANCEL_FAILED, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body(new ApiResponse<>(ErrorMessage.STORY_GENERATION_CANCEL_FAILED, null));
+        }
+        return ResponseEntity.internalServerError().body(handleUnexpectedException(e));
     }
 
     @ExceptionHandler(StoryDataIntegrityException.class)

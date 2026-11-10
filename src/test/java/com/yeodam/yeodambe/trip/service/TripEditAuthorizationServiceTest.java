@@ -93,7 +93,7 @@ class TripEditAuthorizationServiceTest {
 
     @Test
     void 공유_관계가_없으면_여행_접근을_거절한다() {
-        when(shares.findByTripIdAndGranteeUserId(73L, 2L)).thenReturn(Optional.empty());
+        when(shares.findGrantSnapshot(73L, 2L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.requireWritePermission(trip, 2L))
                 .isInstanceOf(TripNotFoundException.class);
@@ -151,6 +151,11 @@ class TripEditAuthorizationServiceTest {
     }
 
     private void stored(TripShareUser share) {
-        when(shares.findByTripIdAndGranteeUserId(73L, 2L)).thenReturn(Optional.of(share));
+        TripShareUserRepository.GrantSnapshot snapshot = mock(TripShareUserRepository.GrantSnapshot.class);
+        when(snapshot.getOwnerId()).thenReturn(share.getUserId());
+        when(snapshot.getPermission()).thenReturn(share.getPermission());
+        when(snapshot.getExpiresAt()).thenReturn(share.getExpiresAt());
+        when(snapshot.getDeletedAt()).thenReturn(share.getDeletedAt());
+        when(shares.findGrantSnapshot(73L, 2L)).thenReturn(Optional.of(snapshot));
     }
 }

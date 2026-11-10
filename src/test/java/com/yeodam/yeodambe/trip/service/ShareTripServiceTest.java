@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripSharePermission;
 import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
 import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
 import com.yeodam.yeodambe.trip.service.request.cursor.TripShareCursor;
 import com.yeodam.yeodambe.trip.service.response.TripShareListResponse;
@@ -42,7 +43,9 @@ class ShareTripServiceTest {
     private final TripAccessService access = mock(TripAccessService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Clock clock = Clock.fixed(Instant.parse("2026-11-02T06:00:00Z"), ZoneOffset.UTC);
-    private final ShareTripService service = new ShareTripService(trips, shares, users, clock, access, objectMapper);
+    private final ShareTripService service = new ShareTripService(
+            trips, shares, users, clock, access, objectMapper, TripMutationTestFixture.direct()
+    );
 
     @BeforeEach
     void prepare() {

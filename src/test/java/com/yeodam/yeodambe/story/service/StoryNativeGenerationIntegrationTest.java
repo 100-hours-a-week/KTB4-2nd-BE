@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.story.service;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.SharedTestMongo;
 import com.mongodb.ConnectionString;
+import com.yeodam.yeodambe.common.exception.StoryAlreadyExistsException;
 import com.yeodam.yeodambe.common.exception.StoryDataIntegrityException;
 import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
 import com.yeodam.yeodambe.file.entity.StoredFile;
@@ -15,6 +16,7 @@ import com.yeodam.yeodambe.story.exception.InvalidStoryResultException;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.repository.StoryContentRepository;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
+import com.yeodam.yeodambe.story.repository.StoryGenerationOutboxRepository;
 import com.yeodam.yeodambe.story.service.request.StoryGenerationRequest;
 import com.yeodam.yeodambe.trip.entity.RegionOrigin;
 import com.yeodam.yeodambe.trip.entity.Trip;
@@ -82,6 +84,7 @@ class StoryNativeGenerationIntegrationTest {
     @MockitoSpyBean private StoryGenerationFinalizationService finalization;
     @Autowired private StoryContentRepository contents;
     @Autowired private StoryGenerationJobRepository jobs;
+    @Autowired private StoryGenerationOutboxRepository outboxes;
     @Autowired private UserRepository users;
     @Autowired private TripRepository trips;
     @Autowired private TripDetailPlaceRepository places;
@@ -169,6 +172,41 @@ class StoryNativeGenerationIntegrationTest {
         assertThat(content.getInitialContentHash()).matches("[0-9a-f]{64}");
         assertThat(completed.getPreparedContentMetadata()).contains(content.getInitialContentHash());
         assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isEqualTo(content.getId());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void 기존_스토리의_모든_사진이나_파일이_삭제되면_새_생성을_접수한다(boolean deleteAttachment) {
+        completion.complete(job.getId(), result("기존 요약"));
+        Long previousStoryId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        if (deleteAttachment) {
+            jdbc.update("UPDATE trip_attachments SET deleted_at = NOW() WHERE trip_attachment_id = ?", photo.getId());
+        } else {
+            jdbc.update("UPDATE files SET deleted_at = NOW() WHERE file_id = ?", photo.getFileId());
+        }
+
+        StoryGenerationJob replacement = acceptance.accept(owner.getUserId(), trip.getId(),
+                new StoryGenerationRequest(Story.Mood.PLAIN, List.of(place.getId())), "recover-empty-story");
+
+        assertThat(replacement.getStatus()).isEqualTo(StoryGenerationJob.Status.QUEUED);
+        assertThat(outboxes.findByGenerationId(replacement.getId())).isPresent();
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isNull();
+        assertThat(jdbc.queryForMap("SELECT deleted_at FROM stories WHERE story_id = ?", previousStoryId)
+                .get("deleted_at")).isNotNull();
+        assertThat(contents.existsById(previousStoryId)).isTrue();
+    }
+
+    @Test
+    void 기존_스토리에_사진이_한_장이라도_남으면_새_생성을_거절한다() {
+        completion.complete(job.getId(), result("기존 요약", List.of(
+                aiBlock(1, photo.getId()), aiBlock(2, secondPhoto.getId()))));
+        Long previousStoryId = jobs.findById(job.getId()).orElseThrow().getStoryId();
+        jdbc.update("UPDATE trip_attachments SET deleted_at = NOW() WHERE trip_attachment_id = ?", photo.getId());
+
+        assertThatThrownBy(() -> acceptance.accept(owner.getUserId(), trip.getId(),
+                new StoryGenerationRequest(Story.Mood.PLAIN, List.of(place.getId())), "keep-current-story"))
+                .isInstanceOf(StoryAlreadyExistsException.class);
+        assertThat(trips.findById(trip.getId()).orElseThrow().getCurrentStoryId()).isEqualTo(previousStoryId);
     }
 
     @Test

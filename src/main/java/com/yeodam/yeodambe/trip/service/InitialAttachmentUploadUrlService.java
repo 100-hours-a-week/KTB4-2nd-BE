@@ -6,6 +6,7 @@ import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
+import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -26,13 +27,19 @@ public class InitialAttachmentUploadUrlService {
 
     private final InitialAttachmentUploadTransactionService transactions;
     private final TripAttachmentStorageClient storage;
+    private final TripMutationCoordinator mutations;
+    private final TripAccessService access;
 
     public InitialAttachmentUploadUrlResponse issueUploadUrls(
             Long tripId,
             Long userId,
             InitialAttachmentUploadUrlRequest request
     ) {
-        var batch = transactions.prepareBatch(tripId, userId, request);
+        validateRequest(request);
+        access.requireOwnedTrip(tripId, userId);
+        InitialAttachmentUploadBatchSnapshot batch = mutations.execute(
+                tripId, () -> transactions.prepareBatch(tripId, userId, request)
+        );
         OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC).plus(UPLOAD_URL_TTL);
         List<InitialAttachmentUploadUrlResponse.Attachment> responseItems = batch.photos().stream()
                 .map(item -> new InitialAttachmentUploadUrlResponse.Attachment(

@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.common.event.EventInternalErrorMessage;
 import com.yeodam.yeodambe.common.event.EventType;
 import com.yeodam.yeodambe.trip.event.TripCreateRequestEvent;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadTransactionService;
+import com.yeodam.yeodambe.trip.service.TripMutationCoordinator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
@@ -13,6 +14,7 @@ import org.springframework.util.Assert;
 @RequiredArgsConstructor
 public class TripCreateRequestEventHandler implements EventHandler<TripCreateRequestEvent> {
     private final InitialAttachmentUploadTransactionService transactions;
+    private final TripMutationCoordinator mutations;
 
     @Override
     public EventType eventType() {
@@ -25,6 +27,6 @@ public class TripCreateRequestEventHandler implements EventHandler<TripCreateReq
         if (!supports(event.eventType())) {
             return;
         }
-        transactions.enqueueRequest(event);
+        mutations.run(event.tripId(), () -> transactions.enqueueRequest(event));
     }
 }

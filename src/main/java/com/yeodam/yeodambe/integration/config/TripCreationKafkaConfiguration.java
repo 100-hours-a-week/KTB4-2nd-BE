@@ -43,10 +43,11 @@ public class TripCreationKafkaConfiguration {
             KafkaTemplate<String, String> kafka,
             @Value("${app.kafka.dead-letter-topics.trip-create-result}") String deadLetterTopic
     ) {
-        var factory = new ConcurrentKafkaListenerContainerFactory<Object, Object>();
+        ConcurrentKafkaListenerContainerFactory<Object, Object> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
         configurer.configure(factory, consumerFactory);
         factory.getContainerProperties().setDeliveryAttemptHeader(true);
-        var recoverer = new DeadLetterPublishingRecoverer(
+        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(
                 kafka,
                 (record, failure) -> new TopicPartition(deadLetterTopic, record.partition())
         );
@@ -55,9 +56,9 @@ public class TripCreationKafkaConfiguration {
             recoverer.accept(record, consumer, failure);
             dltLogs.logPublished(record, failure, deadLetterTopic);
         };
-        var errors = new DefaultErrorHandler(
+        DefaultErrorHandler errors = new DefaultErrorHandler(
                 loggingRecoverer,
-                new FixedBackOff(1_000L, 3L)
+                new FixedBackOff(1_000L, FixedBackOff.UNLIMITED_ATTEMPTS)
         );
         errors.addNotRetryableExceptions(IllegalArgumentException.class, JacksonException.class);
         factory.setCommonErrorHandler(errors);

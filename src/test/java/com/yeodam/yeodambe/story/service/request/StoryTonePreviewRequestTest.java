@@ -73,6 +73,18 @@ class StoryTonePreviewRequestTest {
     }
 
     @Test
+    void 메모의_줄바꿈과_탭은_허용하고_깨진_문자와_다른_제어문자는_거절한다() {
+        assertThat(validator.validate(request(new StoryTonePreviewRequest.Block(
+                null, 1L, 1, null, null, "첫째 줄\n둘째 줄\t😀")))).isEmpty();
+        for (String invalid : List.of("본문\000끝", "본문\033끝", "\uD800")) {
+            assertThat(validator.validate(request(new StoryTonePreviewRequest.Block(
+                    null, 1L, 1, null, null, invalid))))
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .contains("blocks[0].memoLengthValid");
+        }
+    }
+
+    @Test
     void 프론트엔드_JSON에서_미저장_블록과_생략된_텍스트를_읽는다() {
         var request = new ObjectMapper().readValue("""
                 {"tone":"HUMOROUS","blocks":[{"tripAttachmentId":135,"orderNumber":1}]}

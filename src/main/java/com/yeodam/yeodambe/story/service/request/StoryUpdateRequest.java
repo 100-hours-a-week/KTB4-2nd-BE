@@ -64,6 +64,7 @@ public record StoryUpdateRequest(
         public boolean isMemoLengthValid() {
             return memo == null
                     || (!TextValidation.containsUnpairedSurrogate(memo)
+                    && !TextValidation.containsUnsupportedMultilineControlCharacter(memo)
                     && memo.codePointCount(0, memo.length()) <= 125);
         }
     }

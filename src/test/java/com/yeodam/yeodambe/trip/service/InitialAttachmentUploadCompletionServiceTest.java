@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.AttachmentStorageException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadBatch;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadCompleteRequest;
@@ -34,7 +35,9 @@ class InitialAttachmentUploadCompletionServiceTest {
     private final InitialAttachmentUploadTransactionService transactions = mock(InitialAttachmentUploadTransactionService.class);
     private final TripAttachmentDerivativeService derivatives = mock(TripAttachmentDerivativeService.class);
     private final InitialAttachmentUploadCompletionService service =
-            new InitialAttachmentUploadCompletionService(storage, transactions, derivatives);
+            new InitialAttachmentUploadCompletionService(
+                    storage, transactions, derivatives, TripMutationTestFixture.direct()
+            );
     private final InitialAttachmentUploadBatch batch = new InitialAttachmentUploadBatch(
             "upload-id", "execution-id", 7L, 42L, 1, 2, true);
 

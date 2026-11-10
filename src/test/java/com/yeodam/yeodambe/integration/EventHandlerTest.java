@@ -135,7 +135,9 @@ class EventHandlerTest {
     }
 
     private TripCreateRequestEventHandler requestHandler() {
-        return new TripCreateRequestEventHandler(mock(InitialAttachmentUploadTransactionService.class));
+        return new TripCreateRequestEventHandler(
+                mock(InitialAttachmentUploadTransactionService.class), TripMutationTestFixture.direct()
+        );
     }
 
     private TripCreateResultEventHandler resultHandler() {

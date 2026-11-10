@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.integration;
 
 import com.yeodam.yeodambe.integration.config.TripCreationKafkaConfiguration;
 import com.yeodam.yeodambe.integration.service.KafkaDltLogService;
+import com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -42,28 +43,16 @@ class TripCreationKafkaConfigurationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"create", "update"})
-    void 일시적_오류는_세번_재시도한_뒤_DLT로_발행한다(String operation) {
-        var fixture = retryFixture(operation);
-        when(fixture.kafka().send(any(ProducerRecord.class)))
-                .thenReturn(successfulPublish());
-        var failure = new IllegalStateException("database unavailable");
+    void 일시적_저장_오류는_기존_재시도_한도를_넘어도_DLT로_넘기지_않는다(String operation) {
+        RetryFixture fixture = retryFixture(operation);
+        IllegalStateException failure = new IllegalStateException(TripUploadTestErrorMessage.DATABASE_UNAVAILABLE.message());
 
-        for (int attempt = 0; attempt < 3; attempt++) {
+        for (int attempt = 0; attempt < 5; attempt++) {
             assertThat(fixture.handler().handleOne(
                     failure, fixture.record(), fixture.consumer(), fixture.container()))
                     .isFalse();
             verify(fixture.kafka(), never()).send(any(ProducerRecord.class));
         }
-
-        assertThat(fixture.handler().handleOne(
-                failure, fixture.record(), fixture.consumer(), fixture.container()))
-                .isTrue();
-        var captor = ArgumentCaptor.forClass(ProducerRecord.class);
-        verify(fixture.kafka(), times(1)).send(captor.capture());
-        assertThat(captor.getValue().topic()).isEqualTo("configured-trip-dlt");
-        assertThat(captor.getValue().partition()).isEqualTo(1);
-        assertThat(captor.getValue().key()).isEqualTo("7");
-        assertThat(captor.getValue().value()).isEqualTo("result-json");
     }
 
     @ParameterizedTest

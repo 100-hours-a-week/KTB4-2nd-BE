@@ -30,6 +30,7 @@ public class InitialAttachmentUploadCompletionService {
     private final TripAttachmentStorageClient storage;
     private final InitialAttachmentUploadTransactionService transactions;
     private final TripAttachmentDerivativeService derivatives;
+    private final TripMutationCoordinator mutations;
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public TripProcessingStatusResponse complete(
@@ -41,15 +42,17 @@ public class InitialAttachmentUploadCompletionService {
             throw new InvalidAttachmentUploadException();
         }
 
-        var candidate = transactions.loadAcceptanceCandidate(tripId, userId, request.uploadId());
+        InitialAttachmentUploadBatchSnapshot candidate = transactions.loadAcceptanceCandidate(tripId, userId, request.uploadId());
 
         TripProcessingStatusResponse status;
-        try (var scope = WorkflowMdcScope.job("trip_creation", tripId, candidate.executionId());
-             var timing = startUploadAcceptanceLogging(candidate.batchNo())) {
+        try (WorkflowMdcScope scope = WorkflowMdcScope.job("trip_creation", tripId, candidate.executionId());
+             WorkflowLog.Stage timing = startUploadAcceptanceLogging(candidate.batchNo())) {
             if (candidate.status() == InitialAttachmentUploadStatus.PENDING) {
                 verifyUploadedFiles(candidate.photos());
             }
-            status = transactions.startProcessing(tripId, userId, request.uploadId());
+            status = mutations.execute(
+                    tripId, () -> transactions.startProcessing(tripId, userId, request.uploadId())
+            );
             timing.success();
         }
         if (status.status() == TripProcessingStatusResponse.Status.PROCESSING) {

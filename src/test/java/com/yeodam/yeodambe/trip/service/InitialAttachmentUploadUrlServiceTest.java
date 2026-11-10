@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededExcepti
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
 import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadBatch;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadItem;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
@@ -35,7 +36,9 @@ class InitialAttachmentUploadUrlServiceTest {
     private final InitialAttachmentUploadItemRepository items = mock(InitialAttachmentUploadItemRepository.class);
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
     private final InitialAttachmentUploadTransactionService transactions = mock(InitialAttachmentUploadTransactionService.class);
-    private final InitialAttachmentUploadUrlService service = new InitialAttachmentUploadUrlService(transactions, storage);
+    private final InitialAttachmentUploadUrlService service = new InitialAttachmentUploadUrlService(
+            transactions, storage, TripMutationTestFixture.direct(), mock(TripAccessService.class)
+    );
 
     @Test
     void 필수_헤더와_10분_유효기간이_있는_파일_URL을_순서대로_발급한다() {

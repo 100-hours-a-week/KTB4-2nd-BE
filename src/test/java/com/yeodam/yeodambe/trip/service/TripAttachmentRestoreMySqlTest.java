@@ -15,6 +15,7 @@ import com.yeodam.yeodambe.user.entity.UserStats;
 import com.yeodam.yeodambe.user.repository.*;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
+import org.mockito.stubbing.Answer;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -120,12 +121,12 @@ class TripAttachmentRestoreMySqlTest {
         CountDownLatch firstWritten = new CountDownLatch(1);
         CountDownLatch secondRead = new CountDownLatch(1);
         CountDownLatch commitFirst = new CountDownLatch(1);
-        var delegate = mockingDetails(attachments).getMockCreationSettings().getDefaultAnswer();
+        Answer<?> delegate = mockingDetails(attachments).getMockCreationSettings().getDefaultAnswer();
         doAnswer(invocation -> {
             Object result = delegate.answer(invocation);
             secondRead.countDown();
             return result;
-        }).when(attachments).findDeletionTripIds(List.of(fixture.last()));
+        }).when(attachments).findAccessibleById(fixture.last(), fixture.user());
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
@@ -222,15 +223,15 @@ class TripAttachmentRestoreMySqlTest {
         CountDownLatch secondStarted = new CountDownLatch(1);
         CountDownLatch commitFirst = new CountDownLatch(1);
         AtomicReference<Thread> secondThread = new AtomicReference<>();
-        var attachmentDelegate = mockingDetails(attachments).getMockCreationSettings().getDefaultAnswer();
-        var tripDelegate = mockingDetails(trips).getMockCreationSettings().getDefaultAnswer();
+        Answer<?> attachmentDelegate = mockingDetails(attachments).getMockCreationSettings().getDefaultAnswer();
+        Answer<?> tripDelegate = mockingDetails(trips).getMockCreationSettings().getDefaultAnswer();
         doAnswer(invocation -> {
             Object result = attachmentDelegate.answer(invocation);
             if (Thread.currentThread() == secondThread.get()) {
                 secondStarted.countDown();
             }
             return result;
-        }).when(attachments).findDeletionTripIds(List.of(fixture.first()));
+        }).when(attachments).findAccessibleById(fixture.first(), fixture.user());
         doAnswer(invocation -> {
             if (Thread.currentThread() == secondThread.get()) {
                 secondStarted.countDown();
@@ -273,7 +274,7 @@ class TripAttachmentRestoreMySqlTest {
         CountDownLatch restoreLockedTrip = new CountDownLatch(1);
         CountDownLatch withdrawalEnteredTripLock = new CountDownLatch(1);
         CountDownLatch continueRestore = new CountDownLatch(1);
-        var tripDelegate = mockingDetails(trips).getMockCreationSettings().getDefaultAnswer();
+        Answer<?> tripDelegate = mockingDetails(trips).getMockCreationSettings().getDefaultAnswer();
         var regionDelegate = mockingDetails(regions).getMockCreationSettings().getDefaultAnswer();
         doAnswer(invocation -> {
             Object result = tripDelegate.answer(invocation);

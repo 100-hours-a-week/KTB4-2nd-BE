@@ -58,7 +58,8 @@ class TripDeletionServiceTest {
     @Test
     void 없는_여행은_404다() {
         assertThrows(TripNotFoundException.class, () -> service.delete(7L, 1L));
-        verify(trips).findOwnedActiveForUpdate(7L, 1L);
+        verify(trips).findByIdAndUserIdAndDeletedAtIsNull(7L, 1L);
+        verify(trips, never()).findOwnedActiveForUpdate(anyLong(), anyLong());
         verifyNoInteractions(userStats);
         verifyNoInteractions(mapCache);
         assertEquals(1, meterRegistry.find("yeodam.trip.stage")
@@ -69,8 +70,7 @@ class TripDeletionServiceTest {
 
     @Test
     void PROCESSING_여행도_작업을_취소하고_삭제한다() {
-        when(trips.findOwnedActiveForUpdate(7L, 1L))
-                .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)));
+        stubOwnedTrip(ProcessingStatus.PROCESSING);
 
         service.delete(7L, 1L);
         verify(cancellations).cancel(any(Trip.class), any());
@@ -82,8 +82,7 @@ class TripDeletionServiceTest {
     void 완료_여행을_삭제하고_S3_객체는_보관한다() {
         TripAttachment attachment = TripAttachment.initial(7L, 20L, "analyze", "preview");
         ReflectionTestUtils.setField(attachment, "id", 30L);
-        when(trips.findOwnedActiveForUpdate(7L, 1L))
-                .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
+        stubOwnedTrip(ProcessingStatus.COMPLETED);
         when(attachments.findAllByTripIdAndDeletedAtIsNull(7L))
                 .thenReturn(List.of(attachment));
 
@@ -100,8 +99,7 @@ class TripDeletionServiceTest {
 
     @Test
     void 여러_파일을_참조_조회_없이_한번에_소프트_삭제한다() {
-        when(trips.findOwnedActiveForUpdate(7L, 1L))
-                .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
+        stubOwnedTrip(ProcessingStatus.COMPLETED);
         when(attachments.findAllByTripIdAndDeletedAtIsNull(7L))
                 .thenReturn(List.of(
                         TripAttachment.initial(7L, 20L, "analyze-a", "preview-a"),
@@ -116,8 +114,7 @@ class TripDeletionServiceTest {
 
     @Test
     void 첨부가_없으면_파일_삭제를_호출하지_않는다() {
-        when(trips.findOwnedActiveForUpdate(7L, 1L))
-                .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
+        stubOwnedTrip(ProcessingStatus.COMPLETED);
         when(attachments.findAllByTripIdAndDeletedAtIsNull(7L)).thenReturn(List.of());
 
         service.delete(7L, 1L);
@@ -130,8 +127,7 @@ class TripDeletionServiceTest {
 
     @Test
     void 통계_갱신_실패시_무효화를_예약하지_않고_롤백한다() {
-        when(trips.findOwnedActiveForUpdate(7L, 1L))
-                .thenReturn(Optional.of(trip(ProcessingStatus.COMPLETED)));
+        stubOwnedTrip(ProcessingStatus.COMPLETED);
         when(attachments.findAllByTripIdAndDeletedAtIsNull(7L)).thenReturn(List.of());
         doThrow(new IllegalStateException(TripUploadTestErrorMessage.ANALYSIS_OUTBOX_FAILURE.message()))
                 .when(userStats).refreshFromActiveTrips(1L);
@@ -141,6 +137,12 @@ class TripDeletionServiceTest {
         verify(transactionManager).rollback(any());
         verify(transactionManager, never()).commit(any());
         verifyNoInteractions(mapCache);
+    }
+
+    private void stubOwnedTrip(ProcessingStatus status) {
+        Trip owned = trip(status);
+        when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L)).thenReturn(Optional.of(owned));
+        when(trips.findOwnedActiveForUpdate(7L, 1L)).thenReturn(Optional.of(owned));
     }
 
     private Trip trip(ProcessingStatus status) {

@@ -48,6 +48,8 @@ public class TripDeletionService {
         TransactionTemplate transactions = new TransactionTemplate(transactionManager);
         transactions.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
         try {
+            trips.findByIdAndUserIdAndDeletedAtIsNull(tripId, userId)
+                    .orElseThrow(TripNotFoundException::new);
             editLock.execute(tripId, () -> {
                 transactions.executeWithoutResult(status -> deleteInTransaction(tripId, userId));
                 return null;

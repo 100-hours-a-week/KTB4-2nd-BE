@@ -7,7 +7,6 @@ import com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadBatchSnapshot;
-import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import com.yeodam.yeodambe.trip.service.response.PreparedPhotoDerivative;
 import java.io.IOException;
@@ -22,6 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.io.TempDir;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +57,10 @@ class DbConversionMutationBoundaryIntegrationTest {
     private AdditionalAttachmentDerivativeWorker worker;
     @Autowired
     private AdditionalAttachmentUploadUrlService admission;
+    @Autowired
+    private AdditionalAttachmentAdmissionTransactionService v3Admission;
+    @Autowired
+    private TripMutationCoordinator mutations;
     @Autowired
     private TripEditLockProperties properties;
     @Autowired
@@ -124,15 +129,21 @@ class DbConversionMutationBoundaryIntegrationTest {
         assertBoundaryAndAccounting(12L);
     }
 
-    @Test
-    void 추가_워커는_외부_변환_뒤_여행_락을_유지한_상태에서_사진을_커밋한다() {
-        AdditionalAttachmentUploadUrlResponse prepared = admission.issueUploadUrls(
-                tripId,
-                ownerId,
-                new AdditionalAttachmentUploadUrlRequest(UUID.randomUUID().toString(), 1, 1, true, List.of(
-                        new AdditionalAttachmentUploadUrlRequest.Attachment("photo.jpg", "image/jpeg", 12L)))
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 추가_워커는_외부_변환_뒤_여행_락을_유지한_상태에서_사진을_커밋한다(boolean v3) {
+        AdditionalAttachmentUploadUrlRequest request = new AdditionalAttachmentUploadUrlRequest(
+                UUID.randomUUID().toString(), 1, 1, true, List.of(
+                        new AdditionalAttachmentUploadUrlRequest.Attachment("photo.jpg", "image/jpeg", 12L))
         );
-        additional.markVerified(tripId, ownerId, prepared.uploadId());
+        String uploadId;
+        if (v3) {
+            uploadId = mutations.execute(tripId,
+                    () -> v3Admission.prepareBatch(tripId, ownerId, request)).getUploadId();
+        } else {
+            uploadId = admission.issueUploadUrls(tripId, ownerId, request).uploadId();
+        }
+        additional.markVerified(tripId, ownerId, uploadId);
         when(derivatives.generateAdditional(anyString(), anyString(), anyString(), anyList()))
                 .thenAnswer(invocation -> {
                     observeExternal();
@@ -144,8 +155,11 @@ class DbConversionMutationBoundaryIntegrationTest {
 
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(jdbc.queryForObject(
                 "SELECT status FROM additional_attachment_upload_batches WHERE upload_id = ?",
-                String.class, prepared.uploadId())).isEqualTo("PREPARED"));
+                String.class, uploadId)).isEqualTo("PREPARED"));
         assertBoundaryAndAccounting(0L);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM additional_attachment_upload_outbox WHERE trip_id = ?",
+                Long.class, tripId)).isEqualTo(v3 ? 0L : 1L);
     }
 
     private void observeExternal() {

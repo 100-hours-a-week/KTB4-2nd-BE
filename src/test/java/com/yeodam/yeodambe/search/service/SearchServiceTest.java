@@ -12,6 +12,7 @@ import com.yeodam.yeodambe.integration.service.AiQueryService;
 import com.yeodam.yeodambe.integration.service.request.AiQuerySearchRequest;
 import com.yeodam.yeodambe.integration.service.response.AiQueryParseResponse;
 import com.yeodam.yeodambe.integration.service.response.AiQuerySearchResponse;
+import com.yeodam.yeodambe.search.service.response.SearchResponse;
 import com.yeodam.yeodambe.trip.service.TripService;
 import com.yeodam.yeodambe.trip.service.request.TripSearchCondition;
 import com.yeodam.yeodambe.trip.service.response.TripSearchCandidateResponse;
@@ -19,6 +20,9 @@ import com.yeodam.yeodambe.trip.service.response.TripSearchResultResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EmptySource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
@@ -29,6 +33,7 @@ import java.util.Map;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.LongStream;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -213,16 +218,18 @@ class SearchServiceTest {
         assertThat(result.folders()).extracting(item -> item.tripPlaceId()).containsExactly(1L, 2L);
     }
 
-    @Test
-    void 분해_실패면_날짜와_지역을_해제하고_원문으로_검색한다() {
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "추출 조건"})
+    void 분해_실패면_날짜와_지역을_해제하고_원문으로_검색한다(String visualQuery) {
         when(ai.parse("바다 사진")).thenReturn(new AiQueryParseResponse(
                 AiQueryParseResponse.Intent.QUESTION, LocalDate.of(2026, 1, 1),
-                LocalDate.of(2026, 1, 2), List.of("제주"), "추출 조건", false));
+                LocalDate.of(2026, 1, 2), List.of("제주"), visualQuery, false));
         prepare(List.of(hit(1, .8)), List.of(photo(1, 1)), List.of(folder(1)), null, null);
 
         assertThat(service.search(1L, "바다 사진").attachments()).hasSize(1);
         verify(trips).findSearchCandidates(1L, new TripSearchCondition(null, null, null));
-        var request = ArgumentCaptor.forClass(AiQuerySearchRequest.class);
+        ArgumentCaptor<AiQuerySearchRequest> request = ArgumentCaptor.forClass(AiQuerySearchRequest.class);
         verify(ai).search(request.capture());
         assertThat(request.getValue().intent()).isEqualTo(AiQueryParseResponse.Intent.SEARCH);
         assertThat(request.getValue().visualQuery()).isEqualTo("바다 사진");
@@ -230,9 +237,9 @@ class SearchServiceTest {
     }
 
     @ParameterizedTest
-    @NullAndEmptySource
+    @EmptySource
     @ValueSource(strings = {" ", "\t\n"})
-    void 시각_검색어가_없으면_날짜와_지역과_의도를_유지하고_원문으로_검색한다(String visualQuery) {
+    void 사진_내용_검색어가_공백이면_날짜와_지역과_의도를_유지하고_원문으로_검색한다(String visualQuery) {
         LocalDate dateFrom = LocalDate.of(2026, 1, 1);
         LocalDate dateTo = LocalDate.of(2026, 1, 2);
         when(ai.parse("바다 사진")).thenReturn(new AiQueryParseResponse(
@@ -248,6 +255,67 @@ class SearchServiceTest {
         assertThat(request.getValue().visualQuery()).isEqualTo("바다 사진");
         assertThat(request.getValue().query()).isEqualTo("바다 사진");
         assertThat(request.getValue().limit()).isEqualTo(30);
+    }
+
+    @ParameterizedTest
+    @MethodSource("사진_내용_조건이_없는_질의")
+    void 해석에_성공하고_사진_내용_조건이_없으면_null과_필터와_의도를_유지한다(
+            String query,
+            AiQueryParseResponse.Intent intent,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            List<String> regionNames
+    ) {
+        when(ai.parse(query)).thenReturn(new AiQueryParseResponse(
+                intent, dateFrom, dateTo, regionNames, null, true));
+        prepare(List.of(hit(1, .8)), List.of(photo(1, 1)), List.of(folder(1)), null, null);
+
+        service.search(1L, query);
+
+        verify(trips).findSearchCandidates(1L, new TripSearchCondition(dateFrom, dateTo, regionNames));
+        ArgumentCaptor<AiQuerySearchRequest> request = ArgumentCaptor.forClass(AiQuerySearchRequest.class);
+        verify(ai).search(request.capture());
+        assertThat(request.getValue().visualQuery()).isNull();
+        assertThat(request.getValue().query()).isEqualTo(query);
+        assertThat(request.getValue().intent()).isEqualTo(intent);
+        assertThat(request.getValue().limit()).isEqualTo(30);
+    }
+
+    private static Stream<Arguments> 사진_내용_조건이_없는_질의() {
+        LocalDate date = LocalDate.of(2026, 9, 11);
+        return Stream.of(
+                Arguments.of("9월 11일 사진", AiQueryParseResponse.Intent.SEARCH, date, date, null),
+                Arguments.of("용인에서 찍은 사진", AiQueryParseResponse.Intent.SEARCH, null, null, List.of("용인")),
+                Arguments.of("9월 11일 용인 사진", AiQueryParseResponse.Intent.SEARCH, date, date, List.of("용인")),
+                Arguments.of("9월 11일 어디 갔지", AiQueryParseResponse.Intent.QUESTION, date, date, null)
+        );
+    }
+
+    @Test
+    void 사진_내용_조건이_있으면_해석한_검색어를_그대로_전달한다() {
+        prepare(List.of(hit(1, .8)), List.of(photo(1, 1)), List.of(folder(1)), null, null);
+
+        service.search(1L, "바다 사진");
+
+        ArgumentCaptor<AiQuerySearchRequest> request = ArgumentCaptor.forClass(AiQuerySearchRequest.class);
+        verify(ai).search(request.capture());
+        assertThat(request.getValue().visualQuery()).isEqualTo("바다");
+        assertThat(request.getValue().query()).isEqualTo("바다 사진");
+    }
+
+    @Test
+    void 사진_내용_조건이_없으면_AI의_촬영_시각순_순위_점수를_유지한다() {
+        when(ai.parse("용인에서 찍은 사진")).thenReturn(new AiQueryParseResponse(
+                AiQueryParseResponse.Intent.SEARCH, null, null, List.of("용인"), null, true));
+        prepare(List.of(hit(2, 1.0), hit(1, .5)), List.of(photo(1, 1), photo(2, 1)),
+                List.of(folder(1)), null, null);
+
+        SearchResponse result = service.search(1L, "용인에서 찍은 사진");
+
+        assertThat(result.attachments()).extracting(SearchResponse.Attachment::tripAttachmentId)
+                .containsExactly(2L, 1L);
+        assertThat(result.attachments()).extracting(SearchResponse.Attachment::score)
+                .containsExactly(1.0, .5);
     }
 
     @Test

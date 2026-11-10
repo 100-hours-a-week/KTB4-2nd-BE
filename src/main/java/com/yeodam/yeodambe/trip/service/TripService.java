@@ -322,8 +322,7 @@ public class TripService {
     ) {
         Trip trip = tripAccessService.requireReadableTrip(tripId, userId);
 
-        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
-                || additionalAttachmentExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
             throw new TripUpdateNotAllowedException();
         }
 
@@ -343,13 +342,16 @@ public class TripService {
 
         boolean hasNext = attachments.size() > EDIT_ATTACHMENT_PAGE_SIZE;
 
+        Set<Long> pending = Set.copyOf(tripAttachmentRepository.findPendingDeletionIds(
+                attachments.stream().map(TripAttachment::getId).toList()));
         List<TripAttachmentListResponse.Item> items = attachments.stream()
                 .limit(EDIT_ATTACHMENT_PAGE_SIZE)
                 .map(attachment -> new TripAttachmentListResponse.Item(
                         attachment.getId(),
                         tripAttachmentStorageClient.createReadUrl(
                                 attachment.getPreviewStorageKey()
-                        )
+                        ),
+                        pending.contains(attachment.getId())
                 ))
                 .toList();
 
@@ -536,8 +538,7 @@ public class TripService {
             throw new TripNotFoundException();
         }
 
-        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED
-                || additionalAttachmentExecutionRepository.existsByTripIdAndEndedAtIsNull(tripId)) {
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
             throw new TripDetailNotAvailableException();
         }
         return trip;

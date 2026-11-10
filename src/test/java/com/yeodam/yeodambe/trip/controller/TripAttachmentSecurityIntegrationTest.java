@@ -9,7 +9,7 @@ import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlReq
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.TripPhotoDeletionService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
@@ -107,7 +107,7 @@ class TripAttachmentSecurityIntegrationTest {
     private TripAttachmentDetailService tripAttachmentDetailService;
 
     @MockitoBean
-    private TripAttachmentDeletionService tripAttachmentDeletionService;
+    private TripPhotoDeletionService tripAttachmentDeletionService;
 
     @MockitoBean
     private TripAttachmentDownloadService tripAttachmentDownloadService;

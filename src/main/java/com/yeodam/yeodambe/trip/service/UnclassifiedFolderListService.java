@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -57,13 +58,16 @@ public class UnclassifiedFolderListService {
                 .findFirst()
                 .orElse(0L);
 
+        Set<Long> pending = Set.copyOf(tripAttachmentRepository.findPendingDeletionIds(
+                attachments.stream().map(TripAttachment::getId).toList()));
         List<UnclassifiedAttachmentListResponse.Item> items = attachments.stream()
                 .limit(PAGE_SIZE)
                 .map(attachment -> new UnclassifiedAttachmentListResponse.Item(
                         attachment.getId(),
                         tripAttachmentStorageClient.createReadUrl(attachment.getPreviewStorageKey()),
                         attachment.getIssue(),
-                        attachment.getTripPlaceId()
+                        attachment.getTripPlaceId(),
+                        pending.contains(attachment.getId())
                 ))
                 .toList();
 

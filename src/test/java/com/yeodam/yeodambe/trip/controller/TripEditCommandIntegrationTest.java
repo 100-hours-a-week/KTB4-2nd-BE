@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.controller;
 
+import com.yeodam.yeodambe.trip.service.TripEditAccessService;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
@@ -63,6 +64,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -93,6 +95,7 @@ class TripEditCommandIntegrationTest {
     @MockitoSpyBean private TripEditNotificationOutboxRepository notifications;
     @MockitoSpyBean private TripEditLock editLock;
     @MockitoSpyBean private TripEditCommandRecordService records;
+    @MockitoSpyBean private TripEditAccessService access;
     private Long ownerId;
     private Long readerId;
     private Trip trip;
@@ -108,6 +111,25 @@ class TripEditCommandIntegrationTest {
         ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
         trip = trips.saveAndFlush(trip);
         regions.saveAndFlush(new TripRegion(trip, "11000", "서울", new BigDecimal("37.5"), new BigDecimal("127.0")));
+    }
+
+    @Test
+    void 기간을_수정한_공유_명령도_저장된_기간을_참여자_알림에_담는다() throws Exception {
+        update(ownerId, "{\"requestId\":\"end-only\",\"changes\":{\"startDate\":\"2026-10-01\",\"endDate\":\"2026-10-04\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SUCCEEDED"));
+
+        assertThat(trips.findById(trip.getId()).orElseThrow().getEndDate()).isEqualTo(LocalDate.of(2026, 10, 4));
+        String endDate = jdbc.queryForObject("""
+                SELECT JSON_UNQUOTE(JSON_EXTRACT(event_json, '$.payload.data.changes.endDate'))
+                FROM trip_edit_notification_outbox WHERE target_type = 'TRIP' AND target_id = ?
+                """, String.class, trip.getId());
+        String startDate = jdbc.queryForObject("""
+                SELECT JSON_UNQUOTE(JSON_EXTRACT(event_json, '$.payload.data.changes.startDate'))
+                FROM trip_edit_notification_outbox WHERE target_type = 'TRIP' AND target_id = ?
+                """, String.class, trip.getId());
+        assertThat(endDate).isEqualTo("2026-10-04");
+        assertThat(startDate).isEqualTo("2026-10-01");
     }
 
     @Test
@@ -138,7 +160,7 @@ class TripEditCommandIntegrationTest {
     }
 
     @Test
-    void READ_수정_거절은_여행_락_없이_기록한다() throws Exception {
+    void READ_수정_거절도_여행_락_안에서_기록한다() throws Exception {
         share(TripSharePermission.READ);
 
         update(readerId, "{\"requestId\":\"before-lock-read\",\"changes\":{\"tripName\":\"금지변경\"}}")
@@ -146,19 +168,19 @@ class TripEditCommandIntegrationTest {
                 .andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"))
                 .andExpect(jsonPath("$.data.status").value("REJECTED"));
 
-        verify(editLock, never()).execute(any(), any());
+        verify(editLock).execute(eq(trip.getId()), any());
         assertThat(notificationCount("COMMAND_RESULT")).isEqualTo(1);
         assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isZero();
     }
 
     @Test
-    void 공유_없는_사진_삭제_거절은_여행_락_없이_기록한다() throws Exception {
+    void 공유_없는_사진_삭제_거절도_여행_락_안에서_기록한다() throws Exception {
         delete(readerId, "{\"requestId\":\"before-lock-no-share\",\"attachmentIds\":[1]}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
                 .andExpect(jsonPath("$.data.status").value("REJECTED"));
 
-        verify(editLock, never()).execute(any(), any());
+        verify(editLock).execute(eq(trip.getId()), any());
         assertThat(notificationCount("COMMAND_RESULT")).isEqualTo(1);
         assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isZero();
     }
@@ -181,7 +203,7 @@ class TripEditCommandIntegrationTest {
                 .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
                 .andExpect(jsonPath("$.data.status").value("REJECTED"));
 
-        verify(editLock).execute(eq(trip.getId()), any());
+        verify(editLock, times(2)).execute(eq(trip.getId()), any());
         assertThat(trips.findById(trip.getId()).orElseThrow().getTripName()).isEqualTo("승인된수정");
         assertThat(notificationCount("TRIP_EVENT")).isEqualTo(1);
     }
@@ -203,7 +225,7 @@ class TripEditCommandIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.data.sequence").value(1));
 
-        verify(editLock).execute(eq(trip.getId()), any());
+        verify(editLock, times(2)).execute(eq(trip.getId()), any());
         assertThat(attachments.findById(photo.getId()).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(notificationCount("TRIP_EVENT")).isEqualTo(1);
     }
@@ -281,14 +303,10 @@ class TripEditCommandIntegrationTest {
         String request = "{\"requestId\":\"concurrent-denied\",\"changes\":{\"tripName\":\"금지변경\"}}";
         CountDownLatch checked = new CountDownLatch(2);
         doAnswer(invocation -> {
-            Optional<?> previous = (Optional<?>) invocation.callRealMethod();
-            if (previous.isEmpty()) {
-                checked.countDown();
-                assertThat(checked.await(5, TimeUnit.SECONDS)).isTrue();
-            }
-            return previous;
-        }).when(records).findResult(eq(readerId), eq("concurrent-denied"), eq(trip.getId()),
-                eq(CommandType.UPDATE_TRIP), any(), any());
+            checked.countDown();
+            assertThat(checked.await(5, TimeUnit.SECONDS)).isTrue();
+            return invocation.callRealMethod();
+        }).when(access).requireWritePermission(trip.getId(), readerId);
 
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
             Future<ResultActions> first = executor.submit(() -> update(readerId, request));
@@ -299,7 +317,7 @@ class TripEditCommandIntegrationTest {
                     .andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"));
         }
 
-        verify(editLock, never()).execute(any(), any());
+        verify(editLock, times(2)).execute(eq(trip.getId()), any());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trip_edit_command_records WHERE user_id = ?",
                 Integer.class, readerId)).isEqualTo(1);
         assertThat(notificationCount("COMMAND_RESULT")).isEqualTo(2);
@@ -307,7 +325,7 @@ class TripEditCommandIntegrationTest {
     }
 
     @Test
-    void 권한_거절이_승인된_동일_요청과_경합하면_확정된_결과를_반환한다() throws Exception {
+    void 승인된_요청과_경합한_재요청은_미접수_후_확정된_결과를_재사용한다() throws Exception {
         share(TripSharePermission.WRITE);
         String request = "{\"requestId\":\"admission-race\",\"changes\":{\"tripName\":\"금지변경\"}}";
         CountDownLatch checked = new CountDownLatch(1);
@@ -328,18 +346,19 @@ class TripEditCommandIntegrationTest {
             try {
                 assertThat(checked.await(5, TimeUnit.SECONDS)).isTrue();
                 jdbc.update("UPDATE trip_share_users SET permission = 'READ' WHERE trip_id = ?", trip.getId());
-                update(readerId, request).andExpect(status().isOk())
-                        .andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"));
+                update(readerId, request).andExpect(status().isTooManyRequests());
             } finally {
                 proceed.countDown();
             }
             admitted.get(10, TimeUnit.SECONDS).andExpect(status().isOk())
-                    .andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"));
+                    .andExpect(jsonPath("$.data.status").value("SUCCEEDED"));
+            update(readerId, request).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("SUCCEEDED"));
         }
 
-        assertThat(trips.findById(trip.getId()).orElseThrow().getTripName()).isEqualTo("원래여행");
-        assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isZero();
-        assertThat(notificationCount("TRIP_EVENT")).isZero();
+        assertThat(trips.findById(trip.getId()).orElseThrow().getTripName()).isEqualTo("금지변경");
+        assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isEqualTo(1);
+        assertThat(notificationCount("TRIP_EVENT")).isEqualTo(1);
         assertThat(notificationCount("COMMAND_RESULT")).isEqualTo(2);
     }
 

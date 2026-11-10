@@ -15,7 +15,11 @@ public record TripAttachmentListResponse(
 
     public record Item(
             Long tripAttachmentId,
-            String thumbnailUrl
+            String thumbnailUrl,
+            boolean pendingDeletion
     ) {
+        public Item(Long tripAttachmentId, String thumbnailUrl) {
+            this(tripAttachmentId, thumbnailUrl, false);
+        }
     }
 }

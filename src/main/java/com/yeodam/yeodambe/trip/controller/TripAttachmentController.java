@@ -14,7 +14,7 @@ import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadUrlReq
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadUrlResponse;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadCompletionService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadUrlService;
-import com.yeodam.yeodambe.trip.service.TripAttachmentDeletionService;
+import com.yeodam.yeodambe.trip.service.TripPhotoDeletionService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDetailService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentDownloadService;
 import com.yeodam.yeodambe.trip.service.TripAttachmentListService;
@@ -57,7 +57,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TripAttachmentController {
     private final TripAttachmentListService tripAttachmentListService;
     private final TripAttachmentDetailService tripAttachmentDetailService;
-    private final TripAttachmentDeletionService tripAttachmentDeletionService;
+    private final TripPhotoDeletionService tripAttachmentDeletionService;
     private final TripAttachmentDownloadService tripAttachmentDownloadService;
     private final BulkAttachmentDownloadService bulkAttachmentDownloadService;
     private final InitialAttachmentUploadUrlService uploadUrlService;

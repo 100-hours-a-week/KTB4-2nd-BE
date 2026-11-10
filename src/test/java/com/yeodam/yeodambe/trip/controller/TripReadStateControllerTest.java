@@ -88,7 +88,7 @@ class TripReadStateControllerTest {
                                 mock(TripAttachmentPageStore.class), new TripAttachmentCacheProperties(), mapper),
                         storage, new TripAttachmentCacheProperties(),
                         mock(TripAttachmentResponseCacheService.class)),
-                mock(TripAttachmentDetailService.class), mock(TripAttachmentDeletionService.class),
+                mock(TripAttachmentDetailService.class), mock(TripPhotoDeletionService.class),
                 mock(TripAttachmentDownloadService.class), mock(BulkAttachmentDownloadService.class),
                 mock(InitialAttachmentUploadUrlService.class),
                 mock(InitialAttachmentUploadCompletionService.class),
@@ -161,22 +161,21 @@ class TripReadStateControllerTest {
     }
 
     @ParameterizedTest
-    @CsvSource({
-            "/trips/7, TRIP_DETAIL_NOT_AVAILABLE",
-            "/trips/7/map, TRIP_DETAIL_NOT_AVAILABLE",
-            "/trips/7/edit, TRIP_UPDATE_NOT_ALLOWED",
-            "/trips/7/story/source-folders, STORY_GENERATION_NOT_ALLOWED"
-    })
-    void 추가_분석_중에는_상세와_수정과_스토리_대상_조회를_거절한다(
-            String path, String message
-    ) throws Exception {
+    @ValueSource(strings = {"/trips/7", "/trips/7/map", "/trips/7/edit"})
+    void 추가_분석_중에도_기존_여행의_상세와_편집_정보를_조회한다(String path) throws Exception {
         when(executions.existsByTripIdAndEndedAtIsNull(7L)).thenReturn(true);
-
         mvc.perform(get(path))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value(message))
-                .andExpect(jsonPath("$.data").isEmpty());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tripId").value(7));
+    }
 
+    @Test
+    void 추가_분석_중에는_새_스토리의_대상_조회를_거절한다() throws Exception {
+        when(executions.existsByTripIdAndEndedAtIsNull(7L)).thenReturn(true);
+        mvc.perform(get("/trips/7/story/source-folders"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("STORY_GENERATION_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.data").isEmpty());
         verifyNoInteractions(attachments, regions, storage);
     }
 
@@ -193,10 +192,14 @@ class TripReadStateControllerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"/trips/7", "/trips/7/map", "/trips/7/edit", "/trips/7/story/source-folders"})
-    void 추가_실행이_종료되면_다시_조회할_수_있다(String path) throws Exception {
+    void 추가_실행_종료_전후에_각_조회_계약을_유지한다(String path) throws Exception {
         when(executions.existsByTripIdAndEndedAtIsNull(7L)).thenReturn(true, false);
 
-        mvc.perform(get(path)).andExpect(status().isConflict());
+        if (path.endsWith("/story/source-folders")) {
+            mvc.perform(get(path)).andExpect(status().isConflict());
+        } else {
+            mvc.perform(get(path)).andExpect(status().isOk());
+        }
         mvc.perform(get(path)).andExpect(status().isOk());
     }
 

@@ -125,7 +125,7 @@ class TripEditCommandLockTest {
         assertThatThrownBy(() -> service().update(7L, 1L,
                 new TripEditUpdateCommandRequest("constraint-error", json.readTree("{\"tripName\":\"변경\"}"))))
                 .isSameAs(original);
-        assertThat(events).containsExactly("authorized", "acquired", "released", "result-query");
+        assertThat(events).containsExactly("authorized", "acquired", "released", "acquired", "result-query", "released");
     }
 
     private TripEditCommandService service() {

@@ -234,14 +234,16 @@ class TripAttachmentReadStateIntegrationTest {
 
     @ParameterizedTest
     @CsvSource({
-            "OWNER,COLD,1,5", "READ,COLD,1,5", "WRITE,COLD,1,5",
-            "OWNER,COLD,19,5", "READ,COLD,19,5", "WRITE,COLD,19,5",
-            "READ,METADATA_HIT,1,4", "WRITE,ACCESS_HIT,1,3",
+            "OWNER,COLD,1,6", "READ,COLD,1,6", "WRITE,COLD,1,6",
+            "OWNER,COLD,19,6", "READ,COLD,19,6", "WRITE,COLD,19,6",
+            "READ,METADATA_HIT,1,4", "WRITE,ACCESS_HIT,1,4",
             "OWNER,RESPONSE_HIT,1,0", "READ,RESPONSE_HIT,1,0", "WRITE,RESPONSE_HIT,19,0",
-            "OWNER,OFF,1,3", "READ,OFF,1,4", "WRITE,OFF,1,4",
-            "OWNER,OFF,19,3", "READ,OFF,19,4", "WRITE,OFF,19,4"
+            "OWNER,OFF,1,4", "READ,OFF,1,5", "WRITE,OFF,1,5",
+            "OWNER,OFF,19,4", "READ,OFF,19,5", "WRITE,OFF,19,5"
     })
-    void 캐시_경로별_SELECT_횟수를_유지한다(AccessRole role, CacheState state, int photoCount, long expectedSelects) {
+    void 예약_상태_일괄_조회를_포함한_캐시_경로별_SELECT_횟수를_유지한다(
+            AccessRole role, CacheState state, int photoCount, long expectedSelects
+    ) {
         new TransactionTemplate(transactions).executeWithoutResult(status -> {
             for (int index = 1; index < photoCount; index++) {
                 savePhoto("photo-" + index);

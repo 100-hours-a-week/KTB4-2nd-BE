@@ -1,6 +1,15 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import static org.mockito.ArgumentMatchers.argThat;
+import org.springframework.dao.DataAccessResourceFailureException;
+import com.yeodam.yeodambe.common.event.EventType;
+import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
+import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
+import com.yeodam.yeodambe.integration.service.OutboxReceiptService;
+import com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage;
+import com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture;
+import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentUploadOutboxRepository;
 import com.yeodam.yeodambe.integration.CdcTestEnvironment;
 import com.yeodam.yeodambe.trip.client.AttachmentConversionReceiptListener;
 import com.yeodam.yeodambe.trip.entity.*;
@@ -68,6 +77,7 @@ import static org.mockito.Mockito.*;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class AttachmentConversionCdcIntegrationTest {
+    @MockitoSpyBean private AdditionalAttachmentUploadOutboxRepository analysisOutboxes;
     private static final String GROUP = "yeodam-image-conversion-receipts";
     private static final List<String> TOPICS = List.of("yeodam-image-initial-light", "yeodam-image-initial-heic",
             "yeodam-image-additional-light", "yeodam-image-additional-heic");
@@ -82,6 +92,96 @@ class AttachmentConversionCdcIntegrationTest {
     @Autowired private KafkaTemplate<String, String> kafka;
     @Autowired private ObjectMapper json;
     @Autowired private ApplicationContext context;
+
+    @Test
+    void 한_커밋의_분석_메시지는_실제_CDC에서_준비_메시지_뒤에_process로_전달된다() throws Exception {
+        String topic = analysisTopic();
+        TripAnalysisTestFixture fixture =
+                new TripAnalysisTestFixture(jdbc);
+        Long ownerId = fixture.createOwner();
+        Long tripId = fixture.createTrip(ownerId);
+        fixture.prepareAddition(tripId, ownerId);
+        fixture.prepareAddition(tripId, ownerId);
+        String executionId = context.getBean(TripAnalysisExecutionService.class).startNext(tripId).orElseThrow();
+        List<ConsumerRecord<String, String>> records = receiveAnalysis(topic, tripId);
+        assertThat(records.stream().map(record -> json.readTree(record.value()).path("type").asString()))
+                .containsExactly("photos_ready", "photos_ready", "process");
+        for (ConsumerRecord<String, String> record : records) {
+            assertThat(record.key()).isEqualTo(tripId.toString());
+            assertThat(header(record, "outbox-source")).isEqualTo("additional_attachment_upload_outbox");
+            assertThat(json.readTree(record.value()).path("execution_id").asString()).isEqualTo(executionId);
+            context.getBean(OutboxReceiptService.class).observe(
+                    header(record, "outbox-source"), header(record, "id"),
+                    new OutboxReceipt(
+                            record.topic(), record.key(), record.value(), Instant.ofEpochMilli(record.timestamp())));
+        }
+        assertThat(jdbc.queryForObject("""
+                SELECT process_published_at IS NOT NULL FROM trip_analysis_executions WHERE execution_id = ?
+                """, Boolean.class, executionId)).isTrue();
+    }
+
+    @Test
+    void 분석_입력_저장이_롤백되면_준비_메시지도_CDC로_전달되지_않는다() throws Exception {
+        String topic = analysisTopic();
+        TripAnalysisTestFixture fixture =
+                new TripAnalysisTestFixture(jdbc);
+        Long ownerId = fixture.createOwner();
+        Long failedTripId = fixture.createTrip(ownerId);
+        fixture.prepareAddition(failedTripId, ownerId);
+        doThrow(new DataAccessResourceFailureException(
+                TripUploadTestErrorMessage.ANALYSIS_OUTBOX_FAILURE.message()))
+                .when(analysisOutboxes).saveAndFlush(argThat(outbox ->
+                        failedTripId.equals(outbox.getTripId()) && "process".equals(outbox.getMessageType())));
+        assertThatThrownBy(() -> context.getBean(TripAnalysisExecutionService.class).startNext(failedTripId))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trip_analysis_executions WHERE trip_id = ?",
+                Integer.class, failedTripId)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM additional_attachment_upload_outbox WHERE trip_id = ?",
+                Integer.class, failedTripId)).isZero();
+        Long controlOwner = fixture.createOwner();
+        Long controlTripId = fixture.createTrip(controlOwner);
+        fixture.prepareAddition(controlTripId, controlOwner);
+        context.getBean(TripAnalysisExecutionService.class).startNext(controlTripId).orElseThrow();
+        List<ConsumerRecord<String, String>> observed = new ArrayList<>();
+        try (KafkaConsumer<String, String> reader = consumer()) {
+            reader.subscribe(List.of(topic));
+            await().atMost(Duration.ofSeconds(30)).until(() -> {
+                reader.poll(Duration.ofMillis(100)).forEach(observed::add);
+                return observed.stream().anyMatch(record -> controlTripId.toString().equals(record.key())
+                        && "process".equals(json.readTree(record.value()).path("type").asString()));
+            });
+        }
+        assertThat(observed).noneMatch(record -> failedTripId.toString().equals(record.key()));
+    }
+
+    private String analysisTopic() throws Exception {
+        String topic = context.getBean(KafkaTopicProperties.class)
+                .topicFor(EventType.TRIP_UPDATE_REQUEST);
+        try (AdminClient administration = admin()) {
+            if (!administration.listTopics().names().get(10, TimeUnit.SECONDS).contains(topic)) {
+                administration.createTopics(List.of(new NewTopic(topic, 1, (short) 1)
+                        .configs(Map.of("message.timestamp.type", "LogAppendTime"))))
+                        .all().get(20, TimeUnit.SECONDS);
+            }
+        }
+        return topic;
+    }
+
+    private List<ConsumerRecord<String, String>> receiveAnalysis(String topic, Long tripId) {
+        List<ConsumerRecord<String, String>> records = new ArrayList<>();
+        try (KafkaConsumer<String, String> reader = consumer()) {
+            reader.subscribe(List.of(topic));
+            await().atMost(Duration.ofSeconds(30)).until(() -> {
+                for (ConsumerRecord<String, String> record : reader.poll(Duration.ofMillis(100))) {
+                    if (tripId.toString().equals(record.key())) {
+                        records.add(record);
+                    }
+                }
+                return records.stream().anyMatch(record -> "process".equals(json.readTree(record.value()).path("type").asString()));
+            });
+        }
+        return records;
+    }
 
     @BeforeAll
     void startConnectorAndReceipt() throws Exception {

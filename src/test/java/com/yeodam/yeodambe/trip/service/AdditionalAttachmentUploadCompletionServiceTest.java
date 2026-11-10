@@ -17,21 +17,25 @@ import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadCompleteRequest;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.List;
+import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 class AdditionalAttachmentUploadCompletionServiceTest {
     @Test
     void 전달된_배치의_키와_형식만_공유_준비_로직에_전달한다() {
-        var preparation = mock(AttachmentDerivativePreparationService.class);
-        var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
-        var validator = mock(AttachmentUploadedFileValidator.class);
-        var service = new AdditionalAttachmentUploadCompletionService(transactions, validator, preparation, mock(TripAttachmentStorageClient.class), mock(AdditionalAttachmentAnalysisPreparationService.class));
-        var batch = new AdditionalAttachmentUploadBatch("upload-id", "addition-id", 7L, 2L, 1, 2, true);
-        var items = List.of(
+        AttachmentDerivativePreparationService preparation = mock(AttachmentDerivativePreparationService.class);
+        AdditionalAttachmentUploadTransactionService transactions = mock(AdditionalAttachmentUploadTransactionService.class);
+        AttachmentUploadedFileValidator validator = mock(AttachmentUploadedFileValidator.class);
+        AdditionalAttachmentUploadCompletionService service = new AdditionalAttachmentUploadCompletionService(
+                transactions, validator, preparation, mock(TripAttachmentStorageClient.class),
+                mock(AdditionalAttachmentAnalysisPreparationService.class), coordinator()
+        );
+        AdditionalAttachmentUploadBatch batch = new AdditionalAttachmentUploadBatch("upload-id", "addition-id", 7L, 2L, 1, 2, true);
+        List<AdditionalAttachmentUploadItem> items = List.of(
                 new AdditionalAttachmentUploadItem(batch, 1, "one.jpg", "image/jpeg", 1024L, "new-one"),
                 new AdditionalAttachmentUploadItem(batch, 2, "two.png", "image/png", 2048L, "new-two"));
-        var photos = List.of(
+        List<DerivedPhotoKeys> photos = List.of(
                 new DerivedPhotoKeys("new-one", "analyze-one", "preview-one"),
                 new DerivedPhotoKeys("new-two", "analyze-two", "preview-two"));
         when(preparation.create("upload-id", List.of("new-one", "new-two"),
@@ -46,17 +50,17 @@ class AdditionalAttachmentUploadCompletionServiceTest {
             "HOLD,VERIFIED", "KAFKA,VERIFIED", "HOLD,PREPARED", "KAFKA,PREPARED", "HOLD,COMPLETED", "KAFKA,COMPLETED"
     })
     void DB_외의_경로는_기존_준비_로직을_사용할_수_없다(String route, String status) {
-        var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
-        var preparation = mock(AttachmentDerivativePreparationService.class);
-        var analysis = mock(AdditionalAttachmentAnalysisPreparationService.class);
-        var service = new AdditionalAttachmentUploadCompletionService(transactions,
+        AdditionalAttachmentUploadTransactionService transactions = mock(AdditionalAttachmentUploadTransactionService.class);
+        AttachmentDerivativePreparationService preparation = mock(AttachmentDerivativePreparationService.class);
+        AdditionalAttachmentAnalysisPreparationService analysis = mock(AdditionalAttachmentAnalysisPreparationService.class);
+        AdditionalAttachmentUploadCompletionService service = new AdditionalAttachmentUploadCompletionService(transactions,
                 mock(AttachmentUploadedFileValidator.class), preparation,
-                mock(TripAttachmentStorageClient.class), analysis);
+                mock(TripAttachmentStorageClient.class), analysis, coordinator());
         when(transactions.loadForVerification(7L, 2L, "upload-id"))
                 .thenReturn(new AdditionalAttachmentUploadTransactionService.VerificationBatch(
                         "addition-id", AdditionalAttachmentUploadStatus.valueOf(status), List.of(), false,
                         AttachmentConversionRoute.valueOf(route)));
-        var request = new AdditionalAttachmentUploadCompleteRequest("upload-id");
+        AdditionalAttachmentUploadCompleteRequest request = new AdditionalAttachmentUploadCompleteRequest("upload-id");
 
         assertThatThrownBy(() -> service.prepareBatchPhotos(7L, 2L, request))
                 .isInstanceOf(TripAttachmentAddNotAllowedException.class);
@@ -68,21 +72,24 @@ class AdditionalAttachmentUploadCompletionServiceTest {
     @ParameterizedTest
     @ValueSource(strings = {"size", "type", "unsupported"})
     void 파일_검증이_실패한_실행만_종료하고_원래_오류를_다시_던진다(String stage) {
-        var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
-        var validator = mock(AttachmentUploadedFileValidator.class);
-        var service = new AdditionalAttachmentUploadCompletionService(transactions, validator,
+        AdditionalAttachmentUploadTransactionService transactions = mock(AdditionalAttachmentUploadTransactionService.class);
+        AttachmentUploadedFileValidator validator = mock(AttachmentUploadedFileValidator.class);
+        AdditionalAttachmentUploadCompletionService service = new AdditionalAttachmentUploadCompletionService(transactions, validator,
                 mock(AttachmentDerivativePreparationService.class),
                 mock(TripAttachmentStorageClient.class),
-                mock(AdditionalAttachmentAnalysisPreparationService.class));
-        var batch = new AdditionalAttachmentUploadBatch("upload-id", "addition-id", 7L, 2L, 1, 1, true);
-        var item = new AdditionalAttachmentUploadItem(batch, 1, "photo.jpg", "image/jpeg", 33L, "new-photo");
+                mock(AdditionalAttachmentAnalysisPreparationService.class), coordinator());
+        AdditionalAttachmentUploadBatch batch = new AdditionalAttachmentUploadBatch("upload-id", "addition-id", 7L, 2L, 1, 1, true);
+        AdditionalAttachmentUploadItem item = new AdditionalAttachmentUploadItem(batch, 1, "photo.jpg", "image/jpeg", 33L, "new-photo");
         when(transactions.loadForVerification(7L, 2L, "upload-id"))
                 .thenReturn(new AdditionalAttachmentUploadTransactionService.VerificationBatch(
                         "addition-id", AdditionalAttachmentUploadStatus.PENDING, List.of(item), true, AttachmentConversionRoute.DB));
         RuntimeException failure = stage.equals("unsupported")
                 ? new UnsupportedAttachmentFormatException() : new InvalidAttachmentUploadException();
-        if (stage.equals("size")) doThrow(failure).when(validator).verifySize("new-photo", 33L);
-        else doThrow(failure).when(validator).verifyType("new-photo", "image/jpeg");
+        if (stage.equals("size")) {
+            doThrow(failure).when(validator).verifySize("new-photo", 33L);
+        } else {
+            doThrow(failure).when(validator).verifyType("new-photo", "image/jpeg");
+        }
 
         assertThatThrownBy(() -> service.verifyBatch(7L, 2L,
                 new AdditionalAttachmentUploadCompleteRequest("upload-id"))).isSameAs(failure);
@@ -93,13 +100,13 @@ class AdditionalAttachmentUploadCompletionServiceTest {
 
     @Test
     void 소유권_조회_실패시_실행을_종료하지_않는다() {
-        var transactions = mock(AdditionalAttachmentUploadTransactionService.class);
-        var validator = mock(AttachmentUploadedFileValidator.class);
-        var service = new AdditionalAttachmentUploadCompletionService(transactions, validator,
+        AdditionalAttachmentUploadTransactionService transactions = mock(AdditionalAttachmentUploadTransactionService.class);
+        AttachmentUploadedFileValidator validator = mock(AttachmentUploadedFileValidator.class);
+        AdditionalAttachmentUploadCompletionService service = new AdditionalAttachmentUploadCompletionService(transactions, validator,
                 mock(AttachmentDerivativePreparationService.class),
                 mock(TripAttachmentStorageClient.class),
-                mock(AdditionalAttachmentAnalysisPreparationService.class));
-        var failure = new InvalidAttachmentUploadException();
+                mock(AdditionalAttachmentAnalysisPreparationService.class), coordinator());
+        InvalidAttachmentUploadException failure = new InvalidAttachmentUploadException();
         when(transactions.loadForVerification(7L, 2L, "foreign-upload" )).thenThrow(failure);
 
         assertThatThrownBy(() -> service.verifyBatch(7L, 2L,
@@ -108,4 +115,12 @@ class AdditionalAttachmentUploadCompletionServiceTest {
         verifyNoInteractions(validator);
     }
 
+    private TripMutationCoordinator coordinator() {
+        TripMutationCoordinator coordinator = mock(TripMutationCoordinator.class);
+        when(coordinator.execute(anyLong(), any())).thenAnswer(call -> {
+            Supplier<?> operation = call.getArgument(1);
+            return operation.get();
+        });
+        return coordinator;
+    }
 }

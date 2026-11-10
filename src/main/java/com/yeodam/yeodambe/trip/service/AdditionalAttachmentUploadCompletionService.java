@@ -4,9 +4,7 @@ import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
-
 import com.yeodam.yeodambe.trip.service.response.AdditionalAttachmentUploadCompleteResponse;
-
 import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
@@ -15,14 +13,15 @@ import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.service.request.AdditionalAttachmentUploadCompleteRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import java.util.List;
-import java.util.Optional;
-import java.util.LinkedHashSet;
-import java.util.Set;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import lombok.extern.slf4j.Slf4j;
 import com.yeodam.yeodambe.integration.service.request.PhotosReadyMessage;
 import com.yeodam.yeodambe.integration.service.request.PhotoProcessMessage;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -34,11 +33,12 @@ public class AdditionalAttachmentUploadCompletionService {
     private final AttachmentDerivativePreparationService attachmentDerivativePreparationService;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
     private final AdditionalAttachmentAnalysisPreparationService analysisPreparationService;
+    private final TripMutationCoordinator mutations;
 
     public AdditionalAttachmentUploadCompleteResponse complete(
             Long tripId, Long userId, AdditionalAttachmentUploadCompleteRequest request) {
         verifyBatch(tripId, userId, request);
-        var batch = uploadTransactionService.loadForVerification(tripId, userId, request.uploadId());
+        AdditionalAttachmentUploadTransactionService.VerificationBatch batch = loadForVerification(tripId, userId, request.uploadId());
         return new AdditionalAttachmentUploadCompleteResponse(
                 tripId, "QUEUED", batch.items().size());
     }
@@ -55,7 +55,7 @@ public class AdditionalAttachmentUploadCompletionService {
         }
 
         AdditionalAttachmentUploadTransactionService.VerificationBatch batch =
-                uploadTransactionService.loadForVerification(
+                loadForVerification(
                         tripId,
                         userId,
                         request.uploadId()
@@ -66,8 +66,8 @@ public class AdditionalAttachmentUploadCompletionService {
         }
 
         String jobId = batch.additionId();
-        try (var scope = WorkflowMdcScope.job("trip_reanalysis", tripId, jobId);
-             var timing = startUploadAcceptanceLogging(batch.items().size())) {
+        try (WorkflowMdcScope scope = WorkflowMdcScope.job("trip_reanalysis", tripId, jobId);
+             WorkflowLog.Stage timing = startUploadAcceptanceLogging(batch.items().size())) {
             try {
                 for (AdditionalAttachmentUploadItem item : batch.items()) {
                     uploadedFileValidator.verifySize(
@@ -86,19 +86,18 @@ public class AdditionalAttachmentUploadCompletionService {
                         ? ErrorMessage.UNSUPPORTED_ATTACHMENT_FORMAT
                         : ErrorMessage.INVALID_ATTACHMENT_UPLOAD;
 
-                uploadTransactionService.failExecution(
-                        jobId,
-                        error.name()
-                );
+                mutations.execute(tripId, () -> {
+                    uploadTransactionService.failExecution(jobId, error.name());
+                    return null;
+                });
 
                 throw failure;
             }
 
-            uploadTransactionService.markVerified(
-                    tripId,
-                    userId,
-                    request.uploadId()
-            );
+            mutations.execute(tripId, () -> {
+                uploadTransactionService.markVerified(tripId, userId, request.uploadId());
+                return null;
+            });
             timing.success();
         }
     }
@@ -108,7 +107,7 @@ public class AdditionalAttachmentUploadCompletionService {
         if (request == null || request.uploadId() == null || request.uploadId().isBlank()) {
             throw new InvalidAttachmentUploadException();
         }
-        var batch = uploadTransactionService.loadForVerification(tripId, userId, request.uploadId());
+        AdditionalAttachmentUploadTransactionService.VerificationBatch batch = loadForVerification(tripId, userId, request.uploadId());
         requireLegacyRoute(batch);
         if (batch.status() == AdditionalAttachmentUploadStatus.COMPLETED) {
             return Optional.empty();
@@ -117,7 +116,7 @@ public class AdditionalAttachmentUploadCompletionService {
             prepareBatchPhotos(tripId, userId, request);
         }
         return batch.lastBatch()
-                ? Optional.of(analysisPreparationService.prepare(tripId, userId, request.uploadId()))
+                ? Optional.of(mutations.execute(tripId, () -> analysisPreparationService.prepare(tripId, userId, request.uploadId())))
                 : Optional.empty();
     }
 
@@ -125,8 +124,9 @@ public class AdditionalAttachmentUploadCompletionService {
             Long tripId, Long userId, AdditionalAttachmentUploadCompleteRequest request
     ) {
         verifyBatch(tripId, userId, request);
-        requireLegacyRoute(uploadTransactionService.loadForVerification(tripId, userId, request.uploadId()));
-        var claim = uploadTransactionService.claimConversion(tripId, userId, request.uploadId());
+        requireLegacyRoute(loadForVerification(tripId, userId, request.uploadId()));
+        AdditionalAttachmentUploadTransactionService.ConversionBatch claim = mutations.execute(tripId,
+                () -> uploadTransactionService.claimConversion(tripId, userId, request.uploadId()));
         if (!claim.saved().isEmpty()) {
             retainFiles(claim.saved());
             return claim.saved();
@@ -137,7 +137,11 @@ public class AdditionalAttachmentUploadCompletionService {
         try {
             derived = createDerived(request.uploadId(), claim.items());
             stage = "attachment_persist";
-            uploadTransactionService.saveConverted(tripId, userId, request.uploadId(), claim.token(), derived);
+            List<DerivedPhotoKeys> completed = derived;
+            mutations.execute(tripId, () -> {
+                uploadTransactionService.saveConverted(tripId, userId, request.uploadId(), claim.token(), completed);
+                return null;
+            });
             persisted = true;
             stage = "storage_retain";
             retainFiles(derived);
@@ -156,8 +160,14 @@ public class AdditionalAttachmentUploadCompletionService {
                     }
                 }
                 if (cleaned) {
-                    try { uploadTransactionService.releaseConversion(tripId, userId, request.uploadId(), claim.token()); }
-                    catch (RuntimeException releaseFailure) { failure.addSuppressed(releaseFailure); }
+                    try {
+                        mutations.execute(tripId, () -> {
+                            uploadTransactionService.releaseConversion(tripId, userId, request.uploadId(), claim.token());
+                            return null;
+                        });
+                    } catch (RuntimeException releaseFailure) {
+                        failure.addSuppressed(releaseFailure);
+                    }
                 }
             }
             throw failure;
@@ -169,9 +179,9 @@ public class AdditionalAttachmentUploadCompletionService {
             Long userId,
             AdditionalAttachmentUploadCompleteRequest request
     ) {
-        var analysis = prepareAddition(tripId, userId, request);
+        Optional<AdditionalAttachmentAnalysisPreparationService.PreparedAnalysis> analysis = prepareAddition(tripId, userId, request);
 
-        var batch = uploadTransactionService.loadForVerification(
+        AdditionalAttachmentUploadTransactionService.VerificationBatch batch = loadForVerification(
                 tripId,
                 userId,
                 request.uploadId()
@@ -180,12 +190,8 @@ public class AdditionalAttachmentUploadCompletionService {
         requireLegacyRoute(batch);
         String executionId = batch.additionId();
 
-        PhotosReadyMessage ready = analysisPreparationService.photosReady(
-                tripId,
-                userId,
-                request.uploadId(),
-                executionId
-        );
+        PhotosReadyMessage ready = mutations.execute(tripId, () -> analysisPreparationService.photosReady(
+                tripId, userId, request.uploadId(), executionId));
 
         return new PreparedQueueBatch(
                 ready,
@@ -197,6 +203,16 @@ public class AdditionalAttachmentUploadCompletionService {
             PhotosReadyMessage photosReady,
             Optional<PhotoProcessMessage> process
     ) {
+    }
+
+    private AdditionalAttachmentUploadTransactionService.VerificationBatch loadForVerification(
+            Long tripId,
+            Long actorId,
+            String uploadId
+    ) {
+        uploadTransactionService.validateVerificationAccess(tripId, actorId, uploadId);
+        return mutations.execute(tripId,
+                () -> uploadTransactionService.loadForVerification(tripId, actorId, uploadId));
     }
 
     private void requireLegacyRoute(AdditionalAttachmentUploadTransactionService.VerificationBatch batch) {
@@ -218,10 +234,14 @@ public class AdditionalAttachmentUploadCompletionService {
     private Set<String> keys(List<DerivedPhotoKeys> derived, boolean includeOriginal) {
         Set<String> keys = new LinkedHashSet<>();
         for (DerivedPhotoKeys photo : derived) {
-            if (includeOriginal) keys.add(photo.originalKey());
+            if (includeOriginal) {
+                keys.add(photo.originalKey());
+            }
             keys.add(photo.analyzeKey());
             keys.add(photo.previewKey());
-            if (photo.displayKey() != null && !photo.displayKey().isBlank()) keys.add(photo.displayKey());
+            if (photo.displayKey() != null && !photo.displayKey().isBlank()) {
+                keys.add(photo.displayKey());
+            }
         }
         return keys;
     }

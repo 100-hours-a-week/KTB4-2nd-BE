@@ -61,6 +61,9 @@ import com.yeodam.yeodambe.trip.service.response.AttachmentConversionStepResult;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.cfg.DateTimeFeature;
 import com.yeodam.yeodambe.user.service.UserStatsService;
+import com.yeodam.yeodambe.user.repository.UserRepository;
+import com.yeodam.yeodambe.integration.service.request.PhotosReadyMessage;
+import com.yeodam.yeodambe.common.exception.UserNotFoundException;
 
 @Service
 @RequiredArgsConstructor
@@ -85,6 +88,7 @@ public class AdditionalAttachmentUploadTransactionService {
     private final AttachmentConversionProperties conversionProperties;
     private final AttachmentConversionEnqueueService conversionEnqueue;
     private final AttachmentConversionTaskRepository conversionTasks;
+    private final UserRepository users;
 
     @Transactional(propagation = Propagation.MANDATORY)
     public AttachmentConversionAttemptResult startPhotoAttempt(
@@ -366,29 +370,21 @@ public class AdditionalAttachmentUploadTransactionService {
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public void markVerified(Long tripId, Long userId, String uploadId) {
-        Trip trip = tripRepository.findOwnedActiveForUpdate(tripId, userId)
+    public void markVerified(Long tripId, Long actorId, String uploadId) {
+        users.findByUserIdAndDeletedAtIsNull(actorId).orElseThrow(UserNotFoundException::new);
+        Trip trip = tripRepository.findActiveForUpdate(tripId)
                 .orElseThrow(TripNotFoundException::new);
 
-        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
-            throw new TripAttachmentAddNotAllowedException();
-        }
-        if (storyGenerationJobRepository.existsByTripIdAndStatusIn(
-                tripId,
-                List.of(
-                        StoryGenerationJob.Status.QUEUED,
-                        StoryGenerationJob.Status.PROCESSING
-                )
-        )) {
-            throw new TripAttachmentAddNotAllowedException();
-        }
-        String additionId = uploadBatchRepository.findAdditionId(uploadId, tripId, userId)
-                .orElseThrow(InvalidAttachmentUploadException::new);
-        var execution = executionRepository.findForUpdate(additionId).orElse(null);
+        entityManager.refresh(trip, LockModeType.PESSIMISTIC_WRITE);
+        String additionId = uploadBatchRepository.findAdditionId(uploadId, tripId, trip.getUserId()).orElse(null);
+        AdditionalAttachmentExecution execution = additionId == null
+                ? null : executionRepository.findForUpdate(additionId).orElse(null);
         if (execution != null) {
             entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
         }
-        var batch = uploadBatchRepository.findForUpdate(uploadId, tripId, userId)
+        requireVerificationActor(trip, actorId, execution);
+        requireCompletedVerificationTrip(trip);
+        AdditionalAttachmentUploadBatch batch = uploadBatchRepository.findForUpdate(uploadId, tripId, trip.getUserId())
                 .orElseThrow(InvalidAttachmentUploadException::new);
         entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
         if (!additionId.equals(batch.getAdditionId())) {
@@ -400,7 +396,7 @@ public class AdditionalAttachmentUploadTransactionService {
                 throw new TripAttachmentAddNotAllowedException();
             }
         } else if (!execution.getTripId().equals(tripId)
-                || !execution.getUserId().equals(userId)
+                || !execution.getUserId().equals(trip.getUserId())
                 || execution.isTerminal()) {
             throw new TripAttachmentAddNotAllowedException();
         }
@@ -583,21 +579,42 @@ public class AdditionalAttachmentUploadTransactionService {
         return savedAttachment;
     }
 
-    @Transactional
-    public VerificationBatch loadForVerification(
-            Long tripId,
-            Long userId,
-            String uploadId
-    ) {
-        Trip trip = tripRepository.findOwnedActiveForUpdate(tripId, userId)
-                .orElseThrow(TripNotFoundException::new);
+    @Transactional(readOnly = true)
+    public void validateVerificationAccess(Long tripId, Long actorId, String uploadId) {
+        users.findByUserIdAndDeletedAtIsNull(actorId).orElseThrow(UserNotFoundException::new);
+        Trip trip = tripRepository.findByIdAndDeletedAtIsNull(tripId).orElseThrow(TripNotFoundException::new);
+        String additionId = uploadBatchRepository.findAdditionId(uploadId, tripId, trip.getUserId()).orElse(null);
+        AdditionalAttachmentExecution execution = additionId == null
+                ? null : executionRepository.findById(additionId).orElse(null);
+        requireVerificationActor(trip, actorId, execution);
+        requireCompletedVerificationTrip(trip);
+        if (additionId == null) {
+            throw new InvalidAttachmentUploadException();
+        }
+    }
 
+    private void requireVerificationActor(Trip trip, Long actorId, AdditionalAttachmentExecution execution) {
+        if (execution != null
+                && execution.getProcessingMode() == AdditionalAttachmentExecution.ProcessingMode.V3) {
+            if (!execution.getTripId().equals(trip.getId())
+                    || !execution.getUserId().equals(trip.getUserId())
+                    || !execution.acceptedBy(actorId)) {
+                throw new InvalidAttachmentUploadException();
+            }
+            if (execution.isTerminal()) {
+                throw new TripAttachmentAddNotAllowedException();
+            }
+        } else if (!trip.getUserId().equals(actorId)) {
+            throw new TripNotFoundException();
+        }
+    }
+
+    private void requireCompletedVerificationTrip(Trip trip) {
         if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
             throw new TripAttachmentAddNotAllowedException();
         }
-
         if (storyGenerationJobRepository.existsByTripIdAndStatusIn(
-                tripId,
+                trip.getId(),
                 List.of(
                         StoryGenerationJob.Status.QUEUED,
                         StoryGenerationJob.Status.PROCESSING
@@ -605,10 +622,33 @@ public class AdditionalAttachmentUploadTransactionService {
         )) {
             throw new TripAttachmentAddNotAllowedException();
         }
+    }
+
+    @Transactional
+    public VerificationBatch loadForVerification(
+            Long tripId,
+            Long actorId,
+            String uploadId
+    ) {
+        users.findByUserIdAndDeletedAtIsNull(actorId).orElseThrow(UserNotFoundException::new);
+        Trip trip = tripRepository.findActiveForUpdate(tripId)
+                .orElseThrow(TripNotFoundException::new);
+
+        entityManager.refresh(trip, LockModeType.PESSIMISTIC_WRITE);
+        String additionId = uploadBatchRepository.findAdditionId(uploadId, tripId, trip.getUserId()).orElse(null);
+        AdditionalAttachmentExecution execution = additionId == null
+                ? null : executionRepository.findForUpdate(additionId).orElse(null);
+        if (execution != null) {
+            entityManager.refresh(execution, LockModeType.PESSIMISTIC_WRITE);
+        }
+        requireVerificationActor(trip, actorId, execution);
+        requireCompletedVerificationTrip(trip);
 
         AdditionalAttachmentUploadBatch batch =
-                uploadBatchRepository.findForUpdate(uploadId, tripId, userId)
+                uploadBatchRepository.findForUpdate(uploadId, tripId, trip.getUserId())
                         .orElseThrow(InvalidAttachmentUploadException::new);
+
+        entityManager.refresh(batch, LockModeType.PESSIMISTIC_WRITE);
 
         if (batch.getStatus() != AdditionalAttachmentUploadStatus.PENDING
                 && batch.getStatus() != AdditionalAttachmentUploadStatus.VERIFIED
@@ -822,7 +862,12 @@ public class AdditionalAttachmentUploadTransactionService {
     private void completeBatch(AdditionalAttachmentUploadBatch batch) {
         batch.markPrepared();
         logPhotoDerivativesPersisted(batch.getTripId(), batch.getAdditionId());
-        var ready = analysisPreparationService.photosReady(batch.getTripId(), batch.getUserId(),
+        AdditionalAttachmentExecution execution = executionRepository.findById(batch.getAdditionId()).orElse(null);
+        if (execution != null
+                && execution.getProcessingMode() == AdditionalAttachmentExecution.ProcessingMode.V3) {
+            return;
+        }
+        PhotosReadyMessage ready = analysisPreparationService.photosReady(batch.getTripId(), batch.getUserId(),
                 batch.getUploadId(), batch.getAdditionId());
         outboxService.save(batch.getTripId(), batch.getUserId(), batch.getUploadId(),
                 new AdditionalAttachmentUploadCompletionService.PreparedQueueBatch(ready, Optional.empty()),

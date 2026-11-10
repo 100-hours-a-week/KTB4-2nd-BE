@@ -78,7 +78,7 @@ class TripReadStateControllerTest {
                 places
         );
         TripController controller = new TripController(
-                service, mock(TripProcessingStatusService.class),
+                service, mock(TripUpdateService.class), mock(TripProcessingStatusService.class),
                 mock(TripProcessingCancellationService.class), folders,
                 mock(TripDeletionService.class), mapper, mock(ShareTripService.class), mock(InvitedTripListService.class)
         );

@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.trip.service.TripPlaceFolderListService;
 import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.TripService;
+import com.yeodam.yeodambe.trip.service.TripUpdateService;
 import com.yeodam.yeodambe.trip.service.ShareTripService;
 import com.yeodam.yeodambe.trip.service.InvitedTripListService;
 import com.yeodam.yeodambe.trip.service.request.TripShareCreateRequest;
@@ -50,6 +51,7 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class TripController {
     private final TripService tripService;
+    private final TripUpdateService tripUpdateService;
     private final TripProcessingStatusService processingStatusService;
     private final TripProcessingCancellationService processingCancellationService;
     private final TripPlaceFolderListService tripPlaceFolderListService;
@@ -105,7 +107,7 @@ public class TripController {
         }
 
         Long userId = Long.valueOf(jwt.getSubject());
-        TripUpdateResponse data = tripService.updateTrip(
+        TripUpdateResponse data = tripUpdateService.updateTrip(
                 tripId, userId, request
         );
 
@@ -121,7 +123,7 @@ public class TripController {
     ) {
         return ResponseEntity.ok(new ApiResponse<>(
                 SuccessMessage.FAVORITE_REGISTERED,
-                tripService.registerFavorite(tripId, Long.valueOf(jwt.getSubject()))
+                tripUpdateService.registerFavorite(tripId, Long.valueOf(jwt.getSubject()))
         ));
     }
 
@@ -130,7 +132,7 @@ public class TripController {
             @PathVariable Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
-        tripService.removeFavorite(tripId, Long.valueOf(jwt.getSubject()));
+        tripUpdateService.removeFavorite(tripId, Long.valueOf(jwt.getSubject()));
         return ResponseEntity.noContent().build();
     }
 

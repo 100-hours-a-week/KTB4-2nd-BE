@@ -21,6 +21,7 @@ import com.yeodam.yeodambe.trip.service.TripProcessingCancellationService;
 import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.ShareTripService;
 import com.yeodam.yeodambe.trip.service.TripService;
+import com.yeodam.yeodambe.trip.service.TripUpdateService;
 import com.yeodam.yeodambe.trip.service.request.cursor.PlaceFolderCursor;
 import com.yeodam.yeodambe.trip.service.request.cursor.FavoriteTripCursor;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
@@ -121,6 +122,9 @@ class TripCreationSecurityIntegrationTest {
 
     @MockitoBean
     private TripService tripService;
+
+    @MockitoBean
+    private TripUpdateService tripUpdateService;
 
     @MockitoBean
     private TripProcessingStatusService processingStatusService;
@@ -668,7 +672,7 @@ class TripCreationSecurityIntegrationTest {
     void 즐겨찾기_등록_API는_Jwt_subject와_tripId를_서비스에_전달한다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         given(csrfTokenStore.find("favorite-browser")).willReturn("csrf-token");
-        given(tripService.registerFavorite(7L, 42L))
+        given(tripUpdateService.registerFavorite(7L, 42L))
                 .willReturn(new TripFavoriteResponse(7L, true));
 
         mockMvc.perform(post("/trips/7/favorite")
@@ -682,7 +686,7 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(jsonPath("$.data.tripId").value(7))
                 .andExpect(jsonPath("$.data.isFavorite").value(true));
 
-        then(tripService).should().registerFavorite(7L, 42L);
+        then(tripUpdateService).should().registerFavorite(7L, 42L);
     }
 
     @Test
@@ -695,7 +699,7 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
 
-        then(tripService).should(never()).registerFavorite(any(), any());
+        then(tripUpdateService).should(never()).registerFavorite(any(), any());
     }
 
     @Test
@@ -712,7 +716,7 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
 
-        then(tripService).should(never()).registerFavorite(any(), any());
+        then(tripUpdateService).should(never()).registerFavorite(any(), any());
     }
 
     @Test
@@ -728,7 +732,7 @@ class TripCreationSecurityIntegrationTest {
                         .header("X-CSRF-TOKEN", "csrf-token"))
                 .andExpect(status().isNoContent());
 
-        then(tripService).should().removeFavorite(7L, 42L);
+        then(tripUpdateService).should().removeFavorite(7L, 42L);
     }
 
     @Test
@@ -741,7 +745,7 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("UNAUTHORIZED"));
 
-        then(tripService).should(never()).removeFavorite(any(), any());
+        then(tripUpdateService).should(never()).removeFavorite(any(), any());
     }
 
     @Test
@@ -758,7 +762,7 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
 
-        then(tripService).should(never()).removeFavorite(any(), any());
+        then(tripUpdateService).should(never()).removeFavorite(any(), any());
     }
 
     @ParameterizedTest

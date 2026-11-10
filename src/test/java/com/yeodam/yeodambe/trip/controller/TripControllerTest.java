@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.trip.controller.TripController;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.service.TripDeletionService;
@@ -11,6 +12,7 @@ import com.yeodam.yeodambe.trip.service.TripProcessingStatusService;
 import com.yeodam.yeodambe.trip.service.ShareTripService;
 import com.yeodam.yeodambe.trip.service.InvitedTripListService;
 import com.yeodam.yeodambe.trip.service.TripService;
+import com.yeodam.yeodambe.trip.service.TripUpdateService;
 import com.yeodam.yeodambe.trip.service.request.TripCreateRequest;
 import com.yeodam.yeodambe.trip.service.request.cursor.TripListCursor;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
@@ -23,6 +25,7 @@ import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.BindingResult;
 import tools.jackson.databind.ObjectMapper;
@@ -36,6 +39,7 @@ import static org.mockito.Mockito.*;
 
 class TripControllerTest {
     private final TripService tripService = mock(TripService.class);
+    private final TripUpdateService tripUpdateService = mock(TripUpdateService.class);
     private final TripProcessingStatusService processingStatusService =
             mock(TripProcessingStatusService.class);
     private final TripProcessingCancellationService cancellationService =
@@ -45,7 +49,7 @@ class TripControllerTest {
     private final TripDeletionService deletionService = mock(TripDeletionService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final TripController controller = new TripController(
-            tripService, processingStatusService, cancellationService, placeFolderListService,
+            tripService, tripUpdateService, processingStatusService, cancellationService, placeFolderListService,
             deletionService, objectMapper, mock(ShareTripService.class), mock(InvitedTripListService.class));
     private final TripCreateRequest request = new TripCreateRequest(
             "여행",
@@ -127,28 +131,28 @@ class TripControllerTest {
 
     @Test
     void 수정_요청은_JWT_회원_ID로_전달하고_성공_응답을_감싼다() {
-        var request = new TripUpdateRequest(
+        TripUpdateRequest request = new TripUpdateRequest(
                 "수정 여행", null, null, null);
-        var data = new TripUpdateResponse(
+        TripUpdateResponse data = new TripUpdateResponse(
                 7L, "수정 여행", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 3), List.of());
-        var binding = mock(BindingResult.class);
-        when(tripService.updateTrip(7L, 1L, request)).thenReturn(data);
-        var response = controller.updateTrip(7L, request, binding, jwt());
+        BindingResult binding = mock(BindingResult.class);
+        when(tripUpdateService.updateTrip(7L, 1L, request)).thenReturn(data);
+        ResponseEntity<ApiResponse<TripUpdateResponse>> response = controller.updateTrip(7L, request, binding, jwt());
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().message()).isEqualTo("TRIP_UPDATE_SUCCESS");
         assertThat(response.getBody().data()).isSameAs(data);
-        verify(tripService).updateTrip(7L, 1L, request);
+        verify(tripUpdateService).updateTrip(7L, 1L, request);
     }
 
     @Test
     void 수정_DTO_검증에_실패하면_서비스를_호출하지_않는다() {
-        var binding = mock(BindingResult.class);
+        BindingResult binding = mock(BindingResult.class);
         when(binding.hasErrors()).thenReturn(true);
         Assertions.assertThatThrownBy(() -> controller.updateTrip(
                 7L, new TripUpdateRequest(
                         null, null, null, null), binding, jwt()))
                 .isInstanceOf(InvalidTripRequestException.class);
-        verifyNoInteractions(tripService);
+        verifyNoInteractions(tripService, tripUpdateService);
     }
 
     @Test

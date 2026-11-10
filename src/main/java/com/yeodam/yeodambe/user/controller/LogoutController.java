@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.user.controller;
 
 import com.yeodam.yeodambe.user.service.LogoutService;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketAuthRevocationPublisher;
 import com.yeodam.yeodambe.user.security.CookiePathResolver;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,17 +23,20 @@ public class LogoutController {
     private final CsrfTokenStore csrfTokenStore;
     private final boolean cookieSecure;
     private final CookiePathResolver cookiePathResolver;
+    private final WebSocketAuthRevocationPublisher authRevocationPublisher;
 
     public LogoutController(
             LogoutService service,
             CsrfTokenStore csrfTokenStore,
             @Value("${oauth.browser-context-cookie.secure}") boolean cookieSecure,
-            CookiePathResolver cookiePathResolver
+            CookiePathResolver cookiePathResolver,
+            WebSocketAuthRevocationPublisher authRevocationPublisher
     ) {
         this.service = service;
         this.csrfTokenStore = csrfTokenStore;
         this.cookieSecure = cookieSecure;
         this.cookiePathResolver = cookiePathResolver;
+        this.authRevocationPublisher = authRevocationPublisher;
     }
 
     @PostMapping("/auth/logout")
@@ -40,7 +44,9 @@ public class LogoutController {
             @AuthenticationPrincipal Jwt jwt,
             @CookieValue(name = "CSRF_CONTEXT", required = false) String csrfContext
     ) {
-        service.logout(jwt.getClaimAsString("sid"));
+        String sid = jwt.getClaimAsString("sid");
+        service.logout(sid);
+        authRevocationPublisher.revokeSession(Long.valueOf(jwt.getSubject()), sid);
         csrfTokenStore.delete(csrfContext);
 
         ResponseCookie accessCookie = expiredCookie(

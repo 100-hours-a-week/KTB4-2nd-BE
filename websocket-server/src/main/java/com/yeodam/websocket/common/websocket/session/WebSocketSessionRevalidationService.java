@@ -83,6 +83,15 @@ public class WebSocketSessionRevalidationService {
                     .addKeyValue("failure", exception.failure().name())
                     .log("WebSocket login session revalidation rejected.");
 
+            if (exception.failure() == BackendAuthenticationFailure.USER_UNAUTHORIZED
+                    || exception.failure() == BackendAuthenticationFailure.CSRF_INVALID) {
+                sessionManager.closeConnectionsForSession(
+                        selectedPrincipal.userId(),
+                        selectedPrincipal.sessionId()
+                );
+                return;
+            }
+
             for (WebSocketSession connection : connections) {
                 sessionManager.closeConnection(connection.getId());
             }

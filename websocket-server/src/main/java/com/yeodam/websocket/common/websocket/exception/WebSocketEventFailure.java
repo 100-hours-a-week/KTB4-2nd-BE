@@ -23,6 +23,9 @@ public enum WebSocketEventFailure {
     PAYLOAD_FORMAT_INVALID("웹소켓 이벤트 본문 형식이 올바르지 않습니다."),
     PAYLOAD_MESSAGE_INVALID("웹소켓 이벤트 본문의 메시지가 올바르지 않습니다."),
     PAYLOAD_DATA_MISSING("웹소켓 이벤트 본문의 데이터가 없습니다."),
+    AUTH_REVOCATION_DATA_INVALID("인증 폐기 이벤트의 데이터가 올바르지 않습니다."),
+    AUTH_REVOCATION_SCOPE_INVALID("인증 폐기 이벤트의 범위가 올바르지 않습니다."),
+    AUTH_REVOCATION_SESSION_ID_INVALID("인증 폐기 이벤트의 로그인 세션 ID가 올바르지 않습니다."),
     DELIVERY_FAILED("웹소켓 이벤트를 전달하지 못했습니다.");
 
     private final String message;

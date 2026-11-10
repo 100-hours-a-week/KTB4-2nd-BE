@@ -274,6 +274,38 @@ class WebSocketSessionManagerTest {
     }
 
     @Test
+    void 로그아웃은_같은_로그인_세션의_연결만_인증_종료_코드로_닫는다() throws Exception {
+        WebSocketSession anotherSession = createSession("connection-b", 42L, "another-session");
+        WebSocketSession anotherUser = createSession("connection-c", 99L, "login-session");
+        manager.register(session);
+        manager.register(anotherSession);
+        manager.register(anotherUser);
+
+        manager.closeConnectionsForSession(42L, "login-session");
+
+        CloseStatus revoked = new CloseStatus(4401, "AUTH_REVOKED");
+        verify(session).close(revoked);
+        verify(anotherSession, never()).close(any(CloseStatus.class));
+        verify(anotherUser, never()).close(any(CloseStatus.class));
+    }
+
+    @Test
+    void 회원_탈퇴는_해당_사용자의_모든_연결만_인증_종료_코드로_닫는다() throws Exception {
+        WebSocketSession anotherSession = createSession("connection-b", 42L, "another-session");
+        WebSocketSession anotherUser = createSession("connection-c", 99L, "other-session");
+        manager.register(session);
+        manager.register(anotherSession);
+        manager.register(anotherUser);
+
+        manager.closeConnectionsForUser(42L);
+
+        CloseStatus revoked = new CloseStatus(4401, "AUTH_REVOKED");
+        verify(session).close(revoked);
+        verify(anotherSession).close(revoked);
+        verify(anotherUser, never()).close(any(CloseStatus.class));
+    }
+
+    @Test
     void 예약_작업_실행_전에_확보한_연결만_종료한다() throws Exception {
         manager.register(session);
         when(session.isOpen()).thenReturn(true);
@@ -350,5 +382,15 @@ class WebSocketSessionManagerTest {
         assertThat(manager.getSessions()).isEmpty();
         assertThat(session.getAttributes()).doesNotContainKey(WebSocketSessionCredentials.ATTRIBUTE_NAME);
         verify(reservation).cancel(false);
+    }
+
+    private WebSocketSession createSession(String connectionId, Long userId, String sessionId) {
+        WebSocketSession created = mock(WebSocketSession.class);
+        when(created.getId()).thenReturn(connectionId);
+        when(created.getAttributes()).thenReturn(new HashMap<>());
+        when(created.getPrincipal()).thenReturn(UsernamePasswordAuthenticationToken.authenticated(
+                new WebSocketPrincipal(userId, sessionId, EXPIRES_AT), null, List.of()
+        ));
+        return created;
     }
 }

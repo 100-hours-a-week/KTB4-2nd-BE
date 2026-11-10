@@ -101,7 +101,7 @@ public class WebSocketEventPublisher {
                 WebSocketEventInternalErrorMessage.PAYLOAD_MESSAGE_MISSING.message());
 
         WebSocketEventTargetType expectedTarget = switch (event.type()) {
-            case AI_TASK, COMMAND_RESULT -> WebSocketEventTargetType.USER;
+            case AI_TASK, COMMAND_RESULT, AUTH_REVOKED -> WebSocketEventTargetType.USER;
             case TRIP_EVENT, PRESENCE_SNAPSHOT -> WebSocketEventTargetType.TRIP;
         };
 

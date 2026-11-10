@@ -13,6 +13,7 @@ import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
 import com.yeodam.yeodambe.user.security.session.LoginSessionStore;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketAuthRevocationPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -35,6 +36,7 @@ public class WithdrawalService {
     private final LoginSessionStore loginSessionStore;
     private final TripWithdrawalService tripWithdrawalService;
     private final CsrfTokenStore csrfTokenStore;
+    private final WebSocketAuthRevocationPublisher authRevocationPublisher;
 
     @Transactional
     public void withdraw(Long userId, String csrfContext) {
@@ -100,6 +102,7 @@ public class WithdrawalService {
         } catch (RuntimeException exception) {
             logCleanupFailure("session_cleanup");
         }
+        authRevocationPublisher.revokeUser(userId);
     }
 
     private void logCleanupFailure(String stage) {

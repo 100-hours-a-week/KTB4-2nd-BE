@@ -12,12 +12,15 @@ import com.yeodam.yeodambe.user.repository.OAuthAccountRepository;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import com.yeodam.yeodambe.user.repository.UserStatsRepository;
 import com.yeodam.yeodambe.user.security.csrf.CsrfTokenStore;
+import com.yeodam.yeodambe.common.websocket.service.WebSocketAuthRevocationPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -50,6 +53,9 @@ class WithdrawalServiceTest {
     @Mock
     private CsrfTokenStore csrfTokenStore;
 
+    @Mock
+    private WebSocketAuthRevocationPublisher authRevocationPublisher;
+
     @InjectMocks
     private WithdrawalService service;
 
@@ -79,6 +85,38 @@ class WithdrawalServiceTest {
         then(user).should().withdraw(withdrawnAt.getValue());
         then(loginSessionStore).should().deleteByUserId(USER_ID);
         then(csrfTokenStore).should().delete(CSRF_CONTEXT);
+        then(authRevocationPublisher).should().revokeUser(USER_ID);
+    }
+
+    @Test
+    void 트랜잭션이_끝난_뒤에_웹소켓_종료_이벤트를_발행한다() {
+        User user = org.mockito.Mockito.mock(User.class);
+        OAuthAccount oauthAccount = org.mockito.Mockito.mock(OAuthAccount.class);
+        Consent consent = org.mockito.Mockito.mock(Consent.class);
+        UserStats userStats = org.mockito.Mockito.mock(UserStats.class);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+        given(user.getDeletedAt()).willReturn(null);
+        given(oauthAccountRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
+                .willReturn(Optional.of(oauthAccount));
+        given(consentRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
+                .willReturn(Optional.of(consent));
+        given(userStatsRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
+                .willReturn(Optional.of(userStats));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.withdraw(USER_ID, CSRF_CONTEXT);
+            then(authRevocationPublisher).shouldHaveNoInteractions();
+
+            for (TransactionSynchronization synchronization :
+                    TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCommit();
+            }
+
+            then(authRevocationPublisher).should().revokeUser(USER_ID);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test

@@ -3,6 +3,8 @@ package com.yeodam.websocket.common.websocket.service;
 import com.yeodam.websocket.common.websocket.config.WebSocketProperties;
 import com.yeodam.websocket.common.websocket.config.WebSocketEventProperties;
 import com.yeodam.websocket.common.websocket.session.WebSocketSessionManager;
+import com.yeodam.websocket.common.websocket.security.WebSocketPrincipal;
+import com.yeodam.websocket.common.websocket.security.WebSocketSessionCredentials;
 import com.yeodam.websocket.common.websocket.service.request.WebSocketEvent;
 import com.yeodam.websocket.trip.service.TripPresenceService;
 import tools.jackson.databind.JsonNode;
@@ -13,10 +15,17 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ScheduledFuture;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -167,6 +176,46 @@ class WebSocketEventSubscriberTest {
         verifyNoInteractions(presenceService, template);
     }
 
+    @Test
+    void 로그아웃_이벤트는_같은_사용자의_같은_세션_연결만_닫는다() throws Exception {
+        WebSocketSession revoked = registerSession("revoked-connection", 42L, "sid-42");
+        WebSocketSession otherSession = registerSession("other-connection", 42L, "sid-other");
+        WebSocketSession otherUser = registerSession("other-user-connection", 99L, "sid-42");
+
+        subscriber.onMessage(Redis_메시지_생성(인증_폐기_이벤트_생성("SESSION", "sid-42")), null);
+
+        CloseStatus closeStatus = new CloseStatus(4401, "AUTH_REVOKED");
+        verify(revoked).close(closeStatus);
+        verify(otherSession, never()).close(any(CloseStatus.class));
+        verify(otherUser, never()).close(any(CloseStatus.class));
+        verifyNoInteractions(template);
+    }
+
+    @Test
+    void 회원_탈퇴_이벤트는_사용자의_모든_연결을_닫는다() throws Exception {
+        WebSocketSession revoked = registerSession("revoked-connection", 42L, "sid-42");
+        WebSocketSession otherSession = registerSession("other-connection", 42L, "sid-other");
+        WebSocketSession otherUser = registerSession("other-user-connection", 99L, "sid-99");
+
+        subscriber.onMessage(Redis_메시지_생성(인증_폐기_이벤트_생성("USER", "null")), null);
+
+        CloseStatus closeStatus = new CloseStatus(4401, "AUTH_REVOKED");
+        verify(revoked).close(closeStatus);
+        verify(otherSession).close(closeStatus);
+        verify(otherUser, never()).close(any(CloseStatus.class));
+        verifyNoInteractions(template);
+    }
+
+    @Test
+    void 잘못된_인증_폐기_범위는_연결을_닫지_않는다() throws Exception {
+        WebSocketSession session = registerSession("connection-a", 42L, "sid-42");
+
+        subscriber.onMessage(Redis_메시지_생성(인증_폐기_이벤트_생성("UNKNOWN", "sid-42")), null);
+
+        verify(session, never()).close(any(CloseStatus.class));
+        verifyNoInteractions(template);
+    }
+
     private static String 이벤트_본문_생성(String type, String target) {
         return """
                 {"eventId":"11111111-1111-1111-1111-111111111111","type":"%s","schemaVersion":1,
@@ -179,5 +228,32 @@ class WebSocketEventSubscriberTest {
         Message message = mock(Message.class);
         when(message.getBody()).thenReturn(json.getBytes(StandardCharsets.UTF_8));
         return message;
+    }
+
+    private WebSocketSession registerSession(String connectionId, Long userId, String sessionId) {
+        subscriptionState.markSubscribed();
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
+                .thenReturn(mock(ScheduledFuture.class));
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn(connectionId);
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put(WebSocketSessionCredentials.ATTRIBUTE_NAME,
+                new WebSocketSessionCredentials("access-token", "browser-context"));
+        when(session.getAttributes()).thenReturn(attributes);
+        when(session.getPrincipal()).thenReturn(UsernamePasswordAuthenticationToken.authenticated(
+                new WebSocketPrincipal(userId, sessionId, Instant.parse("2099-01-01T00:00:00Z")),
+                null,
+                List.of()
+        ));
+        sessionManager.register(session);
+        return session;
+    }
+
+    private static String 인증_폐기_이벤트_생성(String scope, String sessionId) {
+        return """
+                {"eventId":"11111111-1111-1111-1111-111111111111","type":"AUTH_REVOKED","schemaVersion":1,
+                "occurredAt":"2026-10-28T00:00:00Z","target":{"type":"USER","id":42},
+                "payload":{"message":"AUTH_REVOKED","data":{"scope":"%s","sid":%s}}}
+                """.formatted(scope, sessionId.equals("null") ? "null" : "\"" + sessionId + "\"");
     }
 }

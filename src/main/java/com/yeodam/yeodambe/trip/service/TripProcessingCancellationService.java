@@ -8,6 +8,7 @@ import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
 import com.yeodam.yeodambe.trip.entity.InitialAttachmentUploadStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
 import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadBatchRepository;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
@@ -22,6 +23,7 @@ import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -39,21 +41,29 @@ public class TripProcessingCancellationService {
     private final TripAttachmentDerivativeService derivatives;
     private final InitialAttachmentUploadTransactionService uploadTransactions;
     private final TripCreationExecutionRepository creationExecutions;
+    private final TripMutationCoordinator mutations;
 
     public void cancel(
             Long tripId,
             Long userId
     ) {
-        transactions.executeWithoutResult(status -> cancelInTransaction(tripId, userId));
+        Trip trip = trips.findByIdAndUserId(tripId, userId)
+                .orElseThrow(TripNotFoundException::new);
+        if (trip.getProcessingStatus() != ProcessingStatus.PROCESSING || trip.getDeletedAt() != null) {
+            throw cancellationFailure(trip);
+        }
+        mutations.run(tripId, () ->
+                transactions.executeWithoutResult(status -> cancelInTransaction(tripId, userId)));
 
-        var persistent = creationExecutions.findByTripId(tripId);
+        Optional<TripCreationExecution> persistent = creationExecutions.findByTripId(tripId);
         if (persistent.isPresent()) {
-            var execution = persistent.get();
+            TripCreationExecution execution = persistent.get();
             derivatives.cancelExecution(execution.getExecutionId());
             if (execution.isCancelPending()) {
                 try {
                     analysis.cancel(tripId);
-                    uploadTransactions.recordCancellationDelivered(execution.getExecutionId());
+                    mutations.run(tripId, () ->
+                            uploadTransactions.recordCancellationDelivered(execution.getExecutionId()));
                 } catch (RuntimeException failure) {
                     log.warn("AI 사진 분석 취소 전달 재시도: executionId={}, cause={}",
                             execution.getExecutionId(), failure.getClass().getSimpleName());
@@ -71,7 +81,9 @@ public class TripProcessingCancellationService {
             derivatives.cancelExecution(executionId);
         }
         if (legacyAnalysisStarted || uploadBatches.existsByTripIdAndStatus(
-                tripId, InitialAttachmentUploadStatus.ANALYZING)) cancelAnalysis(tripId);
+                tripId, InitialAttachmentUploadStatus.ANALYZING)) {
+            cancelAnalysis(tripId);
+        }
     }
 
     private void cancelInTransaction(
@@ -105,7 +117,10 @@ public class TripProcessingCancellationService {
     ) {
         Trip trip = trips.findByIdAndUserId(tripId, userId)
                 .orElseThrow(TripNotFoundException::new);
+        return cancellationFailure(trip);
+    }
 
+    private RuntimeException cancellationFailure(Trip trip) {
         if (trip.getProcessingStatus() == ProcessingStatus.CANCELED) {
             return new TripProcessingCannotBeCanceledException();
         }

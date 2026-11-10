@@ -8,7 +8,9 @@ public enum TripUploadTestErrorMessage {
     DATABASE_WRITE_CONSTRAINT_FAILED("database write constraint failed"),
     S3_FAILURE("S3 failure"),
     NOTIFICATION_PUBLISH_FAILURE("redis unavailable"),
-    INVALID_RESULT("invalid");
+    INVALID_RESULT("invalid"),
+    AI_CANCELLATION_FAILURE("AI"),
+    DATABASE_COMMIT_FAILURE("DB commit");
 
     private final String message;
 

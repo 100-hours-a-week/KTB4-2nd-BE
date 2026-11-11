@@ -172,7 +172,7 @@ class InitialAttachmentUploadPreparationTest {
 
     @Test
     void 기존_첨부와_1이_아닌_첫_배치_번호와_최종_배치_이후_요청을_거부한다() {
-        assertThatThrownBy(() -> prepare(request(2, 1, true, List.of(file("first.jpg", 1024)))))
+        assertThatThrownBy(() -> prepare(request(2, 2, true, List.of(file("first.jpg", 1024)))))
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
         StoredFile original = files.saveAndFlush(StoredFile.uploaded(owner.getUserId(), "existing.jpg", "existing/key", "image/jpeg"));
         TripAttachment existing = attachments.saveAndFlush(TripAttachment.initial(
@@ -181,11 +181,12 @@ class InitialAttachmentUploadPreparationTest {
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
 
         attachments.deleteById(existing.getId());
-        InitialAttachmentUploadBatch last = prepare(request(1, 1, true, List.of(file("first.jpg", 1024))));
+        var lastRequest = request(1, 2, true, firstFiles());
+        InitialAttachmentUploadBatch last = prepare(lastRequest);
         markAccepted(last);
-        assertThatThrownBy(() -> prepare(request(2, 1, true, List.of(file("second.jpg", 1024)))))
+        assertThatThrownBy(() -> prepare(request(2, 2, true, List.of(file("third.jpg", 1024)))))
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
-        assertThatThrownBy(() -> prepare(request(1, 1, true, List.of(file("first.jpg", 1024)))))
+        assertThatThrownBy(() -> prepare(lastRequest))
                 .isInstanceOf(TripInitialAttachmentUploadNotAllowedException.class);
     }
 

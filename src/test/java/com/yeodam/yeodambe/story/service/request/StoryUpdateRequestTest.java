@@ -109,6 +109,34 @@ class StoryUpdateRequestTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"null", "3"})
+    void 블록_ID의_null과_정상_숫자를_그대로_읽는다(String blockId) {
+        String json = """
+                {"tone":"CALM","storySummary":"요약",
+                 "blocks":[{"storyBlockId":%s,"tripAttachmentId":10,
+                 "dayLabel":"첫째 날","detailSummary":"설명","orderNumber":1}]}
+                """.formatted(blockId);
+        StoryUpdateRequest request = new ObjectMapper().readValue(json, StoryUpdateRequest.class);
+
+        assertThat(request.blocks().getFirst().storyBlockId())
+                .isEqualTo(blockId.equals("null") ? null : 3L);
+        assertThat(validator.validate(request)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   "})
+    void 빈_문자열_블록_ID를_신규_블록으로_변환하지_않는다(String blockId) {
+        String json = """
+                {"tone":"PLAIN","storySummary":"요약",
+                 "blocks":[{"storyBlockId":"%s","tripAttachmentId":10,
+                 "dayLabel":"첫째 날","detailSummary":"설명","orderNumber":1}]}
+                """.formatted(blockId);
+
+        assertThatThrownBy(() -> new ObjectMapper().readValue(json, StoryUpdateRequest.class))
+                .isInstanceOf(tools.jackson.core.JacksonException.class);
+    }
+
+    @ParameterizedTest
     @NullSource
     @ValueSource(strings = {"", " ", "\u200B", "\u3164", "\u00A0"})
     void 두_필수_문구의_null과_빈값과_보이지않는_내용을_거절한다(String text) {

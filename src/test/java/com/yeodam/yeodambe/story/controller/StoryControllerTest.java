@@ -286,6 +286,22 @@ class StoryControllerTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"", "   "})
+    void 빈_문자열_블록_ID는_서비스_호출_전에_400으로_거절한다(String blockId) throws Exception {
+        when(csrfTokens.find("update-browser")).thenReturn("csrf-token");
+        String body = updateBody().replace("\"storyBlockId\":3", "\"storyBlockId\":\"" + blockId + "\"");
+
+        mvc.perform(put("/stories/1")
+                        .cookie(authenticated(), new Cookie("CSRF_CONTEXT", "update-browser"))
+                        .header("X-CSRF-TOKEN", "csrf-token")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("INVALID_STORY_UPDATE"));
+
+        verifyNoInteractions(updateService);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {
             "{}",
             "{\"tone\":\"CALM\",\"storySummary\":\"요약\",\"blocks\":[]}",

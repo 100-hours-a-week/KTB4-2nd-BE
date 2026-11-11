@@ -9,22 +9,7 @@
 
 API 서버는 인증·권한 검증과 데이터 처리를, 별도 WebSocket 서버는 편집 요청 전달과 상태·변경 알림을 담당합니다. 사진 변환은 백엔드 워커가, 사진 분석과 글 생성은 AI 서버가 수행합니다. 주요 비동기 처리 흐름은 다음과 같습니다.
 
-```mermaid
-flowchart LR
-    Client[클라이언트] -->|HTTP| API[API 서버]
-    Client <-->|WebSocket| WS[WebSocket 서버]
-    WS -->|인증·편집 요청| API
-    Client -->|사진 직접 업로드| S3[S3]
-    API --> MySQL[MySQL]
-    API --> Mongo[MongoDB]
-    API <--> Redis[Redis]
-    Redis -->|상태·변경 알림| WS
-    MySQL -->|Outbox · Debezium CDC| Kafka[Kafka]
-    Kafka -->|사진 변환 작업| Worker[사진 변환 워커]
-    Worker --> S3
-    Kafka -->|AI 결과| API
-    Kafka <-->|분석·생성 요청과 결과| AI[AI 서버]
-```
+![여담 백엔드 구조: 클라이언트, API 서버, WebSocket 서버, 사진 변환 워커, AI 서버와 MySQL·MongoDB·Redis·Kafka·S3의 연결](docs/images/backend-architecture.png)
 
 | 기술 | 사용 목적 |
 | --- | --- |

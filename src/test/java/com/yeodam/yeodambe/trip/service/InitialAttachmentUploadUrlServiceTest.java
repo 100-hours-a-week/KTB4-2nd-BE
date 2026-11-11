@@ -12,6 +12,9 @@ import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -29,6 +32,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class InitialAttachmentUploadUrlServiceTest {
@@ -109,6 +113,27 @@ class InitialAttachmentUploadUrlServiceTest {
         assertThat(service.validateRequest(request)).isEqualTo(7168L);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {".", "..", "../photo.jpg", "folder/photo.jpg", "folder\\photo.jpg",
+            "photo\000.jpg", "photo\n.jpg", "photo\t.jpg", "photo\u007F.jpg"})
+    void 잘못된_파일명은_업로드_접수와_URL_발급_전에_거절한다(String fileName) {
+        var request = request(1, true, List.of(file(fileName, "image/jpeg", 1024)));
+
+        assertThatThrownBy(() -> service.issueUploadUrls(10L, 2L, request))
+                .isInstanceOf(InvalidAttachmentUploadException.class);
+
+        verifyNoInteractions(transactions, storage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"photo.jpg", "제주 여행.jpg", "사진😀.heic", "photo..jpg"})
+    void 정상_파일명은_원문을_유지하고_전체_바이트를_반환한다(String fileName) {
+        var request = request(1, true, List.of(file(fileName, "image/jpeg", 1024)));
+
+        assertThat(service.validateRequest(request)).isEqualTo(1024L);
+        assertThat(request.attachments().getFirst().fileName()).isEqualTo(fileName);
+    }
+
     @Test
     void 필수_요청_필드_누락은_거부하고_완료_여부_false는_허용한다() {
         List<InitialAttachmentUploadUrlRequest.Attachment> files = List.of(file("photo.jpg", "image/jpeg", 1024));
@@ -123,6 +148,27 @@ class InitialAttachmentUploadUrlServiceTest {
                 .isInstanceOf(InvalidAttachmentUploadException.class);
         assertThatThrownBy(() -> service.validateRequest(request(201, false, files)))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"2,1", "4,3", "201,200", "2147483647,200"})
+    void 전체_사진_수보다_큰_배치번호는_접수와_URL_발급_전에_거절한다(int batchNo, int total) {
+        var request = new InitialAttachmentUploadUrlRequest(
+                batchNo, total, true, List.of(file("photo.jpg", "image/jpeg", 1024)));
+
+        assertThatThrownBy(() -> service.issueUploadUrls(10L, 2L, request))
+                .isInstanceOf(InvalidAttachmentUploadException.class);
+
+        verifyNoInteractions(transactions, storage);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1,1", "3,3", "200,200"})
+    void 전체_사진_수와_같은_배치번호는_요청_형식_검증을_통과한다(int batchNo, int total) {
+        var request = new InitialAttachmentUploadUrlRequest(
+                batchNo, total, true, List.of(file("photo.jpg", "image/jpeg", 1024)));
+
+        assertThat(service.validateRequest(request)).isEqualTo(1024L);
     }
 
     @Test

@@ -23,6 +23,8 @@ import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
@@ -223,6 +225,30 @@ class TripServiceTest {
         assertInvalid(today, today.minusDays(1), List.of("50110"));
         assertInvalid(today.plusDays(1), today.plusDays(1), List.of("50110"));
         assertInvalid(today, today.plusDays(1), List.of("50110"));
+        verifyNoInteractions(tripRepository, tripRegionRepository);
+    }
+
+    @Test
+    void 최소_날짜인_1000년_1월_1일의_여행은_생성한다() {
+        givenRegion();
+        givenSavedTrip();
+        LocalDate minimumDate = LocalDate.of(1000, 1, 1);
+
+        tripService.createTrip(1L, request(minimumDate, minimumDate, List.of("50110")));
+
+        ArgumentCaptor<Trip> saved = ArgumentCaptor.forClass(Trip.class);
+        verify(tripRepository).save(saved.capture());
+        assertThat(saved.getValue().getStartDate()).isEqualTo(minimumDate);
+        assertThat(saved.getValue().getEndDate()).isEqualTo(minimumDate);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0001-01-01", "0999-12-31", "9999-12-31"})
+    void 지원_범위_밖의_날짜로는_여행을_저장하지_않는다(String date) {
+        LocalDate invalidDate = LocalDate.parse(date);
+
+        assertInvalid(invalidDate, invalidDate, List.of("50110"));
+
         verifyNoInteractions(tripRepository, tripRegionRepository);
     }
 

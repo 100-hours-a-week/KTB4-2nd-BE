@@ -163,6 +163,37 @@ class TripEditWebSocketEndToEndTest {
     }
 
     @Test
+    void 실제_공유_만료_후_이벤트를_전달하지_않고_STOMP_연결을_종료한다() throws Exception {
+        Long owner = users.saveAndFlush(new User(UUID.randomUUID() + "@e2e.test", "소유자")).getUserId();
+        Long reader = users.saveAndFlush(new User(UUID.randomUUID() + "@e2e.test", "독자")).getUserId();
+        Trip trip = new Trip(owner, "만료여행", LocalDate.now(), LocalDate.now());
+        ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
+        Long tripId = trips.saveAndFlush(trip).getId();
+        int port = freePort();
+        Process server = startServer(port);
+        try {
+            ready(port);
+            Instant expiresAt = Instant.now().plusSeconds(10);
+            LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
+            shares.saveAndFlush(new TripShareUser(tripId, owner, reader, TripSharePermission.READ,
+                    LocalDateTime.ofInstant(expiresAt, ZoneId.of("Asia/Seoul")), now));
+            try (Connection viewer = connect(port, reader)) {
+                viewer.send("SUBSCRIBE\nid:trip\ndestination:/topic/trips/" + tripId + "/events\n\n");
+                awaitSubscription(viewer, WebSocketEventTargetType.TRIP, tripId, WebSocketEventType.TRIP_EVENT);
+                await().atMost(Duration.ofSeconds(15)).until(() -> Instant.now().isAfter(expiresAt));
+                publisher.publish(new WebSocketEvent(UUID.randomUUID(), WebSocketEventType.TRIP_EVENT, 1, Instant.now(),
+                        new WebSocketEventTarget(WebSocketEventTargetType.TRIP, tripId),
+                        new ApiResponse<>("EXPIRED_SHOULD_NOT_DELIVER", null)));
+
+                assertThat(viewer.closed.get(5, TimeUnit.SECONDS)).isNotNull();
+                assertThat(viewer.messages).noneSatisfy(frame -> assertThat(frame).contains("EXPIRED_SHOULD_NOT_DELIVER"));
+            }
+        } finally {
+            stop(server);
+        }
+    }
+
+    @Test
     void 지연된_구독_확인_메시지를_명령_결과와_혼동하지_않는다() throws Exception {
         Connection connection = new Connection();
         connection.messages.add("{\"message\":\"SUBSCRIPTION_PROBE\"}");
@@ -267,6 +298,7 @@ class TripEditWebSocketEndToEndTest {
 
     private static class Connection implements WebSocket.Listener, AutoCloseable {
         private WebSocket socket;
+        private final CompletableFuture<Integer> closed = new CompletableFuture<>();
         private final BlockingQueue<String> messages = new LinkedBlockingQueue<>();
         private final StringBuilder partial = new StringBuilder();
 
@@ -283,6 +315,12 @@ class TripEditWebSocketEndToEndTest {
                 partial.setLength(0);
             }
             webSocket.request(1);
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            closed.complete(statusCode);
             return CompletableFuture.completedFuture(null);
         }
 

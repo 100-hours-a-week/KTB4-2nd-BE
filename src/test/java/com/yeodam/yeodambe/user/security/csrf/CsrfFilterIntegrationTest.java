@@ -52,6 +52,26 @@ class CsrfFilterIntegrationTest {
     }
 
     @Test
+    void 무효화한_구_토큰은_거절하고_재발급한_토큰은_허용한다() throws Exception {
+        String context = "rotated-browser";
+        csrfTokenStore.save(context, "old-token");
+        csrfTokenStore.delete(context);
+        String renewed = csrfTokenStore.findOrCreate(context, () -> "new-token");
+
+        mockMvc.perform(post("/test/csrf-probe")
+                        .with(user("test"))
+                        .cookie(new Cookie("CSRF_CONTEXT", context))
+                        .header("X-CSRF-TOKEN", "old-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("CSRF_TOKEN_INVALID"));
+        mockMvc.perform(post("/test/csrf-probe")
+                        .with(user("test"))
+                        .cookie(new Cookie("CSRF_CONTEXT", context))
+                        .header("X-CSRF-TOKEN", renewed))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
     void 유효하지_않은_CSRF_토큰을_거부한다() throws Exception {
         csrfTokenStore.save("browser-wrong-token", "known-token");
 

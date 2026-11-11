@@ -17,10 +17,13 @@ import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.UnclassifiedFolderAttachmentCount;
+import com.yeodam.yeodambe.trip.repository.PlaceFolderAttachmentCount;
 import com.yeodam.yeodambe.trip.service.request.AttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.response.AttachmentRestoreResponse;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentRestoreResponse;
+import com.yeodam.yeodambe.trip.service.response.TripPhotoRestorationResult;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.validation.Validator;
@@ -28,6 +31,9 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -36,6 +42,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -58,6 +65,7 @@ public class TripAttachmentRestoreService {
     private final TripMapCacheStore tripMapCacheStore;
     private final AdditionalAttachmentModificationGuard additionalAttachmentModificationGuard;
     private final TripMutationCoordinator mutations;
+    private final TripEditNotificationOutboxService notifications;
 
     public AttachmentRestoreResponse restoreOne(
             Long userId, Long tripAttachmentId, AttachmentRestoreRequest request
@@ -82,7 +90,7 @@ public class TripAttachmentRestoreService {
                 new BulkAttachmentRestoreRequest.Item(tripAttachmentId, request.tripPlaceId())
         );
 
-        restore(userId, items, List.of(attachment));
+        restore(userId, UUID.randomUUID().toString(), items, List.of(attachment));
 
         return new AttachmentRestoreResponse(tripAttachmentId, request.tripPlaceId(), "CLASSIFIED");
     }
@@ -111,7 +119,7 @@ public class TripAttachmentRestoreService {
                 throw new AttachmentNotFoundException();
             }
 
-            restore(userId, items, attachments);
+            restore(userId, UUID.randomUUID().toString(), items, attachments);
             return new BulkAttachmentRestoreResponse(
                     ids,
                     items.stream()
@@ -158,15 +166,46 @@ public class TripAttachmentRestoreService {
 
     private void restore(
             Long userId,
+            String requestId,
             List<BulkAttachmentRestoreRequest.Item> items,
             List<TripAttachment> attachments
+    ) {
+        List<Trip> trips = lockTrips(userId, attachments);
+        applyRestore(items, attachments, trips, requestId);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public TripPhotoRestorationResult restoreForSharedEditing(
+            Trip trip, String requestId, List<BulkAttachmentRestoreRequest.Item> items
+    ) {
+        validateRequest(new BulkAttachmentRestoreRequest(items));
+        validateItems(items);
+        if (trip == null || trip.getId() == null || trip.getDeletedAt() != null) {
+            throw new BulkRestoreFailedException();
+        }
+        if (trip.getProcessingStatus() != ProcessingStatus.COMPLETED) {
+            throw new AttachmentRestoreNotAllowedException();
+        }
+        additionalAttachmentModificationGuard.check(trip.getId(), trip.getUserId());
+        List<Long> ids = items.stream().map(BulkAttachmentRestoreRequest.Item::tripAttachmentId).toList();
+        List<TripAttachment> attachments = tripAttachmentRepository.findAllActiveWithTripAndFileByIds(ids);
+        if (attachments.size() != ids.size()
+                || attachments.stream().anyMatch(attachment -> !trip.getId().equals(attachment.getTripId()))) {
+            throw new BulkRestoreFailedException();
+        }
+        return applyRestore(items, attachments, List.of(trip), requestId).getFirst();
+    }
+
+    private List<TripPhotoRestorationResult> applyRestore(
+            List<BulkAttachmentRestoreRequest.Item> items,
+            List<TripAttachment> attachments,
+            List<Trip> trips,
+            String requestId
     ) {
         Map<Long, TripAttachment> byId = attachments.stream()
                 .collect(Collectors.toMap(
                                 TripAttachment::getId, Function.identity()
                         ));
-
-        List<Trip> trips = lockTrips(userId, attachments);
         for (TripAttachment attachment : attachments) {
             entityManager.refresh(attachment);
             entityManager.refresh(attachment.getFile());
@@ -192,10 +231,78 @@ public class TripAttachmentRestoreService {
             validateDestination(byId.get(item.tripAttachmentId()), placesById.get(item.tripPlaceId()));
         }
 
-        restoreAttachments(userId, attachments, destinations);
+        List<TripPhotoRestorationResult.RestoredAttachment> restored = items.stream()
+                .map(item -> new TripPhotoRestorationResult.RestoredAttachment(
+                        item.tripAttachmentId(), byId.get(item.tripAttachmentId()).getIssue(), item.tripPlaceId()
+                )).toList();
+        restoreAttachments(attachments, destinations);
         refreshThumbnails(places, trips);
-        tripMapCacheStore.evictAfterCommit(userId);
-        trips.forEach(trip -> tripRepository.advanceSequence(trip.getId()));
+        List<TripPhotoRestorationResult> results = new ArrayList<>();
+        for (Trip trip : trips) {
+            tripMapCacheStore.evictAfterCommit(trip.getUserId());
+            entityManager.flush();
+            tripRepository.advanceSequence(trip.getId());
+            entityManager.refresh(trip);
+            List<TripPhotoRestorationResult.RestoredAttachment> tripRestored = restored.stream()
+                    .filter(item -> byId.get(item.tripAttachmentId()).getTripId().equals(trip.getId()))
+                    .toList();
+            List<TripDetailPlace> tripPlaces = places.stream()
+                    .filter(place -> trip.getId().equals(place.getTripId()))
+                    .toList();
+            TripPhotoRestorationResult result = restorationResult(trip, tripRestored, tripPlaces);
+            notifications.enqueuePhotosRestored(trip.getId(), trip.getSequence(), requestId, result);
+            results.add(result);
+        }
+        return results;
+    }
+
+    private TripPhotoRestorationResult restorationResult(
+            Trip trip,
+            List<TripPhotoRestorationResult.RestoredAttachment> restored,
+            List<TripDetailPlace> places
+    ) {
+        long activeCount = tripAttachmentRepository.countVisibleByClassification(trip.getId(), ClassificationStatus.ACTIVE);
+        long unclassifiedCount = tripAttachmentRepository.countVisibleByClassification(
+                trip.getId(), ClassificationStatus.UNCLASSIFIED
+        );
+        Map<Long, Long> placeCounts = tripAttachmentRepository.countActiveByTripPlaceIds(
+                places.stream().map(TripDetailPlace::getId).toList()
+        ).stream().collect(Collectors.toMap(
+                PlaceFolderAttachmentCount::tripPlaceId,
+                PlaceFolderAttachmentCount::attachmentCount
+        ));
+        List<TripPhotoRestorationResult.PlaceChange> placeChanges = places.stream()
+                .map(place -> new TripPhotoRestorationResult.PlaceChange(
+                        place.getId(),
+                        placeCounts.getOrDefault(place.getId(), 0L),
+                        place.getThumbnailKey()
+                )).toList();
+        Map<AttachmentIssue, Long> counts = tripAttachmentRepository.countUnclassifiedByIssue(trip.getId()).stream()
+                .collect(Collectors.toMap(
+                        UnclassifiedFolderAttachmentCount::issue,
+                        UnclassifiedFolderAttachmentCount::attachmentCount
+                ));
+        List<TripPhotoRestorationResult.UnclassifiedFolderChange> folders = RESTORABLE_ISSUES.stream()
+                .sorted()
+                .map(issue -> unclassifiedFolder(trip.getId(), issue, counts.getOrDefault(issue, 0L)))
+                .toList();
+        return new TripPhotoRestorationResult(
+                restored, activeCount + unclassifiedCount, unclassifiedCount,
+                trip.getThumbnailKey(), placeChanges, folders
+        );
+    }
+
+    private TripPhotoRestorationResult.UnclassifiedFolderChange unclassifiedFolder(
+            Long tripId, AttachmentIssue issue, long count
+    ) {
+        TripAttachment representative = count == 0 ? null : tripAttachmentRepository
+                .findUnclassifiedRepresentatives(tripId, issue, PageRequest.of(0, 1))
+                .stream().findFirst().orElse(null);
+        return new TripPhotoRestorationResult.UnclassifiedFolderChange(
+                issue, count,
+                representative == null ? null : representative.getId(),
+                representative == null ? null : representative.getPreviewStorageKey()
+        );
     }
 
     private List<Trip> lockTrips(Long userId, List<TripAttachment> attachments) {
@@ -281,7 +388,7 @@ public class TripAttachmentRestoreService {
     }
 
     private void restoreAttachments(
-            Long userId, List<TripAttachment> attachments, Map<Long, Long> destinations
+            List<TripAttachment> attachments, Map<Long, Long> destinations
     ) {
         LocalDateTime updatedAt = LocalDateTime.now();
         List<TripAttachment> ordered = attachments.stream()
@@ -291,7 +398,7 @@ public class TripAttachmentRestoreService {
             Long destinationId = destinations.get(attachment.getId());
 
             int updated = tripAttachmentRepository.restoreIfUnclassified(
-                    attachment.getId(), attachment.getTripId(), userId,
+                    attachment.getId(), attachment.getTripId(), attachment.getTrip().getUserId(),
                     attachment.getTripPlaceId(), destinationId, updatedAt
             );
 

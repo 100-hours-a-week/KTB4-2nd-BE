@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
+import com.yeodam.yeodambe.trip.entity.TripEditNotificationOutbox;
 import com.yeodam.yeodambe.trip.service.request.*;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.entity.UserStats;
@@ -25,7 +26,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.support.TransactionOperations;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -57,6 +61,10 @@ class TripAttachmentRestoreMySqlTest {
     @Autowired private EntityManager entityManager;
     @Autowired private TransactionOperations transactions;
     @MockitoSpyBean private TripAttachmentRepository attachments;
+    @MockitoSpyBean
+    private TripEditNotificationOutboxRepository notifications;
+    @Autowired
+    private ObjectMapper json;
 
     @Autowired
     private AdditionalAttachmentUploadBatchRepository batches;
@@ -324,6 +332,80 @@ class TripAttachmentRestoreMySqlTest {
         assertThatThrownBy(() -> service.restoreBulk(fixture.user(), bulk(fixture)))
                 .isInstanceOf(BulkRestoreFailedException.class);
         assertRolledBack(fixture);
+    }
+
+    @Test
+    void 소유자_일괄복구는_마지막_미분류사진을_옮기고_여행알림을_한번_남긴다() {
+        Fixture fixture = fixture();
+
+        service.restoreBulk(fixture.user(), bulk(fixture));
+
+        List<TripEditNotificationOutbox> events = notifications.findAll().stream()
+                .filter(event -> fixture.trip().equals(event.getTargetId()))
+                .filter(event -> event.getEventJson().contains("TRIP_PHOTOS_RESTORED"))
+                .toList();
+        assertThat(events).hasSize(1);
+        assertThat(events.getFirst().getEventJson())
+                .contains("\"sourceIssue\":\"BLURRY\"", "\"unclassifiedAttachmentCount\":0")
+                .contains("\"representativeTripAttachmentId\":null", "\"attachmentCount\":2")
+                .doesNotContain("thumbnailUrl", "original/");
+        assertThat(trips.findById(fixture.trip()).orElseThrow().getSequence()).isEqualTo(1);
+        assertThat(attachments.findById(fixture.first()).orElseThrow().getClassificationStatus())
+                .isEqualTo(ClassificationStatus.ACTIVE);
+        assertThat(stats.findByUser_UserId(fixture.user()).orElseThrow().getAttachmentCount()).isEqualTo(2);
+        assertThat(stats.findByUser_UserId(fixture.user()).orElseThrow().getStorageUsedBytes()).isEqualTo(80);
+    }
+
+    @Test
+    void 여러_여행의_일괄복구는_각_여행의_사진과_sequence로_알림을_분리한다() {
+        Fixture first = fixture();
+        Fixture second = transactions.execute(status -> {
+            User owner = users.findById(first.user()).orElseThrow();
+            Trip trip = completedTrip(owner, "두 번째 여행");
+            TripDetailPlace place = savePlace(trip.getId(), "old");
+            TripAttachment photo = unclassified(owner, trip, place, 95);
+            TripAttachment last = unclassified(owner, trip, place, 80);
+            stats.findByUser_UserId(first.user()).orElseThrow().replaceActiveTripUsage(2, 4, 160);
+            return new Fixture(first.user(), trip.getId(), place.getId(), photo.getId(), last.getId());
+        });
+        BulkAttachmentRestoreRequest request = new BulkAttachmentRestoreRequest(List.of(
+                new BulkAttachmentRestoreRequest.Item(first.first(), first.place()),
+                new BulkAttachmentRestoreRequest.Item(second.first(), second.place())
+        ));
+
+        service.restoreBulk(first.user(), request);
+
+        List<TripEditNotificationOutbox> events = notifications.findAll().stream()
+                .filter(event -> List.of(first.trip(), second.trip()).contains(event.getTargetId()))
+                .filter(event -> event.getEventJson().contains("TRIP_PHOTOS_RESTORED"))
+                .toList();
+        assertThat(events).hasSize(2);
+        for (TripEditNotificationOutbox event : events) {
+            Long expectedPhoto = event.getTargetId().equals(first.trip()) ? first.first() : second.first();
+            JsonNode data = json.readTree(event.getEventJson()).path("payload").path("data");
+            assertThat(data.path("restoredAttachments").size()).isEqualTo(1);
+            assertThat(data.path("restoredAttachments").get(0).path("tripAttachmentId").asLong())
+                    .isEqualTo(expectedPhoto);
+            assertThat(data.path("tripId").asLong()).isEqualTo(event.getTargetId());
+            assertThat(data.path("sequence").asLong()).isEqualTo(1);
+            assertThat(data.path("attachmentCount").asLong()).isEqualTo(2);
+            assertThat(data.path("unclassifiedAttachmentCount").asLong()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void 알림_저장이_실패하면_소유자_복구와_대표사진도_롤백한다() {
+        Fixture fixture = fixture();
+        doThrow(DataAccessResourceFailureException.class)
+                .when(notifications).saveAndFlush(any(TripEditNotificationOutbox.class));
+
+        assertThatThrownBy(() -> service.restoreBulk(fixture.user(), bulk(fixture)))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+
+        assertRolledBack(fixture);
+        assertThat(notifications.findAll().stream()
+                .noneMatch(event -> fixture.trip().equals(event.getTargetId())
+                        && event.getEventJson().contains("TRIP_PHOTOS_RESTORED"))).isTrue();
     }
 
     @Test

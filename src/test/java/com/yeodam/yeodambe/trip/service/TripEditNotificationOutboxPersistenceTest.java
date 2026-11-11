@@ -11,6 +11,8 @@ import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventType;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripEditNotificationOutbox;
 import com.yeodam.yeodambe.trip.entity.TripEditNotificationOutbox.Status;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.service.response.TripPhotoRestorationResult;
 import com.yeodam.yeodambe.trip.repository.TripEditNotificationOutboxRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.user.entity.User;
@@ -344,6 +346,37 @@ class TripEditNotificationOutboxPersistenceTest {
                 .isEqualTo("https://storage.test/fresh-preview");
         assertThat(onlyRecord().getEventJson()).isEqualTo(frozen);
         assertThat(onlyRecord().getStatus()).isEqualTo(Status.PUBLISHED);
+    }
+
+    @Test
+    void 복구_알림은_스토리지_키를_보관하고_발행할_때_새_URL을_만든다() {
+        TripPhotoRestorationResult result = new TripPhotoRestorationResult(
+                List.of(new TripPhotoRestorationResult.RestoredAttachment(11L, AttachmentIssue.BLURRY, 21L)),
+                2, 0, "trip-key",
+                List.of(new TripPhotoRestorationResult.PlaceChange(21L, 2, "place-key")),
+                List.of(new TripPhotoRestorationResult.UnclassifiedFolderChange(
+                        AttachmentIssue.BLURRY, 0, null, null
+                ))
+        );
+        transactions.executeWithoutResult(status -> outbox.enqueuePhotosRestored(42L, 3, "request-1", result));
+        TripEditNotificationOutbox record = onlyRecord();
+        assertThat(record.getEventJson()).contains("TRIP_PHOTOS_RESTORED", "trip-key", "place-key", "BLURRY")
+                .doesNotContain("thumbnailUrl");
+        when(storage.createReadUrl("trip-key")).thenReturn("https://storage.test/trip");
+        when(storage.createReadUrl("place-key")).thenReturn("https://storage.test/place");
+
+        submitted.getFirst().run();
+
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        verify(redis).convertAndSend(eq(CHANNEL), sent.capture());
+        assertThat(json.readTree(sent.getValue()).path("payload").path("data")
+                .path("thumbnailUrl").asString()).isEqualTo("https://storage.test/trip");
+        assertThat(json.readTree(sent.getValue()).path("payload").path("data")
+                .path("places").get(0).path("thumbnailUrl").asString())
+                .isEqualTo("https://storage.test/place");
+        assertThat(json.readTree(sent.getValue()).path("payload").path("data")
+                .path("unclassifiedFolders").get(0).path("thumbnailUrl").isNull()).isTrue();
+        assertThat(onlyRecord().getEventJson()).isEqualTo(record.getEventJson());
     }
 
     private void enqueue(WebSocketEvent event) {

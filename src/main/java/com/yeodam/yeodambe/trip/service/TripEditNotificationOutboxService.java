@@ -11,6 +11,7 @@ import com.yeodam.yeodambe.trip.entity.TripEditNotificationOutbox;
 import com.yeodam.yeodambe.trip.repository.TripEditNotificationOutboxRepository;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
+import com.yeodam.yeodambe.trip.service.response.TripPhotoRestorationResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
@@ -95,6 +96,37 @@ public class TripEditNotificationOutboxService {
                 occurredAt,
                 new WebSocketEventTarget(WebSocketEventTargetType.TRIP, tripId),
                 new ApiResponse<>(SuccessMessage.TRIP_UPDATED, data)
+        ));
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void enqueuePhotosRestored(
+            Long tripId,
+            long sequence,
+            String requestId,
+            TripPhotoRestorationResult result
+    ) {
+        UUID eventId = UUID.randomUUID();
+        Instant occurredAt = clock.instant();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("eventId", eventId);
+        data.put("requestId", requestId);
+        data.put("tripId", tripId);
+        data.put("sequence", sequence);
+        data.put("occurredAt", occurredAt);
+        data.put("restoredAttachments", result.restoredAttachments());
+        data.put("attachmentCount", result.attachmentCount());
+        data.put("unclassifiedAttachmentCount", result.unclassifiedAttachmentCount());
+        data.put("thumbnailKey", result.thumbnailKey());
+        data.put("places", result.places());
+        data.put("unclassifiedFolders", result.unclassifiedFolders());
+        enqueue(new WebSocketEvent(
+                eventId,
+                WebSocketEventType.TRIP_EVENT,
+                1,
+                occurredAt,
+                new WebSocketEventTarget(WebSocketEventTargetType.TRIP, tripId),
+                new ApiResponse<>(SuccessMessage.TRIP_PHOTOS_RESTORED, data)
         ));
     }
 

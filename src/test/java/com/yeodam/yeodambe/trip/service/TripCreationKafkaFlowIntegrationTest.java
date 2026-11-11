@@ -1,5 +1,14 @@
 package com.yeodam.yeodambe.trip.service;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.TraceFlags;
+import io.opentelemetry.api.trace.TraceState;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import java.util.concurrent.atomic.AtomicReference;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import java.time.Instant;
 import java.util.Comparator;
@@ -171,6 +180,50 @@ class TripCreationKafkaFlowIntegrationTest {
     private void assertResultLockHeld() {
         assertThat(redis.getLock(lockProperties.namespace() + ":lock:trip:mutation:" + trip.getId())
                 .isHeldByCurrentThread()).isTrue();
+    }
+
+    @Test
+    @EnabledIfSystemProperty(named = "workflow.trace.agent.enabled", matches = "true")
+    void Agent_Context를_실제_Kafka와_DB를_거쳐_최종_결과_Worker까지_연결한다() throws Exception {
+        String traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        SpanContext parent = SpanContext.create(traceId, "00f067aa0ba902b7",
+                TraceFlags.getSampled(), TraceState.getDefault());
+        try (Scope scope = Span.wrap(parent).makeCurrent()) {
+            for (int batchNo = 1; batchNo <= 3; batchNo++) {
+                boolean last = batchNo == 3;
+                InitialAttachmentUploadBatchSnapshot batch = prepare(batchNo, last ? 3 : 10, last);
+                accept(batch);
+                finishConversion(transactions.claimBatch().orElseThrow());
+            }
+            publishOutboxFixture();
+        }
+        String raw = resultPayload(json.readTree(execution().getProcessPayload()));
+        AtomicReference<SpanContext> received = new AtomicReference<>();
+        AtomicReference<SpanContext> applied = new AtomicReference<>();
+        doAnswer(call -> {
+            received.set(Span.current().getSpanContext());
+            return call.callRealMethod();
+        }).when(results).receiveKafkaResult(any(), any());
+        doAnswer(call -> {
+            applied.set(Span.current().getSpanContext());
+            return observeResultMutation(call);
+        }).when(results).saveKafkaCompleted(any(), any(), any());
+        ProducerRecord<String, String> record = new ProducerRecord<>(RESULT_TOPIC, trip.getId().toString(), raw);
+        record.headers().add("traceparent", ("00-" + traceId + "-00f067aa0ba902b7-01")
+                .getBytes(StandardCharsets.UTF_8));
+        kafka.send(record).get(10, TimeUnit.SECONDS);
+        for (int attempt = 0; attempt < 100 && execution().getResultRawPayload() == null; attempt++) {
+            Thread.sleep(100);
+        }
+        assertThat(received.get()).isNotNull();
+        assertThat(execution().getResultTraceparent()).contains(received.get().getSpanId());
+        try (Scope scope = Context.root().makeCurrent()) {
+            worker.applyPendingResults();
+        }
+        assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.COMPLETED);
+        assertThat(received.get().getTraceId()).isEqualTo(traceId);
+        assertThat(applied.get().getTraceId()).isEqualTo(traceId);
+        assertThat(applied.get().getSpanId()).isNotEqualTo(received.get().getSpanId());
     }
 
     @Test

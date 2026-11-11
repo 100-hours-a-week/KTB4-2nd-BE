@@ -66,7 +66,7 @@ class TripResultClaimFoundationIntegrationTest {
     void 최초_결과는_지정한_실행만_선점하고_리스와_재시도_대기와_이전_토큰을_검증한다() {
         TripCreationExecution execution = new TripCreationExecution(UUID.randomUUID().toString(), tripId, ownerId, 1);
         execution.enqueueProcess("{}");
-        execution.receiveResult(RAW, "COMPLETED", LocalDateTime.now());
+        execution.receiveResult(RAW, "COMPLETED", LocalDateTime.now(), null);
         initials.saveAndFlush(execution);
         String executionId = execution.getExecutionId();
         assertThat(initialResults.findResultClaimCandidates())

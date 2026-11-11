@@ -139,7 +139,7 @@ public class AdditionalAttachmentKafkaResultService {
         }
         execution.claimResult(UUID.randomUUID().toString(), now.plusMinutes(5));
         return Optional.of(new TripAnalysisResultClaim(executionId, execution.getTripId(), execution.getUserId(),
-                execution.getResultClaimToken(), execution.getResultRawPayload(), execution.getResultAttempts() + 1));
+                execution.getResultClaimToken(), execution.getResultRawPayload(), execution.getResultAttempts() + 1, null));
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

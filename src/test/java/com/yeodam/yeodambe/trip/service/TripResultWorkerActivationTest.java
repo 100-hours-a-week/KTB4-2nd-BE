@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.integration.service.TripPhotoAnalysisService;
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
 import com.yeodam.yeodambe.trip.repository.TripCreationExecutionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.trip.repository.AdditionalAttachmentExecutionRepository;
@@ -20,6 +21,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 class TripResultWorkerActivationTest {
     private final ApplicationContextRunner context = new ApplicationContextRunner()
+            .withBean(WorkflowTraceService.class, WorkflowTraceService::new)
             .withUserConfiguration(SchedulingConfiguration.class, TripAnalysisResultWorker.class,
                     AdditionalAttachmentResultWorker.class, TripUploadTimeoutService.class, TripAnalysisSchedulingWorker.class)
             .withBean(AdditionalAttachmentExecutionRepository.class, () -> mock(AdditionalAttachmentExecutionRepository.class))

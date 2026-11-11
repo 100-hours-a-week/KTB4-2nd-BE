@@ -1,6 +1,9 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Scope;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
@@ -27,6 +30,7 @@ public class TripAnalysisResultWorker {
     private final TripAnalysisResultService results;
     private final TripPlaceNameService placeNames;
     private final TripMutationCoordinator mutations;
+    private final WorkflowTraceService traces;
 
     @Scheduled(initialDelayString = "${app.trip.worker-initial-delay-ms:0}", fixedDelayString = "${app.trip.result-delay-ms:5000}")
     public void applyPendingResults() {
@@ -35,8 +39,18 @@ public class TripAnalysisResultWorker {
             return;
         }
         TripAnalysisResultClaim claim = pending.get();
+        Span span = traces.startResultApplication(claim.traceContext());
+        try (Scope traceScope = traces.makeCurrent(span);
+             WorkflowMdcScope scope = WorkflowMdcScope.job("trip_creation", claim.tripId(), claim.executionId())) {
+            applyClaim(claim);
+        } finally {
+            traces.end(span);
+        }
+    }
+
+    private void applyClaim(TripAnalysisResultClaim claim) {
         boolean validated = false;
-        try (WorkflowMdcScope scope = WorkflowMdcScope.job("trip_creation", claim.tripId(), claim.executionId())) {
+        try {
             if (!mutations.execute(claim.tripId(), () -> results.startResultAttempt(claim))) {
                 return;
             }

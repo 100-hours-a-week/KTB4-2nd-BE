@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
 import com.yeodam.yeodambe.story.service.StoryPhotoChangeService;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
@@ -42,7 +43,8 @@ class TripAnalysisResultServiceTest {
                 mock(InitialAttachmentUploadTransactionService.class),
                 new ObjectMapper(),
                 mock(EntityManager.class), mapCache, mock(ApplicationEventPublisher.class),
-                mock(TripCompletionSnapshotFactory.class), storyPhotoChangeService);
+                mock(TripCompletionSnapshotFactory.class), storyPhotoChangeService,
+                new WorkflowTraceService());
     private final ObjectMapper json = new ObjectMapper();
 
     @Test

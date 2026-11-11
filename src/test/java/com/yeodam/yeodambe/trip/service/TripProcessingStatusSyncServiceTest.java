@@ -85,7 +85,7 @@ class TripProcessingStatusSyncServiceTest {
     @Test
     void 이전에_읽은_엔티티_대신_새로_읽은_상태와_비교한다() {
         doAnswer(invocation -> {
-            execution.receiveResult("{}", "COMPLETED", LocalDateTime.of(2026, 10, 29, 12, 0));
+            execution.receiveResult("{}", "COMPLETED", LocalDateTime.of(2026, 10, 29, 12, 0), null);
             return null;
         }).when(entityManager).refresh(execution, LockModeType.PESSIMISTIC_WRITE);
 

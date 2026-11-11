@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
 import com.yeodam.yeodambe.trip.entity.AdditionalAttachmentExecution;
 import com.yeodam.yeodambe.trip.entity.TripAnalysisExecution;
 import com.yeodam.yeodambe.trip.entity.TripCreationExecution;
@@ -45,9 +46,10 @@ class TripResultWorkerContentionTest {
     private final TripPlaceNameService names = mock(TripPlaceNameService.class);
     private final TripMutationCoordinator mutations = TripMutationTestFixture.direct();
     private final TripEditLock editLock = mock(TripEditLock.class);
-    private final TripAnalysisResultClaim claim = new TripAnalysisResultClaim("second", 12L, 1L, "token", "{}", 1);
+    private final TripAnalysisResultClaim claim = new TripAnalysisResultClaim("second", 12L, 1L, "token", "{}", 1, null);
     private final JsonNode result = new ObjectMapper().readTree("{}");
-    private final TripAnalysisResultWorker worker = new TripAnalysisResultWorker(initial, names, mutations);
+    private final TripAnalysisResultWorker worker = new TripAnalysisResultWorker(initial, names, mutations,
+            new WorkflowTraceService());
     private final TripAnalysisResultApplicationService application = new TripAnalysisResultApplicationService(
             legacy, transactions, mock(TripAnalysisExecutionRepository.class), editLock,
             mutations, mock(AdditionalAttachmentExecutionRepository.class)

@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -86,6 +87,12 @@ public class TripCreationExecution {
 
     @Column(name = "process_next_attempt_at")
     private LocalDateTime processNextAttemptAt;
+
+    @Column(name = "result_traceparent", length = 55)
+    private String resultTraceparent;
+
+    @Column(name = "result_tracestate", length = 512)
+    private String resultTracestate;
 
     @Column(name = "result_raw_payload", columnDefinition = "LONGTEXT")
     private String resultRawPayload;
@@ -178,11 +185,14 @@ public class TripCreationExecution {
     public void receiveResult(
             String rawPayload,
             String aiStatus,
-            LocalDateTime now
+            LocalDateTime now,
+            WorkflowTraceCarrier traceContext
     ) {
         if (isTerminal() || resultRawPayload != null) {
             return;
         }
+        resultTraceparent = traceContext == null ? null : traceContext.traceparent();
+        resultTracestate = traceContext == null ? null : traceContext.tracestate();
         resultRawPayload = rawPayload;
         resultAiStatus = aiStatus;
         resultReceivedAt = now;

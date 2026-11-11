@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.integration.service;
 
+import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import com.yeodam.yeodambe.story.service.StoryGenerationPublicationStateService;
 import com.yeodam.yeodambe.trip.service.InitialAttachmentUploadTransactionService;
@@ -29,7 +30,8 @@ class OutboxReceiptServiceTest {
     @Test
     void 발행_확인_정보를_바꾸지_않고_원본_도메인에_전달한다() {
         TripCreationOutbox outbox = new TripCreationOutbox(
-                "trip-event", "execution", "process", 0, 7L, "requests", "{}"
+                "trip-event", "execution", "process", 0, 7L, "requests", "{}",
+                new WorkflowTraceCarrier(null, null)
         );
         when(outboxes.findById("trip-event")).thenReturn(Optional.of(outbox));
         service.observe("trip_creation_outbox", "trip-event", receipt);

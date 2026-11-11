@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.entity;
 
+import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
@@ -43,6 +44,12 @@ public class TripCreationOutbox {
     @Column(name = "request_id", nullable = false, updatable = false)
     private String requestId;
 
+    @Column(name = "traceparent", length = 55, updatable = false)
+    private String traceparent;
+
+    @Column(name = "tracestate", length = 512, updatable = false)
+    private String tracestate;
+
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)
     private Status status = Status.PENDING;
@@ -61,7 +68,8 @@ public class TripCreationOutbox {
             int batchNo,
             Long tripId,
             String topic,
-            String payload
+            String payload,
+            WorkflowTraceCarrier traceContext
     ) {
         this.id = id;
         this.executionId = executionId;
@@ -71,6 +79,8 @@ public class TripCreationOutbox {
         this.topic = topic;
         this.payload = payload;
         this.requestId = executionId;
+        this.traceparent = traceContext.traceparent();
+        this.tracestate = traceContext.tracestate();
     }
 
     public void recordPublished(LocalDateTime now) {

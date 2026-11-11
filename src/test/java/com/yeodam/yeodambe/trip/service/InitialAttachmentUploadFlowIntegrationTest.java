@@ -1,5 +1,10 @@
 package com.yeodam.yeodambe.trip.service;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.TraceFlags;
+import io.opentelemetry.api.trace.TraceState;
+import io.opentelemetry.context.Scope;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import java.time.Instant;
 
@@ -157,6 +162,34 @@ class InitialAttachmentUploadFlowIntegrationTest {
         var process = processOutbox(batch.executionId());
         confirm(process);
         return resultPayload(json.readTree(process.getPayload()), false);
+    }
+
+    @Test
+    void process_Outbox와_최초_결과_Context를_저장하고_재전달로_덮어쓰지_않는다() {
+        SpanContext parent = SpanContext.create("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7",
+                TraceFlags.getSampled(), TraceState.builder().put("yeodam", "synthetic").build());
+        TripCreationOutbox process;
+        try (Scope scope = Span.wrap(parent).makeCurrent()) {
+            process = publishSingleBatch();
+        }
+        assertThat(process.getTraceparent()).isEqualTo("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+        assertThat(process.getTracestate()).isEqualTo("yeodam=synthetic");
+        String raw = resultPayload(json.readTree(process.getPayload()), false);
+        TripCreateResultEvent event = json.readValue(raw, TripCreateResultEvent.class);
+        try (Scope scope = Span.wrap(parent).makeCurrent()) {
+            results.receiveKafkaResult(event, raw);
+        }
+        results.receiveKafkaResult(event, raw);
+        TripCreationExecution saved = executions.findById(process.getExecutionId()).orElseThrow();
+        assertThat(saved.getResultTraceparent()).isEqualTo(process.getTraceparent());
+        assertThat(saved.getResultTracestate()).isEqualTo(process.getTracestate());
+        TripAnalysisResultClaim claim = results.claimResult(process.getExecutionId()).orElseThrow();
+        assertThat(claim.traceContext().traceparent()).isEqualTo(saved.getResultTraceparent());
+        jdbc.update("UPDATE trip_creation_executions SET result_lease_until = CURRENT_TIMESTAMP(6) - INTERVAL 1 SECOND "
+                + "WHERE execution_id = ?", process.getExecutionId());
+        worker.applyPendingResults();
+        assertThat(executions.findById(process.getExecutionId()).orElseThrow().getStatus())
+                .isEqualTo(TripCreationExecution.Status.COMPLETED);
     }
 
     @Test

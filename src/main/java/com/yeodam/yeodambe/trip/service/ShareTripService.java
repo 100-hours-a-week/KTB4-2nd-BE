@@ -47,10 +47,11 @@ public class ShareTripService {
     public TripShareListResponse findShares(Long tripId, Long requesterId, String cursor) {
         Trip trip = tripAccessService.requireOwnedTrip(tripId, requesterId);
         TripShareCursor decoded = TripShareCursor.decode(cursor, tripId, objectMapper);
+        Long lastTripShareId = decoded == null ? 0L : decoded.lastTripShareId();
         LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), SHARE_ZONE);
         List<TripShareUser> fetched = shareRepository.findActiveSharesWithGrantee(
                 trip.getId(), trip.getUserId(), now,
-                decoded == null ? null : decoded.lastTripShareId(), PageRequest.of(0, PAGE_SIZE + 1));
+                lastTripShareId, PageRequest.of(0, PAGE_SIZE + 1));
         boolean hasNext = fetched.size() > PAGE_SIZE;
         List<TripShareUser> page = hasNext ? fetched.subList(0, PAGE_SIZE) : fetched;
         List<TripShareListResponse.Item> items = page.stream().map(this::toShareItem).toList();

@@ -9,6 +9,8 @@ import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -126,6 +128,34 @@ class TripUpdateServiceTest {
                 .isInstanceOf(InvalidTripRequestException.class);
         assertThat(trip.getStartDate()).isEqualTo(start);
         assertThat(trip.getEndDate()).isEqualTo(end);
+    }
+
+    @Test
+    void 최소_날짜인_1000년_1월_1일로_여행을_수정한다() {
+        LocalDate minimumDate = LocalDate.of(1000, 1, 1);
+
+        var response = service.updateTrip(7L, 1L,
+                new TripUpdateRequest(null, minimumDate, minimumDate, null));
+
+        assertThat(response.startDate()).isEqualTo(minimumDate);
+        assertThat(response.endDate()).isEqualTo(minimumDate);
+        assertThat(trip.getStartDate()).isEqualTo(minimumDate);
+        assertThat(trip.getEndDate()).isEqualTo(minimumDate);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0001-01-01", "0999-12-31", "9999-12-31"})
+    void 지원_범위_밖의_날짜는_거절하고_여행_정보를_보존한다(String date) {
+        LocalDate invalidDate = LocalDate.parse(date);
+
+        assertThatThrownBy(() -> service.updateTrip(7L, 1L,
+                new TripUpdateRequest(null, invalidDate, invalidDate, null)))
+                .isInstanceOf(InvalidTripRequestException.class);
+
+        assertThat(trip.getStartDate()).isEqualTo(start);
+        assertThat(trip.getEndDate()).isEqualTo(end);
+        verify(trips, never()).advanceSequence(anyLong());
+        verifyNoInteractions(mapCache);
     }
 
     @Test

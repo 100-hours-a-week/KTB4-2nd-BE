@@ -863,9 +863,12 @@ public class TripService {
             LocalDate endDate,
             List<String> regionCodes
     ) {
+        LocalDate minimumDate = LocalDate.of(1000, 1, 1);
         LocalDate today = LocalDate.now(clock.withZone(TRIP_ZONE));
 
-        if (endDate.isBefore(startDate)
+        if (startDate.isBefore(minimumDate)
+                || endDate.isBefore(minimumDate)
+                || endDate.isBefore(startDate)
                 || startDate.isAfter(today)
                 || endDate.isAfter(today)
                 || ChronoUnit.DAYS.between(startDate, endDate) + 1 > 92

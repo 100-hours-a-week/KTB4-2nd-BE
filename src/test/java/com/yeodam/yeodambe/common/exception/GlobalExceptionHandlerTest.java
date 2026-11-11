@@ -35,7 +35,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.slf4j.LoggerFactory;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 
@@ -60,6 +62,16 @@ class GlobalExceptionHandlerTest {
     void tearDown() {
         handlerLogger.detachAppender(logAppender);
         logAppender.stop();
+    }
+
+    @Test
+    void 미지원_메서드는_405와_허용_메서드를_반환한다() throws Exception {
+        mockMvc.perform(post("/test/duplicate-email"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(header().string("Allow", org.hamcrest.Matchers.containsString("GET")))
+                .andExpect(content().json("""
+                        {"message":"METHOD_NOT_ALLOWED","data":null}
+                        """));
     }
 
     @Test

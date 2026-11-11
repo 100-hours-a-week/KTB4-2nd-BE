@@ -36,6 +36,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.validation.Errors;
 import org.springframework.validation.method.ParameterErrors;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -222,6 +223,15 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
     ApiResponse<Void> handleAttachmentConversionUnavailable(AttachmentConversionUnavailableException exception) {
         return new ApiResponse<>(ErrorMessage.ATTACHMENT_CONVERSION_UNAVAILABLE, null);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException exception
+    ) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .headers(exception.getHeaders())
+                .body(new ApiResponse<>(ErrorMessage.METHOD_NOT_ALLOWED, null));
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)

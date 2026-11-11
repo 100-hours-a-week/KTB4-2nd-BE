@@ -7,6 +7,7 @@ public record FavoriteTripListItemResponse(
         String tripName,
         LocalDate startDate,
         LocalDate endDate,
+        String placeSummary,
         long attachmentCount,
         String thumbnailUrl,
         boolean isFavorite

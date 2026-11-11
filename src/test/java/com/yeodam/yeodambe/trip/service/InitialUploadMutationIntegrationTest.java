@@ -100,7 +100,7 @@ class InitialUploadMutationIntegrationTest {
         doAnswer(call -> {
             assertOutsideMutation();
             return "https://upload.test/photo";
-        }).when(storage).createUploadUrl(anyString(), anyString(), any());
+        }).when(storage).createUploadUrl(anyString(), anyString(), anyLong(), any());
 
         assertThat(urls.issueUploadUrls(tripId, ownerId, request()).attachments()).hasSize(1);
 

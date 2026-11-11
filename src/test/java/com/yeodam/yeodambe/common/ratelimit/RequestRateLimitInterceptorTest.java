@@ -2,6 +2,10 @@ package com.yeodam.yeodambe.common.ratelimit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
+import org.springframework.core.convert.support.DefaultConversionService;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -15,6 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -72,13 +78,47 @@ class RequestRateLimitInterceptorTest {
                         exception -> assertThat(exception.retryAfterSeconds()).isEqualTo(3L));
     }
 
+    @Test
+    void 일괄_다운로드와_말투_미리보기는_각각_별도_요청_그룹으로_제한한다() {
+        RequestRateLimitInterceptor interceptor = interceptor(true);
+        authenticateAs("42");
+        ArgumentCaptor<RequestRateLimitGroup> groups =
+                ArgumentCaptor.forClass(RequestRateLimitGroup.class);
+
+        interceptor.preHandle(request("POST", "/attachments/bulk-download"),
+                new MockHttpServletResponse(), new Object());
+        interceptor.preHandle(request("POST", "/stories/9/tone-preview"),
+                new MockHttpServletResponse(), new Object());
+
+        verify(rateLimiter, times(2)).tryAcquire(groups.capture(), eq(42L));
+        assertThat(groups.getAllValues()).extracting(RequestRateLimitGroup::key)
+                .containsExactly("attachment-bulk-download", "story-tone-preview");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"9", "09", "+9"})
+    void 같은_스토리_ID의_다른_표기로_미리보기_요청_제한을_우회할_수_없다(String storyId) {
+        RequestRateLimitInterceptor interceptor = interceptor(true);
+        authenticateAs("42");
+        when(rateLimiter.tryAcquire(RequestRateLimitGroup.STORY_TONE_PREVIEW, 42L)).thenReturn(1L);
+
+        assertThat(DefaultConversionService.getSharedInstance()
+                .convert(storyId, Long.class)).isEqualTo(9L);
+        assertThatThrownBy(() -> interceptor.preHandle(
+                request("POST", "/stories/" + storyId + "/tone-preview"),
+                new MockHttpServletResponse(), new Object()))
+                .isInstanceOf(RequestRateLimitExceededException.class);
+    }
+
     private RequestRateLimitInterceptor interceptor(boolean enabled) {
         RequestRateLimitProperties properties = new RequestRateLimitProperties(
                 enabled,
                 "yeodam:test",
                 Duration.ofSeconds(60),
                 new RequestRateLimitProperties.Bucket(5, 30),
-                new RequestRateLimitProperties.Bucket(1, 5)
+                new RequestRateLimitProperties.Bucket(1, 5),
+                null,
+                null
         );
         return new RequestRateLimitInterceptor(properties, rateLimiter);
     }

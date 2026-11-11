@@ -16,7 +16,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -58,8 +58,12 @@ class BulkAttachmentDownloadServiceTest {
     private TripAttachmentStorageClient tripAttachmentStorageClient;
     @Mock
     private TripEditAuthorizationService access;
-    @InjectMocks
     private BulkAttachmentDownloadService service;
+
+    @BeforeEach
+    void setUpService() {
+        service = new BulkAttachmentDownloadService(tripAttachmentRepository, tripAttachmentStorageClient, access, 1);
+    }
     private final Logger logger =
             (Logger) LoggerFactory.getLogger(BulkAttachmentDownloadService.class);
     private ListAppender<ILoggingEvent> logAppender;

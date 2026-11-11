@@ -100,7 +100,7 @@ class AdditionalAttachmentCdcIntegrationTest {
         old.originalMetadata(OffsetDateTime.parse("2026-10-01T10:00:00+09:00"), BigDecimal.ONE, BigDecimal.TEN, "camera");
         old.classify(oldPlaceId, RegionOrigin.EXIF, LocalDateTime.now(), BigDecimal.ONE, BigDecimal.TEN, 80);
         oldPhotoId = attachments.save(old).getId();
-        when(storage.createUploadUrl(anyString(), anyString(), any())).thenAnswer(c -> "https://example.test/" + c.getArgument(0));
+        when(storage.createUploadUrl(anyString(), anyString(), anyLong(), any())).thenAnswer(c -> "https://example.test/" + c.getArgument(0));
         when(storage.size(anyString())).thenReturn(12L);
         when(storage.open(anyString())).thenAnswer(c -> new ByteArrayInputStream(new byte[]{(byte)255, (byte)216, (byte)255}));
         when(derivatives.createAll(anyString(), anyList(), anyList())).thenAnswer(call -> {

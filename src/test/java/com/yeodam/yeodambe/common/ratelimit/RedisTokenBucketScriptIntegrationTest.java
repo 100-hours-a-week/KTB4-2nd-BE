@@ -49,7 +49,9 @@ class RedisTokenBucketScriptIntegrationTest {
                         "yeodam:test",
                         Duration.ofSeconds(60),
                         new RequestRateLimitProperties.Bucket(5, 30),
-                        new RequestRateLimitProperties.Bucket(1, 2)
+                        new RequestRateLimitProperties.Bucket(1, 2),
+                        null,
+                        null
                 )
         );
     }
@@ -114,6 +116,21 @@ class RedisTokenBucketScriptIntegrationTest {
 
         assertThat(rateLimiter.tryAcquire(RequestRateLimitGroup.TRIP_CREATE, 43L)).isZero();
         assertThat(rateLimiter.tryAcquire(RequestRateLimitGroup.TRIP_READ, 42L)).isZero();
+    }
+
+    @Test
+    void 두_서버의_고비용_요청은_사용자별_동일한_버킷을_공유한다() {
+        RequestRateLimitProperties properties = new RequestRateLimitProperties(
+                true, "yeodam:test", Duration.ofSeconds(60), null, null, null, null);
+        RedisTokenBucketRateLimiter first = new RedisTokenBucketRateLimiter(redis, properties);
+        RedisTokenBucketRateLimiter second = new RedisTokenBucketRateLimiter(redis, properties);
+
+        for (RequestRateLimitGroup group : List.of(
+                RequestRateLimitGroup.ATTACHMENT_BULK_DOWNLOAD, RequestRateLimitGroup.STORY_TONE_PREVIEW)) {
+            assertThat(first.tryAcquire(group, 42L)).isZero();
+            assertThat(second.tryAcquire(group, 42L)).isEqualTo(1L);
+            assertThat(second.tryAcquire(group, 43L)).isZero();
+        }
     }
 
     private static Long consume(String key, int capacity, int refillPerSecond) {

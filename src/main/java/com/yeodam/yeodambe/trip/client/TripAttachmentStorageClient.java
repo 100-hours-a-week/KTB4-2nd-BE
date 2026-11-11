@@ -33,6 +33,7 @@ public interface TripAttachmentStorageClient {
     String createUploadUrl(
             String objectKey,
             String contentType,
+            long sizeBytes,
             Duration ttl
     );
 }

@@ -56,6 +56,7 @@ public class AdditionalAttachmentUploadUrlService {
             String uploadUrl = tripAttachmentStorageClient.createUploadUrl(
                     item.getObjectKey(),
                     item.getContentType(),
+                    item.getSizeBytes(),
                     UPLOAD_URL_TTL
             );
 

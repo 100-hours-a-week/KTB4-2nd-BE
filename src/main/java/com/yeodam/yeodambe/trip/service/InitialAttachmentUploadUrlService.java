@@ -40,7 +40,7 @@ public class InitialAttachmentUploadUrlService {
         List<InitialAttachmentUploadUrlResponse.Attachment> responseItems = batch.photos().stream()
                 .map(item -> new InitialAttachmentUploadUrlResponse.Attachment(
                         item.fileName(),
-                        storage.createUploadUrl(item.objectKey(), item.contentType(), UPLOAD_URL_TTL),
+                        storage.createUploadUrl(item.objectKey(), item.contentType(), item.sizeBytes(), UPLOAD_URL_TTL),
                         "PUT",
                         Map.of("Content-Type", item.contentType(), "If-None-Match", "*"),
                         expiresAt

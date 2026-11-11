@@ -89,6 +89,12 @@ app:
     trip-create:
       refill-per-second: 1
       capacity: 5
+    attachment-bulk-download:
+      refill-per-second: 1
+      capacity: 1
+    story-tone-preview:
+      refill-per-second: 1
+      capacity: 1
   photo-list-cache:
     enabled: ${PHOTO_LIST_CACHE_ENABLED:false}
     namespace: ${PHOTO_LIST_CACHE_NAMESPACE:photo-list}
@@ -163,12 +169,18 @@ app:
 aws:
   region: ${AWS_REGION:ap-northeast-2}
 
+story:
+  tone-preview:
+    max-concurrent: ${STORY_TONE_PREVIEW_MAX_CONCURRENT:2}
+
 attachment:
   derivative:
     heic-workers: ${ATTACHMENT_DERIVATIVE_HEIC_WORKERS:1}
     light-workers: ${ATTACHMENT_DERIVATIVE_LIGHT_WORKERS:1}
     heic-max-inflight-photos: ${ATTACHMENT_DERIVATIVE_HEIC_MAX_INFLIGHT_PHOTOS:50}
     light-max-inflight-photos: ${ATTACHMENT_DERIVATIVE_LIGHT_MAX_INFLIGHT_PHOTOS:100}
+  bulk-download:
+    max-concurrent: ${ATTACHMENT_BULK_DOWNLOAD_MAX_CONCURRENT:1}
   s3:
     bucket: ${ATTACHMENT_S3_BUCKET}
     read-url-ttl: ${ATTACHMENT_S3_READ_URL_TTL:10m}
@@ -210,6 +222,10 @@ spring:
       ddl-auto: create-drop
   flyway:
     enabled: false
+
+attachment:
+  s3:
+    local-mock-asset-base-url: http://localhost:${server.port:8080}/api/mock-assets
 
 management:
   endpoints:

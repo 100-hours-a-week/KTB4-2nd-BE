@@ -11,20 +11,28 @@ public record RequestRateLimitProperties(
         @DefaultValue("yeodam:v3:local") String keyPrefix,
         @DefaultValue("60s") Duration idleTtl,
         @DefaultValue Bucket tripRead,
-        @DefaultValue Bucket tripCreate
+        @DefaultValue Bucket tripCreate,
+        @DefaultValue Bucket attachmentBulkDownload,
+        @DefaultValue Bucket storyTonePreview
 ) {
     public RequestRateLimitProperties {
         if (keyPrefix == null || !keyPrefix.matches("[A-Za-z0-9:_-]{1,100}")) {
-            throw new IllegalArgumentException("요청 제한 Redis 키 접두사가 올바르지 않습니다.");
+            throw new IllegalArgumentException(RequestRateLimitErrorMessage.KEY_PREFIX_INVALID.message());
         }
         if (idleTtl == null || idleTtl.isNegative() || idleTtl.isZero()) {
-            throw new IllegalArgumentException("요청 제한 Redis 만료 시간은 0보다 커야 합니다.");
+            throw new IllegalArgumentException(RequestRateLimitErrorMessage.TTL_INVALID.message());
         }
         if (tripRead == null) {
             tripRead = new Bucket(5, 30);
         }
         if (tripCreate == null) {
             tripCreate = new Bucket(1, 5);
+        }
+        if (attachmentBulkDownload == null) {
+            attachmentBulkDownload = new Bucket(1, 1);
+        }
+        if (storyTonePreview == null) {
+            storyTonePreview = new Bucket(1, 1);
         }
     }
 
@@ -34,7 +42,7 @@ public record RequestRateLimitProperties(
     ) {
         public Bucket {
             if (refillPerSecond < 1 || capacity < 1) {
-                throw new IllegalArgumentException("요청 제한 충전 속도와 용량은 0보다 커야 합니다.");
+                throw new IllegalArgumentException(RequestRateLimitErrorMessage.BUCKET_INVALID.message());
             }
         }
     }

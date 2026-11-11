@@ -1,18 +1,20 @@
 package com.yeodam.yeodambe.trip.service;
 
-import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
-import com.yeodam.yeodambe.common.logging.WorkflowLog;
-
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
-import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
+import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.common.ratelimit.RequestRateLimitErrorMessage;
+import com.yeodam.yeodambe.common.ratelimit.RequestRateLimitExceededException;
+import com.yeodam.yeodambe.common.ratelimit.RequestRateLimitGroup;
+import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
 import com.yeodam.yeodambe.trip.service.response.BulkAttachmentDownloadResponse;
-import com.yeodam.yeodambe.common.response.ErrorMessage;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -22,11 +24,11 @@ import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class BulkAttachmentDownloadService {
 
@@ -36,6 +38,23 @@ public class BulkAttachmentDownloadService {
     private final TripAttachmentRepository tripAttachmentRepository;
     private final TripAttachmentStorageClient tripAttachmentStorageClient;
     private final TripEditAuthorizationService authorizationService;
+
+    private final Semaphore executionSlots;
+
+    public BulkAttachmentDownloadService(
+            TripAttachmentRepository tripAttachmentRepository,
+            TripAttachmentStorageClient tripAttachmentStorageClient,
+            TripEditAuthorizationService authorizationService,
+            @Value("${attachment.bulk-download.max-concurrent:1}") int maxConcurrent
+    ) {
+        if (maxConcurrent < 1) {
+            throw new IllegalArgumentException(RequestRateLimitErrorMessage.CONCURRENCY_LIMIT_INVALID.message());
+        }
+        this.tripAttachmentRepository = tripAttachmentRepository;
+        this.tripAttachmentStorageClient = tripAttachmentStorageClient;
+        this.authorizationService = authorizationService;
+        this.executionSlots = new Semaphore(maxConcurrent);
+    }
 
     public BulkAttachmentDownloadResponse issueDownloadUrl(
             Long userId,
@@ -64,6 +83,17 @@ public class BulkAttachmentDownloadService {
             throw new InvalidAttachmentIdsException();
         }
 
+        if (!executionSlots.tryAcquire()) {
+            throw new RequestRateLimitExceededException(RequestRateLimitGroup.ATTACHMENT_BULK_DOWNLOAD, 1L);
+        }
+        try {
+            return createDownload(attachments);
+        } finally {
+            executionSlots.release();
+        }
+    }
+
+    private BulkAttachmentDownloadResponse createDownload(List<TripAttachment> attachments) {
         int expectedCount = attachments.size();
         long startedAt = System.nanoTime();
         String failureStage = "zip_create";

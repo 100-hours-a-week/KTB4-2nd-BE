@@ -29,6 +29,7 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -37,6 +38,11 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
 
@@ -107,6 +113,7 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
         String body = "{\"requestId\":\"ws-edit-1\",\"changes\":{\"tripName\":\"Jeju\"}}";
         try (Connection writer = connect(42L, "editor", "/user/queue/command-results");
              Connection reader = connect(99L, "reader", "/topic/trips/14/events")) {
+            subscribe(writer, 42L, "/topic/trips/14/events", users);
             writer.send("SEND\ndestination:/app/trips/14/update\ncontent-type:application/json\n\n" + body);
             await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
                     org.mockito.Mockito.verify(tripClient).execute(org.mockito.ArgumentMatchers.eq(14L),
@@ -118,10 +125,23 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
             String tripEvent = "{\"message\":\"TRIP_UPDATED\",\"data\":{\"requestId\":\"ws-edit-1\",\"tripId\":14,\"sequence\":8,\"changes\":{\"tripName\":\"Jeju\"}}}";
             redis.convertAndSend(CHANNEL, envelope("COMMAND_RESULT", "USER", 42, result));
             redis.convertAndSend(CHANNEL, envelope("TRIP_EVENT", "TRIP", 14, tripEvent));
-            assertThat(writer.next()).contains("TRIP_UPDATE_SUCCESS", "ws-edit-1");
+            assertThat(List.of(writer.next(), writer.next())).satisfiesExactlyInAnyOrder(
+                    frame -> assertThat(frame).contains("TRIP_UPDATE_SUCCESS", "ws-edit-1"),
+                    frame -> assertThat(frame).contains("TRIP_UPDATED", "Jeju"));
             assertThat(reader.next()).contains("TRIP_UPDATED", "Jeju");
             assertThat(writer.messages.poll(200, TimeUnit.MILLISECONDS)).isNull();
             assertThat(reader.messages.poll(200, TimeUnit.MILLISECONDS)).isNull();
+        }
+    }
+
+    @Test
+    void 개인_결과만_구독한_연결의_편집은_BE에_전달하지_않는다() throws Exception {
+        try (Connection writer = connect(42L, "no-trip-subscription", "/user/queue/command-results")) {
+            writer.send("SEND\ndestination:/app/trips/14/update\ncontent-type:application/json\n\n"
+                    + "{\"requestId\":\"unsubscribed-edit\",\"changes\":{\"tripName\":\"Jeju\"}}");
+
+            assertThat(writer.next()).startsWith("ERROR");
+            verify(tripClient, never()).execute(anyLong(), anyString(), any(), any(), anyString());
         }
     }
 
@@ -236,15 +256,20 @@ class WebSocketRedisDeliveryTest extends RedisTestSupport {
                 .get(5, TimeUnit.SECONDS);
         connection.send("CONNECT\naccept-version:1.2\nheart-beat:0,0\nX-CSRF-TOKEN:csrf\n\n");
         assertThat(connection.next()).startsWith("CONNECTED");
+        subscribe(connection, userId, destination, registry);
+        return connection;
+    }
+
+    private void subscribe(Connection connection, long userId, String destination, SimpUserRegistry registry) {
+        String userName = Long.toString(userId);
         String subscriptionId = UUID.randomUUID().toString();
         connection.send("SUBSCRIBE\nid:" + subscriptionId + "\ndestination:" + destination + "\n\n");
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
-            assertThat(registry.getUser(userId.toString())).isNotNull();
-            assertThat(registry.getUser(userId.toString()).getSessions().stream()
+            assertThat(registry.getUser(userName)).isNotNull();
+            assertThat(registry.getUser(userName).getSessions().stream()
                     .flatMap(session -> session.getSubscriptions().stream())
                     .anyMatch(subscription -> subscriptionId.equals(subscription.getId()))).isTrue();
         });
-        return connection;
     }
 
     private String event(String type, Long userId) {

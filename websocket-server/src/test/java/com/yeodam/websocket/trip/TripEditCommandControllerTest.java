@@ -10,6 +10,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -106,6 +107,41 @@ class TripEditCommandControllerTest {
         };
         doThrow(exception).when(client).execute(anyLong(), anyString(), any(), any(), anyString());
         controller.update(14, bytes("{\"requestId\":\"r1\",\"changes\":{\"tripName\":\"Jeju\"}}"), principal, headers());
+        verifyNoInteractions(messaging, sessions);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void 편집_락_경합을_원래_요청_ID로_즉시_전달한다(boolean delete) {
+        HttpClientErrorException busy = HttpClientErrorException.create(HttpStatus.TOO_MANY_REQUESTS,
+                "Too Many Requests", HttpHeaders.EMPTY,
+                bytes("{\"message\":\"TRIP_EDIT_BUSY\",\"data\":null}"), StandardCharsets.UTF_8);
+        doThrow(busy).when(client).execute(eq(14L), anyString(), any(), same(credentials), eq("original-csrf"));
+
+        if (delete) {
+            controller.delete(14, bytes("{\"requestId\":\"r1\",\"attachmentIds\":[10]}"), principal, headers());
+        } else {
+            controller.update(14, bytes("{\"requestId\":\"r1\",\"changes\":{\"tripName\":\"Jeju\"}}"), principal, headers());
+        }
+
+        ArgumentCaptor<JsonNode> result = ArgumentCaptor.forClass(JsonNode.class);
+        verify(messaging).convertAndSendToUser(eq("42"), eq("/queue/command-results"), result.capture());
+        assertThat(result.getValue().path("message").asString()).isEqualTo("TRIP_EDIT_BUSY");
+        assertThat(result.getValue().path("data").path("requestId").asString()).isEqualTo("r1");
+        assertThat(result.getValue().path("data").path("tripId").asLong()).isEqualTo(14L);
+        assertThat(result.getValue().path("data").path("status").asString()).isEqualTo("REJECTED");
+        verifyNoInteractions(sessions);
+    }
+
+    @Test
+    void 다른_429는_편집_락_경합으로_전달하지_않는다() {
+        HttpClientErrorException throttled = HttpClientErrorException.create(HttpStatus.TOO_MANY_REQUESTS,
+                "Too Many Requests", HttpHeaders.EMPTY,
+                bytes("{\"message\":\"REQUEST_RATE_LIMIT_EXCEEDED\"}"), StandardCharsets.UTF_8);
+        doThrow(throttled).when(client).execute(anyLong(), anyString(), any(), any(), anyString());
+
+        controller.update(14, bytes("{\"requestId\":\"r1\",\"changes\":{\"tripName\":\"Jeju\"}}"), principal, headers());
+
         verifyNoInteractions(messaging, sessions);
     }
 

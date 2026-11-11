@@ -13,6 +13,7 @@ import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlReques
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
@@ -147,6 +148,27 @@ class InitialAttachmentUploadUrlServiceTest {
                 .isInstanceOf(InvalidAttachmentUploadException.class);
         assertThatThrownBy(() -> service.validateRequest(request(201, false, files)))
                 .isInstanceOf(InvalidAttachmentUploadException.class);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"2,1", "4,3", "201,200", "2147483647,200"})
+    void 전체_사진_수보다_큰_배치번호는_접수와_URL_발급_전에_거절한다(int batchNo, int total) {
+        var request = new InitialAttachmentUploadUrlRequest(
+                batchNo, total, true, List.of(file("photo.jpg", "image/jpeg", 1024)));
+
+        assertThatThrownBy(() -> service.issueUploadUrls(10L, 2L, request))
+                .isInstanceOf(InvalidAttachmentUploadException.class);
+
+        verifyNoInteractions(transactions, storage);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1,1", "3,3", "200,200"})
+    void 전체_사진_수와_같은_배치번호는_요청_형식_검증을_통과한다(int batchNo, int total) {
+        var request = new InitialAttachmentUploadUrlRequest(
+                batchNo, total, true, List.of(file("photo.jpg", "image/jpeg", 1024)));
+
+        assertThat(service.validateRequest(request)).isEqualTo(1024L);
     }
 
     @Test

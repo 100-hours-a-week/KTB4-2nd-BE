@@ -66,7 +66,8 @@ public class InitialAttachmentUploadUrlService {
             throw new AttachmentUploadLimitExceededException();
         }
 
-        if (request.attachments().size() > request.totalAttachmentCount()) {
+        if (request.batchNo() > request.totalAttachmentCount()
+                || request.attachments().size() > request.totalAttachmentCount()) {
             throw new InvalidAttachmentUploadException();
         }
 

@@ -1,6 +1,9 @@
 package com.yeodam.yeodambe.story.service;
 
+import com.yeodam.yeodambe.common.exception.RunpodStatusUnavailableException;
 import com.yeodam.yeodambe.common.exception.StoryBlockNotFoundException;
+import com.yeodam.yeodambe.common.exception.StorySimilarAttachmentUnavailableException;
+import com.yeodam.yeodambe.integration.service.RunpodStatusService;
 import com.yeodam.yeodambe.story.client.StorySimilarAttachmentAiClient;
 import com.yeodam.yeodambe.story.client.request.StorySimilarAttachmentAiRequest;
 import com.yeodam.yeodambe.story.client.response.StorySimilarAttachmentAiResponse;
@@ -31,6 +34,7 @@ public class StorySimilarAttachmentService {
     private final StoryContentRepository storyContentRepository;
     private final TripAttachmentRepository tripAttachmentRepository;
     private final StorySimilarAttachmentAiClient aiClient;
+    private final RunpodStatusService runpodStatusService;
 
     public StorySimilarAttachmentListResponse findSimilar(
             Long userId,
@@ -95,6 +99,7 @@ public class StorySimilarAttachmentService {
             );
         }
 
+        requireAiReady();
         var request = new StorySimilarAttachmentAiRequest(
                 source.getId(), candidateIds, RESULT_LIMIT
         );
@@ -110,6 +115,16 @@ public class StorySimilarAttachmentService {
                         ))
                         .toList()
         );
+    }
+
+    private void requireAiReady() {
+        try {
+            if (!runpodStatusService.getStatus().ready()) {
+                throw new StorySimilarAttachmentUnavailableException();
+            }
+        } catch (RunpodStatusUnavailableException exception) {
+            throw new StorySimilarAttachmentUnavailableException();
+        }
     }
 
     private void validateResponse(

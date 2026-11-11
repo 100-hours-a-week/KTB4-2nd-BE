@@ -175,8 +175,8 @@ class StoryUpdateRequestTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"\uD800", "\uDC00", "\uDC00\uD800", "😀\uDC00"})
-    void 메모의_짝이_깨진_서로게이트를_거절한다(String memo) {
+    @ValueSource(strings = {"\uD800", "\uDC00", "\uDC00\uD800", "😀\uDC00", "본문\000끝", "본문\033끝"})
+    void 메모의_깨진_문자와_허용하지_않는_제어문자를_거절한다(String memo) {
         StoryUpdateRequest request = new StoryUpdateRequest(Story.Mood.CALM, "요약", List.of(
                 new StoryUpdateRequest.Block(null, 1L, "첫째 날", "설명", memo, 1)
         ));

@@ -17,6 +17,11 @@ public final class TextValidation {
                 .anyMatch(codePoint -> Character.getType(codePoint) == Character.SURROGATE);
     }
 
+    public static boolean containsUnsupportedMultilineControlCharacter(String value) {
+        return value != null && value.codePoints().anyMatch(codePoint ->
+                Character.isISOControl(codePoint) && codePoint != '\n' && codePoint != '\t');
+    }
+
     public static String stripInvisible(String value) {
         if (value == null) {
             return null;

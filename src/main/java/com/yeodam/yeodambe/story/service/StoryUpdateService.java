@@ -67,14 +67,17 @@ public class StoryUpdateService {
         Story story = requireEditableStory(userId, storyId);
         StoryContentDocument content = requireContent(storyId);
         List<StoryContentBlock> previousBlocks = content.getBlocks();
-        validateContentBlockIds(content, request.blocks());
-        validateContentAttachmentReuse(request.blocks(), content.getBlocks());
+        List<StoryContentBlock> activeBlocks = previousBlocks.stream()
+                .filter(block -> block.deletedAt() == null)
+                .toList();
+        validateContentBlockIds(activeBlocks, request.blocks());
+        validateContentAttachmentReuse(request.blocks(), activeBlocks);
 
         Map<Long, TripAttachment> attachmentsById =
                 requireAttachments(story.getTripId(), request.blocks());
         Map<Long, TripDetailPlace> placesById = findPlaces(attachmentsById);
         List<StoryContentBlock> updatedBlocks = applyContentBlocks(
-                content, request.blocks(), attachmentsById, placesById);
+                content, activeBlocks, request.blocks(), attachmentsById, placesById);
         content.updateContent(request.tone(), request.storySummary(), updatedBlocks);
 
         StoryUpdateResponse response = StoryUpdateResponse.from(
@@ -91,12 +94,12 @@ public class StoryUpdateService {
     }
 
     private void validateContentBlockIds(
-            StoryContentDocument content,
+            List<StoryContentBlock> activeBlocks,
             List<StoryUpdateRequest.Block> requestedBlocks
     ) {
         Set<Long> existingBlockIds = new HashSet<>();
 
-        for (StoryContentBlock block : content.getBlocks()) {
+        for (StoryContentBlock block : activeBlocks) {
             existingBlockIds.add(block.id());
         }
 
@@ -186,6 +189,7 @@ public class StoryUpdateService {
 
     private List<StoryContentBlock> applyContentBlocks(
             StoryContentDocument content,
+            List<StoryContentBlock> activeBlocks,
             List<StoryUpdateRequest.Block> requestedBlocks,
             Map<Long, TripAttachment> attachmentsById,
             Map<Long, TripDetailPlace> placesById
@@ -194,7 +198,7 @@ public class StoryUpdateService {
         Map<Long, StoryContentBlock> blocksByAttachmentId =
                 new java.util.HashMap<>();
 
-        for (StoryContentBlock block : content.getBlocks()) {
+        for (StoryContentBlock block : activeBlocks) {
             blocksById.put(block.id(), block);
             blocksByAttachmentId.put(block.tripAttachmentId(), block);
         }

@@ -53,7 +53,9 @@ public record StoryTonePreviewRequest(
         @AssertTrue
         public boolean isMemoLengthValid() {
             return memo == null
-                    || memo.codePointCount(0, memo.length()) <= 125;
+                    || (!TextValidation.containsUnpairedSurrogate(memo)
+                    && !TextValidation.containsUnsupportedMultilineControlCharacter(memo)
+                    && memo.codePointCount(0, memo.length()) <= 125);
         }
 
         private static boolean isOptionalTextValid(

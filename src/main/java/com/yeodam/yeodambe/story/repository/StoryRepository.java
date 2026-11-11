@@ -120,4 +120,13 @@ public interface StoryRepository extends JpaRepository<Story, Long> {
             @Param("afterId") Long afterId,
             Pageable pageable
     );
+
+    @Query("""
+            select story.id
+            from Story story
+            join Trip trip on trip.id = story.tripId
+            where story.id in :storyIds
+              and (story.deletedAt is not null or trip.deletedAt is not null)
+            """)
+    List<Long> findDeletedContentIds(@Param("storyIds") List<Long> storyIds);
 }

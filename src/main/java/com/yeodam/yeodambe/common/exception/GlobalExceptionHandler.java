@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.user.exception.UserInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.StoryGenerationInternalErrorMessage;
 import com.yeodam.yeodambe.story.exception.StoryGenerationAiRequestException;
+import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentAiRequestException;
 import com.yeodam.yeodambe.story.service.request.StoryUpdateRequest;
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.common.response.ApiResponse;
@@ -599,6 +600,19 @@ public class GlobalExceptionHandler {
             StoryTonePreviewFailedException exception
     ) {
         return new ApiResponse<>(ErrorMessage.STORY_TONE_PREVIEW_FAILED, null);
+    }
+
+    @ExceptionHandler(StorySimilarAttachmentAiRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    ApiResponse<Void> handleStorySimilarAttachmentFailed(StorySimilarAttachmentAiRequestException exception) {
+        logFailure(log.atWarn(), ErrorMessage.STORY_SIMILAR_ATTACHMENT_FAILED, exception.getMessage(), exception);
+        return new ApiResponse<>(ErrorMessage.STORY_SIMILAR_ATTACHMENT_FAILED, null);
+    }
+
+    @ExceptionHandler(StorySimilarAttachmentUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    ApiResponse<Void> handleStorySimilarAttachmentUnavailable(StorySimilarAttachmentUnavailableException exception) {
+        return new ApiResponse<>(ErrorMessage.STORY_SIMILAR_ATTACHMENT_UNAVAILABLE, null);
     }
 
     @ExceptionHandler(StoryTonePreviewInProgressException.class)

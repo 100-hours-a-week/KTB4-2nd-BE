@@ -1,6 +1,10 @@
 package com.yeodam.yeodambe.story.service;
 
 import com.yeodam.yeodambe.common.exception.StoryBlockNotFoundException;
+import com.yeodam.yeodambe.common.exception.RunpodStatusUnavailableException;
+import com.yeodam.yeodambe.common.exception.StorySimilarAttachmentUnavailableException;
+import com.yeodam.yeodambe.integration.service.RunpodStatusService;
+import com.yeodam.yeodambe.integration.service.response.RunpodStatusResponse;
 import com.yeodam.yeodambe.story.client.StorySimilarAttachmentAiClient;
 import com.yeodam.yeodambe.story.client.request.StorySimilarAttachmentAiRequest;
 import com.yeodam.yeodambe.story.client.response.StorySimilarAttachmentAiResponse;
@@ -43,14 +47,16 @@ class StorySimilarAttachmentServiceTest {
     private final StoryContentRepository contents = mock(StoryContentRepository.class);
     private final TripAttachmentRepository attachments = mock(TripAttachmentRepository.class);
     private final StorySimilarAttachmentAiClient aiClient = mock(StorySimilarAttachmentAiClient.class);
+    private final RunpodStatusService runpodStatus = mock(RunpodStatusService.class);
     private final StorySimilarAttachmentService service =
-            new StorySimilarAttachmentService(stories, contents, attachments, aiClient);
+            new StorySimilarAttachmentService(stories, contents, attachments, aiClient, runpodStatus);
     private final StorySimilarAttachmentAiRequest expectedRequest =
             new StorySimilarAttachmentAiRequest(501L, List.of(506L, 507L), 10);
     private final TripAttachment source = attachment(501L, 31L);
 
     @BeforeEach
     void setUp() {
+        when(runpodStatus.getStatus()).thenReturn(new RunpodStatusResponse(true, true));
         Story story = new Story(31L, Story.Mood.PLAIN, "요약");
         ReflectionTestUtils.setField(story, "id", 71L);
         when(stories.findOwnedCurrentCompletedForSimilarById(71L, 1L))
@@ -89,6 +95,20 @@ class StorySimilarAttachmentServiceTest {
         var actual = service.findSimilar(1L, 71L, 101L);
 
         assertThat(actual).isEqualTo(new StorySimilarAttachmentListResponse(501L, List.of()));
+        verifyNoInteractions(aiClient, runpodStatus);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void AI가_준비되지_않거나_상태조회가_실패하면_추천을_요청하지_않는다(boolean statusFailure) {
+        if (statusFailure) {
+            when(runpodStatus.getStatus()).thenThrow(new RunpodStatusUnavailableException());
+        } else {
+            when(runpodStatus.getStatus()).thenReturn(new RunpodStatusResponse(true, false));
+        }
+
+        assertThatThrownBy(() -> service.findSimilar(1L, 71L, 101L))
+                .isInstanceOf(StorySimilarAttachmentUnavailableException.class);
         verifyNoInteractions(aiClient);
     }
 

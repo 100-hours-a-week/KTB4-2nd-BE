@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.story.service.StoryReadService;
 import com.yeodam.yeodambe.story.service.StorySimilarAttachmentService;
 import com.yeodam.yeodambe.story.service.response.StorySimilarAttachmentListResponse;
 import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentAiRequestException;
+import com.yeodam.yeodambe.common.exception.StorySimilarAttachmentUnavailableException;
 import com.yeodam.yeodambe.story.exception.StorySimilarAttachmentInternalErrorMessage;
 
 import com.yeodam.yeodambe.story.service.StoryUpdateService;
@@ -125,6 +126,17 @@ class StoryControllerTest {
         verifyNoInteractions(previewService);
     }
 
+    @Test
+    void 유사사진_AI가_준비되지_않으면_503으로_반환한다() throws Exception {
+        when(similarService.findSimilar(42L, 71L, 101L))
+                .thenThrow(new StorySimilarAttachmentUnavailableException());
+
+        mvc.perform(get("/stories/71/blocks/101/similar-attachments").cookie(authenticated()))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message").value("STORY_SIMILAR_ATTACHMENT_UNAVAILABLE"))
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"abc", "9223372036854775808", "0", "-1"})
     void 분위기미리보기_잘못된경로는_전용입력오류다(String id) throws Exception {
@@ -193,15 +205,15 @@ class StoryControllerTest {
 
     @ParameterizedTest
     @org.junit.jupiter.params.provider.EnumSource(StorySimilarAttachmentInternalErrorMessage.class)
-    void 유사사진_AI오류는_내부내용_없이_500으로_반환한다(
+    void 유사사진_AI오류는_내부내용_없이_502로_반환한다(
             StorySimilarAttachmentInternalErrorMessage error
     ) throws Exception {
         when(similarService.findSimilar(42L, 71L, 101L))
                 .thenThrow(new StorySimilarAttachmentAiRequestException(error));
         mvc.perform(get("/stories/71/blocks/101/similar-attachments").cookie(authenticated()))
-                .andExpect(status().isInternalServerError())
+                .andExpect(status().isBadGateway())
                 .andExpect(content().json("""
-                        {"message":"INTERNAL_SERVER_ERROR","data":null}
+                        {"message":"STORY_SIMILAR_ATTACHMENT_FAILED","data":null}
                         """));
     }
 

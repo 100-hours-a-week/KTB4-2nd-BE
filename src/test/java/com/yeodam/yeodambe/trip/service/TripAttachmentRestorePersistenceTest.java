@@ -73,6 +73,8 @@ class TripAttachmentRestorePersistenceTest {
 
     @MockitoBean
     private com.yeodam.yeodambe.trip.service.TripMapCacheStore mapCache;
+    @MockitoBean
+    private TripEditNotificationOutboxService notifications;
     @Autowired private TripAttachmentRestoreService service;
     @Autowired private UserRepository users;
     @Autowired private UserStatsRepository stats;

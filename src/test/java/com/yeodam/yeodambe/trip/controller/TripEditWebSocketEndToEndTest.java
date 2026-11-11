@@ -7,11 +7,21 @@ import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEvent;
 import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventTarget;
 import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventTargetType;
 import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventType;
+import com.yeodam.yeodambe.file.entity.StoredFile;
+import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
+import com.yeodam.yeodambe.trip.entity.RegionOrigin;
 import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.TripSharePermission;
 import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.UserRepository;
@@ -30,7 +40,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.math.BigDecimal;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -53,6 +65,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "auth.websocket.internal-service-token=e2e-service-token")
@@ -71,6 +85,14 @@ class TripEditWebSocketEndToEndTest {
     @Autowired private LoginSessionStore sessions;
     @Autowired private CsrfTokenStore csrfTokens;
     @Autowired private WebSocketEventPublisher publisher;
+    @Autowired
+    private TripAttachmentRepository attachments;
+    @Autowired
+    private TripDetailPlaceRepository places;
+    @Autowired
+    private StoredFileRepository files;
+    @MockitoBean
+    private TripAttachmentStorageClient storage;
 
     @DynamicPropertySource
     static void channel(DynamicPropertyRegistry registry) {
@@ -84,6 +106,9 @@ class TripEditWebSocketEndToEndTest {
         Trip trip = new Trip(owner, "통합여행", LocalDate.now(), LocalDate.now());
         ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
         trip = trips.saveAndFlush(trip);
+        TripAttachment photo = restorablePhoto(owner, trip.getId());
+        when(storage.createReadUrl(anyString())).thenAnswer(invocation ->
+                "https://test.example/" + invocation.getArgument(0, String.class));
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
         shares.saveAndFlush(new TripShareUser(trip.getId(), owner, reader, TripSharePermission.READ,
                 now.plusHours(1), now));
@@ -115,6 +140,19 @@ class TripEditWebSocketEndToEndTest {
                     Trip saved = trips.findById(trip.getId()).orElseThrow();
                     assertThat(saved.getTripName()).isEqualTo("소켓수정");
                     assertThat(saved.getSequence()).isEqualTo(1);
+
+                    restorePhoto(owner, photo);
+
+                    for (Connection connection : List.of(writer, viewer)) {
+                        assertThat(connection.next()).contains(
+                                "TRIP_PHOTOS_RESTORED", "\"sequence\":2", "\"sourceIssue\":\"BLURRY\"",
+                                "\"tripAttachmentId\":" + photo.getId(),
+                                "\"unclassifiedAttachmentCount\":0", "https://test.example/"
+                        );
+                    }
+                    assertThat(attachments.findById(photo.getId()).orElseThrow().getClassificationStatus())
+                            .isEqualTo(ClassificationStatus.ACTIVE);
+                    assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isEqualTo(2);
                 }
             } finally {
                 stop(second);
@@ -132,6 +170,37 @@ class TripEditWebSocketEndToEndTest {
         connection.messages.add("TRIP_UPDATE_SUCCESS");
 
         assertThat(connection.next()).isEqualTo("TRIP_UPDATE_SUCCESS");
+    }
+
+    private TripAttachment restorablePhoto(Long ownerId, Long tripId) {
+        LocalDateTime now = LocalDateTime.now();
+        String key = UUID.randomUUID().toString();
+        TripDetailPlace place = places.saveAndFlush(TripDetailPlace.fromAnalysis(
+                tripId, 1, "복구 장소", BigDecimal.ZERO, BigDecimal.ZERO, now, now, null
+        ));
+        StoredFile file = files.saveAndFlush(StoredFile.uploaded(ownerId, key + ".jpg", key, "image/jpeg"));
+        TripAttachment photo = TripAttachment.initial(tripId, file.getId(), key, key + "-preview", key);
+        photo.unclassify(place.getId(), AttachmentIssue.BLURRY, RegionOrigin.EXIF, now,
+                BigDecimal.ZERO, BigDecimal.ZERO, 90);
+        return attachments.saveAndFlush(photo);
+    }
+
+    private void restorePhoto(Long ownerId, TripAttachment photo) throws Exception {
+        String sid = UUID.randomUUID().toString();
+        String browserContext = UUID.randomUUID().toString();
+        sessions.save(sid, ownerId, UUID.randomUUID().toString());
+        csrfTokens.save(browserContext, "e2e-csrf");
+        HttpRequest request = HttpRequest.newBuilder(URI.create(
+                        "http://127.0.0.1:" + apiPort + "/api/attachments/" + photo.getId() + "/restore"))
+                .timeout(Duration.ofSeconds(10))
+                .header("Cookie", "accessToken=" + tokens.issue(ownerId, sid) + "; CSRF_CONTEXT=" + browserContext)
+                .header("X-CSRF-TOKEN", "e2e-csrf")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"tripPlaceId\":" + photo.getTripPlaceId() + "}"))
+                .build();
+        HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("ATTACHMENT_RESTORE_SUCCESS");
     }
 
     private Process startServer(int port) throws Exception {

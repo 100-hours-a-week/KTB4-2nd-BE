@@ -72,15 +72,34 @@ public class TripEditNotificationPublisher {
     }
 
     private String prepareForDelivery(TripEditNotificationOutbox notification) {
-        if (notification.getThumbnailKey() == null) {
+        if (notification.getThumbnailKey() == null
+                && !notification.getEventJson().contains("\"TRIP_PHOTOS_RESTORED\"")) {
             return notification.getEventJson();
         }
         JsonNode message = json.readTree(notification.getEventJson());
+        JsonNode data = message.path("payload").path("data");
+        if ("TRIP_PHOTOS_RESTORED".equals(message.path("payload").path("message").asString())) {
+            addThumbnailUrl(data);
+            data.path("places").forEach(this::addThumbnailUrl);
+            data.path("unclassifiedFolders").forEach(this::addThumbnailUrl);
+            return json.writeValueAsString(message);
+        }
         JsonNode item = message.path("payload").path("data").path("listItem");
         if (item instanceof ObjectNode listItem) {
             listItem.put("thumbnailUrl", storage.createReadUrl(notification.getThumbnailKey()));
         }
         return json.writeValueAsString(message);
+    }
+
+    private void addThumbnailUrl(JsonNode item) {
+        if (item instanceof ObjectNode object) {
+            JsonNode key = object.path("thumbnailKey");
+            if (key.isTextual()) {
+                object.put("thumbnailUrl", storage.createReadUrl(key.asString()));
+            } else {
+                object.putNull("thumbnailUrl");
+            }
+        }
     }
 
     private void recordFailure(TripEditNotificationOutbox notification) {

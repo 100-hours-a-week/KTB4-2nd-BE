@@ -4,6 +4,7 @@ import com.yeodam.yeodambe.common.exception.*;
 import com.yeodam.yeodambe.trip.entity.*;
 import com.yeodam.yeodambe.trip.repository.*;
 import com.yeodam.yeodambe.trip.service.request.*;
+import com.yeodam.yeodambe.trip.service.response.TripPhotoRestorationResult;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.trip.fixture.TripMutationTestFixture;
 import jakarta.persistence.EntityManager;
@@ -28,11 +29,12 @@ class TripAttachmentRestoreServiceTest {
     private final TripAccessService access = mock(TripAccessService.class);
     private final EntityManager entityManager = mock(EntityManager.class);
     private final TripMapCacheStore mapCache = mock(TripMapCacheStore.class);
+    private final TripEditNotificationOutboxService notifications = mock(TripEditNotificationOutboxService.class);
     private final TripAttachmentRestoreService service = new TripAttachmentRestoreService(
             attachments, trips, places, access, entityManager,
             Validation.buildDefaultValidatorFactory().getValidator(), mapCache,
             new AdditionalAttachmentModificationGuard(trips, mock(AdditionalAttachmentUploadBatchRepository.class)),
-            TripMutationTestFixture.direct()
+            TripMutationTestFixture.direct(), notifications
     );
     private Trip trip;
     private TripDetailPlace place;
@@ -157,6 +159,37 @@ class TripAttachmentRestoreServiceTest {
         doThrow(new TripNotFoundException()).when(access).requireWritableTrip(10L, 1L);
         assertThatThrownBy(() -> service.restoreOne(1L, 30L, new AttachmentRestoreRequest(20L)))
                 .isInstanceOf(AttachmentNotFoundException.class);
+    }
+
+    @Test
+    void 공유복구는_잠긴_여행의_사진만_적용하고_원래_사유를_돌려준다() {
+        TripAttachment attachment = attachment(30L, 20L);
+        when(attachments.findAllActiveWithTripAndFileByIds(List.of(30L)))
+                .thenReturn(List.of(attachment));
+
+        TripPhotoRestorationResult result = service.restoreForSharedEditing(
+                trip, "request-1", List.of(new BulkAttachmentRestoreRequest.Item(30L, 20L))
+        );
+
+        assertThat(result.restoredAttachments()).singleElement()
+                .satisfies(restored -> assertThat(restored.sourceIssue()).isEqualTo(AttachmentIssue.BLURRY));
+        verify(attachments).restoreIfUnclassified(eq(30L), eq(10L), eq(1L), eq(20L), eq(20L), any());
+        verify(notifications).enqueuePhotosRestored(eq(10L), anyLong(), eq("request-1"), eq(result));
+    }
+
+    @Test
+    void 공유복구는_다른_여행의_사진을_적용하지_않는다() {
+        TripAttachment attachment = attachment(30L, 20L);
+        ReflectionTestUtils.setField(attachment, "tripId", 99L);
+        when(attachments.findAllActiveWithTripAndFileByIds(List.of(30L)))
+                .thenReturn(List.of(attachment));
+
+        assertThatThrownBy(() -> service.restoreForSharedEditing(
+                trip, "request-2", List.of(new BulkAttachmentRestoreRequest.Item(30L, 20L))
+        )).isInstanceOf(BulkRestoreFailedException.class);
+
+        verify(attachments, never()).restoreIfUnclassified(any(), any(), any(), any(), any(), any());
+        verifyNoInteractions(notifications);
     }
 
     private TripAttachment attachment(Long id, Long placeId) {

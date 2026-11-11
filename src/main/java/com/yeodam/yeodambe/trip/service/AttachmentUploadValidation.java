@@ -24,6 +24,12 @@ public final class AttachmentUploadValidation {
         if (fileName == null
                 || fileName.isBlank()
                 || fileName.length() > 255
+                || fileName.equals(".")
+                || fileName.equals("..")
+                || fileName.contains("/")
+                || fileName.contains("\\")
+                || fileName.codePoints().anyMatch(
+                codePoint -> Character.isISOControl(codePoint))
                 || contentType == null
                 || contentType.isBlank()
                 || contentType.length() > 100

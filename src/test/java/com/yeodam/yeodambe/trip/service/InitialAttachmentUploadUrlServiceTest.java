@@ -12,6 +12,8 @@ import com.yeodam.yeodambe.trip.repository.InitialAttachmentUploadItemRepository
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadBatchSnapshot;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -29,6 +31,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class InitialAttachmentUploadUrlServiceTest {
@@ -107,6 +110,27 @@ class InitialAttachmentUploadUrlServiceTest {
                 file("photo.heic", "image/heic", 4096)));
 
         assertThat(service.validateRequest(request)).isEqualTo(7168L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {".", "..", "../photo.jpg", "folder/photo.jpg", "folder\\photo.jpg",
+            "photo\000.jpg", "photo\n.jpg", "photo\t.jpg", "photo\u007F.jpg"})
+    void 잘못된_파일명은_업로드_접수와_URL_발급_전에_거절한다(String fileName) {
+        var request = request(1, true, List.of(file(fileName, "image/jpeg", 1024)));
+
+        assertThatThrownBy(() -> service.issueUploadUrls(10L, 2L, request))
+                .isInstanceOf(InvalidAttachmentUploadException.class);
+
+        verifyNoInteractions(transactions, storage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"photo.jpg", "제주 여행.jpg", "사진😀.heic", "photo..jpg"})
+    void 정상_파일명은_원문을_유지하고_전체_바이트를_반환한다(String fileName) {
+        var request = request(1, true, List.of(file(fileName, "image/jpeg", 1024)));
+
+        assertThat(service.validateRequest(request)).isEqualTo(1024L);
+        assertThat(request.attachments().getFirst().fileName()).isEqualTo(fileName);
     }
 
     @Test

@@ -2,7 +2,6 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.AttachmentUploadLimitExceededException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentUploadException;
-import com.yeodam.yeodambe.common.exception.UnsupportedAttachmentFormatException;
 import com.yeodam.yeodambe.trip.client.TripAttachmentStorageClient;
 import com.yeodam.yeodambe.trip.service.request.InitialAttachmentUploadUrlRequest;
 import com.yeodam.yeodambe.trip.service.response.InitialAttachmentUploadUrlResponse;
@@ -15,15 +14,12 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class InitialAttachmentUploadUrlService {
-    private static final long MAX_FILE_BYTES = 15L * 1024 * 1024;
     private static final long MAX_BATCH_BYTES = 145L * 1024 * 1024;
     private static final Duration UPLOAD_URL_TTL = Duration.ofMinutes(10);
-    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/heic");
 
     private final InitialAttachmentUploadTransactionService transactions;
     private final TripAttachmentStorageClient storage;
@@ -78,27 +74,15 @@ public class InitialAttachmentUploadUrlService {
 
         for (InitialAttachmentUploadUrlRequest.Attachment attachment
                 : request.attachments()) {
-            if (attachment == null
-                    || attachment.fileName() == null
-                    || attachment.fileName().isBlank()
-                    || attachment.fileName().length() > 255
-                    || attachment.contentType() == null
-                    || attachment.contentType().isBlank()
-                    || attachment.contentType().length() > 100
-                    || attachment.sizeBytes() == null
-                    || attachment.sizeBytes() < 1) {
+            if (attachment == null) {
                 throw new InvalidAttachmentUploadException();
             }
 
-            if (!ALLOWED_CONTENT_TYPES.contains(attachment.contentType())) {
-                throw new UnsupportedAttachmentFormatException();
-            }
-
-            if (attachment.sizeBytes() > MAX_FILE_BYTES) {
-                throw new AttachmentUploadLimitExceededException();
-            }
-
-            batchBytes += attachment.sizeBytes();
+            batchBytes += AttachmentUploadValidation.validateFile(
+                    attachment.fileName(),
+                    attachment.contentType(),
+                    attachment.sizeBytes()
+            );
 
             if (batchBytes > MAX_BATCH_BYTES) {
                 throw new AttachmentUploadLimitExceededException();

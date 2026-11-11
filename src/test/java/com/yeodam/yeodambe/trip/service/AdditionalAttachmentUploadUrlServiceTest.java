@@ -15,6 +15,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import jakarta.persistence.EntityManager;
 import com.yeodam.yeodambe.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import com.yeodam.yeodambe.story.repository.StoryGenerationJobRepository;
 
 import java.util.Collections;
@@ -52,6 +54,25 @@ class AdditionalAttachmentUploadUrlServiceTest {
                 file("photo.heic", "image/heic", 4096)));
 
         assertThat(service.validateRequest(request)).isEqualTo(7168);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {".", "..", "../photo.jpg", "folder/photo.jpg", "folder\\photo.jpg",
+            "photo\000.jpg", "photo\n.jpg", "photo\t.jpg", "photo\u007F.jpg"})
+    void 추가_업로드에서도_경로와_제어문자가_있는_파일명을_거절한다(String fileName) {
+        var request = request(1, List.of(file(fileName, "image/jpeg", 1024)));
+
+        assertThatThrownBy(() -> service.validateRequest(request))
+                .isInstanceOf(InvalidAttachmentUploadException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"photo.jpg", "제주 여행.jpg", "사진😀.heic", "photo..jpg"})
+    void 추가_업로드에서도_정상_파일명을_허용한다(String fileName) {
+        var request = request(1, List.of(file(fileName, "image/jpeg", 1024)));
+
+        assertThat(service.validateRequest(request)).isEqualTo(1024L);
+        assertThat(request.attachments().getFirst().fileName()).isEqualTo(fileName);
     }
 
     @Test

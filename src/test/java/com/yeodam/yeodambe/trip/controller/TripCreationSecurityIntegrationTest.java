@@ -935,8 +935,16 @@ class TripCreationSecurityIntegrationTest {
     void 즐겨찾기_경로로_인증_사용자의_카드와_다음_페이지_정보를_반환한다() throws Exception {
         String accessToken = accessTokenIssuer.issue(42L, "sid-42");
         String cursor = new FavoriteTripCursor(LocalDate.of(2026, 10, 20), 80L).encode(objectMapper);
-        var item = new FavoriteTripListItemResponse(79L, "가을 여행", LocalDate.of(2026, 10, 19),
-                LocalDate.of(2026, 10, 21), 3L, "https://image.test/79", true);
+        FavoriteTripListItemResponse item = new FavoriteTripListItemResponse(
+                79L,
+                "가을 여행",
+                LocalDate.of(2026, 10, 19),
+                LocalDate.of(2026, 10, 21),
+                "서울, 부산",
+                3L,
+                "https://image.test/79",
+                true
+        );
         given(tripService.findFavoriteTrips(42L, cursor))
                 .willReturn(new FavoriteTripListResponse(12L, List.of(item), true, "next-cursor"));
 
@@ -949,6 +957,7 @@ class TripCreationSecurityIntegrationTest {
                 .andExpect(jsonPath("$.data.items[0].tripName").value("가을 여행"))
                 .andExpect(jsonPath("$.data.items[0].startDate").value("2026-10-19"))
                 .andExpect(jsonPath("$.data.items[0].endDate").value("2026-10-21"))
+                .andExpect(jsonPath("$.data.items[0].placeSummary").value("서울, 부산"))
                 .andExpect(jsonPath("$.data.items[0].attachmentCount").value(3))
                 .andExpect(jsonPath("$.data.items[0].thumbnailUrl").value("https://image.test/79"))
                 .andExpect(jsonPath("$.data.items[0].isFavorite").value(true))

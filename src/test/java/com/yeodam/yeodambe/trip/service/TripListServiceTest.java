@@ -16,11 +16,14 @@ import com.yeodam.yeodambe.common.exception.InvalidCursorException;
 import com.yeodam.yeodambe.trip.service.request.TripListRequest;
 import com.yeodam.yeodambe.trip.service.request.TripSort;
 import com.yeodam.yeodambe.trip.service.response.TripListItemResponse;
+import com.yeodam.yeodambe.trip.service.response.FavoriteTripListItemResponse;
+import com.yeodam.yeodambe.trip.service.response.FavoriteTripListResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
 import org.springframework.data.domain.Pageable;
 
 import java.time.Clock;
@@ -212,13 +215,13 @@ class TripListServiceTest {
         when(tripRepository.findFavoritePage(eq(1L), isNull(), isNull(), any(Pageable.class)))
                 .thenReturn(fetched);
 
-        var response = tripService.findFavoriteTrips(1L, null);
+        FavoriteTripListResponse response = tripService.findFavoriteTrips(1L, null);
 
         assertThat(response.totalCount()).isEqualTo(size);
         assertThat(response.items()).hasSize(Math.min(size, 10));
         assertThat(response.hasNext()).isEqualTo(size > 10);
         if (size > 10) {
-            var cursor = FavoriteTripCursor.decode(response.nextCursor(), objectMapper);
+            FavoriteTripCursor cursor = FavoriteTripCursor.decode(response.nextCursor(), objectMapper);
             assertThat(cursor.tripId()).isEqualTo(2L);
             assertThat(cursor.startDate()).isEqualTo(LocalDate.of(2026, 9, 1));
         } else {
@@ -227,9 +230,44 @@ class TripListServiceTest {
         verify(tripRepository).findFavoritePage(eq(1L), isNull(), isNull(),
                 argThat(page -> page.getPageNumber() == 0 && page.getPageSize() == 11));
         if (size == 0) {
-            verifyNoInteractions(tripAttachmentRepository, storageClient);
+            verifyNoInteractions(tripRegionRepository, tripAttachmentRepository, storageClient);
+        } else {
+            verify(tripRegionRepository).findNamesByTripIds(response.items().stream()
+                    .map(FavoriteTripListItemResponse::tripId)
+                    .toList());
+            verifyNoMoreInteractions(tripRegionRepository);
         }
-        verifyNoInteractions(tripRegionRepository, executions);
+        verifyNoInteractions(executions);
+    }
+
+    @Test
+    void 즐겨찾기_카드는_여행별_지역을_최대_세개까지_응답한다() {
+        when(tripRepository.countFavoriteTrips(1L)).thenReturn(3L);
+        List<Trip> trips = List.of(
+                trip(7L, true, ProcessingStatus.COMPLETED, null),
+                trip(6L, true, ProcessingStatus.COMPLETED, null),
+                trip(5L, true, ProcessingStatus.COMPLETED, null)
+        );
+        when(tripRepository.findFavoritePage(eq(1L), isNull(), isNull(), any(Pageable.class)))
+                .thenReturn(trips);
+        when(tripRegionRepository.findNamesByTripIds(List.of(7L, 6L, 5L)))
+                .thenReturn(List.of(
+                        new TripRegionName(6L, "제주시"),
+                        new TripRegionName(7L, "서울"),
+                        new TripRegionName(7L, "부산"),
+                        new TripRegionName(7L, "대구"),
+                        new TripRegionName(7L, "대전")
+                ));
+
+        FavoriteTripListResponse response = tripService.findFavoriteTrips(1L, null);
+        JsonNode items = objectMapper.valueToTree(response).path("items");
+
+        assertThat(items.get(0).path("placeSummary").asString()).isEqualTo("서울, 부산, 대구");
+        assertThat(items.get(1).path("placeSummary").asString()).isEqualTo("제주시");
+        assertThat(items.get(2).has("placeSummary")).isTrue();
+        assertThat(items.get(2).path("placeSummary").asString()).isEmpty();
+        verify(tripRegionRepository).findNamesByTripIds(List.of(7L, 6L, 5L));
+        verifyNoMoreInteractions(tripRegionRepository);
     }
 
     @Test

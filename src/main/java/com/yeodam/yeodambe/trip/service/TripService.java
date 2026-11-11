@@ -728,6 +728,11 @@ public class TripService {
                 .map(Trip::getId)
                 .toList();
 
+        Map<Long, List<String>> regionNames = tripRegionRepository.findNamesByTripIds(tripIds).stream()
+                .collect(Collectors.groupingBy(
+                        TripRegionName::tripId,
+                        Collectors.mapping(TripRegionName::regionName, Collectors.toList())
+                ));
         Map<Long, Long> attachmentCounts = tripAttachmentRepository
                 .countNotDeletedByTripIds(tripIds).stream()
                 .collect(Collectors.toMap(
@@ -741,6 +746,9 @@ public class TripService {
                         trip.getTripName(),
                         trip.getStartDate(),
                         trip.getEndDate(),
+                        regionNames.getOrDefault(trip.getId(), List.of()).stream()
+                                .limit(3)
+                                .collect(Collectors.joining(", ")),
                         attachmentCounts.getOrDefault(trip.getId(), 0L),
                         createThumbnailUrl(trip),
                         trip.getFavorite()

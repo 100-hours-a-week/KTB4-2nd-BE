@@ -41,7 +41,7 @@ import java.util.stream.Collectors;
 public class TripSubscriptionService implements ExecutorChannelInterceptor {
 
     private static final Pattern TRIP_SUBSCRIPTION = Pattern.compile("/topic/trips/([1-9][0-9]*)/events");
-    private static final Pattern TRIP_COMMAND = Pattern.compile("/app/trips/([1-9][0-9]*)/(update|attachments/delete)");
+    private static final Pattern TRIP_COMMAND = Pattern.compile("/app/trips/([1-9][0-9]*)/(update|attachments/(delete|restore))");
 
     private final BackendTripEditClient client;
     private final WebSocketSessionManager sessionManager;

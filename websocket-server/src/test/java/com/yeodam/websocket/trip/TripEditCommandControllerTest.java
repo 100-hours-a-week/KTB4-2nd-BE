@@ -59,6 +59,23 @@ class TripEditCommandControllerTest {
         verifyNoInteractions(messaging, sessions);
     }
 
+    @Test
+    void 사진_복구를_BE에_전달하고_성공_알림은_직접_만들지_않는다() {
+        byte[] payload = bytes("{\"requestId\":\"restore\",\"items\":[{\"tripAttachmentId\":10,\"tripPlaceId\":20}]}");
+        controller.restore(14, payload, principal, headers());
+        verify(client).execute(eq(14L), eq("attachments/restore"), eq(mapper.readTree(payload)),
+                same(credentials), eq("original-csrf"));
+        verifyNoInteractions(messaging, sessions);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"[]", "[{\"tripAttachmentId\":\"10\",\"tripPlaceId\":20}]", "null"})
+    void 잘못된_복구_목록도_BE가_요청_ID와_함께_거절을_기록하도록_전달한다(String items) {
+        controller.restore(14, bytes("{\"requestId\":\"restore-invalid\",\"items\":" + items + "}"), principal, headers());
+        verify(client).execute(eq(14L), eq("attachments/restore"), any(), same(credentials), eq("original-csrf"));
+        verifyNoInteractions(messaging, sessions);
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"{}", "not-json", "null",
             "{\"requestId\":\"r1\",\"changes\":{\"tripName\":\"Jeju\"},\"userId\":99}"})

@@ -36,6 +36,7 @@ import org.springframework.boot.data.redis.autoconfigure.DataRedisConnectionDeta
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -80,6 +81,8 @@ class TripEditWebSocketEndToEndTest {
     @Autowired private DataRedisConnectionDetails redis;
     @Autowired private UserRepository users;
     @Autowired private TripRepository trips;
+    @Autowired
+    private JdbcTemplate jdbc;
     @Autowired private TripShareUserRepository shares;
     @Autowired private AccessTokenIssuer tokens;
     @Autowired private LoginSessionStore sessions;
@@ -100,17 +103,21 @@ class TripEditWebSocketEndToEndTest {
     }
 
     @Test
-    void 두_WS_서버에서_실제_쿠키_명령과_DB_Outbox_Redis_알림이_연결된다() throws Exception {
+    void 두_WS_서버에서_공유복구를_전달하고_READ_복구는_거절한다() throws Exception {
         Long owner = users.saveAndFlush(new User(UUID.randomUUID() + "@e2e.test", "소유자")).getUserId();
         Long reader = users.saveAndFlush(new User(UUID.randomUUID() + "@e2e.test", "독자")).getUserId();
+        Long editor = users.saveAndFlush(new User(UUID.randomUUID() + "@e2e.test", "편집자")).getUserId();
         Trip trip = new Trip(owner, "통합여행", LocalDate.now(), LocalDate.now());
         ReflectionTestUtils.setField(trip, "processingStatus", ProcessingStatus.COMPLETED);
         trip = trips.saveAndFlush(trip);
         TripAttachment photo = restorablePhoto(owner, trip.getId());
+        TripAttachment sharedPhoto = restorablePhoto(owner, trip.getId());
         when(storage.createReadUrl(anyString())).thenAnswer(invocation ->
                 "https://test.example/" + invocation.getArgument(0, String.class));
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
         shares.saveAndFlush(new TripShareUser(trip.getId(), owner, reader, TripSharePermission.READ,
+                now.plusHours(1), now));
+        shares.saveAndFlush(new TripShareUser(trip.getId(), owner, editor, TripSharePermission.WRITE,
                 now.plusHours(1), now));
         int firstPort = freePort();
         int secondPort = freePort();
@@ -121,12 +128,19 @@ class TripEditWebSocketEndToEndTest {
                 ready(firstPort);
                 ready(secondPort);
                 try (Connection writer = connect(firstPort, owner);
+                     Connection sharedWriter = connect(firstPort, editor);
                      Connection viewer = connect(secondPort, reader)) {
                     writer.send("SUBSCRIBE\nid:personal\ndestination:/user/queue/command-results\n\n");
                     writer.send("SUBSCRIBE\nid:trip\ndestination:/topic/trips/" + trip.getId() + "/events\n\n");
+                    sharedWriter.send("SUBSCRIBE\nid:personal\ndestination:/user/queue/command-results\n\n");
+                    sharedWriter.send("SUBSCRIBE\nid:trip\ndestination:/topic/trips/" + trip.getId() + "/events\n\n");
+                    viewer.send("SUBSCRIBE\nid:personal\ndestination:/user/queue/command-results\n\n");
                     viewer.send("SUBSCRIBE\nid:trip\ndestination:/topic/trips/" + trip.getId() + "/events\n\n");
                     awaitSubscription(writer, WebSocketEventTargetType.USER, owner, WebSocketEventType.COMMAND_RESULT);
                     awaitSubscription(writer, WebSocketEventTargetType.TRIP, trip.getId(), WebSocketEventType.TRIP_EVENT);
+                    awaitSubscription(sharedWriter, WebSocketEventTargetType.USER, editor, WebSocketEventType.COMMAND_RESULT);
+                    awaitSubscription(sharedWriter, WebSocketEventTargetType.TRIP, trip.getId(), WebSocketEventType.TRIP_EVENT);
+                    awaitSubscription(viewer, WebSocketEventTargetType.USER, reader, WebSocketEventType.COMMAND_RESULT);
                     awaitSubscription(viewer, WebSocketEventTargetType.TRIP, trip.getId(), WebSocketEventType.TRIP_EVENT);
                     String command = "SEND\ndestination:/app/trips/" + trip.getId()
                             + "/update\ncontent-type:application/json\n\n{\"requestId\":\"e2e-save\",\"changes\":{\"tripName\":\"소켓수정\"}}";
@@ -135,6 +149,7 @@ class TripEditWebSocketEndToEndTest {
                             frame -> assertThat(frame).contains("TRIP_UPDATE_SUCCESS", "SUCCEEDED", "e2e-save"),
                             frame -> assertThat(frame).contains("TRIP_UPDATED", "소켓수정", "e2e-save"));
                     assertThat(viewer.next()).contains("TRIP_UPDATED", "소켓수정", "e2e-save");
+                    assertThat(sharedWriter.next()).contains("TRIP_UPDATED", "소켓수정", "e2e-save");
                     writer.send(command);
                     assertThat(writer.next()).contains("TRIP_UPDATE_SUCCESS", "e2e-save");
                     Trip saved = trips.findById(trip.getId()).orElseThrow();
@@ -147,12 +162,44 @@ class TripEditWebSocketEndToEndTest {
                         assertThat(connection.next()).contains(
                                 "TRIP_PHOTOS_RESTORED", "\"sequence\":2", "\"sourceIssue\":\"BLURRY\"",
                                 "\"tripAttachmentId\":" + photo.getId(),
-                                "\"unclassifiedAttachmentCount\":0", "https://test.example/"
+                                "\"unclassifiedAttachmentCount\":1", "https://test.example/"
                         );
                     }
+                    assertThat(sharedWriter.next()).contains("TRIP_PHOTOS_RESTORED", "\"sequence\":2",
+                            "\"tripAttachmentId\":" + photo.getId());
                     assertThat(attachments.findById(photo.getId()).orElseThrow().getClassificationStatus())
                             .isEqualTo(ClassificationStatus.ACTIVE);
                     assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isEqualTo(2);
+
+                    String restoreCommand = "SEND\ndestination:/app/trips/" + trip.getId()
+                            + "/attachments/restore\ncontent-type:application/json\n\n{\"requestId\":\"e2e-shared-restore\",\"items\":[{\"tripAttachmentId\":"
+                            + sharedPhoto.getId() + ",\"tripPlaceId\":" + sharedPhoto.getTripPlaceId() + "}]}";
+                    sharedWriter.send(restoreCommand);
+                    assertThat(List.of(sharedWriter.next(), sharedWriter.next())).satisfiesExactlyInAnyOrder(
+                            frame -> assertThat(frame).contains("ATTACHMENT_RESTORE_SUCCESS", "SUCCEEDED", "e2e-shared-restore"),
+                            frame -> assertThat(frame).contains("TRIP_PHOTOS_RESTORED", "e2e-shared-restore",
+                                    "\"tripAttachmentId\":" + sharedPhoto.getId(),
+                                    "\"unclassifiedAttachmentCount\":0"));
+                    for (Connection connection : List.of(writer, viewer)) {
+                        assertThat(connection.next()).contains("TRIP_PHOTOS_RESTORED", "\"sequence\":3",
+                                "\"tripAttachmentId\":" + sharedPhoto.getId());
+                    }
+                    sharedWriter.send(restoreCommand);
+                    assertThat(sharedWriter.nextContaining("ATTACHMENT_RESTORE_SUCCESS"))
+                            .contains("e2e-shared-restore",
+                            "\"sequence\":3");
+                    assertThat(attachments.findById(sharedPhoto.getId()).orElseThrow().getClassificationStatus())
+                            .isEqualTo(ClassificationStatus.ACTIVE);
+                    assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isEqualTo(3);
+
+                    viewer.send("SEND\ndestination:/app/trips/" + trip.getId()
+                            + "/attachments/restore\ncontent-type:application/json\n\n{\"requestId\":\"e2e-read-denied\",\"items\":[{\"tripAttachmentId\":"
+                            + sharedPhoto.getId() + ",\"tripPlaceId\":" + sharedPhoto.getTripPlaceId() + "}]}");
+                    assertThat(viewer.nextContaining("WRITE_PERMISSION_REQUIRED"))
+                            .contains("REJECTED", "e2e-read-denied");
+                    assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isEqualTo(3);
+                    assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trip_edit_notification_outbox WHERE target_type = 'TRIP' AND target_id = ?",
+                            Integer.class, trip.getId())).isEqualTo(3);
                 }
             } finally {
                 stop(second);
@@ -298,6 +345,21 @@ class TripEditWebSocketEndToEndTest {
                 frame = remaining > 0 ? messages.poll(remaining, TimeUnit.NANOSECONDS) : null;
             }
             assertThat(frame).isNotNull();
+            return frame;
+        }
+
+        private String nextContaining(String token) throws InterruptedException {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            long remaining = deadline - System.nanoTime();
+            String frame = null;
+            while (remaining > 0) {
+                frame = messages.poll(remaining, TimeUnit.NANOSECONDS);
+                if (frame != null && frame.contains(token)) {
+                    return frame;
+                }
+                remaining = deadline - System.nanoTime();
+            }
+            assertThat(frame).contains(token);
             return frame;
         }
 

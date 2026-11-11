@@ -2,8 +2,14 @@ package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.AttachmentDeleteNotAllowedException;
 import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
+import com.yeodam.yeodambe.common.exception.AttachmentRestoreNotAllowedException;
+import com.yeodam.yeodambe.common.exception.BulkRestoreFailedException;
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
+import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.common.exception.PlaceFolderNotFoundException;
+import com.yeodam.yeodambe.common.exception.RestorePlaceFolderRequiredException;
+import com.yeodam.yeodambe.common.exception.RestorePlaceMismatchException;
 import com.yeodam.yeodambe.common.exception.TripAttachmentAddNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNameDuplicatedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
@@ -26,6 +32,12 @@ public final class TripEditRejectionMessageResolver {
             case TripUpdateNotAllowedException ignored -> ErrorMessage.TRIP_UPDATE_NOT_ALLOWED;
             case TripAttachmentAddNotAllowedException ignored -> ErrorMessage.TRIP_ATTACHMENT_ADD_NOT_ALLOWED;
             case AttachmentDeleteNotAllowedException ignored -> ErrorMessage.ATTACHMENT_DELETE_NOT_ALLOWED;
+            case InvalidRestoreRequestException ignored -> ErrorMessage.INVALID_REQUEST;
+            case RestorePlaceFolderRequiredException ignored -> ErrorMessage.RESTORE_PLACE_FOLDER_REQUIRED;
+            case PlaceFolderNotFoundException ignored -> ErrorMessage.PLACE_FOLDER_NOT_FOUND;
+            case RestorePlaceMismatchException ignored -> ErrorMessage.RESTORE_PLACE_MISMATCH;
+            case AttachmentRestoreNotAllowedException ignored -> ErrorMessage.ATTACHMENT_RESTORE_NOT_ALLOWED;
+            case BulkRestoreFailedException ignored -> ErrorMessage.BULK_RESTORE_FAILED;
             default -> null;
         };
     }

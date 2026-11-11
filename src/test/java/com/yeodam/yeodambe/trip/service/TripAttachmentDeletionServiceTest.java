@@ -133,6 +133,7 @@ class TripAttachmentDeletionServiceTest {
         TripAttachment lowerEvaluation = mock(TripAttachment.class);
         TripAttachment replacement = mock(TripAttachment.class);
 
+        when(deletedAttachment.getClassificationStatus()).thenReturn(ClassificationStatus.ACTIVE);
         when(deletedAttachment.getTripPlace()).thenReturn(place);
         when(deletedAttachment.getTrip()).thenReturn(trip);
         when(deletedAttachment.getTripId()).thenReturn(99L);

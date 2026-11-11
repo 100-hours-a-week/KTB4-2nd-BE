@@ -61,6 +61,16 @@ public class TripEditCommandController {
         execute(tripId, "attachments/delete", payload, principal, headers);
     }
 
+    @MessageMapping("/trips/{tripId}/attachments/restore")
+    public void restore(
+            @DestinationVariable long tripId,
+            byte[] payload,
+            Principal principal,
+            SimpMessageHeaderAccessor headers
+    ) {
+        execute(tripId, "attachments/restore", payload, principal, headers);
+    }
+
     private void execute(
             long tripId,
             String command,
@@ -116,7 +126,7 @@ public class TripEditCommandController {
             return body.has("changes");
         }
         // 업무 입력 거절도 BE에 기록해야 같은 requestId로 다시 실행되지 않는다.
-        return body.has("attachmentIds");
+        return "attachments/restore".equals(command) ? body.has("items") : body.has("attachmentIds");
     }
 
     private ErrorMessage knownError(RestClientResponseException exception) {

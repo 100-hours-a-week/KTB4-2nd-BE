@@ -4,15 +4,19 @@ import com.yeodam.yeodambe.trip.service.TripEditAccessService;
 import com.yeodam.yeodambe.TestcontainersConfiguration;
 import com.yeodam.yeodambe.file.entity.StoredFile;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
+import com.yeodam.yeodambe.trip.entity.AttachmentIssue;
+import com.yeodam.yeodambe.trip.entity.ClassificationStatus;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
 import com.yeodam.yeodambe.trip.entity.RegionOrigin;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripAttachment;
+import com.yeodam.yeodambe.trip.entity.TripDetailPlace;
 import com.yeodam.yeodambe.trip.entity.TripEditCommandRecord.CommandType;
 import com.yeodam.yeodambe.trip.entity.TripRegion;
 import com.yeodam.yeodambe.trip.entity.TripSharePermission;
 import com.yeodam.yeodambe.trip.entity.TripShareUser;
 import com.yeodam.yeodambe.trip.repository.TripAttachmentRepository;
+import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripEditNotificationOutboxRepository;
 import com.yeodam.yeodambe.trip.repository.TripRegionRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
@@ -48,6 +52,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -56,6 +62,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -91,6 +98,8 @@ class TripEditCommandIntegrationTest {
     @Autowired private CsrfTokenStore csrfTokens;
     @Autowired private StoredFileRepository files;
     @Autowired private TripAttachmentRepository attachments;
+    @Autowired
+    private TripDetailPlaceRepository places;
     @Autowired private UserStatsRepository stats;
     @MockitoSpyBean private TripEditNotificationOutboxRepository notifications;
     @MockitoSpyBean private TripEditLock editLock;
@@ -523,6 +532,207 @@ class TripEditCommandIntegrationTest {
         assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isZero();
     }
 
+    @Test
+    void WRITE의_단일복구는_한번만_적용하고_결과와_여행_이벤트를_재사용한다() throws Exception {
+        share(TripSharePermission.WRITE);
+        TripDetailPlace place = place();
+        TripAttachment photo = restorablePhoto("shared-restore", place);
+        String body = restoreBody("restore-once", photo.getId(), place.getId());
+
+        restore(readerId, body).andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("ATTACHMENT_RESTORE_SUCCESS"))
+                .andExpect(jsonPath("$.data.sequence").value(1));
+        restore(readerId, body).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sequence").value(1));
+        restore(readerId, restoreBody("restore-once", photo.getId(), place.getId() + 1))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("TRIP_EDIT_COMMAND_MISMATCH"));
+        jdbc.update("UPDATE trip_edit_command_records SET result_expires_at = ? WHERE user_id = ? AND request_id = ?",
+                LocalDateTime.now().minusMinutes(1), readerId, "restore-once");
+        restore(readerId, body).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("TRIP_EDIT_COMMAND_RESULT_EXPIRED"));
+
+        assertThat(attachments.findById(photo.getId()).orElseThrow().getClassificationStatus())
+                .isEqualTo(ClassificationStatus.ACTIVE);
+        assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isEqualTo(1);
+        assertThat(notificationCount("TRIP_EVENT")).isEqualTo(1);
+        assertThat(notificationCount("COMMAND_RESULT")).isEqualTo(2);
+        String event = jdbc.queryForObject("SELECT event_json FROM trip_edit_notification_outbox WHERE target_type = 'TRIP' AND target_id = ?",
+                String.class, trip.getId());
+        assertThat(event).contains("TRIP_PHOTOS_RESTORED", "\"sourceIssue\":\"BLURRY\"");
+    }
+
+    @Test
+    void READ와_미공유_사용자는_사진을_복구하지_못한다() throws Exception {
+        share(TripSharePermission.READ);
+        TripDetailPlace place = place();
+        TripAttachment photo = restorablePhoto("read-restore", place);
+        restore(readerId, restoreBody("read-restore", photo.getId(), place.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"));
+        Long stranger = users.saveAndFlush(new User(UUID.randomUUID() + "@edit.test", "미공유")).getUserId();
+        restore(stranger, restoreBody("stranger-restore", photo.getId(), place.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"));
+
+        assertThat(attachments.findById(photo.getId()).orElseThrow().getClassificationStatus())
+                .isEqualTo(ClassificationStatus.UNCLASSIFIED);
+        assertThat(notificationCount("TRIP_EVENT")).isZero();
+    }
+
+    @Test
+    void 만료되거나_READ로_바뀐_공유자는_새_복구를_실행하지_못한다() throws Exception {
+        share(TripSharePermission.WRITE);
+        TripDetailPlace place = place();
+        TripAttachment photo = restorablePhoto("expired-restore", place);
+        jdbc.update("UPDATE trip_share_users SET expires_at = ? WHERE trip_id = ?",
+                LocalDateTime.now(ZoneId.of("Asia/Seoul")).minusMinutes(1), trip.getId());
+        restore(readerId, restoreBody("expired-restore", photo.getId(), place.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"));
+        jdbc.update("UPDATE trip_share_users SET expires_at = ?, permission = 'READ' WHERE trip_id = ?",
+                LocalDateTime.now(ZoneId.of("Asia/Seoul")).plusHours(1), trip.getId());
+        restore(readerId, restoreBody("read-after-expiry", photo.getId(), place.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"));
+        assertThat(attachments.findById(photo.getId()).orElseThrow().getClassificationStatus())
+                .isEqualTo(ClassificationStatus.UNCLASSIFIED);
+        assertThat(notificationCount("TRIP_EVENT")).isZero();
+    }
+
+    @Test
+    void WRITE_승인_후_락_대기_중_READ가_되어도_복구를_완료한다() throws Exception {
+        share(TripSharePermission.WRITE);
+        TripDetailPlace place = place();
+        TripAttachment photo = restorablePhoto("admitted-restore", place);
+        doAnswer(invocation -> {
+            jdbc.update("UPDATE trip_share_users SET permission = 'READ' WHERE trip_id = ?", trip.getId());
+            return invocation.callRealMethod();
+        }).when(editLock).execute(eq(trip.getId()), any());
+
+        restore(readerId, restoreBody("admitted-restore", photo.getId(), place.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("SUCCEEDED"));
+        restore(readerId, restoreBody("next-restore", photo.getId(), place.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("WRITE_PERMISSION_REQUIRED"));
+        assertThat(attachments.findById(photo.getId()).orElseThrow().getClassificationStatus())
+                .isEqualTo(ClassificationStatus.ACTIVE);
+        assertThat(notificationCount("TRIP_EVENT")).isEqualTo(1);
+    }
+
+    @Test
+    void 잘못된_복구_입력은_기록하고_일괄복구_실패는_전부_롤백한다() throws Exception {
+        share(TripSharePermission.WRITE);
+        TripDetailPlace place = place();
+        TripAttachment first = restorablePhoto("bulk-first", place);
+        TripAttachment second = restorablePhoto("bulk-second", place);
+        restore(readerId, "{\"requestId\":\"invalid-restore\",\"items\":[{\"tripAttachmentId\":\""
+                + first.getId() + "\",\"tripPlaceId\":" + place.getId() + "}]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        restore(readerId, "{\"requestId\":\"missing-destination\",\"items\":[{\"tripAttachmentId\":"
+                + first.getId() + "}]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("RESTORE_PLACE_FOLDER_REQUIRED"));
+        restore(readerId, restoreBody("missing-photo", Long.MAX_VALUE, place.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("ATTACHMENT_NOT_FOUND"));
+        TripDetailPlace otherPlace = place();
+        restore(readerId, restoreBody("wrong-place", first.getId(), otherPlace.getId()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("RESTORE_PLACE_MISMATCH"));
+        restore(readerId, "{\"requestId\":\"bulk-failed\",\"items\":[{\"tripAttachmentId\":"
+                + first.getId() + ",\"tripPlaceId\":" + place.getId() + "},{\"tripAttachmentId\":"
+                + second.getId() + ",\"tripPlaceId\":" + (place.getId() + 1000000L) + "}]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("BULK_RESTORE_FAILED"));
+
+        assertThat(attachments.findById(first.getId()).orElseThrow().getClassificationStatus())
+                .isEqualTo(ClassificationStatus.UNCLASSIFIED);
+        assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isZero();
+        assertThat(notificationCount("TRIP_EVENT")).isZero();
+    }
+
+    @Test
+    void 미분류_사진도_기존_삭제_명령으로_삭제한다() throws Exception {
+        share(TripSharePermission.WRITE);
+        stats.saveAndFlush(new UserStats(users.findById(ownerId).orElseThrow()));
+        TripDetailPlace place = place();
+        TripAttachment photo = restorablePhoto("unclassified-delete", place);
+
+        delete(readerId, "{\"requestId\":\"delete-unclassified\",\"attachmentIds\":[" + photo.getId() + "]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_PHOTOS_DELETE_SUCCESS"));
+
+        assertThat(attachments.findById(photo.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(places.findById(place.getId()).orElseThrow().getDeletedAt()).isNull();
+        assertThat(trips.findById(trip.getId()).orElseThrow().getSequence()).isEqualTo(1);
+    }
+
+    @Test
+    void 일반과_미분류_사진을_함께_삭제하면_일반_마지막_장소만_삭제한다() throws Exception {
+        share(TripSharePermission.WRITE);
+        stats.saveAndFlush(new UserStats(users.findById(ownerId).orElseThrow()));
+        TripDetailPlace normalPlace = place();
+        TripDetailPlace unclassifiedPlace = place();
+        TripAttachment normal = activePhotoAtPlace("normal-delete", normalPlace);
+        TripAttachment unclassified = restorablePhoto("unclassified-bulk-delete", unclassifiedPlace);
+
+        delete(readerId, "{\"requestId\":\"mixed-delete\",\"attachmentIds\":[" + normal.getId()
+                + "," + unclassified.getId() + "]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_PHOTOS_DELETE_SUCCESS"));
+
+        assertThat(attachments.findById(normal.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(attachments.findById(unclassified.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(places.findById(normalPlace.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(places.findById(unclassifiedPlace.getId()).orElseThrow().getDeletedAt()).isNull();
+    }
+
+    @Test
+    void WRITE는_이백개를_한번에_복구하고_이백한개는_거절한다() throws Exception {
+        share(TripSharePermission.WRITE);
+        TripDetailPlace place = place();
+        List<TripAttachment> photos = new ArrayList<>();
+        for (int index = 0; index < 200; index++) {
+            photos.add(restorablePhoto("restore-200-" + index, place));
+        }
+        String items = photos.stream()
+                .map(photo -> "{\"tripAttachmentId\":" + photo.getId() + ",\"tripPlaceId\":" + place.getId() + "}")
+                .collect(Collectors.joining(","));
+        restore(readerId, "{\"requestId\":\"restore-201\",\"items\":[" + items
+                + ", {\"tripAttachmentId\":99999999,\"tripPlaceId\":" + place.getId() + "}]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        restore(readerId, "{\"requestId\":\"restore-200\",\"items\":[" + items + "]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("BULK_ATTACHMENT_RESTORE_SUCCESS"))
+                .andExpect(jsonPath("$.data.sequence").value(1));
+
+        assertThat(photos).allSatisfy(photo -> assertThat(attachments.findById(photo.getId()).orElseThrow()
+                .getClassificationStatus()).isEqualTo(ClassificationStatus.ACTIVE));
+        assertThat(notificationCount("TRIP_EVENT")).isEqualTo(1);
+    }
+
+    @Test
+    void 중복_ID와_다른_여행의_사진이_섞인_복구는_적용하지_않는다() throws Exception {
+        share(TripSharePermission.WRITE);
+        TripDetailPlace place = place();
+        TripAttachment own = restorablePhoto("same-trip", place);
+        restore(readerId, "{\"requestId\":\"duplicate-restore\",\"items\":[{\"tripAttachmentId\":"
+                + own.getId() + ",\"tripPlaceId\":" + place.getId() + "},{\"tripAttachmentId\":"
+                + own.getId() + ",\"tripPlaceId\":" + place.getId() + "}]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+
+        Trip otherTrip = new Trip(ownerId, "다른여행", LocalDate.now(), LocalDate.now());
+        ReflectionTestUtils.setField(otherTrip, "processingStatus", ProcessingStatus.COMPLETED);
+        otherTrip = trips.saveAndFlush(otherTrip);
+        StoredFile file = files.saveAndFlush(StoredFile.uploaded(ownerId, "other.jpg", "original/" + UUID.randomUUID(), "image/jpeg"));
+        TripAttachment foreign = TripAttachment.initial(otherTrip.getId(), file.getId(), "analyze/other", "preview/other");
+        foreign.unclassify(place.getId(), AttachmentIssue.BLURRY, RegionOrigin.EXIF, LocalDateTime.now(),
+                BigDecimal.ZERO, BigDecimal.ZERO, 90);
+        foreign = attachments.saveAndFlush(foreign);
+
+        restore(readerId, "{\"requestId\":\"mixed-trip\",\"items\":[{\"tripAttachmentId\":"
+                + own.getId() + ",\"tripPlaceId\":" + place.getId() + "},{\"tripAttachmentId\":"
+                + foreign.getId() + ",\"tripPlaceId\":" + place.getId() + "}]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("BULK_RESTORE_FAILED"));
+        assertThat(attachments.findById(own.getId()).orElseThrow().getClassificationStatus())
+                .isEqualTo(ClassificationStatus.UNCLASSIFIED);
+        assertThat(notificationCount("TRIP_EVENT")).isZero();
+    }
+
     private void share(TripSharePermission permission) {
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
         shares.saveAndFlush(new TripShareUser(trip.getId(), ownerId, readerId, permission, now.plusHours(1), now));
@@ -535,6 +745,42 @@ class TripEditCommandIntegrationTest {
         TripAttachment photo = TripAttachment.initial(trip.getId(), file.getId(), "analyze/" + key, "preview/" + key);
         photo.classify(null, RegionOrigin.EXIF, LocalDateTime.now(), new BigDecimal("37.5"), new BigDecimal("127.0"), 90);
         return attachments.saveAndFlush(photo);
+    }
+
+    private TripDetailPlace place() {
+        LocalDateTime now = LocalDateTime.now();
+        return places.saveAndFlush(TripDetailPlace.fromAnalysis(trip.getId(), 1, "복구 장소",
+                BigDecimal.ZERO, BigDecimal.ZERO, now, now, null));
+    }
+
+    private TripAttachment restorablePhoto(String key, TripDetailPlace place) {
+        TripAttachment photo = photo(key);
+        photo.unclassify(place.getId(), AttachmentIssue.BLURRY, RegionOrigin.EXIF, LocalDateTime.now(),
+                new BigDecimal("37.5"), new BigDecimal("127.0"), 90);
+        return attachments.saveAndFlush(photo);
+    }
+
+    private TripAttachment activePhotoAtPlace(String key, TripDetailPlace place) {
+        StoredFile file = files.saveAndFlush(StoredFile.uploaded(ownerId, key + ".jpg",
+                "original/" + UUID.randomUUID(), "image/jpeg"));
+        TripAttachment photo = TripAttachment.initial(trip.getId(), file.getId(), "analyze/" + key, "preview/" + key);
+        photo.classify(place.getId(), RegionOrigin.EXIF, LocalDateTime.now(),
+                new BigDecimal("37.5"), new BigDecimal("127.0"), 90);
+        return attachments.saveAndFlush(photo);
+    }
+
+    private String restoreBody(String requestId, Long photoId, Long placeId) {
+        return "{\"requestId\":\"" + requestId + "\",\"items\":[{\"tripAttachmentId\":" + photoId
+                + ",\"tripPlaceId\":" + placeId + "}]}";
+    }
+
+    private ResultActions restore(Long actorId, String body) throws Exception {
+        return mvc.perform(post("/internal/websocket/trips/" + trip.getId() + "/attachments/restore")
+                .with(jwt().jwt(token -> token.subject(actorId.toString())))
+                .cookie(new Cookie("CSRF_CONTEXT", csrfContext))
+                .header("X-CSRF-TOKEN", "edit-test-csrf")
+                .header("X-Internal-Service-Token", "edit-test-token")
+                .contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
     private int notificationCount(String type) {

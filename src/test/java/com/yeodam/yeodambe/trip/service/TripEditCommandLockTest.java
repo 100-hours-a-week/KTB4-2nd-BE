@@ -7,6 +7,7 @@ import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.trip.config.TripEditLockProperties;
 import com.yeodam.yeodambe.trip.exception.TripEditLockRejectedException;
 import com.yeodam.yeodambe.trip.service.request.TripEditPhotoDeleteCommandRequest;
+import com.yeodam.yeodambe.trip.service.request.TripEditPhotoRestoreCommandRequest;
 import com.yeodam.yeodambe.trip.service.request.TripEditUpdateCommandRequest;
 import com.yeodam.yeodambe.trip.service.response.TripEditCommandResultResponse;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -109,6 +110,23 @@ class TripEditCommandLockTest {
 
         assertThat(result.data().sequence()).isEqualTo(3);
         assertThat(events).containsExactly("authorized", "acquired", "delete-commit", "released");
+    }
+
+    @Test
+    void 사진_복구는_WRITE_승인_뒤_여행_락에서_처리한다() throws Exception {
+        acquired();
+        when(transactions.restoreAttachments(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            events.add("restore-commit");
+            return new ApiResponse<>(SuccessMessage.ATTACHMENT_RESTORE_SUCCESS,
+                    new TripEditCommandResultResponse("restore", 7L, "SUCCEEDED", 3L));
+        });
+
+        ApiResponse<TripEditCommandResultResponse> result = service().restoreAttachments(7L, 1L,
+                new TripEditPhotoRestoreCommandRequest("restore",
+                        json.readTree("[{\"tripAttachmentId\":11,\"tripPlaceId\":12}]")));
+
+        assertThat(result.data().sequence()).isEqualTo(3);
+        assertThat(events).containsExactly("authorized", "acquired", "restore-commit", "released");
     }
 
     @Test

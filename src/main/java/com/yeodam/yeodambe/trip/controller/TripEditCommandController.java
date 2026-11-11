@@ -5,6 +5,7 @@ import com.yeodam.yeodambe.common.response.SuccessMessage;
 import com.yeodam.yeodambe.trip.service.TripEditAccessService;
 import com.yeodam.yeodambe.trip.service.TripEditCommandService;
 import com.yeodam.yeodambe.trip.service.request.TripEditPhotoDeleteCommandRequest;
+import com.yeodam.yeodambe.trip.service.request.TripEditPhotoRestoreCommandRequest;
 import com.yeodam.yeodambe.trip.service.request.TripEditUpdateCommandRequest;
 import com.yeodam.yeodambe.trip.service.response.TripEditCommandResultResponse;
 import com.yeodam.yeodambe.trip.service.response.TripWebSocketAccessResponse;
@@ -45,6 +46,16 @@ public class TripEditCommandController {
     ) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .body(commands.deleteAttachments(tripId, Long.valueOf(jwt.getSubject()), request));
+    }
+
+    @PostMapping("/internal/websocket/trips/{tripId}/attachments/restore")
+    public ResponseEntity<ApiResponse<TripEditCommandResultResponse>> restoreAttachments(
+            @Positive @PathVariable Long tripId,
+            @Valid @RequestBody TripEditPhotoRestoreCommandRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(commands.restoreAttachments(tripId, Long.valueOf(jwt.getSubject()), request));
     }
 
     @GetMapping("/internal/websocket/trips/{tripId}/access")

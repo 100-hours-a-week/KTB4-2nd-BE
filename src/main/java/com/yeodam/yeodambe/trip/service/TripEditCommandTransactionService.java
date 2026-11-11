@@ -1,5 +1,10 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.common.exception.AttachmentNotFoundException;
+import com.yeodam.yeodambe.common.exception.AttachmentRestoreNotAllowedException;
+import com.yeodam.yeodambe.common.exception.BulkRestoreFailedException;
+import com.yeodam.yeodambe.common.exception.PlaceFolderNotFoundException;
+import com.yeodam.yeodambe.common.exception.RestorePlaceMismatchException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
@@ -11,6 +16,7 @@ import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEventType;
 import com.yeodam.yeodambe.trip.entity.Trip;
 import com.yeodam.yeodambe.trip.entity.TripEditCommandRecord.CommandType;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripEditCommandResultResponse;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
@@ -35,6 +41,7 @@ public class TripEditCommandTransactionService {
     private final TripRepository trips;
     private final TripService tripService;
     private final TripPhotoDeletionReservationService deletionService;
+    private final TripAttachmentRestoreService restoreService;
     private final TripEditCommandRecordService records;
     private final TripEditNotificationOutboxService notifications;
     private final EntityManager entityManager;
@@ -74,6 +81,37 @@ public class TripEditCommandTransactionService {
         ApiResponse<TripEditCommandResultResponse> result = success(scheduled
                 ? SuccessMessage.TRIP_PHOTOS_DELETE_SCHEDULED : SuccessMessage.TRIP_PHOTOS_DELETE_SUCCESS, requestId, trip);
         saveResult(actorId, CommandType.DELETE_ATTACHMENTS, hash, result);
+        return result;
+    }
+
+    public ApiResponse<TripEditCommandResultResponse> restoreAttachments(
+            Long tripId, Long actorId, String requestId, List<BulkAttachmentRestoreRequest.Item> items, String hash
+    ) {
+        Trip trip = requireActiveTrip(tripId);
+        Optional<ApiResponse<TripEditCommandResultResponse>> previous = records.findResult(
+                actorId, requestId, tripId, CommandType.RESTORE_ATTACHMENTS, hash, now());
+        if (previous.isPresent()) {
+            return enqueuePersonalResult(actorId, previous.orElseThrow());
+        }
+        try {
+            restoreService.restoreForSharedEditing(trip, requestId, items);
+        } catch (BulkRestoreFailedException exception) {
+            if (items.size() == 1) {
+                throw new AttachmentNotFoundException();
+            }
+            throw exception;
+        } catch (AttachmentNotFoundException | PlaceFolderNotFoundException
+                 | RestorePlaceMismatchException | AttachmentRestoreNotAllowedException exception) {
+            if (items.size() > 1) {
+                throw new BulkRestoreFailedException();
+            }
+            throw exception;
+        }
+        refresh(trip);
+        SuccessMessage message = items.size() == 1
+                ? SuccessMessage.ATTACHMENT_RESTORE_SUCCESS : SuccessMessage.BULK_ATTACHMENT_RESTORE_SUCCESS;
+        ApiResponse<TripEditCommandResultResponse> result = success(message, requestId, trip);
+        saveResult(actorId, CommandType.RESTORE_ATTACHMENTS, hash, result);
         return result;
     }
 

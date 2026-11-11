@@ -98,7 +98,8 @@ class WebSocketMessageSecurityTest extends RedisTestSupport {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"/app/trips/14/update", "/app/trips/14/attachments/delete"})
+    @ValueSource(strings = {"/app/trips/14/update", "/app/trips/14/attachments/delete",
+            "/app/trips/14/attachments/restore"})
     void 여행을_구독한_연결의_편집_명령만_허용한다(String destination) {
         assertDenied(message(SimpMessageType.MESSAGE, destination, true, null));
         assertThat(send(message(SimpMessageType.SUBSCRIBE, "/topic/trips/14/events", true, null))).isTrue();

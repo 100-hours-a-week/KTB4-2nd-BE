@@ -110,6 +110,7 @@ public class TripAttachmentDeletionService {
         List<TripAttachment> remaining = softDelete(attachments, trip.getUserId(), reserved)
                 .get(trip.getId());
         List<TripDetailPlace> affectedPlaces = attachments.stream()
+                .filter(attachment -> attachment.getClassificationStatus() == ClassificationStatus.ACTIVE)
                 .map(TripAttachment::getTripPlace)
                 .filter(Objects::nonNull)
                 .distinct()
@@ -167,6 +168,7 @@ public class TripAttachmentDeletionService {
         LocalDateTime deletedAt = LocalDateTime.now();
 
         List<TripDetailPlace> affectedPlaces = attachments.stream()
+                .filter(attachment -> attachment.getClassificationStatus() == ClassificationStatus.ACTIVE)
                 .filter(attachment -> attachment.getTripPlace() != null)
                 .map(TripAttachment::getTripPlace)
                 .distinct()

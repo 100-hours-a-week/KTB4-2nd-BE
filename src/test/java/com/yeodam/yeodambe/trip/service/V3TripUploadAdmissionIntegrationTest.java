@@ -48,6 +48,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -88,7 +89,7 @@ class V3TripUploadAdmissionIntegrationTest {
         LocalDateTime now = LocalDateTime.now();
         shares.saveAndFlush(new TripShareUser(tripId, ownerId, actorId, TripSharePermission.WRITE,
                 now.plusDays(1), now));
-        when(storage.createUploadUrl(anyString(), anyString(), any())).thenAnswer(call -> {
+        when(storage.createUploadUrl(anyString(), anyString(), anyLong(), any())).thenAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             assertThat(lock().isHeldByCurrentThread()).isFalse();
             return "https://example.test/upload";

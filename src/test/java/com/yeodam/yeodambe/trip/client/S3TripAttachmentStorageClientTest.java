@@ -56,6 +56,7 @@ class S3TripAttachmentStorageClientTest {
                 Duration.ofMinutes(10),
                 "",
                 false,
+                "",
                 meterRegistry
         );
     }
@@ -73,6 +74,7 @@ class S3TripAttachmentStorageClientTest {
         URI uri = URI.create(storageClient.createUploadUrl(
                 "trip-uploads/execution/original/photo-key",
                 "image/jpeg",
+                100L,
                 Duration.ofMinutes(10)
         ));
         String query = URLDecoder.decode(uri.getRawQuery(), StandardCharsets.UTF_8);
@@ -83,15 +85,41 @@ class S3TripAttachmentStorageClientTest {
                 .isEqualTo("/trip-uploads/execution/original/photo-key");
         assertThat(query)
                 .contains("X-Amz-Expires=600")
-                .contains("X-Amz-SignedHeaders=content-type;host;if-none-match")
+                .contains("X-Amz-SignedHeaders=content-length;content-type;host;if-none-match")
                 .contains("X-Amz-Signature=");
 
         URI shorterUrl = URI.create(storageClient.createUploadUrl(
                 "trip-uploads/execution/original/photo-key",
                 "image/jpeg",
+                100L,
                 Duration.ofMinutes(3)
         ));
         assertThat(shorterUrl.getRawQuery()).contains("X-Amz-Expires=180");
+    }
+
+    @Test
+    void 로컬_mock_주소가_설정되지_않으면_mock_키를_거절한다() {
+        assertThatThrownBy(() -> storageClient.createReadUrl("local-map-mock/seoul.png"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 설정된_mock_주소로만_mock_사진을_조회한다() {
+        S3TripAttachmentStorageClient local = new S3TripAttachmentStorageClient(
+                "test-bucket", "ap-northeast-2", Duration.ofMinutes(10), "", false,
+                "http://localhost:9090/api/mock-assets", meterRegistry);
+        try {
+            assertThat(local.createReadUrl("local-map-mock/seoul.png"))
+                    .isEqualTo("http://localhost:9090/api/mock-assets/seoul.png");
+        } finally {
+            local.close();
+        }
+    }
+
+    @Test
+    void 양수가_아닌_업로드_크기를_거절한다() {
+        assertThatThrownBy(() -> storageClient.createUploadUrl("key", "image/jpeg", 0L, Duration.ofMinutes(10)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -119,6 +147,7 @@ class S3TripAttachmentStorageClientTest {
                 Duration.ofMinutes(10),
                 "http://localhost:4566",
                 true,
+                "",
                 meterRegistry
         );
 
@@ -131,13 +160,6 @@ class S3TripAttachmentStorageClientTest {
         } finally {
             localStackClient.close();
         }
-    }
-
-    @Test
-    void 로컬_목업_이미지는_S3_서명_URL_대신_정적_리소스_URL을_반환한다() {
-        String url = storageClient.createReadUrl("local-map-mock/seoul.png");
-
-        assertThat(url).isEqualTo("http://localhost:8080/api/mock-assets/seoul.png");
     }
 
     @Test

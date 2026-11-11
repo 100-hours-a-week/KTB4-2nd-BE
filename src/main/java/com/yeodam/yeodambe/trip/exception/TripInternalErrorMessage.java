@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.trip.exception;
 
 public enum TripInternalErrorMessage {
+    LOCAL_MOCK_ASSET_DISABLED("로컬 mock 사진 주소가 설정되지 않았습니다."),
+    UPLOAD_SIZE_INVALID("업로드 파일 크기는 양수여야 합니다."),
     REDIS_LOCK_CONFIGURATION_UNSUPPORTED("Redis 잠금은 Lettuce의 단일 또는 Sentinel 연결 설정이 필요합니다."),
     REDIS_LOCK_SENTINEL_CONFIGURATION_INVALID("Redis 잠금의 Sentinel 감시 이름 또는 노드 주소가 올바르지 않습니다."),
     REDIS_LOCK_TIMEOUT_INVALID("Redis 잠금의 연결 및 명령 제한 시간은 유효한 밀리초 범위의 양수여야 합니다."),

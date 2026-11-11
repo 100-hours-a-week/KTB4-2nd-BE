@@ -4,18 +4,24 @@ import com.sun.net.httpserver.HttpServer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 class S3AsyncUploadHttpTest {
     @Test
@@ -53,7 +59,7 @@ class S3AsyncUploadHttpTest {
         S3TripAttachmentStorageClient storage = null;
         try {
             storage = new S3TripAttachmentStorageClient("test-bucket", "ap-northeast-2",
-                    Duration.ofMinutes(10), "http://127.0.0.1:" + server.getAddress().getPort(), true, metrics);
+                    Duration.ofMinutes(10), "http://127.0.0.1:" + server.getAddress().getPort(), true, "", metrics);
             Path file = Files.writeString(directory.resolve("analyze.jpg"), "test-image-payload");
             CompletableFuture<String> result = storage.storeDerivedToAsync("planned/analyze.jpg", file, "image/jpeg");
             assertThat(received.await(5, TimeUnit.SECONDS)).isTrue();
@@ -68,6 +74,71 @@ class S3AsyncUploadHttpTest {
             if (storage != null) {
                 storage.close();
             }
+            server.stop(0);
+            metrics.close();
+            restore("aws.accessKeyId", previousKey);
+            restore("aws.secretAccessKey", previousSecret);
+        }
+    }
+
+    @Test
+    void 완료_실행기가_포화되어도_모든_업로드_Future는_성공이나_실패로_종료한다(
+            @TempDir Path directory
+    ) throws Exception {
+        String previousKey = System.getProperty("aws.accessKeyId");
+        String previousSecret = System.getProperty("aws.secretAccessKey");
+        System.setProperty("aws.accessKeyId", "test-access");
+        System.setProperty("aws.secretAccessKey", "test-secret");
+        CountDownLatch firstResponse = new CountDownLatch(1);
+        CompletableFuture<Void> releaseCompletion = new CompletableFuture<>();
+        CountDownLatch completionStarted = new CountDownLatch(1);
+        AtomicBoolean first = new AtomicBoolean(true);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            try {
+                exchange.getRequestBody().readAllBytes();
+                if (first.getAndSet(false)) {
+                    assertThat(firstResponse.await(5, TimeUnit.SECONDS)).isTrue();
+                }
+                exchange.getResponseHeaders().set("ETag", "\"test\"");
+                exchange.sendResponseHeaders(200, -1);
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        SimpleMeterRegistry metrics = new SimpleMeterRegistry();
+        S3TripAttachmentStorageClient storage = new S3TripAttachmentStorageClient(
+                "test-bucket", "ap-northeast-2", Duration.ofMinutes(10),
+                "http://127.0.0.1:" + server.getAddress().getPort(), true, "", metrics);
+        try {
+            Path file = Files.writeString(directory.resolve("photo.jpg"), "test-image");
+            List<CompletableFuture<String>> uploads = new ArrayList<>();
+            uploads.add(storage.storeDerivedToAsync("first.jpg", file, "image/jpeg").thenApply(key -> {
+                completionStarted.countDown();
+                releaseCompletion.join();
+                return key;
+            }));
+            firstResponse.countDown();
+            assertThat(completionStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            for (int index = 0; index < 20; index++) {
+                uploads.add(storage.storeDerivedToAsync("queued-" + index + ".jpg", file, "image/jpeg"));
+            }
+            ThreadPoolExecutor completions = (ThreadPoolExecutor) ReflectionTestUtils.getField(storage, "asyncCompletions");
+            assertThat(completions).isNotNull();
+            await().atMost(Duration.ofSeconds(5)).until(() -> completions.getQueue().remainingCapacity() == 0);
+            releaseCompletion.complete(null);
+            CompletableFuture.allOf(uploads.stream()
+                    .map(upload -> upload.handle((key, failure) -> null))
+                    .toArray(CompletableFuture[]::new)).get(10, TimeUnit.SECONDS);
+            assertThat(uploads).allSatisfy(upload -> assertThat(upload).isDone());
+            assertThat(uploads.getFirst().get(1, TimeUnit.SECONDS)).isEqualTo("first.jpg");
+        } finally {
+            firstResponse.countDown();
+            releaseCompletion.complete(null);
+            storage.close();
             server.stop(0);
             metrics.close();
             restore("aws.accessKeyId", previousKey);

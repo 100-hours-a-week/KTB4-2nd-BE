@@ -64,9 +64,9 @@ class InitialAttachmentUploadUrlServiceTest {
                 new InitialAttachmentUploadBatchSnapshot(
                         7L, "upload-id", "execution", 10L, 2L, 1, 2, true,
                         InitialAttachmentUploadStatus.PENDING, null, photos));
-        when(storage.createUploadUrl("key-one", "image/jpeg", Duration.ofMinutes(10)))
+        when(storage.createUploadUrl("key-one", "image/jpeg", 1024L, Duration.ofMinutes(10)))
                 .thenReturn("https://example.test/one");
-        when(storage.createUploadUrl("key-two", "image/png", Duration.ofMinutes(10)))
+        when(storage.createUploadUrl("key-two", "image/png", 1024L, Duration.ofMinutes(10)))
                 .thenReturn("https://example.test/two");
 
         OffsetDateTime earliestExpiry = OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(10);
@@ -87,8 +87,8 @@ class InitialAttachmentUploadUrlServiceTest {
                 .isEqualTo(Map.of("Content-Type", "image/png", "If-None-Match", "*"));
 
         subject.issueUploadUrls(10L, 2L, request);
-        verify(storage, times(2)).createUploadUrl("key-one", "image/jpeg", Duration.ofMinutes(10));
-        verify(storage, times(2)).createUploadUrl("key-two", "image/png", Duration.ofMinutes(10));
+        verify(storage, times(2)).createUploadUrl("key-one", "image/jpeg", 1024L, Duration.ofMinutes(10));
+        verify(storage, times(2)).createUploadUrl("key-two", "image/png", 1024L, Duration.ofMinutes(10));
     }
 
     private InitialAttachmentUploadItem savedItem(

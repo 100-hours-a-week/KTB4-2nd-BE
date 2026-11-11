@@ -46,6 +46,7 @@ import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -91,7 +92,7 @@ class AttachmentConversionAdmissionHttpTest {
         additionId = UUID.randomUUID().toString();
         when(csrf.find("admission-browser")).thenReturn("csrf-token");
         when(sessions.validate(any())).thenReturn(OAuth2TokenValidatorResult.success());
-        when(storage.createUploadUrl(anyString(), anyString(), any())).thenReturn("https://upload.test/photo");
+        when(storage.createUploadUrl(anyString(), anyString(), anyLong(), any())).thenReturn("https://upload.test/photo");
         clearInvocations(jdbc, admission);
     }
 
@@ -116,7 +117,7 @@ class AttachmentConversionAdmissionHttpTest {
         assertThat(count(initial ? "trip_creation_executions" : "additional_attachment_executions")).isZero();
         assertThat(count(table(initial))).isZero();
         assertThat(reservedBytes()).isZero();
-        verify(storage, never()).createUploadUrl(anyString(), anyString(), any());
+        verify(storage, never()).createUploadUrl(anyString(), anyString(), anyLong(), any());
         assertNoAdmissionQueries();
     }
 
@@ -150,7 +151,7 @@ class AttachmentConversionAdmissionHttpTest {
         entityManager.flush();
         assertThat(count(table(initial))).isEqualTo(1);
         assertThat(reservedBytes()).isEqualTo(1024);
-        verify(storage).createUploadUrl(anyString(), anyString(), any());
+        verify(storage).createUploadUrl(anyString(), anyString(), anyLong(), any());
         assertNoAdmissionQueries();
     }
 
@@ -170,7 +171,7 @@ class AttachmentConversionAdmissionHttpTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body(initial, 1, 1, true)))
                 .andExpect(status().isForbidden());
         verify(admission, never()).assertNewExecutionAllowed();
-        verify(storage, never()).createUploadUrl(anyString(), anyString(), any());
+        verify(storage, never()).createUploadUrl(anyString(), anyString(), anyLong(), any());
     }
 
     @ParameterizedTest

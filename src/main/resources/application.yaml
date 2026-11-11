@@ -211,6 +211,10 @@ spring:
   flyway:
     enabled: false
 
+attachment:
+  s3:
+    local-mock-asset-base-url: http://localhost:${server.port:8080}/api/mock-assets
+
 management:
   endpoints:
     web:

@@ -72,7 +72,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
         tripId = tripRepository.save(new Trip(userId, "추가 URL 여행", LocalDate.now(), LocalDate.now())).getId();
         jdbcTemplate.update("UPDATE trips SET processing_status = 'COMPLETED' WHERE trip_id = ?", tripId);
         additionId = UUID.randomUUID().toString();
-        when(storage.createUploadUrl(anyString(), anyString(), eq(Duration.ofMinutes(10))))
+        when(storage.createUploadUrl(anyString(), anyString(), anyLong(), eq(Duration.ofMinutes(10))))
                 .thenAnswer(call -> "https://example.test/" + call.getArgument(0));
     }
 
@@ -215,12 +215,12 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
         assertThat(executionCount()).isEqualTo(1);
         assertThat(executionReservedBytes()).isEqualTo(3072L);
         assertThat(memberReservedBytes()).isEqualTo(3072L);
-        verify(storage, times(4)).createUploadUrl(anyString(), anyString(), eq(Duration.ofMinutes(10)));
+        verify(storage, times(4)).createUploadUrl(anyString(), anyString(), anyLong(), eq(Duration.ofMinutes(10)));
     }
 
     @Test
     void URL_발급_실패_후_같은_묶음의_URL을_중복_예약_없이_다시_발급한다() {
-        when(storage.createUploadUrl(anyString(), anyString(), eq(Duration.ofMinutes(10))))
+        when(storage.createUploadUrl(anyString(), anyString(), anyLong(), eq(Duration.ofMinutes(10))))
                 .thenReturn("https://example.test/first")
                 .thenThrow(new IllegalStateException(
                         com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage.PRESIGN_FAILURE.message()));
@@ -232,7 +232,7 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
         assertThat(itemCount()).isEqualTo(2);
         assertThat(executionCount()).isOne();
         assertThat(memberReservedBytes()).isEqualTo(3072L);
-        when(storage.createUploadUrl(anyString(), anyString(), eq(Duration.ofMinutes(10))))
+        when(storage.createUploadUrl(anyString(), anyString(), anyLong(), eq(Duration.ofMinutes(10))))
                 .thenReturn("https://example.test/retry");
         assertThat(service.issueUploadUrls(tripId, userId, request()).attachments()).hasSize(2);
         assertThat(batchCount()).isOne();
@@ -255,6 +255,14 @@ class AdditionalAttachmentUploadUrlIntegrationTest {
         verifyNoInteractions(storage);
         assertThat(batchCount()).isEqualTo(1);
         assertThat(itemCount()).isEqualTo(2);
+    }
+
+    @Test
+    void 추가_업로드_URL은_예약된_사진별_크기를_서명에_전달한다() {
+        service.issueUploadUrls(tripId, userId, request());
+
+        verify(storage).createUploadUrl(anyString(), eq("image/jpeg"), eq(1024L), eq(Duration.ofMinutes(10)));
+        verify(storage).createUploadUrl(anyString(), eq("image/png"), eq(2048L), eq(Duration.ofMinutes(10)));
     }
 
     private AdditionalAttachmentUploadUrlRequest request() {

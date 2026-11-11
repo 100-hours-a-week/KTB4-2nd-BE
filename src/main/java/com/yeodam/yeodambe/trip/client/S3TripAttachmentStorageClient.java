@@ -17,6 +17,7 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
@@ -45,7 +46,6 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class S3TripAttachmentStorageClient implements TripAttachmentStorageClient {
     private static final String LOCAL_MOCK_ASSET_PREFIX = "local-map-mock/";
-    private static final String LOCAL_MOCK_ASSET_URL_PREFIX = "http://localhost:8080/api/mock-assets/";
 
     private final S3Client s3;
     private final S3AsyncClient asyncS3;
@@ -57,6 +57,7 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     private final S3Presigner presigner;
     private final Duration readUrlTtl;
     private final MeterRegistry meterRegistry;
+    private final String localMockAssetBaseUrl;
 
     @Autowired
     public S3TripAttachmentStorageClient(
@@ -65,16 +66,18 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
             @Value("${attachment.s3.read-url-ttl}") Duration readUrlTtl,
             @Value("${attachment.s3.endpoint}") String endpoint,
             @Value("${attachment.s3.path-style}") boolean pathStyle,
+            @Value("${attachment.s3.local-mock-asset-base-url:}") String localMockAssetBaseUrl,
             MeterRegistry meterRegistry
     ) {
+        this.localMockAssetBaseUrl = localMockAssetBaseUrl;
         this.bucket = bucket;
         this.readUrlTtl = readUrlTtl;
         this.meterRegistry = meterRegistry;
-        var s3Configuration = S3Configuration.builder()
+        S3Configuration s3Configuration = S3Configuration.builder()
                 .pathStyleAccessEnabled(pathStyle)
                 .build();
 
-        var s3Builder = S3Client.builder()
+        S3ClientBuilder s3Builder = S3Client.builder()
                 .region(Region.of(region))
                 .serviceConfiguration(s3Configuration)
                 .overrideConfiguration(config -> config.apiCallTimeout(Duration.ofMinutes(1)));
@@ -90,7 +93,7 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
                         .eventLoopGroupBuilder(SdkEventLoopGroup.builder().numberOfThreads(1)))
                 .overrideConfiguration(config -> config.apiCallTimeout(Duration.ofMinutes(1)));
 
-        var presignerBuilder = S3Presigner.builder()
+        S3Presigner.Builder presignerBuilder = S3Presigner.builder()
                 .region(Region.of(region))
                 .serviceConfiguration(s3Configuration);
 
@@ -124,6 +127,7 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
             Duration readUrlTtl,
             MeterRegistry meterRegistry
     ) {
+        this.localMockAssetBaseUrl = "";
         this.s3 = s3;
         this.asyncS3 = asyncS3;
         this.bucket = bucket;
@@ -170,12 +174,17 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     public String createUploadUrl(
             String objectKey,
             String contentType,
+            long sizeBytes,
             Duration ttl
     ) {
+        if (sizeBytes <= 0) {
+            throw new IllegalArgumentException(TripInternalErrorMessage.UPLOAD_SIZE_INVALID.message());
+        }
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(bucket)
                 .key(objectKey)
                 .contentType(contentType)
+                .contentLength(sizeBytes)
                 .ifNoneMatch("*")
                 .build();
 
@@ -193,8 +202,10 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
     @Override
     public String createReadUrl(String objectKey) {
         if (objectKey.startsWith(LOCAL_MOCK_ASSET_PREFIX)) {
-            return LOCAL_MOCK_ASSET_URL_PREFIX
-                    + objectKey.substring(LOCAL_MOCK_ASSET_PREFIX.length());
+            if (localMockAssetBaseUrl.isBlank()) {
+                throw new IllegalStateException(TripInternalErrorMessage.LOCAL_MOCK_ASSET_DISABLED.message());
+            }
+            return localMockAssetBaseUrl + "/" + objectKey.substring(LOCAL_MOCK_ASSET_PREFIX.length());
         }
 
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -319,7 +330,7 @@ public class S3TripAttachmentStorageClient implements TripAttachmentStorageClien
                 .build();
         WorkflowLog.Stage timing = startDerivedUploadLogging(objectKey);
         try {
-            var upload = asyncS3.putObject(request, AsyncRequestBody.fromFile(file));
+            CompletableFuture<PutObjectResponse> upload = asyncS3.putObject(request, AsyncRequestBody.fromFile(file));
             trackDerivedUploadCompletion(upload, timing);
             return upload.handle((response, failure) -> {
                 if (failure != null) {

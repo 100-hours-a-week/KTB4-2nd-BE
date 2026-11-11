@@ -88,7 +88,7 @@ class DbConversionMutationBoundaryIntegrationTest {
         TripAnalysisTestFixture fixture = new TripAnalysisTestFixture(jdbc);
         ownerId = fixture.createOwner();
         tripId = fixture.createTrip(ownerId);
-        when(storage.createUploadUrl(anyString(), anyString(), any()))
+        when(storage.createUploadUrl(anyString(), anyString(), anyLong(), any()))
                 .thenReturn("https://storage.test/upload");
         when(storage.storeDerivedToAsync(anyString(), any(), anyString())).thenAnswer(invocation -> {
             observeExternal();

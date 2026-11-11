@@ -110,7 +110,8 @@ class TripSubscriptionServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"/app/trips/14/update", "/app/trips/14/attachments/delete"})
+    @ValueSource(strings = {"/app/trips/14/update", "/app/trips/14/attachments/delete",
+            "/app/trips/14/attachments/restore"})
     void 같은_연결에서_같은_여행을_구독해야_편집_명령을_허용한다(String destination) {
         Message<byte[]> command = message("s1", null, destination, SimpMessageType.MESSAGE);
         assertThat(service.authorize(command, user)).isFalse();

@@ -1,12 +1,16 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.exception.InvalidAttachmentIdsException;
+import com.yeodam.yeodambe.common.exception.InvalidRestoreRequestException;
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.common.exception.RestorePlaceFolderRequiredException;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.common.response.ErrorMessage;
 import com.yeodam.yeodambe.trip.entity.TripEditCommandRecord.CommandType;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
+import com.yeodam.yeodambe.trip.service.request.BulkAttachmentRestoreRequest;
 import com.yeodam.yeodambe.trip.service.request.TripEditPhotoDeleteCommandRequest;
+import com.yeodam.yeodambe.trip.service.request.TripEditPhotoRestoreCommandRequest;
 import com.yeodam.yeodambe.trip.service.request.TripEditUpdateCommandRequest;
 import com.yeodam.yeodambe.trip.service.request.TripUpdateRequest;
 import com.yeodam.yeodambe.trip.service.response.TripEditCommandResultResponse;
@@ -35,6 +39,7 @@ import java.util.stream.StreamSupport;
 @RequiredArgsConstructor
 public class TripEditCommandService {
     private static final Set<String> UPDATE_FIELDS = Set.of("tripName", "startDate", "endDate", "regionCodes");
+    private static final Set<String> RESTORE_FIELDS = Set.of("tripAttachmentId", "tripPlaceId");
     private final TripEditCommandTransactionService transactions;
     private final TripEditAccessService access;
     private final ObjectMapper objectMapper;
@@ -57,6 +62,15 @@ public class TripEditCommandService {
         return executeCommand(tripId, actorId, command.requestId(), CommandType.DELETE_ATTACHMENTS, hash,
                 () -> parseAttachmentIds(command.attachmentIds()),
                 ids -> transactions.deleteAttachments(tripId, actorId, command.requestId(), ids, hash));
+    }
+
+    public ApiResponse<TripEditCommandResultResponse> restoreAttachments(
+            Long tripId, Long actorId, TripEditPhotoRestoreCommandRequest command
+    ) {
+        String hash = fingerprint(command.items());
+        return executeCommand(tripId, actorId, command.requestId(), CommandType.RESTORE_ATTACHMENTS, hash,
+                () -> parseRestores(command.items()),
+                items -> transactions.restoreAttachments(tripId, actorId, command.requestId(), items, hash));
     }
 
     private <T> ApiResponse<TripEditCommandResultResponse> executeCommand(
@@ -125,6 +139,39 @@ public class TripEditCommandService {
             throw new InvalidAttachmentIdsException();
         }
         return StreamSupport.stream(attachmentIds.spliterator(), false).map(JsonNode::asLong).toList();
+    }
+
+    private List<BulkAttachmentRestoreRequest.Item> parseRestores(JsonNode items) {
+        if (items == null || !items.isArray()) {
+            throw new InvalidRestoreRequestException();
+        }
+        List<BulkAttachmentRestoreRequest.Item> parsed = StreamSupport.stream(items.spliterator(), false)
+                .map(this::parseRestoreItem)
+                .toList();
+        if (parsed.stream().anyMatch(item -> item.tripPlaceId() == null)) {
+            throw new RestorePlaceFolderRequiredException();
+        }
+        if (!validator.validate(new BulkAttachmentRestoreRequest(parsed)).isEmpty()) {
+            throw new InvalidRestoreRequestException();
+        }
+        return parsed;
+    }
+
+    private BulkAttachmentRestoreRequest.Item parseRestoreItem(JsonNode item) {
+        if (!item.isObject() || item.properties().stream().anyMatch(field -> !RESTORE_FIELDS.contains(field.getKey()))
+                || !validLong(item.get("tripAttachmentId"))) {
+            throw new InvalidRestoreRequestException();
+        }
+        JsonNode destination = item.get("tripPlaceId");
+        if (destination != null && !destination.isNull() && !validLong(destination)) {
+            throw new InvalidRestoreRequestException();
+        }
+        return new BulkAttachmentRestoreRequest.Item(item.get("tripAttachmentId").asLong(),
+                destination == null || destination.isNull() ? null : destination.asLong());
+    }
+
+    private boolean validLong(JsonNode value) {
+        return value != null && value.isIntegralNumber() && value.canConvertToLong();
     }
 
     private TripUpdateRequest parseUpdate(JsonNode changes) {

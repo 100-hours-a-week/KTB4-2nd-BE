@@ -74,6 +74,7 @@ public class TripEditCommandRecord {
 
     public enum CommandType {
         UPDATE_TRIP,
-        DELETE_ATTACHMENTS
+        DELETE_ATTACHMENTS,
+        RESTORE_ATTACHMENTS
     }
 }

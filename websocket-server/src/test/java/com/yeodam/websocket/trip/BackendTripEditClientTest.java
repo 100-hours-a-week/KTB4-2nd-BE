@@ -91,6 +91,22 @@ class BackendTripEditClientTest {
     }
 
     @Test
+    void 복구_명령도_인증_쿠키와_CSRF를_유지해_BE에_전달한다() {
+        String body = "{\"requestId\":\"restore\",\"items\":[{\"tripAttachmentId\":10,\"tripPlaceId\":20}]}";
+        server.expect(requestTo("http://backend/api/internal/websocket/trips/14/attachments/restore"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-CSRF-TOKEN", "original-csrf"))
+                .andExpect(header("X-Internal-Service-Token", "service"))
+                .andExpect(header("Cookie", org.hamcrest.Matchers.containsString("accessToken=access")))
+                .andExpect(content().json(body))
+                .andRespond(withSuccess("{\"message\":\"ATTACHMENT_RESTORE_SUCCESS\",\"data\":{\"requestId\":\"restore\",\"tripId\":14,\"status\":\"SUCCEEDED\",\"sequence\":3}}",
+                        MediaType.APPLICATION_JSON));
+
+        client.execute(14, "attachments/restore", mapper.readTree(body), credentials, "original-csrf");
+        server.verify();
+    }
+
+    @Test
     void 변경번호가_없는_영속_거절_결과도_허용한다() {
         server.expect(requestTo("http://backend/api/internal/websocket/trips/14/update"))
                 .andRespond(withSuccess("{\"message\":\"INVALID_TRIP_REQUEST\",\"data\":{\"requestId\":\"r1\",\"tripId\":14,\"status\":\"REJECTED\"}}", MediaType.APPLICATION_JSON));

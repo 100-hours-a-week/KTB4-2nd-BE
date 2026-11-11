@@ -101,7 +101,8 @@ public class WebSocketSecurityConfig {
                                 && presenceService.authorizeSubscription(authentication.get(), context.getMessage())
                 ))
                 .simpTypeMatchers(SimpMessageType.SUBSCRIBE).denyAll()
-                .simpDestMatchers("/app/trips/*/update", "/app/trips/*/attachments/delete")
+                .simpDestMatchers("/app/trips/*/update", "/app/trips/*/attachments/delete",
+                        "/app/trips/*/attachments/restore")
                 .access((authentication, context) -> new AuthorizationDecision(
                         tripSubscriptions.authorize(context.getMessage(), authentication.get())
                 ))

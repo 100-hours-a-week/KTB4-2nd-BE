@@ -51,7 +51,8 @@ public class WebSocketAuthenticationSecurityConfig {
                 ).authenticated()
                 .requestMatchers(HttpMethod.POST,
                         "/internal/websocket/trips/*/update",
-                        "/internal/websocket/trips/*/attachments/delete").authenticated()
+                        "/internal/websocket/trips/*/attachments/delete",
+                        "/internal/websocket/trips/*/attachments/restore").authenticated()
                 .anyRequest().denyAll()
         );
 

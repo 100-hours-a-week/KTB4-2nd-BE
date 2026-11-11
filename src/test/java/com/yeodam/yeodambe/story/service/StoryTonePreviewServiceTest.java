@@ -26,7 +26,7 @@ class StoryTonePreviewServiceTest {
     private final StoryTonePreviewAiClient ai = mock(StoryTonePreviewAiClient.class);
     private final StoryTonePreviewResultValidator validator = spy(new StoryTonePreviewResultValidator());
     private final TripAttachmentStorageClient storage = mock(TripAttachmentStorageClient.class);
-    private final StoryTonePreviewService service = new StoryTonePreviewService(input, ready, ai, validator, storage);
+    private final StoryTonePreviewService service = new StoryTonePreviewService(input, ready, ai, validator, storage, 2);
     private final StoryTonePreviewRequest frontend = new StoryTonePreviewRequest(Story.Mood.PLAIN, List.of());
 
     @Test

@@ -42,7 +42,7 @@ public class RequestRateLimitInterceptor implements HandlerInterceptor {
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof Jwt jwt)) {
-            throw new AuthenticationCredentialsNotFoundException("요청 제한에 필요한 인증 정보가 없습니다.");
+            throw new AuthenticationCredentialsNotFoundException(RequestRateLimitErrorMessage.AUTHENTICATION_REQUIRED.message());
         }
 
         long userId = Long.parseLong(jwt.getSubject());
@@ -54,7 +54,16 @@ public class RequestRateLimitInterceptor implements HandlerInterceptor {
     }
 
     private RequestRateLimitGroup groupFor(HttpServletRequest request) {
-        if (!"/trips".equals(request.getServletPath())) {
+        String path = request.getServletPath();
+        if ("POST".equals(request.getMethod())) {
+            if ("/attachments/bulk-download".equals(path)) {
+                return RequestRateLimitGroup.ATTACHMENT_BULK_DOWNLOAD;
+            }
+            if (path.matches("/stories/[^/]+/tone-preview")) {
+                return RequestRateLimitGroup.STORY_TONE_PREVIEW;
+            }
+        }
+        if (!"/trips".equals(path)) {
             return null;
         }
         return switch (request.getMethod()) {

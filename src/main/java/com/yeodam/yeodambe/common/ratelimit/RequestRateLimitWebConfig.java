@@ -22,6 +22,7 @@ public class RequestRateLimitWebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(interceptor).addPathPatterns("/trips");
+        registry.addInterceptor(interceptor).addPathPatterns(
+                "/trips", "/attachments/bulk-download", "/stories/*/tone-preview");
     }
 }

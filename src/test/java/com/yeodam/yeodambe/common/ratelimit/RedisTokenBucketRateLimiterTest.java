@@ -27,7 +27,9 @@ class RedisTokenBucketRateLimiterTest {
                 "yeodam:test",
                 Duration.ofSeconds(60),
                 new RequestRateLimitProperties.Bucket(5, 30),
-                new RequestRateLimitProperties.Bucket(1, 5)
+                new RequestRateLimitProperties.Bucket(1, 5),
+                null,
+                null
         );
         RedisTokenBucketRateLimiter rateLimiter = new RedisTokenBucketRateLimiter(redis, properties);
 
@@ -49,7 +51,9 @@ class RedisTokenBucketRateLimiterTest {
                 "yeodam:test",
                 Duration.ofSeconds(60),
                 new RequestRateLimitProperties.Bucket(5, 30),
-                new RequestRateLimitProperties.Bucket(1, 5)
+                new RequestRateLimitProperties.Bucket(1, 5),
+                null,
+                null
         );
         RedisTokenBucketRateLimiter rateLimiter = new RedisTokenBucketRateLimiter(redis, properties);
 

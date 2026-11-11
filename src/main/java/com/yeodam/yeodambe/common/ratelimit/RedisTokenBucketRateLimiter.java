@@ -60,6 +60,8 @@ public class RedisTokenBucketRateLimiter {
         return switch (group) {
             case TRIP_READ -> properties.tripRead();
             case TRIP_CREATE -> properties.tripCreate();
+            case ATTACHMENT_BULK_DOWNLOAD -> properties.attachmentBulkDownload();
+            case STORY_TONE_PREVIEW -> properties.storyTonePreview();
         };
     }
 }

@@ -68,9 +68,11 @@ public class TripAttachmentController {
     private final TripAttachmentRestoreService tripAttachmentRestoreService;
 
     @PostMapping(value = "/trips/{tripId}/attachments", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ApiResponse<AdditionalAttachmentUploadCompleteResponse>>
-    completeAdditionalUpload(@PathVariable Long tripId, @AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody AdditionalAttachmentUploadCompleteRequest request) {
+    public ResponseEntity<ApiResponse<AdditionalAttachmentUploadCompleteResponse>> completeAdditionalUpload(
+            @PathVariable @Positive Long tripId,
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody AdditionalAttachmentUploadCompleteRequest request
+    ) {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(new ApiResponse<>(
                 SuccessMessage.TRIP_ATTACHMENT_ADD_ACCEPTED,
                 additionalUploadCompletion.complete(tripId, Long.valueOf(jwt.getSubject()), request)));
@@ -131,7 +133,7 @@ public class TripAttachmentController {
 
     @PostMapping(value = "/trips/{tripId}/initial-attachments", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> completeInitialAttachmentUpload(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody InitialAttachmentUploadCompleteRequest request
     ) {
@@ -152,7 +154,7 @@ public class TripAttachmentController {
     )
     public ResponseEntity<ApiResponse<InitialAttachmentUploadUrlResponse>>
     issueInitialAttachmentUploadUrls(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @RequestBody InitialAttachmentUploadUrlRequest request,
             @AuthenticationPrincipal Jwt jwt
     ) {
@@ -175,7 +177,7 @@ public class TripAttachmentController {
     )
     public ResponseEntity<ApiResponse<AdditionalAttachmentUploadUrlResponse>>
     issueAdditionalAttachmentUploadUrls(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @RequestBody AdditionalAttachmentUploadUrlRequest request,
             @AuthenticationPrincipal Jwt jwt
     ) {
@@ -198,8 +200,8 @@ public class TripAttachmentController {
 
     @GetMapping("/trips/{tripId}/place-folders/{tripPlaceId}/attachments")
     public ResponseEntity<ApiResponse<TripAttachmentListResponse>> findAttachmentsByPlaceFolder(
-            @PathVariable Long tripId,
-            @PathVariable Long tripPlaceId,
+            @PathVariable @Positive Long tripId,
+            @PathVariable @Positive Long tripPlaceId,
             @RequestParam(required = false) String cursor,
             @AuthenticationPrincipal Jwt jwt
     ) {
@@ -220,7 +222,7 @@ public class TripAttachmentController {
 
     @GetMapping("/attachments/{tripAttachmentId}")
     public ResponseEntity<ApiResponse<TripAttachmentDetailResponse>> findAttachmentDetail(
-            @PathVariable Long tripAttachmentId,
+            @PathVariable @Positive Long tripAttachmentId,
             @AuthenticationPrincipal Jwt jwt
     ) {
         Long userId = Long.valueOf(jwt.getSubject());
@@ -238,7 +240,7 @@ public class TripAttachmentController {
 
     @GetMapping("/attachments/{tripAttachmentId}/download")
     public ResponseEntity<ApiResponse<TripAttachmentDownloadResponse>> issueDownloadUrl(
-            @PathVariable Long tripAttachmentId,
+            @PathVariable @Positive Long tripAttachmentId,
             @AuthenticationPrincipal Jwt jwt
     ) {
         Long userId = Long.valueOf(jwt.getSubject());
@@ -256,7 +258,7 @@ public class TripAttachmentController {
 
     @DeleteMapping("/attachments/{tripAttachmentId}")
     public ResponseEntity<Void> deleteAttachment(
-            @PathVariable Long tripAttachmentId,
+            @PathVariable @Positive Long tripAttachmentId,
             @AuthenticationPrincipal Jwt jwt
     ) {
         Long userId = Long.valueOf(jwt.getSubject());

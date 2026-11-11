@@ -100,7 +100,7 @@ public class TripController {
 
     @PatchMapping("/trips/{tripId}")
     public ResponseEntity<ApiResponse<TripUpdateResponse>> updateTrip(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @Valid @RequestBody TripUpdateRequest request,
             BindingResult bindingResult,
             @AuthenticationPrincipal Jwt jwt
@@ -121,7 +121,7 @@ public class TripController {
 
     @PostMapping("/trips/{tripId}/favorite")
     public ResponseEntity<ApiResponse<TripFavoriteResponse>> registerFavorite(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.ok(new ApiResponse<>(
@@ -132,7 +132,7 @@ public class TripController {
 
     @DeleteMapping("/trips/{tripId}/favorite")
     public ResponseEntity<Void> removeFavorite(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
         tripUpdateService.removeFavorite(tripId, Long.valueOf(jwt.getSubject()));
@@ -141,7 +141,7 @@ public class TripController {
 
     @GetMapping("/trips/{tripId}/processing-status")
     public ResponseEntity<ApiResponse<TripProcessingStatusResponse>> getProcessingStatus(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.ok(new ApiResponse<>(
@@ -164,7 +164,7 @@ public class TripController {
 
     @DeleteMapping("/trips/{tripId}/processing")
     public ResponseEntity<Void> cancelProcessing(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
         processingCancellationService.cancel(tripId, Long.valueOf(jwt.getSubject()));
@@ -173,7 +173,7 @@ public class TripController {
 
     @DeleteMapping("/trips/{tripId}")
     public ResponseEntity<Void> deleteTrip(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
         tripDeletionService.delete(tripId, Long.valueOf(jwt.getSubject()));
@@ -182,7 +182,7 @@ public class TripController {
 
     @GetMapping("/trips/{tripId}")
     public ResponseEntity<ApiResponse<TripDetailResponse>> findTripDetail(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @AuthenticationPrincipal Jwt jwt
     ) {
         return ResponseEntity.ok(new ApiResponse<>(
@@ -204,7 +204,7 @@ public class TripController {
 
     @GetMapping("/trips/{tripId}/edit")
     public ResponseEntity<ApiResponse<TripEditResponse>> findTripForEdit(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @RequestParam(required = false) String cursor,
             @AuthenticationPrincipal Jwt jwt
     ) {
@@ -272,7 +272,7 @@ public class TripController {
 
     @GetMapping("/trips/{tripId}/place-folders")
     public ResponseEntity<ApiResponse<TripPlaceFolderListResponse>> findPlaceFolders(
-            @PathVariable Long tripId,
+            @PathVariable @Positive Long tripId,
             @RequestParam(required = false) String cursor,
             @AuthenticationPrincipal Jwt jwt
     ) {

@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.trip.controller;
 import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
 import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
+import com.yeodam.yeodambe.common.exception.TripNotFoundException;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.trip.controller.TripController;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -25,10 +26,21 @@ import com.yeodam.yeodambe.trip.service.response.TripProcessingStatusResponse;
 import com.yeodam.yeodambe.trip.service.response.TripUpdateResponse;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.core.MethodParameter;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.support.WebDataBinderFactory;
+import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.method.support.ModelAndViewContainer;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
@@ -38,6 +50,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -63,6 +77,67 @@ class TripControllerTest {
             LocalDate.now(),
             List.of("50110")
     );
+
+    @Test
+    void 양수인_미존재_여행은_404를_유지한다() throws Exception {
+        when(tripService.findTripDetail(7L, 1L)).thenThrow(new TripNotFoundException());
+
+        mvc().perform(get("/trips/7"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"));
+        verify(tripService).findTripDetail(7L, 1L);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "PATCH, /trips/{id}, {\"tripName\":\"여행\"}",
+            "POST, /trips/{id}/favorite,",
+            "DELETE, /trips/{id}/favorite,",
+            "GET, /trips/{id}/processing-status,",
+            "DELETE, /trips/{id}/processing,",
+            "DELETE, /trips/{id},",
+            "GET, /trips/{id},",
+            "GET, /trips/{id}/edit,",
+            "GET, /trips/{id}/place-folders,"
+    })
+    void 여행_경로의_양수가_아닌_ID는_서비스_호출_없이_400을_반환한다(
+            String method,
+            String path,
+            String body
+    ) throws Exception {
+        MockMvc mockMvc = mvc();
+        for (String tripId : List.of("0", "-1")) {
+            mockMvc.perform(request(HttpMethod.valueOf(method), path.replace("{id}", tripId))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body == null ? "" : body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        }
+        verifyNoInteractions(tripService, tripUpdateService, processingStatusService,
+                cancellationService, placeFolderListService, deletionService);
+    }
+
+    private MockMvc mvc() {
+        return standaloneSetup(controller)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .setCustomArgumentResolvers(new HandlerMethodArgumentResolver() {
+                    @Override
+                    public boolean supportsParameter(MethodParameter parameter) {
+                        return parameter.hasParameterAnnotation(AuthenticationPrincipal.class);
+                    }
+
+                    @Override
+                    public Object resolveArgument(
+                            MethodParameter parameter,
+                            ModelAndViewContainer container,
+                            NativeWebRequest request,
+                            WebDataBinderFactory binderFactory
+                    ) {
+                        return jwt();
+                    }
+                })
+                .build();
+    }
 
     @Test
     void 공유_목록의_미지원_PUT은_405와_GET_POST_허용_헤더를_반환한다() throws Exception {

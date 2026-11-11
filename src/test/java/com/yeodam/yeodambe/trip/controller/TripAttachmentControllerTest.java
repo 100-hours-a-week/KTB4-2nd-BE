@@ -39,6 +39,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -57,6 +58,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -89,6 +91,39 @@ class TripAttachmentControllerTest {
             unclassifiedFolderListService,
             restoreService
     );
+
+    @ParameterizedTest
+    @CsvSource({
+            "POST, /trips/{id}/attachments, {\"uploadId\":\"upload-id\"}",
+            "POST, /trips/{id}/initial-attachments, {\"uploadId\":\"upload-id\"}",
+            "POST, /trips/{id}/initial-attachments/upload-urls, {}",
+            "POST, /trips/{id}/attachments/upload-urls, {}",
+            "GET, /trips/{id}/place-folders/3/attachments,",
+            "GET, /trips/7/place-folders/{id}/attachments,",
+            "GET, /attachments/{id},",
+            "GET, /attachments/{id}/download,",
+            "DELETE, /attachments/{id},"
+    })
+    void 사진_경로의_양수가_아닌_ID는_서비스_호출_없이_400을_반환한다(
+            String method,
+            String path,
+            String body
+    ) throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .setCustomArgumentResolvers(authenticationPrincipalResolver())
+                .build();
+        for (String id : List.of("0", "-1")) {
+            mvc.perform(request(HttpMethod.valueOf(method), path.replace("{id}", id))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body == null ? "" : body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("INVALID_REQUEST"));
+        }
+        verifyNoInteractions(listService, detailService, deletionService, downloadService,
+                bulkDownloadService, uploadUrlService, uploadCompletion, additionalUploadUrlService,
+                additionalUploadCompletion, unclassifiedFolderListService, restoreService);
+    }
 
     @Test
     void 추가_업로드_완료는_Accepted와_배치_개수를_반환한다() throws Exception {

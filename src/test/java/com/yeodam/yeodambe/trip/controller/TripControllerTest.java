@@ -2,6 +2,7 @@ package com.yeodam.yeodambe.trip.controller;
 
 import com.yeodam.yeodambe.common.exception.InvalidTripListFilterException;
 import com.yeodam.yeodambe.common.exception.InvalidTripRequestException;
+import com.yeodam.yeodambe.common.exception.GlobalExceptionHandler;
 import com.yeodam.yeodambe.common.response.ApiResponse;
 import com.yeodam.yeodambe.trip.controller.TripController;
 import com.yeodam.yeodambe.trip.entity.ProcessingStatus;
@@ -36,6 +37,11 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 
 class TripControllerTest {
     private final TripService tripService = mock(TripService.class);
@@ -57,6 +63,19 @@ class TripControllerTest {
             LocalDate.now(),
             List.of("50110")
     );
+
+    @Test
+    void 공유_목록의_미지원_PUT은_405와_GET_POST_허용_헤더를_반환한다() throws Exception {
+        standaloneSetup(controller)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build()
+                .perform(put("/trips/7/shares"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(header().string("Allow", org.hamcrest.Matchers.containsString("GET")))
+                .andExpect(header().string("Allow", org.hamcrest.Matchers.containsString("POST")))
+                .andExpect(jsonPath("$.message").value("METHOD_NOT_ALLOWED"));
+        verifyNoInteractions(tripService, tripUpdateService);
+    }
 
     @Test
     void 지도_응답은_지역_그룹_필드_없이_여행_마커를_포함한다() {

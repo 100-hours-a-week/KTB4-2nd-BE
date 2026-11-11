@@ -32,6 +32,7 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -60,11 +61,12 @@ class ShareTripServiceTest {
         List<TripShareUser> fetched = IntStream.rangeClosed(1, count)
                 .mapToObj(this::share)
                 .toList();
-        when(shares.findActiveSharesWithGrantee(7L, 1L, NOW, null, PageRequest.of(0, 6)))
+        when(shares.findActiveSharesWithGrantee(7L, 1L, NOW, 0L, PageRequest.of(0, 6)))
                 .thenReturn(fetched);
 
         TripShareListResponse response = service.findShares(7L, 1L, null);
 
+        verify(shares).findActiveSharesWithGrantee(7L, 1L, NOW, 0L, PageRequest.of(0, 6));
         assertThat(response.items()).hasSize(Math.min(count, 5));
         assertThat(response.items()).extracting(TripShareListResponse.Item::tripShareId)
                 .containsExactlyElementsOf(IntStream.rangeClosed(1, Math.min(count, 5))

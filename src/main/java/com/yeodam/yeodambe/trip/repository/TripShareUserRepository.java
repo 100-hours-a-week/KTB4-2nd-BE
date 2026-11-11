@@ -105,7 +105,7 @@ public interface TripShareUserRepository extends JpaRepository<TripShareUser, Lo
               and share.deletedAt is null
               and share.expiresAt > :now
               and grantee.deletedAt is null
-              and (:lastTripShareId is null or share.id > :lastTripShareId)
+              and share.id > :lastTripShareId
             order by share.id asc
             """)
     List<TripShareUser> findActiveSharesWithGrantee(

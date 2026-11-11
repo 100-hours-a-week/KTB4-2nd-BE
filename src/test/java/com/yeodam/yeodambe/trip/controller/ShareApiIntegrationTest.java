@@ -56,6 +56,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -169,13 +170,20 @@ class ShareApiIntegrationTest {
 
     @Test
     void 소유자와_미삭제_여행을_검증하고_완료_상태는_요구하지_않는다() throws Exception {
-        mvc.perform(listRequest(tripId.toString(), targetId)).andExpect(status().isNotFound());
-        mvc.perform(listRequest(Long.MAX_VALUE + "", ownerId)).andExpect(status().isNotFound());
+        mvc.perform(listRequest(tripId.toString(), targetId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+        mvc.perform(listRequest(Long.toString(Long.MAX_VALUE), ownerId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
         jdbc.update("UPDATE trips SET processing_status = 'PROCESSING' WHERE trip_id = ?", tripId);
         mvc.perform(listRequest(tripId.toString(), ownerId)).andExpect(status().isOk());
         jdbc.update("UPDATE trips SET deleted_at = NOW(6) WHERE trip_id = ?", tripId);
         mvc.perform(listRequest(tripId.toString(), ownerId)).andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"));
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
     }
 
     @ParameterizedTest

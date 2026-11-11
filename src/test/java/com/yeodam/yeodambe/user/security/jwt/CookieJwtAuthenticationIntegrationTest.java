@@ -1,6 +1,11 @@
 package com.yeodam.yeodambe.user.security.jwt;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.trip.entity.Trip;
+import com.yeodam.yeodambe.trip.entity.TripSharePermission;
+import com.yeodam.yeodambe.trip.entity.TripShareUser;
+import com.yeodam.yeodambe.trip.repository.TripRepository;
+import com.yeodam.yeodambe.trip.repository.TripShareUserRepository;
 import com.yeodam.yeodambe.user.entity.OAuthProvider;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.security.session.IssuedLoginSession;
@@ -19,8 +24,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -40,6 +50,98 @@ class CookieJwtAuthenticationIntegrationTest {
     private LoginSessionIssuer loginSessionIssuer;
     @Autowired
     private AccessTokenIssuer accessTokenIssuer;
+    @Autowired
+    private TripRepository tripRepository;
+    @Autowired
+    private TripShareUserRepository tripShareUserRepository;
+    @Autowired
+    private Clock clock;
+
+    @Test
+    void 공유_대상자_목록은_실제_로그인_쿠키로_소유자만_조회한다() throws Exception {
+        User owner = registerShareUser("공유소유자");
+        User grantee = registerShareUser("공유대상자");
+        Trip trip = tripRepository.save(new Trip(
+                owner.getUserId(), "공유여행", LocalDate.of(2026, 11, 11), LocalDate.of(2026, 11, 11)));
+        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneId.of("Asia/Seoul"));
+        TripShareUser share = tripShareUserRepository.save(new TripShareUser(
+                trip.getId(), owner.getUserId(), grantee.getUserId(), TripSharePermission.READ,
+                now.plusHours(1), now));
+
+        mockMvc.perform(get("/trips/{tripId}/shares", trip.getId()).cookie(loginCookie(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_SHARE_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].tripShareId").value(share.getId()))
+                .andExpect(jsonPath("$.data.items[0].granteeUserId").value(grantee.getUserId()))
+                .andExpect(jsonPath("$.data.items[0].email").value(grantee.getEmail()))
+                .andExpect(jsonPath("$.data.items[0].permission").value("READ"))
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").value(nullValue()));
+
+        mockMvc.perform(get("/trips/{tripId}/shares", trip.getId()).cookie(loginCookie(grantee)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+    }
+
+    @Test
+    void 공유_대상자가_없으면_실제_로그인_쿠키로_빈_목록을_반환한다() throws Exception {
+        User owner = registerShareUser("공유소유자");
+        Trip trip = tripRepository.save(new Trip(
+                owner.getUserId(), "빈공유여행", LocalDate.of(2026, 11, 11), LocalDate.of(2026, 11, 11)));
+
+        mockMvc.perform(get("/trips/{tripId}/shares", trip.getId()).cookie(loginCookie(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("TRIP_SHARE_LIST_FOUND"))
+                .andExpect(jsonPath("$.data.items").isEmpty())
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").value(nullValue()));
+    }
+
+    @Test
+    void 공유_대상자_목록은_없는_여행과_비소유자에게_404를_반환한다() throws Exception {
+        User owner = registerShareUser("공유소유자");
+        User other = registerShareUser("다른회원");
+        Trip trip = tripRepository.save(new Trip(
+                owner.getUserId(), "공유여행", LocalDate.of(2026, 11, 11), LocalDate.of(2026, 11, 11)));
+        Cookie ownerCookie = loginCookie(owner);
+
+        mockMvc.perform(get("/trips/{tripId}/shares", Long.MAX_VALUE).cookie(ownerCookie))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+        mockMvc.perform(get("/trips/{tripId}/shares", trip.getId())
+                        .cookie(loginCookie(other)).param("cursor", "broken!"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("TRIP_NOT_FOUND"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+    }
+
+    @Test
+    void 공유_대상자_목록은_쿠키가_없거나_잘못되면_거절한다() throws Exception {
+        mockMvc.perform(get("/trips/{tripId}/shares", 1L))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+        mockMvc.perform(get("/trips/{tripId}/shares", 1L)
+                        .cookie(new Cookie("accessToken", "invalid-jwt")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+    }
+
+    @Test
+    void 공유_대상자_목록은_존재하지_않는_세션을_거절한다() throws Exception {
+        User owner = registerShareUser("공유소유자");
+        String accessToken = accessTokenIssuer.issue(owner.getUserId(), "missing-share-session");
+
+        mockMvc.perform(get("/trips/{tripId}/shares", 1L)
+                        .cookie(new Cookie("accessToken", accessToken)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+    }
 
     @Test
     void 초대_목록은_실제_로그인_세션을_검증한다() throws Exception {
@@ -138,5 +240,17 @@ class CookieJwtAuthenticationIntegrationTest {
                           "data": null
                         }
                         """));
+    }
+
+    private User registerShareUser(String nickname) {
+        String unique = UUID.randomUUID().toString();
+        return userRegistrationService.register(
+                "share-" + unique + "@yeodam.test", nickname, OAuthProvider.KAKAO, "kakao-share-" + unique);
+    }
+
+    private Cookie loginCookie(User user) {
+        IssuedLoginSession session = loginSessionIssuer.issue(user.getUserId());
+        String accessToken = accessTokenIssuer.issue(user.getUserId(), session.sid());
+        return new Cookie("accessToken", accessToken);
     }
 }

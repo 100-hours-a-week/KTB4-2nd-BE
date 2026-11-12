@@ -6,7 +6,6 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
@@ -103,22 +102,6 @@ public interface StoryRepository extends JpaRepository<Story, Long> {
     Optional<Story> findOwnedCurrentCompletedForSimilarById(
             Long storyId,
             Long userId
-    );
-
-    @Query("""
-            select story.id
-            from Story story
-            join Trip trip on trip.currentStoryId = story.id
-            where story.id > :afterId
-              and story.tripId = trip.id
-              and trip.deletedAt is null
-              and story.deletedAt is null
-              and story.processingStatus = 'COMPLETED'
-            order by story.id asc
-            """)
-    List<Long> findContentMigrationTargetIds(
-            @Param("afterId") Long afterId,
-            Pageable pageable
     );
 
     @Query("""

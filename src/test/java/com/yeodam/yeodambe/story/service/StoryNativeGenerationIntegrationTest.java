@@ -27,7 +27,6 @@ import com.yeodam.yeodambe.trip.repository.TripDetailPlaceRepository;
 import com.yeodam.yeodambe.trip.repository.TripRepository;
 import com.yeodam.yeodambe.user.entity.User;
 import com.yeodam.yeodambe.user.repository.UserRepository;
-import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,7 +42,6 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -79,7 +77,6 @@ class StoryNativeGenerationIntegrationTest {
     @Autowired private StoryGenerationPreparationService preparation;
     @Autowired private StoryGenerationCompletionService completion;
     @Autowired private StoryGenerationTerminalService terminal;
-    @Autowired private StoryContentMigrationService migration;
     @MockitoSpyBean private StoryContentStorageService storage;
     @MockitoSpyBean private StoryGenerationFinalizationService finalization;
     @Autowired private StoryContentRepository contents;
@@ -91,7 +88,6 @@ class StoryNativeGenerationIntegrationTest {
     @Autowired private TripAttachmentRepository photos;
     @Autowired private StoredFileRepository files;
     @Autowired private JdbcTemplate jdbc;
-    @Autowired private MongoTemplate mongo;
     @MockitoBean private WebSocketEventPublisher publisher;
 
     @Value("${app.story.mongo-native-generation-enabled}")
@@ -324,21 +320,6 @@ class StoryNativeGenerationIntegrationTest {
     }
 
     @Test
-    void native완료문서는_기동검증과_키보정을_SQL블록없이_통과한다() {
-        completion.complete(job.getId(), result("요약"));
-        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
-        assertThatCode(() -> migration.migrateOne(storyId)).doesNotThrowAnyException();
-        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
-                new Document("$unset", new Document("blocks.0.previewStorageKey", "")));
-        assertThat(migration.backfillPreviewKeys(storyId - 1, 1).updated()).isEqualTo(1);
-        contents.deleteById(storyId);
-
-        assertThatThrownBy(() -> migration.migrateOne(storyId)).isInstanceOf(StoryDataIntegrityException.class)
-                .hasMessage(StoryGenerationInternalErrorMessage.CONTENT_DOCUMENT_MISSING.message());
-        assertThat(contents.existsById(storyId)).isFalse();
-    }
-
-    @Test
     void 중복저장은_편집본문을_유지하며_다른초기해시는_거절한다() {
         StoryContentDocument expected = preparation.prepareContent(job.getId(), result("요약")).orElseThrow();
         storage.insertPreparedIfAbsent(expected);
@@ -404,55 +385,6 @@ class StoryNativeGenerationIntegrationTest {
                 job.getId(), expected.getId(), ZoneOffset.UTC
         )).isInstanceOf(StoryDataIntegrityException.class);
         assertThat(sqlBlockCount(expected.getId())).isZero();
-    }
-
-    @Test
-    void native해시나_SQL출처가_없으면_편집버전도_이관으로_덮어쓰지_않는다() {
-        completion.complete(job.getId(), result("요약"));
-        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
-        StoryContentDocument edited = contents.findById(storyId).orElseThrow();
-        edited.updateContent(Story.Mood.CALM, "편집 본문", edited.getBlocks());
-        contents.save(edited);
-        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
-                new Document("$unset", new Document("initialContentHash", "")));
-
-        assertThatThrownBy(() -> migration.migrateOne(storyId)).isInstanceOf(StoryDataIntegrityException.class);
-        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
-                new Document("$set", new Document("initialContentHash", edited.getInitialContentHash())));
-        jdbc.update("UPDATE story_generation_jobs SET prepared_content_metadata = NULL WHERE generation_id = ?", job.getId());
-
-        assertThatThrownBy(() -> migration.migrateOne(storyId)).isInstanceOf(StoryDataIntegrityException.class);
-        assertThat(contents.findById(storyId).orElseThrow().getStorySummary()).isEqualTo("편집 본문");
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"sourceDate", "tripAttachmentId", "sourceTripPlaceId"})
-    void native기동검증은_편집후_본문의_공개참조와_날짜도_검증한다(String field) {
-        completion.complete(job.getId(), result("요약"));
-        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
-        StoryContentDocument edited = contents.findById(storyId).orElseThrow();
-        edited.updateContent(Story.Mood.CALM, "편집 본문", edited.getBlocks());
-        contents.save(edited);
-        Object invalidValue = field.equals("sourceDate") ? null : Long.MAX_VALUE;
-        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
-                new Document("$set", new Document("blocks.0." + field, invalidValue)));
-
-        assertThatThrownBy(() -> migration.migrateOne(storyId)).isInstanceOf(StoryDataIntegrityException.class);
-        assertThat(contents.findById(storyId).orElseThrow().getStorySummary()).isEqualTo("편집 본문");
-    }
-
-    @Test
-    void native기동검증도_삭제사진의_표시조건은_검사하지_않는다() {
-        completion.complete(job.getId(), result("요약"));
-        Long storyId = jobs.findById(job.getId()).orElseThrow().getStoryId();
-        jdbc.update("UPDATE trip_attachments SET deleted_at = CURRENT_TIMESTAMP WHERE trip_attachment_id = ?", photo.getId());
-        mongo.getCollection("story_contents").updateOne(new Document("_id", storyId),
-                new Document("$set", new Document("blocks.0.sourceDate", null)
-                        .append("blocks.0.sourceTripPlaceId", Long.MAX_VALUE)
-                        .append("blocks.0.previewStorageKey", null)));
-
-        assertThatCode(() -> migration.migrateOne(storyId)).doesNotThrowAnyException();
-        assertThat(contents.findById(storyId).orElseThrow().getVersion()).isZero();
     }
 
     private TripAttachment savePhoto(StoredFile file) {

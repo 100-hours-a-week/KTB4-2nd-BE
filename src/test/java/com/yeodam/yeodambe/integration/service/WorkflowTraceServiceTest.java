@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.integration.service;
 import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.TraceFlags;
 import io.opentelemetry.api.trace.TraceState;
@@ -13,11 +14,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 class WorkflowTraceServiceTest {
@@ -50,6 +54,34 @@ class WorkflowTraceServiceTest {
             assertThat(carrier.traceparent()).endsWith("-00");
             assertThat(Span.fromContext(traces.restore(carrier)).getSpanContext().isSampled()).isFalse();
         }
+    }
+
+    @Test
+    void 결과_적용_Span은_호출자_대신_저장된_carrier를_정확한_부모로_사용한다() {
+        Tracer tracer = mock(Tracer.class);
+        SpanBuilder builder = mock(SpanBuilder.class);
+        Span started = mock(Span.class);
+        when(tracer.spanBuilder("trip.result.apply")).thenReturn(builder);
+        when(builder.setParent(any(Context.class))).thenReturn(builder);
+        when(builder.startSpan()).thenReturn(started);
+        WorkflowTraceService service = new WorkflowTraceService(tracer);
+        WorkflowTraceCarrier carrier = new WorkflowTraceCarrier(
+                "00-" + TRACE_ID + "-" + SPAN_ID + "-01", "yeodam=synthetic");
+        SpanContext caller = SpanContext.create("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb",
+                TraceFlags.getSampled(), TraceState.getDefault());
+        try (Scope scope = Span.wrap(caller).makeCurrent()) {
+            assertThat(service.startResultApplication(carrier)).isSameAs(started);
+            assertThat(Span.current().getSpanContext()).isEqualTo(caller);
+        }
+        ArgumentCaptor<Context> parent = ArgumentCaptor.forClass(Context.class);
+        verify(builder).setParent(parent.capture());
+        SpanContext restored = Span.fromContext(parent.getValue()).getSpanContext();
+        assertThat(restored.isValid()).isTrue();
+        assertThat(restored.getTraceId()).isEqualTo(TRACE_ID);
+        assertThat(restored.getSpanId()).isEqualTo(SPAN_ID);
+        assertThat(restored.isRemote()).isTrue();
+        assertThat(restored.isSampled()).isTrue();
+        assertThat(restored.getTraceState().get("yeodam")).isEqualTo("synthetic");
     }
 
     @Test

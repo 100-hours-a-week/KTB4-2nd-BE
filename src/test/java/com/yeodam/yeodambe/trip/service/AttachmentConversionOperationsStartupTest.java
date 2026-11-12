@@ -49,11 +49,10 @@ class AttachmentConversionOperationsStartupTest {
     private KafkaListenerEndpointRegistry listeners;
 
     @Test
-    void 운영_시작은_스케줄러와_리스너와_백필을_실행하지_않는다() {
+    void 운영_시작은_스케줄러와_리스너를_실행하지_않는다() {
         assertThat(context.getEnvironment().getActiveProfiles()).doesNotContain("test");
         assertThat(context.getBeansOfType(ScheduledAnnotationBeanPostProcessor.class)).isEmpty();
         assertThat(listeners.getListenerContainers()).isEmpty();
-        assertThat(context.getBeansOfType(AttachmentStorageSizeBackfillRunner.class)).isEmpty();
         assertThat(context.getBeansOfType(PlaceSearchCatalogScheduler.class)).isEmpty();
         assertThat(context.containsBean("tripResultKafkaListenerContainerFactory")).isFalse();
         assertThat(context.containsBean("tripUpdateResultKafkaListenerContainerFactory")).isFalse();

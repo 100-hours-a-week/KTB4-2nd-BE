@@ -27,7 +27,7 @@ class ExecutionStatusVersionTest {
         assertThat(execution.getStatusVersion()).isEqualTo(2);
         assertThat(execution.updateDisplayStatus(TripDisplayStatus.FINALIZING, null)).isTrue();
         assertThat(execution.updateDisplayStatus(TripDisplayStatus.PROCESSING, "EMBEDDING")).isFalse();
-        execution.receiveResult("{}", "COMPLETED", now);
+        execution.receiveResult("{}", "COMPLETED", now, null);
         assertThat(execution.getDisplayStatus()).isEqualTo(TripDisplayStatus.FINALIZING);
         assertThat(execution.getCurrentStep()).isNull();
         assertThat(execution.getStatusVersion()).isEqualTo(3);
@@ -73,7 +73,7 @@ class ExecutionStatusVersionTest {
 
         execution.closeInput();
         execution.recordProcessPublished(now.plusSeconds(1));
-        execution.receiveResult("late", "COMPLETED", now.plusSeconds(1));
+        execution.receiveResult("late", "COMPLETED", now.plusSeconds(1), null);
         execution.finish(TripCreationExecution.Status.FAILED, "late", now.plusSeconds(1));
 
         assertThat(execution.getStatus()).isEqualTo(status);
@@ -87,8 +87,8 @@ class ExecutionStatusVersionTest {
     @Test
     void 생성_실행은_결과_재전달시_최초_결과를_유지한다() {
         var execution = new TripCreationExecution("creation", 1L, 2L, 10);
-        execution.receiveResult("first", "COMPLETED", now);
-        execution.receiveResult("second", "FAILED", now.plusSeconds(1));
+        execution.receiveResult("first", "COMPLETED", now, null);
+        execution.receiveResult("second", "FAILED", now.plusSeconds(1), null);
 
         assertThat(execution.getResultRawPayload()).isEqualTo("first");
         assertThat(execution.getResultAiStatus()).isEqualTo("COMPLETED");
@@ -109,8 +109,8 @@ class ExecutionStatusVersionTest {
         execution.recordProcessPublished(now.plusSeconds(1));
         assertThat(execution.getStatusVersion()).isEqualTo(1);
 
-        execution.receiveResult("{}", "COMPLETED", now);
-        execution.receiveResult("{}", "COMPLETED", now);
+        execution.receiveResult("{}", "COMPLETED", now, null);
+        execution.receiveResult("{}", "COMPLETED", now, null);
         execution.recordProcessPublished(now);
         assertThat(execution.getStatus()).isEqualTo(TripCreationExecution.Status.RESULT_APPLYING);
         assertThat(execution.getStatusVersion()).isEqualTo(2);

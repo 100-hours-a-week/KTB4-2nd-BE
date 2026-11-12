@@ -122,7 +122,7 @@ class TripAnalysisStateTest {
         assertThat(noRequest.isRequiresRemoteTerminationConfirmation()).isFalse();
         TripCreationExecution resultReceived = new TripCreationExecution("received", 1L, 2L, 1);
         resultReceived.enqueueProcess("{}");
-        resultReceived.receiveResult("{}", "FAILED", NOW);
+        resultReceived.receiveResult("{}", "FAILED", NOW, null);
         resultReceived.finish(TripCreationExecution.Status.FAILED, null, NOW);
         assertThat(resultReceived.isRequiresRemoteTerminationConfirmation()).isFalse();
         TripCreationExecution completed = new TripCreationExecution("completed", 1L, 2L, 1);

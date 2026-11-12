@@ -38,6 +38,12 @@ public class AttachmentConversionOutbox {
     @Column(name = "request_id", nullable = false, updatable = false, length = 128)
     private String requestId;
 
+    @Column(name = "traceparent", length = 55, updatable = false)
+    private String traceparent;
+
+    @Column(name = "tracestate", length = 512, updatable = false)
+    private String tracestate;
+
     @Column(name = "event_source", nullable = false, updatable = false)
     private String eventSource = "attachment_conversion_outbox";
 

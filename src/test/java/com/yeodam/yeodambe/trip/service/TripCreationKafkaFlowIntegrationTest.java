@@ -1,5 +1,16 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
+import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
+import com.yeodam.yeodambe.trip.fixture.TripUploadTestErrorMessage;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.TraceFlags;
+import io.opentelemetry.api.trace.TraceState;
+import io.opentelemetry.context.Scope;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import java.util.concurrent.atomic.AtomicReference;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import java.time.Instant;
 import java.util.Comparator;
@@ -29,6 +40,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -93,6 +105,10 @@ class TripCreationKafkaFlowIntegrationTest {
     private TripAnalysisResultService results;
     @Autowired
     private TripAnalysisResultWorker worker;
+    @Autowired
+    private TripMutationCoordinator mutations;
+    @Autowired
+    private WorkflowTraceService traces;
     @Autowired
     private TripCreationExecutionRepository executions;
     @Autowired
@@ -171,6 +187,118 @@ class TripCreationKafkaFlowIntegrationTest {
     private void assertResultLockHeld() {
         assertThat(redis.getLock(lockProperties.namespace() + ":lock:trip:mutation:" + trip.getId())
                 .isHeldByCurrentThread()).isTrue();
+    }
+
+    @Test
+    @EnabledIfSystemProperty(named = "workflow.trace.agent.enabled", matches = "true")
+    void Agent_Context를_실패_후_새_Worker가_재시도해도_보존한다() throws Exception {
+        String traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        SpanContext parent = SpanContext.create(traceId, "00f067aa0ba902b7",
+                TraceFlags.getSampled(), TraceState.getDefault());
+        try (Scope scope = Span.wrap(parent).makeCurrent()) {
+            for (int batchNo = 1; batchNo <= 3; batchNo++) {
+                boolean last = batchNo == 3;
+                InitialAttachmentUploadBatchSnapshot batch = prepare(batchNo, last ? 3 : 10, last);
+                accept(batch);
+                finishConversion(transactions.claimBatch().orElseThrow());
+            }
+            publishOutboxFixture();
+        }
+        String raw = resultPayload(json.readTree(execution().getProcessPayload()));
+        AtomicReference<SpanContext> received = new AtomicReference<>();
+        AtomicReference<SpanContext> persisted = new AtomicReference<>();
+        List<TripAnalysisResultClaim> claims = new ArrayList<>();
+        List<SpanContext> applied = new ArrayList<>();
+        doAnswer(call -> {
+            received.set(Span.current().getSpanContext());
+            return call.callRealMethod();
+        }).when(results).receiveKafkaResult(any(), any());
+        doAnswer(call -> {
+            claims.add(call.getArgument(0, TripAnalysisResultClaim.class));
+            applied.add(Span.current().getSpanContext());
+            return observeResultMutation(call);
+        }).when(results).startResultAttempt(any());
+        doAnswer(call -> {
+            persisted.set(Span.current().getSpanContext());
+            return observeResultMutation(call);
+        }).when(results).saveKafkaCompleted(any(), any(), any());
+        when(names.resolve(any(), any(), any(), any()))
+                .thenThrow(new DataAccessResourceFailureException(
+                        TripUploadTestErrorMessage.DATABASE_UNAVAILABLE.message()))
+                .thenAnswer(invocation -> {
+                    assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                    assertThat(redis.getLock(lockProperties.namespace() + ":lock:trip:mutation:" + trip.getId())
+                            .isLocked()).isFalse();
+                    return Map.of();
+                });
+        ProducerRecord<String, String> record = new ProducerRecord<>(RESULT_TOPIC, trip.getId().toString(), raw);
+        record.headers().add("traceparent", ("00-" + traceId + "-00f067aa0ba902b7-01")
+                .getBytes(StandardCharsets.UTF_8));
+        kafka.send(record).get(10, TimeUnit.SECONDS);
+        for (int attempt = 0; attempt < 100 && execution().getResultRawPayload() == null; attempt++) {
+            Thread.sleep(100);
+        }
+        assertThat(received.get()).isNotNull();
+        TripCreationExecution adopted = execution();
+        WorkflowTraceCarrier savedCarrier = new WorkflowTraceCarrier(
+                adopted.getResultTraceparent(), adopted.getResultTracestate());
+        assertThat(savedCarrier.traceparent()).contains(received.get().getSpanId());
+        SpanContext previous = Span.current().getSpanContext();
+        SpanContext caller = SpanContext.create("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb",
+                TraceFlags.getSampled(), TraceState.getDefault());
+        try (Scope scope = Span.wrap(caller).makeCurrent()) {
+            worker.applyPendingResults();
+            assertCurrentSpanContext(caller);
+            TripCreationExecution failed = execution();
+            assertThat(failed.getStatus()).isEqualTo(TripCreationExecution.Status.RESULT_APPLYING);
+            assertThat(failed.getResultAttempts()).isEqualTo(1);
+            assertThat(failed.getResultNextAttemptAt()).isNotNull().isAfter(failed.getResultFailedAt());
+            assertThat(failed.getResultRawPayload()).isEqualTo(raw);
+            assertThat(failed.getResultTraceparent()).isEqualTo(savedCarrier.traceparent());
+            assertThat(failed.getResultTracestate()).isEqualTo(savedCarrier.tracestate());
+            jdbc.update("""
+                    UPDATE trip_creation_executions
+                    SET result_next_attempt_at = DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL 1 SECOND)
+                    WHERE execution_id = ?
+                    """, failed.getExecutionId());
+            TripAnalysisResultWorker restartedWorker = new TripAnalysisResultWorker(results, names, mutations, traces);
+            restartedWorker.applyPendingResults();
+            assertCurrentSpanContext(caller);
+        }
+        assertCurrentSpanContext(previous);
+        TripCreationExecution completed = execution();
+        assertThat(completed.getStatus()).isEqualTo(TripCreationExecution.Status.COMPLETED);
+        assertThat(completed.getResultAttempts()).isEqualTo(2);
+        assertThat(completed.getResultRawPayload()).isEqualTo(raw);
+        assertThat(completed.getResultTraceparent()).isEqualTo(savedCarrier.traceparent());
+        assertThat(completed.getResultTracestate()).isEqualTo(savedCarrier.tracestate());
+        assertThat(claims).extracting(TripAnalysisResultClaim::attempt).containsExactly(1, 2);
+        assertThat(claims).extracting(TripAnalysisResultClaim::traceContext)
+                .containsExactly(savedCarrier, savedCarrier);
+        assertThat(claims).extracting(TripAnalysisResultClaim::rawPayload).containsExactly(raw, raw);
+        assertThat(received.get().isValid()).isTrue();
+        assertThat(received.get().getTraceId()).isEqualTo(traceId);
+        assertThat(applied).hasSize(2).allSatisfy(context -> {
+            assertThat(context.isValid()).isTrue();
+            assertThat(context.getTraceId()).isEqualTo(traceId);
+            assertThat(context.getSpanId()).isNotEqualTo(received.get().getSpanId());
+        });
+        assertThat(applied.get(0).getSpanId()).isNotEqualTo(applied.get(1).getSpanId());
+        assertThat(persisted.get().getTraceId()).isEqualTo(applied.get(1).getTraceId());
+        assertThat(persisted.get().getSpanId()).isEqualTo(applied.get(1).getSpanId());
+        assertThat(trips.findById(trip.getId()).orElseThrow().getProcessingStatus())
+                .isEqualTo(ProcessingStatus.COMPLETED);
+        assertThat(jdbc.queryForObject("SELECT storage_used_bytes FROM user_stats WHERE user_id = ?",
+                Long.class, owner.getUserId())).isEqualTo(23 * 12L);
+        assertThat(jdbc.queryForObject("SELECT storage_reserved_bytes FROM user_stats WHERE user_id = ?",
+                Long.class, owner.getUserId())).isZero();
+    }
+
+    private void assertCurrentSpanContext(SpanContext expected) {
+        SpanContext current = Span.current().getSpanContext();
+        assertThat(current.getTraceId()).isEqualTo(expected.getTraceId());
+        assertThat(current.getSpanId()).isEqualTo(expected.getSpanId());
+        assertThat(current.isSampled()).isEqualTo(expected.isSampled());
     }
 
     @Test

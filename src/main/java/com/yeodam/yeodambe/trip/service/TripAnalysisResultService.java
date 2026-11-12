@@ -1,6 +1,8 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
+import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
 
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.common.exception.TripNotFoundException;
@@ -66,6 +68,7 @@ public class TripAnalysisResultService {
     private final ApplicationEventPublisher eventPublisher;
     private final TripCompletionSnapshotFactory completionSnapshots;
     private final StoryPhotoChangeService storyPhotoChangeService;
+    private final WorkflowTraceService traces;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void saveCompleted(
@@ -489,7 +492,7 @@ public class TripAnalysisResultService {
             return;
         }
         long previousVersion = execution.getStatusVersion();
-        execution.receiveResult(rawPayload, event.status().name(), uploadTransactions.databaseTime());
+        execution.receiveResult(rawPayload, event.status().name(), uploadTransactions.databaseTime(), traces.capture());
         logAiResultReceived(event.tripId(), event.executionId());
         switch (event.status()) {
             case COMPLETED -> {
@@ -551,7 +554,8 @@ public class TripAnalysisResultService {
         }
         execution.claimResult(UUID.randomUUID().toString(), now.plusMinutes(5));
         return Optional.of(new TripAnalysisResultClaim(executionId, trip.getId(), trip.getUserId(),
-                execution.getResultClaimToken(), execution.getResultRawPayload(), execution.getResultAttempts() + 1));
+                execution.getResultClaimToken(), execution.getResultRawPayload(), execution.getResultAttempts() + 1,
+                new WorkflowTraceCarrier(execution.getResultTraceparent(), execution.getResultTracestate())));
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

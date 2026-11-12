@@ -161,7 +161,7 @@ class KafkaDeploymentRoleIntegrationTest {
                 new Trip(owner.getUserId(), "역할 검증", LocalDate.now(), LocalDate.now()));
         TripCreationExecution execution = new TripCreationExecution("role-execution", trip.getId(), owner.getUserId(), 2);
         execution.recordProcessPublished(LocalDateTime.now());
-        execution.receiveResult("{}", "COMPLETED", LocalDateTime.now());
+        execution.receiveResult("{}", "COMPLETED", LocalDateTime.now(), null);
         TripCreationExecutionRepository executions = context.getBean(TripCreationExecutionRepository.class);
         executions.save(execution);
 

@@ -204,7 +204,7 @@ class TripProcessingStatusServiceTest {
         if (state.equals("TERMINAL")) {
             execution.finish(TripCreationExecution.Status.COMPLETED, null, LocalDateTime.now());
         } else if (state.equals("APPLYING")) {
-            execution.receiveResult("{}", "COMPLETED", LocalDateTime.now());
+            execution.receiveResult("{}", "COMPLETED", LocalDateTime.now(), null);
         }
         when(trips.findByIdAndUserIdAndDeletedAtIsNull(7L, 1L))
                 .thenReturn(Optional.of(trip(ProcessingStatus.PROCESSING)));

@@ -40,6 +40,12 @@ public class AdditionalAttachmentUploadOutbox {
     @Column(name = "request_id", nullable = false, length = 128)
     private String requestId;
 
+    @Column(name = "traceparent", length = 55, updatable = false)
+    private String traceparent;
+
+    @Column(name = "tracestate", length = 512, updatable = false)
+    private String tracestate;
+
     @Column(name = "trip_id", updatable = false, columnDefinition = "BIGINT UNSIGNED")
     private Long tripId;
 

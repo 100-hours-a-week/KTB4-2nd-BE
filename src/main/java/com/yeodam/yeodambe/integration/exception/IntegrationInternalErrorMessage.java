@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.integration.exception;
 
 public enum IntegrationInternalErrorMessage {
+    WORKFLOW_TRACE_UNAVAILABLE("업무 추적 정보를 사용할 수 없습니다."),
     OUTBOX_SOURCE_UNKNOWN("알 수 없는 Outbox 원본입니다."),
     OUTBOX_PUBLISHED_AT_MISSING("Outbox 발행 시각이 필요합니다."),
     OUTBOX_RECEIPT_MISMATCH("Outbox 발행 확인 정보가 저장된 이벤트와 일치하지 않습니다."),

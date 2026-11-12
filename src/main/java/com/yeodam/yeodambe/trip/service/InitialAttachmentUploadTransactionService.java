@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask;
@@ -96,6 +97,7 @@ public class InitialAttachmentUploadTransactionService {
     private final AttachmentConversionProperties conversionProperties;
     private final AttachmentConversionEnqueueService conversionEnqueue;
     private final AttachmentConversionTaskRepository conversionTasks;
+    private final WorkflowTraceService traces;
 
     @Transactional(propagation = Propagation.MANDATORY)
     public AttachmentConversionAttemptResult startPhotoAttempt(
@@ -1234,11 +1236,11 @@ public class InitialAttachmentUploadTransactionService {
             Long tripId,
             String payload
     ) {
-        try (var scope = WorkflowMdcScope.job("trip_creation", tripId, executionId);
-             var timing = startOutboxPersistenceLogging(messageType, batchNo)) {
+        try (WorkflowMdcScope scope = WorkflowMdcScope.job("trip_creation", tripId, executionId);
+             WorkflowLog.Stage timing = startOutboxPersistenceLogging(messageType, batchNo)) {
             outboxes.save(new TripCreationOutbox(
                     id, executionId, messageType, batchNo, tripId,
-                    topics.topicFor(EventType.TRIP_CREATE_REQUEST), payload));
+                    topics.topicFor(EventType.TRIP_CREATE_REQUEST), payload, traces.capture()));
             logAiRequestEnqueued(timing);
         }
     }

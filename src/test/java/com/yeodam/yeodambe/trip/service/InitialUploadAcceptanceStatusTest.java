@@ -1,5 +1,6 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
 import com.yeodam.yeodambe.common.exception.TripInitialAttachmentUploadNotAllowedException;
 import com.yeodam.yeodambe.file.repository.StoredFileRepository;
 import com.yeodam.yeodambe.integration.config.KafkaTopicProperties;
@@ -47,7 +48,8 @@ class InitialUploadAcceptanceStatusTest {
                             true,
                             true
                     ),
-                    mock(AttachmentConversionEnqueueService.class), mock(AttachmentConversionTaskRepository.class));
+                    mock(AttachmentConversionEnqueueService.class), mock(AttachmentConversionTaskRepository.class),
+                    new WorkflowTraceService());
 
     @Test
     void 저장된_표시_상태와_단계와_버전을_반환한다() {
@@ -56,7 +58,7 @@ class InitialUploadAcceptanceStatusTest {
         var trip = trip();
 
         var processing = service.acceptanceStatus(trip, execution);
-        execution.receiveResult("{}", "COMPLETED", LocalDateTime.now());
+        execution.receiveResult("{}", "COMPLETED", LocalDateTime.now(), null);
         var finalizing = service.acceptanceStatus(trip, execution);
 
         assertThat(processing.executionId()).isEqualTo("execution");

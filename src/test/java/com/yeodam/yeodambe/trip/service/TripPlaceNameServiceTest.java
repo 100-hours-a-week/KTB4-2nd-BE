@@ -34,6 +34,96 @@ class TripPlaceNameServiceTest {
     }
 
     @Test
+    void AI_장소명을_우선하고_이름이_없는_장소만_좌표로_조회한다() {
+        when(client.lookup(any(), any())).thenReturn(success("기존 조회 이름", null));
+        when(client.lookup(new BigDecimal("33.394"), new BigDecimal("126.2397")))
+                .thenReturn(success("협재해수욕장", "제주시"));
+
+        Map<String, String> names = service(5).resolve(77L, "a3f9c2e1", json.readTree("""
+                {"places":[
+                  {"place_id":"p1","place_name":"성산일출봉","latitude":33.458,"longitude":126.9423},
+                  {"place_id":"p2","place_name":null,"latitude":33.394,"longitude":126.2397}
+                ]}
+                """), () -> true);
+
+        assertThat(names).containsExactly(Map.entry("p1", "성산일출봉"), Map.entry("p2", "협재해수욕장"));
+        verify(client).lookup(new BigDecimal("33.394"), new BigDecimal("126.2397"));
+        verifyNoMoreInteractions(client);
+    }
+
+    @Test
+    void AI_장소명이_모두_있으면_외부_조회_없이_중복_순번과_길이_제한을_적용한다() {
+        when(client.lookup(any(), any())).thenReturn(success("기존 조회 이름", null));
+        String longName = "😀" + "가".repeat(50);
+        Map<String, String> names = service(5).resolve(7L, "run", json.readTree("""
+                {"places":[
+                  {"place_id":"p1","place_name":"%s","latitude":33.45,"longitude":126.94},
+                  {"place_id":"p2","place_name":"%s","latitude":35.18,"longitude":129.07}
+                ]}
+                """.formatted(longName, longName)), () -> true);
+
+        assertThat(names.get("p1")).isEqualTo("😀" + "가".repeat(47) + " 1");
+        assertThat(names.get("p2")).isEqualTo("😀" + "가".repeat(47) + " 2");
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void AI_장소명의_앞뒤_공백과_보이지_않는_문자를_정리한다() {
+        when(client.lookup(any(), any())).thenReturn(success("기존 조회 이름", null));
+        Map<String, String> names = service(5).resolve(7L, "run", json.readTree("""
+                {"places":[
+                  {"place_id":"p1","place_name":"  \u200B성산일출봉\uFEFF  ","latitude":33.45,"longitude":126.94}
+                ]}
+                """), () -> true);
+
+        assertThat(names).containsEntry("p1", "성산일출봉");
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void AI_장소명이_문자열이_아니거나_비어있으면_기존_대체_규칙을_사용한다() {
+        when(client.lookup(any(), any())).thenReturn(failure(KakaoLocalClient.Failure.OTHER));
+
+        Map<String, String> names = service(5).resolve(7L, "run", json.readTree("""
+                {"places":[
+                  {"place_id":"p1","place_name":" \u200B ","latitude":33.45,"longitude":126.94},
+                  {"place_id":"p2","place_name":123,"latitude":35.18,"longitude":129.07},
+                  {"place_id":"p3","place_name":{},"latitude":37.56,"longitude":126.97}
+                ]}
+                """), () -> true);
+
+        assertThat(names).containsExactly(
+                Map.entry("p1", "장소 1"), Map.entry("p2", "장소 2"), Map.entry("p3", "장소 3"));
+        verify(client, times(3)).lookup(any(), any());
+    }
+
+    @Test
+    void 같은_좌표라도_AI_이름이_없는_장소는_별도로_조회한다() {
+        when(client.lookup(any(), any())).thenReturn(success("서귀포시", null));
+
+        Map<String, String> names = service(5).resolve(7L, "run", json.readTree("""
+                {"places":[
+                  {"place_id":"p1","place_name":"성산일출봉","latitude":33.45,"longitude":126.94},
+                  {"place_id":"p2","place_name":null,"latitude":33.450,"longitude":126.940}
+                ]}
+                """), () -> true);
+
+        assertThat(names).containsExactly(Map.entry("p1", "성산일출봉"), Map.entry("p2", "서귀포시"));
+        verify(client).lookup(any(), any());
+    }
+
+    @Test
+    void AI_이름이_있어도_현재_실행이_아니면_결과를_반환하지_않는다() {
+        assertThatThrownBy(() -> service(5).resolve(7L, "run", json.readTree("""
+                {"places":[
+                  {"place_id":"p1","place_name":"성산일출봉","latitude":33.45,"longitude":126.94}
+                ]}
+                """), () -> false)).isInstanceOf(IllegalStateException.class);
+
+        verifyNoInteractions(client);
+    }
+
+    @Test
     void 역지오코딩_완료에_실행문맥과_대체건수를_남긴다() {
         Logger logger = (Logger) LoggerFactory.getLogger(com.yeodam.yeodambe.common.logging.WorkflowLog.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();

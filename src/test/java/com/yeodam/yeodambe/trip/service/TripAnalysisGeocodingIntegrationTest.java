@@ -7,7 +7,8 @@ import com.yeodam.yeodambe.trip.event.TripCreateResultEvent;
 import com.yeodam.yeodambe.trip.event.handler.TripUpdateResultEventHandler;
 import com.yeodam.yeodambe.trip.fixture.TripAnalysisTestFixture;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -21,6 +22,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -69,8 +71,10 @@ class TripAnalysisGeocodingIntegrationTest {
         SERVER.stop(0);
     }
 
-    @Test
-    void 결과_수신부터_락_밖의_HTTP_역지오코딩을_거쳐_장소명과_분류를_DB에_저장한다() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void 추가_업로드_결과의_AI_장소명을_저장하고_없을때만_락_밖에서_역지오코딩한다(boolean hasAiName) {
+        int requestsBefore = REQUESTS.get();
         TripAnalysisTestFixture fixture = new TripAnalysisTestFixture(jdbc);
         Long ownerId = fixture.createOwner();
         Long tripId = fixture.createTrip(ownerId);
@@ -83,6 +87,12 @@ class TripAnalysisGeocodingIntegrationTest {
                 "attachments", List.of(Map.of("trip_attachment_id", photoId, "region_origin", "INFERRED",
                         "latitude", 37.5, "longitude", 127.0, "evaluation", 80)))),
                 "unclassified", List.of(), "failed", List.of()));
+        ObjectNode place = (ObjectNode) result.path("places").get(0);
+        if (hasAiName) {
+            place.put("place_name", "성산일출봉");
+        } else {
+            place.putNull("place_name");
+        }
         doAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             assertThat(redis.getLock(properties.namespace() + ":lock:trip:mutation:" + tripId).isLocked()).isFalse();
@@ -91,11 +101,11 @@ class TripAnalysisGeocodingIntegrationTest {
         listener.consume(json.writeValueAsString(new TripCreateResultEvent("process_result", tripId, executionId,
                 TripCreateResultEvent.Status.COMPLETED, result, null)));
         worker.applyPendingResults();
-        assertThat(REQUESTS.get()).isOne();
+        assertThat(REQUESTS.get() - requestsBefore).isEqualTo(hasAiName ? 0 : 1);
         assertThat(jdbc.queryForObject("SELECT status FROM trip_analysis_executions WHERE execution_id = ?",
                 String.class, executionId)).isEqualTo("COMPLETED");
         assertThat(jdbc.queryForObject("SELECT place_name FROM trip_detail_places WHERE trip_id = ? AND deleted_at IS NULL",
-                String.class, tripId)).isEqualTo("테스트박물관");
+                String.class, tripId)).isEqualTo(hasAiName ? "성산일출봉" : "테스트박물관");
         assertThat(jdbc.queryForObject("SELECT trip_place_id IS NOT NULL FROM trip_attachments WHERE trip_attachment_id = ?",
                 Boolean.class, photoId)).isTrue();
     }

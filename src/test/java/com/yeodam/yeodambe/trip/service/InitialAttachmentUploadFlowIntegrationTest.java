@@ -9,6 +9,7 @@ import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 import java.time.Instant;
 
 import com.yeodam.yeodambe.TestcontainersConfiguration;
+import com.yeodam.yeodambe.trip.client.KakaoLocalClient;
 import com.yeodam.yeodambe.common.websocket.service.WebSocketEventPublisher;
 import com.yeodam.yeodambe.common.websocket.service.request.WebSocketEvent;
 import org.mockito.ArgumentCaptor;
@@ -36,6 +37,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -137,6 +140,51 @@ class InitialAttachmentUploadFlowIntegrationTest {
             assertThat(notification.result()).isNull();
             assertThat(notification.error()).isNull();
         }
+    }
+
+    @Test
+    void 최초_업로드_결과의_AI_장소명을_외부_조회_없이_DB에_저장한다() {
+        KakaoLocalClient kakao = mock(KakaoLocalClient.class);
+        TripPlaceNameService resolver = new TripPlaceNameService(
+                kakao, mock(InitialUploadExecutionRegistry.class), 5);
+        doAnswer(call -> resolver.resolve(
+                call.getArgument(0), call.getArgument(1), call.getArgument(2),
+                call.getArgument(3, BooleanSupplier.class)
+        )).when(names).resolve(any(), any(), any(), any());
+        TripCreationOutbox process = publishSingleBatch();
+        ObjectNode root = (ObjectNode) json.readTree(resultPayload(json.readTree(process.getPayload()), false));
+        ObjectNode result = (ObjectNode) root.path("result");
+        JsonNode photo = result.path("unclassified").get(0);
+        Long photoId = photo.path("trip_attachment_id").asLong();
+        ObjectNode place = result.withArray("places").addObject();
+        place.put("place_id", "p1");
+        place.putNull("matched_trip_place_id");
+        place.put("place_name", "성산일출봉");
+        place.put("latitude", 33.4580);
+        place.put("longitude", 126.9423);
+        place.putNull("first_taken_at");
+        place.putNull("last_taken_at");
+        place.put("representative_attachment_id", photoId);
+        ObjectNode classified = place.putArray("attachments").addObject();
+        classified.put("trip_attachment_id", photoId);
+        classified.put("latitude", 33.4580);
+        classified.put("longitude", 126.9423);
+        classified.put("region_origin", "EXIF");
+        classified.put("evaluation", 91);
+        result.putArray("unclassified");
+        String raw = json.writeValueAsString(root);
+
+        results.receiveKafkaResult(json.readValue(raw, TripCreateResultEvent.class), raw);
+        worker.applyPendingResults();
+
+        assertThat(execution().getStatus()).isEqualTo(TripCreationExecution.Status.COMPLETED);
+        assertThat(jdbc.queryForObject(
+                "SELECT place_name FROM trip_detail_places WHERE trip_id = ? AND deleted_at IS NULL",
+                String.class, trip.getId())).isEqualTo("성산일출봉");
+        assertThat(jdbc.queryForObject(
+                "SELECT trip_place_id IS NOT NULL FROM trip_attachments WHERE trip_attachment_id = ?",
+                Boolean.class, photoId)).isTrue();
+        verifyNoInteractions(kakao);
     }
 
     @Test

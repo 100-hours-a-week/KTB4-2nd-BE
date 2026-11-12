@@ -55,13 +55,18 @@ public class TripPlaceNameService {
     public Map<String, String> resolve(
             Long tripId, String executionId, JsonNode result, BooleanSupplier currentExecution
     ) {
-        try (var scope = openGeocodingLoggingScope(tripId, executionId);
-             var timing = startReverseGeocodingLogging()) {
+        try (WorkflowMdcScope scope = openGeocodingLoggingScope(tripId, executionId);
+             WorkflowLog.Stage timing = startReverseGeocodingLogging()) {
             List<Place> places = validate(result);
 
             LinkedHashMap<Coordinate, Place> unique = new LinkedHashMap<>();
             for (Place place : places) {
-                unique.putIfAbsent(place.coordinate(), place);
+                if (place.name() == null) {
+                    unique.putIfAbsent(place.coordinate(), place);
+                }
+            }
+            if (unique.isEmpty() && !currentExecution.getAsBoolean()) {
+                throw new IllegalStateException(TripInternalErrorMessage.CURRENT_EXECUTION_AI_RESULT_MISMATCH.message());
             }
 
             Map<Coordinate, KakaoLocalClient.LookupResult> lookups = lookupAll(
@@ -70,7 +75,8 @@ public class TripPlaceNameService {
 
             for (Place place : places) {
                 KakaoLocalClient.LookupResult lookup = lookups.get(place.coordinate());
-                String name = lookup == null ? null : firstText(lookup.buildingName(), lookup.regionName());
+                String lookupName = lookup == null ? null : firstText(lookup.buildingName(), lookup.regionName());
+                String name = firstText(place.name(), lookupName);
                 if (name == null) {
                     name = "장소 " + place.order();
                 }
@@ -117,7 +123,7 @@ public class TripPlaceNameService {
                         from, Math.min(from + maxConcurrency, coordinates.size()));
                 List<Future<KakaoLocalClient.LookupResult>> futures = chunk.stream()
                         .map(entry -> executor.submit(() -> {
-                            try (var scope = WorkflowMdcScope.open(callerMdc)) {
+                            try (WorkflowMdcScope scope = WorkflowMdcScope.open(callerMdc)) {
                                 return lookup(tripId, executionId, entry.getValue());
                             }
                         }))
@@ -134,7 +140,7 @@ public class TripPlaceNameService {
     }
 
     private KakaoLocalClient.LookupResult lookup(Long tripId, String executionId, Place place) {
-        try (var timing = startLookupLogging()) {
+        try (WorkflowLog.Stage timing = startLookupLogging()) {
             int attempts = 1;
 
             KakaoLocalClient.LookupResult result = client.lookup(place.latitude(), place.longitude());
@@ -193,7 +199,9 @@ public class TripPlaceNameService {
             BigDecimal latitude = coordinate(node, "latitude", -90, 90);
             BigDecimal longitude = coordinate(node, "longitude", -180, 180);
 
-            places.add(new Place(id, ++order, latitude, longitude,
+            JsonNode name = node.path("place_name");
+            String normalizedName = name.isString() ? firstText(name.asString(), null) : null;
+            places.add(new Place(id, ++order, normalizedName, latitude, longitude,
                     new Coordinate(normalize(latitude), normalize(longitude))));
         }
         return places;
@@ -261,8 +269,9 @@ public class TripPlaceNameService {
                 .filter(value -> value.failure() != KakaoLocalClient.Failure.NONE)
                 .count();
         long fallbackCount = places.stream()
+                .filter(place -> place.name() == null)
                 .filter(place -> {
-                    var lookup = lookups.get(place.coordinate());
+                    KakaoLocalClient.LookupResult lookup = lookups.get(place.coordinate());
                     return lookup == null || firstText(lookup.buildingName(), lookup.regionName()) == null;
                 })
                 .count();
@@ -310,12 +319,16 @@ public class TripPlaceNameService {
     private record Place(
             String id,
             int order,
+            String name,
             BigDecimal latitude,
             BigDecimal longitude,
             Coordinate coordinate
     ) {
     }
 
-    private record Coordinate(String latitude, String longitude) {
+    private record Coordinate(
+            String latitude,
+            String longitude
+    ) {
     }
 }

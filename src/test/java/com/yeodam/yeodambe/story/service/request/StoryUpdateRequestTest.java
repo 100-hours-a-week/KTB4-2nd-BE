@@ -36,9 +36,9 @@ class StoryUpdateRequestTest {
     }
 
     @Test
-    void 요약20자와_메모125자는_코드포인트로_검사하고_null메모를_허용한다() {
+    void 요약40자와_메모125자는_코드포인트로_검사하고_null메모를_허용한다() {
         for (String memo : java.util.Arrays.asList(null, "", "😀".repeat(125))) {
-            var request = new StoryUpdateRequest(Story.Mood.CALM, "😀".repeat(20),
+            var request = new StoryUpdateRequest(Story.Mood.CALM, "😀".repeat(40),
                     List.of(new StoryUpdateRequest.Block(null, 1L, "첫째 날", "설명", memo, 1)));
             assertThat(validator.validate(request)).isEmpty();
         }
@@ -52,8 +52,8 @@ class StoryUpdateRequestTest {
     }
 
     @Test
-    void 요약21자와_메모126자를_거절한다() {
-        assertThat(validator.validate(new StoryUpdateRequest(Story.Mood.CALM, "😀".repeat(21), blocks(1))))
+    void 요약41자와_메모126자를_거절한다() {
+        assertThat(validator.validate(new StoryUpdateRequest(Story.Mood.CALM, "😀".repeat(41), blocks(1))))
                 .isNotEmpty();
         assertThat(validator.validate(new StoryUpdateRequest(Story.Mood.CALM, "요약",
                 List.of(new StoryUpdateRequest.Block(null, 1L, "첫째 날", "설명", "😀".repeat(126), 1)))))

@@ -25,7 +25,7 @@ public record StoryUpdateRequest(
     @AssertTrue
     public boolean isStorySummaryValid() {
         return storySummary == null
-                || isSingleLineTextValid(storySummary, 20);
+                || isSingleLineTextValid(storySummary, 40);
     }
 
     private static boolean isSingleLineTextValid(String value, int maxLength) {

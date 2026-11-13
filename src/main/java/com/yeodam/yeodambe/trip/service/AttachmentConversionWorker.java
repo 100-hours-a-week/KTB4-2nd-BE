@@ -10,6 +10,10 @@ import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionClaim.Photo;
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionStepResult;
 import jakarta.annotation.PreDestroy;
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
+import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Context;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,6 +45,7 @@ import java.util.stream.IntStream;
 @ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}"
         + " && ${app.attachment-conversion.consumer-enabled:true}")
 public class AttachmentConversionWorker {
+    private final WorkflowTraceService traces;
     private final AttachmentConversionService db;
     private final TripAttachmentDerivativeService photos;
     private final Topics topics;
@@ -70,6 +75,12 @@ public class AttachmentConversionWorker {
             Topics topics,
             Duration backoff
     ) {
+        this(db, photos, topics, backoff, new WorkflowTraceService());
+    }
+
+    AttachmentConversionWorker(AttachmentConversionService db, TripAttachmentDerivativeService photos,
+            Topics topics, Duration backoff, WorkflowTraceService traces) {
+        this.traces = traces;
         Assert.isTrue(backoff != null && backoff.isPositive(),
                 TripInternalErrorMessage.CONVERSION_TECHNICAL_BACKOFF_INVALID.message());
         this.db = db;
@@ -94,7 +105,7 @@ public class AttachmentConversionWorker {
             }
             throw new RejectedExecutionException(TripInternalErrorMessage.CONVERSION_TOPIC_TASK_ALREADY_REGISTERED.message());
         }
-        var job = new Job(taskId, kind, lane, topic, partition, sequence++);
+        var job = new Job(taskId, kind, lane, topic, partition, sequence++, traces.capture());
         registered.set(slot, job);
         control.execute(this::pump);
         return job.completion;
@@ -164,15 +175,20 @@ public class AttachmentConversionWorker {
     }
 
     private void advance(Job job) {
-        try {
+        try (var traceScope = traces.openContext(context(job))) {
             switch (job.stage) {
                 case CLAIM -> {
                     var result = db.claim(job.id, job.kind, job.lane);
                     switch (result.status()) {
-                        case ACK_TERMINAL -> terminal(job);
+                        case ACK_TERMINAL -> {
+                            job.span = traces.startConversion(job.parent);
+                            finishTrace(job, "duplicate");
+                            terminal(job);
+                        }
                         case RETRY_LATER -> retry(job);
                         case CLAIMED -> {
                             job.claim = result.claim();
+                            job.span = traces.startConversion(job.parent);
                             job.index = 0;
                             job.fenced = false;
                             job.heartbeat = control.scheduleWithFixedDelay(() -> renew(job), 30, 30, TimeUnit.SECONDS);
@@ -262,11 +278,22 @@ public class AttachmentConversionWorker {
         }
     }
 
+    private Context context(Job job) {
+        Span span = job.span;
+        return span == null ? traces.restore(job.parent) : traces.restore(job.parent).with(span);
+    }
+
+    private void finishTrace(Job job, String result) {
+        Span span = job.span;
+        job.span = null;
+        if (span != null) traces.finish(span, result);
+    }
+
     private boolean active(Job job, AttachmentConversionClaim claim) {
         if (job.fenced) {
             return false;
         }
-        try {
+        try (var traceScope = traces.openContext(context(job))) {
             return db.renewLease(claim);
         } catch (RuntimeException failure) {
             log.atWarn().addKeyValue("event", "attachment_conversion_guard_retry")
@@ -277,6 +304,12 @@ public class AttachmentConversionWorker {
     }
 
     private void photoFinished(Job job, DerivedPhotoKeys output, Throwable failure) {
+        try (var traceScope = traces.openContext(context(job))) {
+            photoFinishedWithContext(job, output, failure);
+        }
+    }
+
+    private void photoFinishedWithContext(Job job, DerivedPhotoKeys output, Throwable failure) {
         job.busy = false;
         if (failure == null) {
             job.output = output;
@@ -296,6 +329,7 @@ public class AttachmentConversionWorker {
 
     private void outcome(Job job, AttachmentConversionStepResult result, boolean saved) {
         if (result.status() == AttachmentConversionStepResult.Status.ACK_READY) {
+            if (!saved) finishTrace(job, "error");
             terminal(job);
         } else if (result.status() == AttachmentConversionStepResult.Status.CONTINUE) {
             if (saved) {
@@ -327,7 +361,7 @@ public class AttachmentConversionWorker {
     }
 
     private void renew(Job job) {
-        try {
+        try (var traceScope = traces.openContext(context(job))) {
             job.fenced = !db.renewLease(job.claim);
         } catch (RuntimeException failure) {
             job.fenced = true;
@@ -350,6 +384,7 @@ public class AttachmentConversionWorker {
         job.claim = null;
         job.output = null;
         job.failure = null;
+        finishTrace(job, job.revoked ? "cancelled" : "retry");
         if (job.revoked) {
             remove(job);
         } else {
@@ -359,12 +394,14 @@ public class AttachmentConversionWorker {
     }
 
     private void terminal(Job job) {
+        finishTrace(job, "success");
         releaseLane(job);
         remove(job);
         job.completion.complete(null);
     }
 
     private void remove(Job job) {
+        finishTrace(job, job.revoked ? "cancelled" : "error");
         cancelTimers(job);
         registered.compareAndSet(slot(job.kind, job.lane), job, null);
         job.cleanup.complete(null);
@@ -452,6 +489,8 @@ public class AttachmentConversionWorker {
         private final String topic;
         private final int partition;
         private final long order;
+        private final WorkflowTraceCarrier parent;
+        private volatile Span span;
         private final CompletableFuture<Void> completion = new CompletableFuture<>();
         private final CompletableFuture<Void> cleanup = new CompletableFuture<>();
         private Stage stage = Stage.CLAIM;
@@ -467,13 +506,14 @@ public class AttachmentConversionWorker {
         private ScheduledFuture<?> retry;
         private ScheduledFuture<?> heartbeat;
 
-        private Job(String id, Kind kind, Lane lane, String topic, int partition, long order) {
+        private Job(String id, Kind kind, Lane lane, String topic, int partition, long order, WorkflowTraceCarrier parent) {
             this.id = id;
             this.kind = kind;
             this.lane = lane;
             this.topic = topic;
             this.partition = partition;
             this.order = order;
+            this.parent = parent;
             this.readyAt = System.nanoTime();
         }
 

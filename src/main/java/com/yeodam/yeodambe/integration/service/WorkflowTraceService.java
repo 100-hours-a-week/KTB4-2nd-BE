@@ -4,14 +4,17 @@ import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage
 import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.context.propagation.TextMapGetter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.header.Headers;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,6 +73,69 @@ public class WorkflowTraceService {
         } catch (RuntimeException failure) {
             logUnavailable(failure);
             return Context.root();
+        }
+    }
+
+    public WorkflowTraceCarrier fromHeaders(Headers headers) {
+        if (headers == null) return new WorkflowTraceCarrier(null, null);
+        try {
+            Map<String, String> values = new HashMap<>();
+            for (String key : List.of("traceparent", "tracestate")) {
+                var entries = headers.headers(key).iterator();
+                if (!entries.hasNext()) continue;
+                byte[] value = entries.next().value();
+                if (entries.hasNext() || value == null || value.length > (key.equals("traceparent") ? 55 : 512)) {
+                    return new WorkflowTraceCarrier(null, null);
+                }
+                values.put(key, new String(value, StandardCharsets.UTF_8));
+            }
+            Map<String, String> normalized = new HashMap<>();
+            PROPAGATOR.inject(restore(new WorkflowTraceCarrier(values.get("traceparent"), values.get("tracestate"))),
+                    normalized, Map::put);
+            return new WorkflowTraceCarrier(normalized.get("traceparent"), normalized.get("tracestate"));
+        } catch (RuntimeException failure) {
+            logUnavailable(failure);
+            return new WorkflowTraceCarrier(null, null);
+        }
+    }
+
+    public Span startConversion(WorkflowTraceCarrier carrier) {
+        return start("photo.convert", carrier);
+    }
+
+    public Span startProcessDispatch() {
+        return start("trip.process.dispatch", capture());
+    }
+
+    public Scope openContext(Context context) {
+        try {
+            Scope scope = context.makeCurrent();
+            return () -> {
+                try { scope.close(); } catch (RuntimeException failure) { logUnavailable(failure); }
+            };
+        } catch (RuntimeException failure) {
+            logUnavailable(failure);
+            return Context.root().makeCurrent();
+        }
+    }
+
+    public void finish(Span span, String result) {
+        try {
+            span.setAttribute("yeodam.result", result);
+            if ("error".equals(result)) span.setStatus(StatusCode.ERROR);
+        } catch (RuntimeException failure) {
+            logUnavailable(failure);
+        } finally {
+            end(span);
+        }
+    }
+
+    private Span start(String name, WorkflowTraceCarrier carrier) {
+        try {
+            return tracer.spanBuilder(name).setParent(restore(carrier)).startSpan();
+        } catch (RuntimeException failure) {
+            logUnavailable(failure);
+            return Span.getInvalid();
         }
     }
 

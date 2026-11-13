@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.entity;
 
 import com.yeodam.yeodambe.trip.service.response.AttachmentConversionPublication;
+import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -90,6 +91,13 @@ public class AttachmentConversionOutbox {
             String payload,
             String requestId
     ) {
+        this(id, taskId, deliveryNo, tripId, topic, payload, requestId, null);
+    }
+
+    public AttachmentConversionOutbox(String id, String taskId, long deliveryNo, Long tripId,
+            String topic, String payload, String requestId, WorkflowTraceCarrier carrier) {
+        this.traceparent = carrier == null ? null : carrier.traceparent();
+        this.tracestate = carrier == null ? null : carrier.tracestate();
         this.id = id;
         this.taskId = taskId;
         this.deliveryNo = deliveryNo;

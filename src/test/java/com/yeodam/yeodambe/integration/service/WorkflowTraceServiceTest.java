@@ -30,6 +30,36 @@ class WorkflowTraceServiceTest {
     private final WorkflowTraceService traces = new WorkflowTraceService(mock(Tracer.class));
 
     @Test
+    void Kafka_Header는_샘플링과_state를_보존하고_중복_부모를_거부한다() {
+        var headers = new org.apache.kafka.common.header.internals.RecordHeaders();
+        String parent = "00-" + TRACE_ID + "-" + SPAN_ID + "-01";
+        headers.add("traceparent", parent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        headers.add("tracestate", "yeodam=synthetic".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(traces.fromHeaders(headers)).isEqualTo(new WorkflowTraceCarrier(parent, "yeodam=synthetic"));
+        headers.add("traceparent", parent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(traces.fromHeaders(headers).traceparent()).isNull();
+    }
+
+    @Test
+    void 변환_Span은_고정_이름과_저장된_부모를_사용하고_실패로_종료한다() {
+        Tracer tracer = mock(Tracer.class);
+        SpanBuilder builder = mock(SpanBuilder.class);
+        Span span = mock(Span.class);
+        when(tracer.spanBuilder("photo.convert")).thenReturn(builder);
+        when(builder.setParent(any(Context.class))).thenReturn(builder);
+        when(builder.startSpan()).thenReturn(span);
+        var service = new WorkflowTraceService(tracer);
+        service.finish(service.startConversion(new WorkflowTraceCarrier(
+                "00-" + TRACE_ID + "-" + SPAN_ID + "-01", null)), "error");
+        var parent = ArgumentCaptor.forClass(Context.class);
+        verify(builder).setParent(parent.capture());
+        assertThat(Span.fromContext(parent.getValue()).getSpanContext().getSpanId()).isEqualTo(SPAN_ID);
+        verify(span).setAttribute("yeodam.result", "error");
+        verify(span).setStatus(io.opentelemetry.api.trace.StatusCode.ERROR);
+        verify(span).end();
+    }
+
+    @Test
     void 유효한_Context를_W3C_carrier로_저장하고_복원한다() {
         SpanContext parent = SpanContext.create(TRACE_ID, SPAN_ID, TraceFlags.getSampled(),
                 TraceState.builder().put("yeodam", "synthetic").build());

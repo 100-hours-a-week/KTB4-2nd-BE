@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import io.opentelemetry.context.Context;
+
 import com.yeodam.yeodambe.trip.exception.TripEditLockRejectedException;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionRoute;
@@ -78,10 +80,11 @@ public class TripAttachmentDerivativeService {
                         (item, outputs) -> prepareInitialPhoto(item.objectKey(), item.contentType(), outputs), active);
             }
             Map<String, String> context = MDC.getCopyOfContextMap();
+            Context traceContext = Context.current();
             var result = new CompletableFuture<DerivedPhotoKeys>();
             BooleanSupplier current = () -> !result.isCancelled() && active.getAsBoolean();
             var task = new TripDerivativeScheduler.PhotoTask(0, photo.contentType(), () -> {
-                try (var conversionScope = WorkflowMdcScope.open(context)) {
+                try (var traceScope = traceContext.makeCurrent(); var conversionScope = WorkflowMdcScope.open(context)) {
                     var derived = generateAdditional(claim.executionId(), photo.objectKey(), photo.contentType(), keys, current);
                     requireActive(current);
                     var retained = new ArrayList<>(keys);

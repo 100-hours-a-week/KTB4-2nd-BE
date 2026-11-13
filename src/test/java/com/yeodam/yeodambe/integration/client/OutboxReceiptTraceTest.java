@@ -25,6 +25,7 @@ class OutboxReceiptTraceTest {
         headers.add("outbox-source", "trip_creation_outbox".getBytes(StandardCharsets.UTF_8));
         headers.add("id", "fixture".getBytes(StandardCharsets.UTF_8));
         headers.add("traceparent", parent.getBytes(StandardCharsets.UTF_8));
+        headers.add("tracestate", null);
         var record = new ConsumerRecord<String, String>("request", 0, 0, 1000L,
                 TimestampType.LOG_APPEND_TIME, 1, 2, "key", "{}", headers, Optional.empty());
         new OutboxReceiptConsumer(receipts).consume(record);

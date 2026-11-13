@@ -68,6 +68,24 @@ class AttachmentConversionKafkaListenerTest {
     }
 
     @Test
+    void NULL_state가_있는_사진_메시지도_재접수_스케줄러까지_샘플링_부모를_유지한다() throws Exception {
+        String parent = "00-11111111111111111111111111111111-2222222222222222-01";
+        var observed = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var attempts = new AtomicInteger();
+        when(worker.process(anyString(), any(), any(), anyString(), anyInt())).thenAnswer(call -> {
+            observed.add(new com.yeodam.yeodambe.integration.service.WorkflowTraceService().capture().traceparent());
+            if (attempts.incrementAndGet() == 1) throw new java.util.concurrent.RejectedExecutionException();
+            return CompletableFuture.completedFuture(null);
+        });
+        var input = record(properties.topics().initialLight(), valid());
+        input.headers().add("traceparent", parent.getBytes(StandardCharsets.UTF_8));
+        input.headers().add("tracestate", null);
+        listener.initialLight(input).get(3, TimeUnit.SECONDS);
+        assertThat(observed).containsExactly(parent, parent);
+        assertThat(new com.yeodam.yeodambe.integration.service.WorkflowTraceService().capture().traceparent()).isNull();
+    }
+
+    @Test
     void 네_진입점은_고정된_종류와_레인과_레코드_위치를_전달한다() throws Exception {
         when(worker.process(anyString(), any(), any(), anyString(), anyInt()))
                 .thenReturn(CompletableFuture.completedFuture(null));

@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.client;
 
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
+
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
@@ -45,6 +47,7 @@ import java.util.stream.Collectors;
         + " && ${app.attachment-conversion.consumer-enabled:true}")
 public class AttachmentConversionKafkaListener {
     private final AttachmentConversionWorker worker;
+    private final WorkflowTraceService traces = new WorkflowTraceService();
     private final ObjectMapper mapper;
     private final KafkaTemplate<String, String> kafka;
     private final String deadLetterTopic;
@@ -133,8 +136,11 @@ public class AttachmentConversionKafkaListener {
             if (!ticket.malformed) {
                 try {
                     var message = parse(ticket.record.value());
-                    worker.process(message.taskId(), ticket.kind, ticket.lane, ticket.record.topic(), ticket.record.partition())
-                            .whenComplete((ignored, failure) -> completed(ticket, failure));
+                    // A retry may run on a scheduler thread with an unrelated current Context.
+                    try (var scope = traces.openContext(traces.restore(traces.fromHeaders(ticket.record.headers())))) {
+                        worker.process(message.taskId(), ticket.kind, ticket.lane, ticket.record.topic(), ticket.record.partition())
+                                .whenComplete((ignored, failure) -> completed(ticket, failure));
+                    }
                 } catch (RuntimeException failure) {
                     completed(ticket, failure);
                 }

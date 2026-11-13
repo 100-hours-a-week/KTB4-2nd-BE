@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
+
 import com.yeodam.yeodambe.trip.client.InvalidAttachmentConversionMessageException;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.entity.*;
@@ -102,7 +104,8 @@ public class AttachmentConversionTransactionService {
             return false;
         }
         outboxes.save(new AttachmentConversionOutbox(UUID.randomUUID().toString(), task.getId(), task.nextDelivery(),
-                task.getTripId(), box.getTopic(), box.getPayload(), box.getRequestId()));
+                task.getTripId(), box.getTopic(), box.getPayload(), box.getRequestId(),
+                new WorkflowTraceCarrier(box.getTraceparent(), box.getTracestate())));
         return true;
     }
 

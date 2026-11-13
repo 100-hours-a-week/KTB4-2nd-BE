@@ -1224,8 +1224,17 @@ public class InitialAttachmentUploadTransactionService {
                 new TripPhotoAnalysisRequest.Period(
                         trip.getStartDate(), trip.getEndDate()), coordinates, objectMapper.valueToTree(photos));
         execution.enqueueProcess(objectMapper.writeValueAsString(event));
-        saveCdcOutbox(execution.getProcessOutboxId(), execution.getExecutionId(), "process",
-                0, execution.getTripId(), execution.getProcessPayload());
+        var dispatch = traces.startProcessDispatch();
+        String traceResult = "success";
+        try (var scope = traces.makeCurrent(dispatch)) {
+            saveCdcOutbox(execution.getProcessOutboxId(), execution.getExecutionId(), "process",
+                    0, execution.getTripId(), execution.getProcessPayload());
+        } catch (RuntimeException failure) {
+            traceResult = "error";
+            throw failure;
+        } finally {
+            traces.finish(dispatch, traceResult);
+        }
     }
 
     private void saveCdcOutbox(

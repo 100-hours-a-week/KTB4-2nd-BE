@@ -1,5 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
+import io.opentelemetry.context.Context;
+
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.common.logging.WorkflowLog;
 import com.yeodam.yeodambe.common.logging.WorkflowMdcScope;
@@ -116,6 +118,7 @@ public class InitialAttachmentStoragePipeline {
     ) {
         var result = new CompletableFuture<DerivedPhotoKeys>();
         Map<String, String> context = MDC.getCopyOfContextMap();
+        Context traceContext = Context.current();
         BooleanSupplier current = () -> !stopping.get() && !result.isCancelled() && active.getAsBoolean();
         synchronized (this) {
             if (stopping.get()) {
@@ -125,12 +128,12 @@ public class InitialAttachmentStoragePipeline {
             control.execute(() -> {
                 try {
                     scheduler.submitPrepared(executionId, photo.contentType(), () -> {
-                        try (var scope = WorkflowMdcScope.open(context)) {
+                        try (var traceScope = traceContext.makeCurrent(); var scope = WorkflowMdcScope.open(context)) {
                             requireActive(current);
                             return prepare.apply(photo, plannedKeys);
                         }
                     }, current).whenComplete((prepared, failure) -> control.execute(() -> {
-                        try (var scope = WorkflowMdcScope.open(context)) {
+                        try (var traceScope = traceContext.makeCurrent(); var scope = WorkflowMdcScope.open(context)) {
                             if (failure != null) {
                                 finishPhoto(result, null, failure);
                             } else {
@@ -152,9 +155,10 @@ public class InitialAttachmentStoragePipeline {
             Map<String, String> context,
             BooleanSupplier active
     ) {
+        Context traceContext = Context.current();
         storePrepared(prepared, context, () -> requireActive(active))
                 .whenComplete((ignored, failure) -> control.execute(() -> {
-                    try (var scope = WorkflowMdcScope.open(context)) {
+                    try (var traceScope = traceContext.makeCurrent(); var scope = WorkflowMdcScope.open(context)) {
                         Throwable outcome = failure;
                         if (outcome == null) {
                             try {
@@ -350,10 +354,11 @@ public class InitialAttachmentStoragePipeline {
     }
 
     private CompletableFuture<Void> storePrepared(PreparedPhotoDerivative prepared, Map<String, String> context, Runnable beforeUpload) {
+        Context traceContext = Context.current();
         CompletableFuture<Void> upload = CompletableFuture.completedFuture(null);
         for (PreparedPhotoDerivative.Output output : prepared.outputs()) {
             upload = upload.thenComposeAsync(ignored -> {
-                try (var scope = WorkflowMdcScope.open(context)) {
+                try (var traceScope = traceContext.makeCurrent(); var scope = WorkflowMdcScope.open(context)) {
                     beforeUpload.run();
                     return storage.storeDerivedToAsync(output.objectKey(), output.file(), output.mimeType()).thenApply(key -> null);
                 }

@@ -55,10 +55,23 @@ class AttachmentConversionWorkerTest {
     private final BlockingQueue<Call> calls = new LinkedBlockingQueue<>();
     private final List<Call> allCalls = new CopyOnWriteArrayList<>();
     private AttachmentConversionWorker worker;
+    private io.opentelemetry.sdk.trace.SdkTracerProvider traceProvider;
+    private final List<io.opentelemetry.sdk.trace.data.SpanData> recorded = new CopyOnWriteArrayList<>();
 
     @BeforeEach
     void setUp() {
-        worker = new AttachmentConversionWorker(db, photos, topics, BACKOFF);
+        var exporter = new io.opentelemetry.sdk.trace.export.SpanExporter() {
+            public io.opentelemetry.sdk.common.CompletableResultCode export(java.util.Collection<io.opentelemetry.sdk.trace.data.SpanData> spans) {
+                recorded.addAll(spans); return io.opentelemetry.sdk.common.CompletableResultCode.ofSuccess();
+            }
+            public io.opentelemetry.sdk.common.CompletableResultCode flush() { return io.opentelemetry.sdk.common.CompletableResultCode.ofSuccess(); }
+            public io.opentelemetry.sdk.common.CompletableResultCode shutdown() { return io.opentelemetry.sdk.common.CompletableResultCode.ofSuccess(); }
+        };
+        traceProvider = io.opentelemetry.sdk.trace.SdkTracerProvider.builder()
+                .setSampler(io.opentelemetry.sdk.trace.samplers.Sampler.parentBased(io.opentelemetry.sdk.trace.samplers.Sampler.alwaysOff()))
+                .addSpanProcessor(io.opentelemetry.sdk.trace.export.SimpleSpanProcessor.create(exporter)).build();
+        worker = new AttachmentConversionWorker(db, photos, topics, BACKOFF,
+                com.yeodam.yeodambe.integration.service.WorkflowTraceTestFactory.create(traceProvider.get("test")));
         when(db.claim(anyString(), any(), any())).thenAnswer(call -> new AttachmentConversionClaimResult(
                 AttachmentConversionClaimResult.Status.CLAIMED, claims.get(call.<String>getArgument(0)), null));
         when(db.renewLease(any())).thenReturn(true);
@@ -90,6 +103,69 @@ class AttachmentConversionWorkerTest {
         worker.stopAccepting();
         worker.drain().get(5, TimeUnit.SECONDS);
         worker.close();
+        traceProvider.close();
+    }
+
+    @Test
+    void 공유_제어_스레드에서_각_작업의_부모와_비동기_완료_Context가_섞이지_않는다() throws Exception {
+        var observed = new ConcurrentHashMap<String, String>();
+        var completed = new ConcurrentHashMap<String, String>();
+        doAnswer(invocation -> {
+            AttachmentConversionClaim claim = invocation.getArgument(0);
+            observed.put(claim.taskId(), io.opentelemetry.api.trace.Span.current().getSpanContext().getTraceId());
+            var entry = new Call(claim, invocation.getArgument(1), invocation.getArgument(2), invocation.getArgument(3), new CompletableFuture<>());
+            calls.add(entry); allCalls.add(entry); return entry.result();
+        }).when(photos).processConversionPhoto(any(), any(), any(), any());
+        doAnswer(invocation -> {
+            AttachmentConversionClaim claim = invocation.getArgument(0);
+            completed.put(claim.taskId(), io.opentelemetry.api.trace.Span.current().getSpanContext().getTraceId());
+            return step(AttachmentConversionStepResult.Status.ACK_READY);
+        }).when(db).completePhoto(any(), anyLong(), any());
+        var first = fixture(Kind.INITIAL, Lane.LIGHT, 1);
+        var second = fixture(Kind.ADDITIONAL, Lane.HEIC, 1);
+        String a = "11111111111111111111111111111111", b = "22222222222222222222222222222222";
+        CompletableFuture<Void> fa, fb;
+        try (var scope = trace(a).makeCurrent()) { fa = process(first); }
+        try (var scope = trace(b).makeCurrent()) { fb = process(second); }
+        var one = next(); var two = next();
+        assertThat(fa).isNotDone(); assertThat(fb).isNotDone();
+        assertThat(recorded).isEmpty();
+        // Complete in reverse order on the caller thread: callbacks must restore their own job.
+        two.succeed(); one.succeed();
+        fa.get(5, TimeUnit.SECONDS); fb.get(5, TimeUnit.SECONDS);
+        assertThat(observed).containsEntry(first.taskId(), a).containsEntry(second.taskId(), b);
+        assertThat(completed).containsEntry(first.taskId(), a).containsEntry(second.taskId(), b);
+        assertThat(recorded).hasSize(2).allSatisfy(span -> {
+            assertThat(span.getName()).isEqualTo("photo.convert");
+            assertThat(span.getParentSpanId()).isEqualTo("3333333333333333");
+            assertThat(span.getSpanContext().isSampled()).isTrue();
+        });
+        assertThat(recorded).extracting(io.opentelemetry.sdk.trace.data.SpanData::getTraceId).containsExactlyInAnyOrder(a, b);
+        assertThat(io.opentelemetry.api.trace.Span.current().getSpanContext().isValid()).isFalse();
+    }
+
+    @Test
+    void 재선점은_같은_부모의_새_attempt_Span이고_완료전_ACK하지_않는다() throws Exception {
+        var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
+        when(db.finishSubBatch(claim)).thenReturn(step(AttachmentConversionStepResult.Status.CONTINUE));
+        CompletableFuture<Void> result;
+        try (var scope = trace("44444444444444444444444444444444").makeCurrent()) { result = process(claim); }
+        var first = next();
+        first.result().completeExceptionally(new java.util.concurrent.CancellationException());
+        var second = next();
+        assertThat(result).isNotDone();
+        assertThat(recorded).hasSize(1);
+        assertThat(recorded.getFirst().getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey("yeodam.result"))).isEqualTo("retry");
+        second.succeed();result.get(5, TimeUnit.SECONDS);
+        assertThat(recorded).hasSize(2);
+        assertThat(recorded.get(0).getSpanId()).isNotEqualTo(recorded.get(1).getSpanId());
+        assertThat(recorded).allSatisfy(span -> assertThat(span.getParentSpanId()).isEqualTo("3333333333333333"));
+    }
+
+    private io.opentelemetry.api.trace.Span trace(String id) {
+        return io.opentelemetry.api.trace.Span.wrap(io.opentelemetry.api.trace.SpanContext.create(
+                id, "3333333333333333", io.opentelemetry.api.trace.TraceFlags.getSampled(),
+                io.opentelemetry.api.trace.TraceState.getDefault()));
     }
 
     @ParameterizedTest

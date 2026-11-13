@@ -3,6 +3,7 @@ package com.yeodam.yeodambe.integration.client;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import com.yeodam.yeodambe.integration.exception.IntegrationInternalErrorMessage;
 import com.yeodam.yeodambe.integration.service.OutboxReceiptService;
+import com.yeodam.yeodambe.integration.service.WorkflowTraceService;
 import com.yeodam.yeodambe.integration.service.request.OutboxReceipt;
 
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import java.time.Instant;
 @ConditionalOnExpression("!${app.attachment-conversion.operations.enabled:false}")
 public class OutboxReceiptConsumer {
     private final OutboxReceiptService receipts;
+    private final WorkflowTraceService traces = new WorkflowTraceService();
 
     @KafkaListener(
             topics = {
@@ -41,8 +43,11 @@ public class OutboxReceiptConsumer {
         Assert.isTrue(record.timestampType() == TimestampType.LOG_APPEND_TIME
                 && record.timestamp() >= 0, IntegrationInternalErrorMessage.CDC_TIMESTAMP_TYPE_INVALID.message());
         String id = header(record.headers().lastHeader("id"));
-        receipts.observe(header(source), id, new OutboxReceipt(
-                record.topic(), record.key(), record.value(), Instant.ofEpochMilli(record.timestamp())));
+        // photos_ready receipt may enqueue the final process Outbox synchronously.
+        try (var scope = traces.openContext(traces.restore(traces.fromHeaders(record.headers())))) {
+            receipts.observe(header(source), id, new OutboxReceipt(
+                    record.topic(), record.key(), record.value(), Instant.ofEpochMilli(record.timestamp())));
+        }
     }
 
     private String header(Header header) {

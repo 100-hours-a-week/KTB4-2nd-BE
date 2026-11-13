@@ -30,6 +30,29 @@ class WorkflowTraceServiceTest {
     private final WorkflowTraceService traces = new WorkflowTraceService(mock(Tracer.class));
 
     @Test
+    void Debezium이_NULL_tracestate_Header를_보내도_유효한_부모와_샘플링은_유지한다() {
+        String parent = "00-" + TRACE_ID + "-" + SPAN_ID + "-01";
+        var headers = new org.apache.kafka.common.header.internals.RecordHeaders();
+        headers.add("traceparent", parent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        // EventRouter + SimpleHeaderConverter emits a present, null-valued optional Header.
+        headers.add("tracestate", null);
+        assertThat(traces.fromHeaders(headers)).isEqualTo(new WorkflowTraceCarrier(parent, null));
+    }
+
+    @Test
+    void 잘못되거나_모호한_선택_state만_버리고_부모는_보존한다() {
+        String parent = "00-" + TRACE_ID + "-" + SPAN_ID + "-01";
+        for (String state : new String[]{"", "invalid state", "x=" + "a".repeat(512)}) {
+            var headers = new org.apache.kafka.common.header.internals.RecordHeaders();
+            headers.add("traceparent", parent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            headers.add("tracestate", state.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            assertThat(traces.fromHeaders(headers)).isEqualTo(new WorkflowTraceCarrier(parent, null));
+            headers.add("tracestate", "vendor=second".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            assertThat(traces.fromHeaders(headers)).isEqualTo(new WorkflowTraceCarrier(parent, null));
+        }
+    }
+
+    @Test
     void Kafka_Header는_샘플링과_state를_보존하고_중복_부모를_거부한다() {
         var headers = new org.apache.kafka.common.header.internals.RecordHeaders();
         String parent = "00-" + TRACE_ID + "-" + SPAN_ID + "-01";

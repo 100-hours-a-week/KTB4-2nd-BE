@@ -80,14 +80,22 @@ public class WorkflowTraceService {
         if (headers == null) return new WorkflowTraceCarrier(null, null);
         try {
             Map<String, String> values = new HashMap<>();
-            for (String key : List.of("traceparent", "tracestate")) {
-                var entries = headers.headers(key).iterator();
-                if (!entries.hasNext()) continue;
-                byte[] value = entries.next().value();
-                if (entries.hasNext() || value == null || value.length > (key.equals("traceparent") ? 55 : 512)) {
-                    return new WorkflowTraceCarrier(null, null);
+            var parents = headers.headers("traceparent").iterator();
+            if (!parents.hasNext()) return new WorkflowTraceCarrier(null, null);
+            byte[] parent = parents.next().value();
+            if (parents.hasNext() || parent == null || parent.length != 55) {
+                return new WorkflowTraceCarrier(null, null);
+            }
+            values.put("traceparent", new String(parent, StandardCharsets.UTF_8));
+
+            // Optional vendor state must never invalidate a valid parent. Debezium's
+            // SimpleHeaderConverter preserves a nullable column as a null Header value.
+            var states = headers.headers("tracestate").iterator();
+            if (states.hasNext()) {
+                byte[] state = states.next().value();
+                if (!states.hasNext() && state != null && state.length <= 512) {
+                    values.put("tracestate", new String(state, StandardCharsets.UTF_8));
                 }
-                values.put(key, new String(value, StandardCharsets.UTF_8));
             }
             Map<String, String> normalized = new HashMap<>();
             PROPAGATOR.inject(restore(new WorkflowTraceCarrier(values.get("traceparent"), values.get("tracestate"))),

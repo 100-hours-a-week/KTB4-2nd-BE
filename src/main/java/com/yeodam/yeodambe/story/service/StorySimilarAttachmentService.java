@@ -29,6 +29,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class StorySimilarAttachmentService {
     private static final int RESULT_LIMIT = 10;
+    private static final double MIN_SIMILARITY_SCORE = 0.7;
 
     private final StoryRepository storyRepository;
     private final StoryContentRepository storyContentRepository;
@@ -110,6 +111,7 @@ public class StorySimilarAttachmentService {
         return new StorySimilarAttachmentListResponse(
                 source.getId(),
                 response.items().stream()
+                        .filter(item -> item.score() >= MIN_SIMILARITY_SCORE)
                         .map(item -> new StorySimilarAttachmentListResponse.Item(
                                 item.tripAttachmentId(), item.score()
                         ))

@@ -84,6 +84,29 @@ class StorySimilarAttachmentServiceTest {
                 new StorySimilarAttachmentListResponse.Item(506L, 0.91));
     }
 
+    @Test
+    void 유사도_기준_이상만_AI_순서대로_반환한다() {
+        var candidates = List.of(attachment(506L, 31L), attachment(507L, 31L), attachment(508L, 31L));
+        when(attachments.findAllActiveByTripPlaceId(11L, ClassificationStatus.ACTIVE))
+                .thenReturn(candidates);
+        var request = new StorySimilarAttachmentAiRequest(501L, List.of(506L, 507L, 508L), 10);
+        when(aiClient.findSimilar(31L, request)).thenReturn(new StorySimilarAttachmentAiResponse(501L,
+                List.of(item(507L, 0.91), item(508L, 0.70), item(506L, 0.69))));
+
+        assertThat(service.findSimilar(1L, 71L, 101L).items()).containsExactly(
+                new StorySimilarAttachmentListResponse.Item(507L, 0.91),
+                new StorySimilarAttachmentListResponse.Item(508L, 0.70));
+    }
+
+    @Test
+    void 모든_유사도가_기준_미만이면_빈_목록을_반환한다() {
+        when(aiClient.findSimilar(31L, expectedRequest)).thenReturn(new StorySimilarAttachmentAiResponse(501L,
+                List.of(item(507L, 0.69), item(506L, 0.60))));
+
+        assertThat(service.findSimilar(1L, 71L, 101L))
+                .isEqualTo(new StorySimilarAttachmentListResponse(501L, List.of()));
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void 후보가_없거나_모두_사용중이면_AI를_호출하지_않는다(boolean onlyUsed) {

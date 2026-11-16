@@ -3,6 +3,11 @@ package com.yeodam.yeodambe.trip.service;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
 import com.yeodam.yeodambe.trip.client.InvalidAttachmentConversionMessageException;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties;
+import com.yeodam.yeodambe.trip.config.AttachmentConversionLeaseProperties;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.yeodam.yeodambe.trip.config.AttachmentConversionProperties.Topics;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Kind;
 import com.yeodam.yeodambe.trip.entity.AttachmentConversionTask.Lane;
@@ -37,6 +42,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 @Slf4j
@@ -50,6 +56,10 @@ public class AttachmentConversionWorker {
     private final TripAttachmentDerivativeService photos;
     private final Topics topics;
     private final long backoffNanos;
+    private final AttachmentConversionLeaseProperties lease;
+    private final MeterRegistry metrics;
+    private final Timer heartbeatGap;
+    private final Timer heartbeatDelay;
     private final ScheduledThreadPoolExecutor control = new ScheduledThreadPoolExecutor(1,
             Thread.ofPlatform().name("attachment-conversion-control").daemon(true).factory());
     private final AtomicReferenceArray<Job> registered = new AtomicReferenceArray<>(4);
@@ -64,9 +74,11 @@ public class AttachmentConversionWorker {
             AttachmentConversionService db,
             TripAttachmentDerivativeService photos,
             AttachmentConversionProperties properties,
-            @Value("${app.attachment-conversion.retry.technical-backoff}") Duration backoff
+            @Value("${app.attachment-conversion.retry.technical-backoff}") Duration backoff,
+            AttachmentConversionLeaseProperties lease,
+            MeterRegistry metrics
     ) {
-        this(db, photos, properties.topics(), backoff);
+        this(db, photos, properties.topics(), backoff, new WorkflowTraceService(), lease, metrics);
     }
 
     AttachmentConversionWorker(
@@ -80,7 +92,28 @@ public class AttachmentConversionWorker {
 
     AttachmentConversionWorker(AttachmentConversionService db, TripAttachmentDerivativeService photos,
             Topics topics, Duration backoff, WorkflowTraceService traces) {
+        this(db, photos, topics, backoff, traces, new AttachmentConversionLeaseProperties(null, null),
+                new SimpleMeterRegistry());
+    }
+
+    AttachmentConversionWorker(AttachmentConversionService db, TripAttachmentDerivativeService photos,
+            Topics topics, Duration backoff, WorkflowTraceService traces,
+            AttachmentConversionLeaseProperties lease, MeterRegistry metrics) {
         this.traces = traces;
+        this.lease = lease;
+        this.metrics = metrics;
+        this.heartbeatGap = metrics.timer("yeodam.attachment.conversion.lease.heartbeat.gap");
+        this.heartbeatDelay = metrics.timer("yeodam.attachment.conversion.lease.heartbeat.delay");
+        for (String outcome : List.of("renewed", "lost", "error")) {
+            metrics.counter("yeodam.attachment.conversion.lease.heartbeat", "outcome", outcome);
+            metrics.counter("yeodam.attachment.conversion.lease.renew", "outcome", outcome);
+        }
+        metrics.timer("yeodam.attachment.conversion.lease.renew.gap");
+        metrics.timer("yeodam.attachment.conversion.lease.renew.duration");
+        Gauge.builder("yeodam.attachment.conversion.lease.duration.seconds", lease,
+                value -> value.duration().toMillis() / 1000.0).register(metrics);
+        Gauge.builder("yeodam.attachment.conversion.lease.renew.interval.seconds", lease,
+                value -> value.renewInterval().toMillis() / 1000.0).register(metrics);
         Assert.isTrue(backoff != null && backoff.isPositive(),
                 TripInternalErrorMessage.CONVERSION_TECHNICAL_BACKOFF_INVALID.message());
         this.db = db;
@@ -191,7 +224,11 @@ public class AttachmentConversionWorker {
                             job.span = traces.startConversion(job.parent);
                             job.index = 0;
                             job.fenced = false;
-                            job.heartbeat = control.scheduleWithFixedDelay(() -> renew(job), 30, 30, TimeUnit.SECONDS);
+                            job.lastRenewStarted.set(0);
+                            job.previousHeartbeatAt = 0;
+                            job.heartbeatDueAt = System.nanoTime() + lease.renewInterval().toNanos();
+                            job.heartbeat = control.scheduleWithFixedDelay(() -> renew(job),
+                                    lease.renewInterval().toMillis(), lease.renewInterval().toMillis(), TimeUnit.MILLISECONDS);
                             nextPhoto(job);
                         }
                     }
@@ -237,7 +274,7 @@ public class AttachmentConversionWorker {
             release(job);
             return;
         }
-        if (!db.renewLease(job.claim)) {
+        if (!renewClaim(job, job.claim)) {
             job.fenced = true;
             job.stage = Stage.FINISH;
             releaseLane(job);
@@ -294,7 +331,7 @@ public class AttachmentConversionWorker {
             return false;
         }
         try (var traceScope = traces.openContext(context(job))) {
-            return db.renewLease(claim);
+            return renewClaim(job, claim);
         } catch (RuntimeException failure) {
             log.atWarn().addKeyValue("event", "attachment_conversion_guard_retry")
                     .addKeyValue("failure", failure.getClass().getSimpleName())
@@ -339,7 +376,7 @@ public class AttachmentConversionWorker {
             job.failure = null;
             releaseLane(job);
             nextPhoto(job);
-        } else if (!db.renewLease(job.claim)) {
+        } else if (!renewClaim(job, job.claim)) {
             job.stage = Stage.RELEASE;
             control.execute(this::pump);
         } else if (saved) {
@@ -360,14 +397,43 @@ public class AttachmentConversionWorker {
         control.execute(this::pump);
     }
 
+    private boolean renewClaim(Job job, AttachmentConversionClaim claim) {
+        long started = System.nanoTime();
+        long previous = job.lastRenewStarted.getAndAccumulate(started,
+                (previousAt, currentAt) -> previousAt == 0 || currentAt - previousAt >= 0 ? currentAt : previousAt);
+        if (previous != 0 && started - previous >= 0) {
+            metrics.timer("yeodam.attachment.conversion.lease.renew.gap").record(started - previous, TimeUnit.NANOSECONDS);
+        }
+        String outcome = "error";
+        try {
+            boolean renewed = db.renewLease(claim);
+            outcome = renewed ? "renewed" : "lost";
+            return renewed;
+        } finally {
+            metrics.counter("yeodam.attachment.conversion.lease.renew", "outcome", outcome).increment();
+            metrics.timer("yeodam.attachment.conversion.lease.renew.duration").record(System.nanoTime() - started, TimeUnit.NANOSECONDS);
+        }
+    }
+
     private void renew(Job job) {
+        long started = System.nanoTime();
+        heartbeatDelay.record(Math.max(0, started - job.heartbeatDueAt), TimeUnit.NANOSECONDS);
+        if (job.previousHeartbeatAt != 0) heartbeatGap.record(started - job.previousHeartbeatAt, TimeUnit.NANOSECONDS);
+        job.previousHeartbeatAt = started;
+        String outcome = "error";
         try (var traceScope = traces.openContext(context(job))) {
-            job.fenced = !db.renewLease(job.claim);
+            job.fenced = !renewClaim(job, job.claim);
+            outcome = job.fenced ? "lost" : "renewed";
         } catch (RuntimeException failure) {
             job.fenced = true;
             log.atWarn().addKeyValue("event", "attachment_conversion_lease_retry")
                     .addKeyValue("failure", failure.getClass().getSimpleName())
                     .log(TripInternalErrorMessage.CONVERSION_LEASE_RETRY.message());
+        } finally {
+            metrics.counter("yeodam.attachment.conversion.lease.heartbeat", "outcome", outcome).increment();
+            metrics.timer("yeodam.attachment.conversion.lease.heartbeat.renew").record(
+                    System.nanoTime() - started, TimeUnit.NANOSECONDS);
+            job.heartbeatDueAt = System.nanoTime() + lease.renewInterval().toNanos();
         }
         if (job.fenced && job.stage == Stage.BEGIN && !job.busy) {
             job.stage = Stage.FINISH;
@@ -505,6 +571,9 @@ public class AttachmentConversionWorker {
         private Throwable failure;
         private ScheduledFuture<?> retry;
         private ScheduledFuture<?> heartbeat;
+        private long heartbeatDueAt;
+        private long previousHeartbeatAt;
+        private final AtomicLong lastRenewStarted = new AtomicLong();
 
         private Job(String id, Kind kind, Lane lane, String topic, int partition, long order, WorkflowTraceCarrier parent) {
             this.id = id;

@@ -107,6 +107,52 @@ class AttachmentConversionWorkerTest {
     }
 
     @Test
+    void 짧은_정책에서도_긴_사진_처리의_갱신과_지연을_구분한다() throws Exception {
+        worker.close();
+        var metrics = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        worker = new AttachmentConversionWorker(db, photos, topics, BACKOFF,
+                new com.yeodam.yeodambe.integration.service.WorkflowTraceService(),
+                new com.yeodam.yeodambe.trip.config.AttachmentConversionLeaseProperties(
+                        Duration.ofSeconds(3), Duration.ofSeconds(1)), metrics);
+        var beats = new CountDownLatch(4);
+        when(db.renewLease(any())).thenAnswer(call -> { beats.countDown(); return true; });
+        var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
+        var result = process(claim);
+        var photo = next();
+        assertThat(beats.await(6, TimeUnit.SECONDS)).isTrue();
+        assertThat(result).isNotDone();
+        assertThat(metrics.get("yeodam.attachment.conversion.lease.heartbeat").tag("outcome", "renewed")
+                .counter().count()).isGreaterThanOrEqualTo(3);
+        assertThat(metrics.get("yeodam.attachment.conversion.lease.heartbeat.gap").timer().count()).isGreaterThanOrEqualTo(2);
+        assertThat(metrics.get("yeodam.attachment.conversion.lease.duration.seconds").gauge().value()).isEqualTo(3);
+        assertThat(metrics.getMeters()).allSatisfy(m ->
+                assertThat(m.getId().getTags()).allSatisfy(tag -> assertThat(tag.getKey()).isEqualTo("outcome")));
+        photo.succeed(); result.get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void 주기적_갱신_실패는_소유권_보호와_별도_오류_지표를_유지한다() throws Exception {
+        worker.close();
+        var metrics = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        worker = new AttachmentConversionWorker(db, photos, topics, BACKOFF,
+                new com.yeodam.yeodambe.integration.service.WorkflowTraceService(),
+                new com.yeodam.yeodambe.trip.config.AttachmentConversionLeaseProperties(
+                        Duration.ofSeconds(3), Duration.ofSeconds(1)), metrics);
+        var failed = new CountDownLatch(1); var renewals = new AtomicInteger();
+        when(db.renewLease(any())).thenAnswer(call -> {
+            if (renewals.incrementAndGet() > 1) { failed.countDown(); throw new TransientDataAccessResourceException("synthetic"); }
+            return true;
+        });
+        var claim = fixture(Kind.INITIAL, Lane.LIGHT, 1);
+        process(claim); var photo = next();
+        assertThat(failed.await(4, TimeUnit.SECONDS)).isTrue();
+        org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+                assertThat(metrics.get("yeodam.attachment.conversion.lease.heartbeat").tag("outcome", "error").counter().count()).isGreaterThanOrEqualTo(1));
+        assertThat(photo.active().getAsBoolean()).isFalse();
+        verify(db, never()).recordPhotoFailure(any(), anyLong(), anyBoolean());
+    }
+
+    @Test
     void 공유_제어_스레드에서_각_작업의_부모와_비동기_완료_Context가_섞이지_않는다() throws Exception {
         var observed = new ConcurrentHashMap<String, String>();
         var completed = new ConcurrentHashMap<String, String>();
@@ -318,6 +364,10 @@ class AttachmentConversionWorkerTest {
     @Test
     void Kafka_워커_설정은_명시적인_양수_백오프를_요구한다() {
         var runner = new ApplicationContextRunner().withUserConfiguration(AttachmentConversionWorker.class)
+                .withBean(com.yeodam.yeodambe.trip.config.AttachmentConversionLeaseProperties.class,
+                        () -> new com.yeodam.yeodambe.trip.config.AttachmentConversionLeaseProperties(null, null))
+                .withBean(io.micrometer.core.instrument.MeterRegistry.class,
+                        io.micrometer.core.instrument.simple.SimpleMeterRegistry::new)
                 .withBean(AttachmentConversionService.class, () -> db)
                 .withBean(TripAttachmentDerivativeService.class, () -> photos)
                 .withBean(AttachmentConversionProperties.class, () -> new AttachmentConversionProperties(

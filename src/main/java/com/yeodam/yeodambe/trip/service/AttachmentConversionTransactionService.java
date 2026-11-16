@@ -1,6 +1,7 @@
 package com.yeodam.yeodambe.trip.service;
 
 import com.yeodam.yeodambe.integration.service.response.WorkflowTraceCarrier;
+import com.yeodam.yeodambe.trip.config.AttachmentConversionLeaseProperties;
 
 import com.yeodam.yeodambe.trip.client.InvalidAttachmentConversionMessageException;
 import com.yeodam.yeodambe.trip.exception.TripInternalErrorMessage;
@@ -25,6 +26,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +44,7 @@ import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
+@EnableConfigurationProperties(AttachmentConversionLeaseProperties.class)
 public class AttachmentConversionTransactionService {
     private final AttachmentConversionTaskRepository tasks;
     private final AttachmentConversionOutboxRepository outboxes;
@@ -52,6 +55,7 @@ public class AttachmentConversionTransactionService {
     private final ObjectMapper json;
     private final InitialAttachmentUploadTransactionService initialSource;
     private final AdditionalAttachmentUploadTransactionService additionalSource;
+    private final AttachmentConversionLeaseProperties lease;
 
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public List<AttachmentConversionRecoveryCandidate> findRecoveryCandidates(
@@ -205,7 +209,7 @@ public class AttachmentConversionTransactionService {
             return retry(task, now);
         }
         task.recordRemaining(remaining.size(), remaining.stream().mapToLong(Photo::sizeBytes).sum());
-        task.claim(UUID.randomUUID().toString(), now.plusMinutes(10));
+        task.claim(UUID.randomUUID().toString(), now.plus(lease.duration()));
         String requestId = outboxes.findRequestId(taskId, task.getLatestDeliveryNo()).orElse(source.executionId());
         return new AttachmentConversionClaimResult(AttachmentConversionClaimResult.Status.CLAIMED,
                 new AttachmentConversionClaim(taskId, task.getClaimToken(), task.getKind(), task.getLane(),
@@ -275,7 +279,7 @@ public class AttachmentConversionTransactionService {
                 || !task.isClaimOwner(claim.claimToken(), now)) {
             return false;
         }
-        task.renewLease(now.plusMinutes(10));
+        task.renewLease(now.plus(lease.duration()));
         return true;
     }
 

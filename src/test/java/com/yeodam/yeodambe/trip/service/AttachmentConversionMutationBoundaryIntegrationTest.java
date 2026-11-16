@@ -112,7 +112,7 @@ class AttachmentConversionMutationBoundaryIntegrationTest {
             return invocation.callRealMethod();
         }).when(transactions).completePhoto(any(), anyLong(), any());
         AttachmentConversionWorker worker = new AttachmentConversionWorker(
-                conversions, photos, properties, Duration.ofMillis(100));
+                conversions, photos, properties.topics(), Duration.ofMillis(100));
         try {
             worker.process(task.getId(), Kind.INITIAL, Lane.LIGHT, properties.topics().initialLight(), 0)
                     .get(10, TimeUnit.SECONDS);

@@ -38,6 +38,7 @@ class AttachmentConversionActivationTest {
                     AttachmentConversionWorker.class, AttachmentConversionRecoveryService.class)
             .withBean("conversionService", ConversionService.class, ApplicationConversionService::new)
             .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withBean(io.micrometer.core.instrument.MeterRegistry.class, io.micrometer.core.instrument.simple.SimpleMeterRegistry::new)
             .withBean(KafkaListenerEndpointRegistry.class, KafkaListenerEndpointRegistry::new)
             .withBean(KafkaTemplate.class, () -> mock(KafkaTemplate.class))
             .withBean(AttachmentConversionService.class, () -> mock(AttachmentConversionService.class))
@@ -184,7 +185,7 @@ class AttachmentConversionActivationTest {
     }
 
     @Configuration(proxyBeanMethods = false)
-    @EnableConfigurationProperties(AttachmentConversionProperties.class)
+    @EnableConfigurationProperties({AttachmentConversionProperties.class, AttachmentConversionLeaseProperties.class})
     static class PropertiesConfiguration {
     }
 }

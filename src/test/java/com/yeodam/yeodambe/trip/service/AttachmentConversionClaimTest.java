@@ -61,6 +61,7 @@ import static org.mockito.ArgumentMatchers.any;
 class AttachmentConversionClaimTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2000, 1, 1, 12, 0);
     @Autowired private AttachmentConversionTransactionService transactions;
+    @Autowired private com.yeodam.yeodambe.trip.config.AttachmentConversionLeaseProperties lease;
     @Autowired
     private AttachmentConversionService conversions;
     @Autowired private EntityManager entityManager;
@@ -137,7 +138,7 @@ class AttachmentConversionClaimTest {
             var actual = List.of(results.get(0).get(10, TimeUnit.SECONDS), results.get(1).get(10, TimeUnit.SECONDS));
             assertThat(actual).filteredOn(result -> result.status() == CLAIMED).hasSize(1);
             assertThat(actual).filteredOn(result -> result.status() == RETRY_LATER).singleElement()
-                    .satisfies(result -> assertThat(result.retryAt()).isEqualTo(NOW.plusMinutes(10)));
+                    .satisfies(result -> assertThat(result.retryAt()).isEqualTo(NOW.plus(lease.duration())));
             var claim = actual.stream().filter(result -> result.status() == CLAIMED).findFirst().orElseThrow().claim();
             assertThat(claim.claimToken()).isEqualTo(jdbc.queryForObject(
                     "SELECT claim_token FROM attachment_conversion_tasks WHERE task_id = ?", String.class, fixture.taskId()));
@@ -171,7 +172,7 @@ class AttachmentConversionClaimTest {
         assertThat(jdbc.queryForObject("SELECT claim_token FROM attachment_conversion_tasks WHERE task_id = ?",
                 String.class, fixture.taskId())).isEqualTo(current.claimToken());
         assertThat(jdbc.queryForObject("SELECT lease_until FROM attachment_conversion_tasks WHERE task_id = ?",
-                LocalDateTime.class, fixture.taskId())).isEqualTo(NOW.plusMinutes(10));
+                LocalDateTime.class, fixture.taskId())).isEqualTo(NOW.plus(lease.duration()));
         List<CleanupProbe> journal = json.readValue(jdbc.queryForObject("SELECT cleanup_json FROM " + itemTable(kind)
                 + " WHERE upload_item_id = ?", String.class, fixture.lightItemId()), new TypeReference<List<CleanupProbe>>() {});
         var oldKeys = List.of(first.plannedKeys().analyzeKey(), first.plannedKeys().previewKey());
@@ -319,11 +320,11 @@ class AttachmentConversionClaimTest {
         assertThat(transactions.renewLease(first)).isFalse();
         entityManager.flush();
         assertThat(jdbc.queryForObject("SELECT lease_until FROM attachment_conversion_tasks WHERE task_id = ?",
-                LocalDateTime.class, fixture.taskId())).isEqualTo(NOW.plusMinutes(10));
+                LocalDateTime.class, fixture.taskId())).isEqualTo(NOW.plus(lease.duration()));
         assertThat(transactions.renewLease(second)).isTrue();
         entityManager.flush();
         assertThat(jdbc.queryForObject("SELECT lease_until FROM attachment_conversion_tasks WHERE task_id = ?",
-                LocalDateTime.class, fixture.taskId())).isEqualTo(NOW.plusMinutes(11));
+                LocalDateTime.class, fixture.taskId())).isEqualTo(NOW.plusMinutes(1).plus(lease.duration()));
         assertAttemptsUnchanged(fixture);
     }
 
